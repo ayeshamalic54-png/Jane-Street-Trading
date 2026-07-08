@@ -103,7 +103,11 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
 
 def close_all_positions(symbol, comment_filter="JS_"):
     """Closes all active positions matching the magic number and symbol."""
-    positions = mt5.positions_get(symbol=symbol)
+    if symbol == "ALL" or not symbol:
+        positions = mt5.positions_get()
+    else:
+        positions = mt5.positions_get(symbol=symbol)
+        
     if not positions:
         return
         
@@ -111,15 +115,15 @@ def close_all_positions(symbol, comment_filter="JS_"):
         if pos.magic == MAGIC_NUMBER and comment_filter in pos.comment:
             order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
             
-            # Fetch latest price
-            tick = mt5.symbol_info_tick(symbol)
+            # Fetch latest price for the specific symbol
+            tick = mt5.symbol_info_tick(pos.symbol)
             if tick is None:
                 continue
             price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
             
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
-                "symbol": symbol,
+                "symbol": pos.symbol,
                 "volume": pos.volume,
                 "type": order_type,
                 "position": pos.ticket,
@@ -134,7 +138,7 @@ def close_all_positions(symbol, comment_filter="JS_"):
             if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                 logger.info(f"Emergency closed position ticket: {pos.ticket}")
                 # Immediately check closed deal details to log to database
-                check_closed_trades(symbol)
+                check_closed_trades(pos.symbol)
             else:
                 err_msg = res.comment if res else "No response"
                 logger.error(f"Failed to close position ticket {pos.ticket}: {err_msg}")

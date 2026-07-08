@@ -351,6 +351,29 @@ export default function Dashboard() {
           <div className="font-mono bg-zinc-900/70 border border-zinc-800 px-2 py-0.5 rounded text-[11px] text-zinc-400 shadow-[0_0_8px_rgba(255,255,255,0.02)]">
             TARGET LEG: <span className="font-bold text-zinc-100">{currentPair}</span>
           </div>
+          <Button
+            onClick={() => {
+              if (window.confirm("ARE YOU SURE YOU WANT TO EMERGENCY CLOSE ALL MT5 POSITIONS?")) {
+                executeTrade.mutate(
+                  { data: { symbol: "ALL", direction: "CLOSE", lots: 0.0, comment: "CLOSE_ALL" } },
+                  {
+                    onSuccess: () => {
+                      toast({ title: "Emergency Close All triggered", description: "Sent CLOSE ALL command to MT5 bot" });
+                    },
+                    onError: () => {
+                      toast({ title: "Failed to trigger close command", variant: "destructive" });
+                    }
+                  }
+                );
+              }
+            }}
+            size="sm"
+            variant="destructive"
+            className="bg-red-600 hover:bg-red-500 text-white font-mono text-[10px] font-bold h-6 px-2 shadow-[0_0_12px_rgba(239,68,68,0.25)] rounded border border-red-500/30 ml-2"
+            disabled={executeTrade.isPending || !botOnline}
+          >
+            🚨 CLOSE ALL
+          </Button>
         </div>
       </div>
 
