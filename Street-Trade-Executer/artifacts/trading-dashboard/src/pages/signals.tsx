@@ -1,12 +1,16 @@
-import { useGetSignals, getGetSignalsQueryKey, useGetConfig } from "@workspace/api-client-react";
+import { useGetSignals, getGetSignalsQueryKey, useGetConfig, useExecuteTrade } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 
 export default function Signals() {
+  const executeTrade = useExecuteTrade();
+  const { toast } = useToast();
   const { data: signals, isLoading: isSignalsLoading } = useGetSignals({ limit: 100 }, {
     query: {
       queryKey: getGetSignalsQueryKey({ limit: 100 })
@@ -16,6 +20,41 @@ export default function Signals() {
   const { data: config, isLoading: isConfigLoading } = useGetConfig();
 
   const isLoading = isSignalsLoading || isConfigLoading;
+
+  const handleExecuteSignal = (sig: any) => {
+    const isBuy = sig.action === "BUY_SPREAD";
+    const dirA = isBuy ? "BUY" : "SELL";
+    const dirB = isBuy ? "SELL" : "BUY";
+    
+    const lots = config?.defaultLots ?? 0.01;
+    const slPips = config?.slPips ?? 10;
+    const tpPips = config?.tpPips ?? 20;
+
+    executeTrade.mutate(
+      { data: { symbol: sig.symbolA, direction: dirA, lots, slPips, tpPips } },
+      {
+        onSuccess: () => {
+          executeTrade.mutate(
+            { data: { symbol: sig.symbolB, direction: dirB, lots, slPips, tpPips } },
+            {
+              onSuccess: () => {
+                toast({
+                  title: "🚀 One-Click Spread Executed",
+                  description: `Queued: ${dirA} ${sig.symbolA} & ${dirB} ${sig.symbolB} (${lots} lots) successfully!`,
+                });
+              },
+              onError: () => {
+                toast({ title: `Failed to queue second leg ${sig.symbolB}`, variant: "destructive" });
+              }
+            }
+          );
+        },
+        onError: () => {
+          toast({ title: `Failed to queue first leg ${sig.symbolA}`, variant: "destructive" });
+        }
+      }
+    );
+  };
 
   const getPipSize = (sym: string): number => {
     const s = sym.toUpperCase();
@@ -140,6 +179,7 @@ export default function Signals() {
                   <TableHead className="font-mono text-xs text-right">LOTS</TableHead>
                   <TableHead className="font-mono text-xs text-right">P&L</TableHead>
                   <TableHead className="font-mono text-xs text-right">Z-SCORE</TableHead>
+                  <TableHead className="font-mono text-xs text-center">ACTION</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -200,6 +240,19 @@ export default function Signals() {
                         Math.abs(sig.zScore) >= 2 ? (sig.zScore > 0 ? "text-red-500" : "text-green-500") : "text-foreground"
                       )}>
                         {sig.zScore.toFixed(3)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleExecuteSignal(sig);
+                          }}
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold h-7 px-2"
+                          disabled={executeTrade.isPending}
+                        >
+                          ⚡ EXECUTE
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
