@@ -41,7 +41,7 @@ const clientDistPath = path.resolve(__dirname, "../../trading-dashboard/dist/pub
 app.use(express.static(clientDistPath));
 
 // For all non-API routes, serve index.html (supports client-side routing)
-app.get("(.*)", (req, res, next) => {
+app.use((req, res, next) => {
   if (req.path.startsWith("/api")) {
     return next();
   }
