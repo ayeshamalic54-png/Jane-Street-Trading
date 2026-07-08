@@ -142,7 +142,15 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                 cat = get_symbol_category(symbol)
                 is_long = (direction == "BUY")
                 
-                if cat == "crypto":
+                if direction == "CLOSE":
+                    ticket_val = int(comment.split("_")[1]) if "_" in comment else 0
+                    if ticket_val > 0:
+                        ok = close_single_trade(symbol, ticket_val, lots, "SELL")
+                    else:
+                        close_all_positions(symbol)
+                        ok = True
+                    err_msg = None if ok else "Failed to execute close command"
+                elif cat == "crypto":
                     tick = get_binance_live_tick(symbol)
                     if tick is None:
                         raise RuntimeError(f"No tick data for crypto {symbol}")

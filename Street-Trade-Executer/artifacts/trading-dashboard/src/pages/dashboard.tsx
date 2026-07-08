@@ -863,6 +863,7 @@ export default function Dashboard() {
                     <TableHead className="font-mono text-xs text-right">ENTRY</TableHead>
                     <TableHead className="font-mono text-xs text-right">CURRENT</TableHead>
                     <TableHead className="font-mono text-xs text-right">PROFIT</TableHead>
+                    <TableHead className="font-mono text-xs text-center">ACTION</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -888,6 +889,30 @@ export default function Dashboard() {
                         pos.profit >= 0 ? "text-green-500" : "text-red-500"
                       )}>
                         {pos.profit > 0 ? "+" : ""}{pos.profit.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            executeTrade.mutate(
+                              { data: { symbol: pos.symbol, direction: "CLOSE", lots: pos.lots, comment: `CLOSE_${pos.ticket}` } },
+                              {
+                                onSuccess: () => {
+                                  toast({ title: "Close command queued", description: `Queued exit for Ticket #${pos.ticket}` });
+                                },
+                                onError: () => {
+                                  toast({ title: "Failed to queue exit", variant: "destructive" });
+                                }
+                              }
+                            );
+                          }}
+                          size="sm"
+                          variant="destructive"
+                          className="h-7 px-2 font-mono text-[10px] uppercase font-bold"
+                          disabled={executeTrade.isPending || !botOnline}
+                        >
+                          Emergency Close
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

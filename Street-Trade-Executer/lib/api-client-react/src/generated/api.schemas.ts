@@ -167,6 +167,7 @@ export type ManualTradeRequestDirection = typeof ManualTradeRequestDirection[key
 export const ManualTradeRequestDirection = {
   BUY: 'BUY',
   SELL: 'SELL',
+  CLOSE: 'CLOSE',
 } as const;
 
 export interface ManualTradeRequest {

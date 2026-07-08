@@ -238,7 +238,7 @@ export const UpdateConfigResponse = zod.object({
  */
 export const ExecuteTradeBody = zod.object({
   "symbol": zod.string(),
-  "direction": zod.enum(['BUY', 'SELL']),
+  "direction": zod.enum(['BUY', 'SELL', 'CLOSE']),
   "lots": zod.number(),
   "slPips": zod.number().optional(),
   "tpPips": zod.number().optional(),
