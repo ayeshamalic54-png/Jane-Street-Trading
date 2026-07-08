@@ -9,6 +9,7 @@ import logging
 import json
 import threading
 import requests
+import joblib
 
 from math_models import KalmanFilterRegression, calculate_obi, test_cointegration
 from data_ingestion import initialize_mt5, check_and_subscribe_symbol, get_live_ticks, get_market_book, shutdown_mt5, get_rates_df, resolve_broker_symbol
@@ -251,6 +252,7 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
 
 
 Z_ENTRY_THRESHOLD = 2.0
+ML_MODEL = None
 DEFAULT_LOTS = 0.01
 Z_EXIT_MEAN = 0.0
 REQUIRE_SMC_CONFLUENCE = True
@@ -752,10 +754,19 @@ def main():
     print("   JANE STREET QUANT BOT INITIALIZING    ")
     print("=========================================\n")
 
-    global REQUIRE_SMC_CONFLUENCE, SL_PIPS, TP_PIPS, AUTO_EXECUTE, Z_ENTRY_THRESHOLD, DEFAULT_LOTS, RISK_LIMITS_ENABLED
+    global REQUIRE_SMC_CONFLUENCE, SL_PIPS, TP_PIPS, AUTO_EXECUTE, Z_ENTRY_THRESHOLD, DEFAULT_LOTS, RISK_LIMITS_ENABLED, ML_MODEL
     global CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED
 
     load_config()
+
+    # Load local ML model if it exists
+    ML_MODEL = None
+    if os.path.exists("ml_model.joblib"):
+        try:
+            ML_MODEL = joblib.load("ml_model.joblib")
+            logger.info("Successfully loaded local Machine Learning model: ml_model.joblib")
+        except Exception as e:
+            logger.error(f"Failed to load ML model: {e}")
 
     # ── BUG FIX 3: Create all DB tables before anything tries to write to them ──
     logger.info("Initializing database tables...")
@@ -1136,6 +1147,7 @@ def main():
                         "action": action,
                         "win_rate": win_rate,
                         "z_score": z,
+                        "z_velocity": z_velocity,
                         "beta": beta,
                         "net_obi": net_obi,
                         "tick_a": tick_a_scan,
@@ -1181,6 +1193,27 @@ def main():
                 best_cat_b = get_symbol_category(best_s_b)
                 
                 if (best_cat_a == "crypto" or is_spread_valid(best_s_a)) and (best_cat_b == "crypto" or is_spread_valid(best_s_b)):
+                    
+                    # Machine Learning Filter evaluation
+                    if ML_MODEL is not None:
+                        now_dt = datetime.datetime.now()
+                        feature_vector = [
+                            float(best_sig["z_score"]),
+                            float(best_sig["z_velocity"]),
+                            float(best_sig["price_a"] - best_sig["price_b"] * best_sig["beta"]),
+                            float(best_sig["beta"]),
+                            int(now_dt.hour),
+                            int(now_dt.weekday())
+                        ]
+                        try:
+                            proba_success = float(ML_MODEL.predict_proba([feature_vector])[0][1])
+                            logger.info(f"ML Filter Evaluation for {best_s_a}/{best_s_b} | Win Probability: {proba_success*100:.1f}%")
+                            if proba_success < 0.65:
+                                logger.info(f"ML Filter: Skipping trade because probability {proba_success*100:.1f}% is below threshold 65%")
+                                continue
+                        except Exception as ml_err:
+                            logger.error(f"ML inference error: {ml_err}")
+                            
                     logger.info(f"Scanning selected pair: {best_s_a}/{best_s_b} with max win rate {best_sig['win_rate']}% and action {best_action}")
                     
                     # Switch active pair
@@ -1230,7 +1263,15 @@ def main():
                                         log_trade_entry(res_hedge.order, S_B, "SELL", qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
                             lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0 else calculate_lots(S_A, sl_dist, acc_info)
-                            qty_b = get_hedge_quantity(S_A, S_B, lots_a, best_sig["beta"], best_cat_a, best_cat_b)
+                            # Apply 3-part safeguard scaling correction
+                            info_a_check = mt5.symbol_info(S_A)
+                            min_vol_a = info_a_check.volume_min if info_a_check else 0.01
+                            part_lots_a = round(lots_a / 3.0, 2)
+                            if part_lots_a < min_vol_a:
+                                part_lots_a = min_vol_a
+                            actual_lots_a = part_lots_a * 3.0
+                            
+                            qty_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
                             if execute_three_part_trade(
                                 S_A, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, lots_a,
@@ -1272,7 +1313,15 @@ def main():
                                         log_trade_entry(res_hedge.order, S_B, "BUY", qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
                             lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0 else calculate_lots(S_A, sl_dist, acc_info)
-                            qty_b = get_hedge_quantity(S_A, S_B, lots_a, best_sig["beta"], best_cat_a, best_cat_b)
+                            # Apply 3-part safeguard scaling correction
+                            info_a_check = mt5.symbol_info(S_A)
+                            min_vol_a = info_a_check.volume_min if info_a_check else 0.01
+                            part_lots_a = round(lots_a / 3.0, 2)
+                            if part_lots_a < min_vol_a:
+                                part_lots_a = min_vol_a
+                            actual_lots_a = part_lots_a * 3.0
+                            
+                            qty_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
                             if execute_three_part_trade(
                                 S_A, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, lots_a,
