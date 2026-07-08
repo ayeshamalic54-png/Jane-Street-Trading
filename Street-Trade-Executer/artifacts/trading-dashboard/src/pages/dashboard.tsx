@@ -1,4 +1,4 @@
-import { useGetDashboard, useExecuteTrade, getGetDashboardQueryKey } from "@workspace/api-client-react";
+import { useGetDashboard, useExecuteTrade, getGetDashboardQueryKey, useGetSignals } from "@workspace/api-client-react";
 import { useLiveDashboard } from "@/hooks/use-ws";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -170,6 +170,11 @@ export default function Dashboard() {
   }
 
   if (!dashboard) return null;
+
+  const { data: signalsData } = useGetSignals({ limit: 50 });
+  const recentSymbolSignals = signalsData?.filter(
+    (s: any) => s.symbolA.toUpperCase().includes(selectedChartSymbol.toUpperCase()) || s.symbolB.toUpperCase().includes(selectedChartSymbol.toUpperCase())
+  ) ?? [];
 
   const {
     systemStatus,
@@ -490,8 +495,41 @@ export default function Dashboard() {
                 TRADINGVIEW FEED
               </Badge>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <TradingViewWidget symbol={selectedChartSymbol} />
+              
+              {/* Signals Timeline for selected symbol */}
+              <div className="p-3 bg-zinc-950 border border-zinc-900 rounded-md">
+                <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono mb-2">Recent Execution Signals ({selectedChartSymbol})</div>
+                {recentSymbolSignals.length === 0 ? (
+                  <div className="text-xs text-zinc-500 italic font-mono">No recent signals recorded for {selectedChartSymbol}</div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {recentSymbolSignals.slice(0, 3).map((sig: any) => {
+                      const isBuy = sig.action === "BUY_SPREAD";
+                      const dateStr = new Date(sig.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                      return (
+                        <div key={sig.id} className={cn(
+                          "flex items-center justify-between p-2 rounded-sm border text-xs font-mono",
+                          isBuy 
+                            ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-400" 
+                            : "bg-rose-500/5 border-rose-500/20 text-rose-400"
+                        )}>
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              isBuy ? "bg-emerald-400 animate-pulse" : "bg-rose-400 animate-pulse"
+                            )} />
+                            <span className="font-bold">{isBuy ? "BUY" : "SELL"}</span>
+                          </div>
+                          <span>Z: {sig.zScore.toFixed(2)}</span>
+                          <span className="text-[10px] text-zinc-500">{dateStr}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 
