@@ -26,6 +26,7 @@ const configSchema = z.object({
   forexEnabled: z.boolean(),
   indicesEnabled: z.boolean(),
   riskLimitsEnabled: z.boolean(),
+  defaultLots: z.coerce.number().min(0.001).max(500),
 });
 type ConfigFormValues = z.infer<typeof configSchema>;
 
@@ -106,6 +107,7 @@ export default function Config() {
       forexEnabled: true,
       indicesEnabled: true,
       riskLimitsEnabled: true,
+      defaultLots: 0.01,
     },
     values: config
       ? {
@@ -119,6 +121,7 @@ export default function Config() {
           forexEnabled: config.forexEnabled,
           indicesEnabled: config.indicesEnabled,
           riskLimitsEnabled: config.riskLimitsEnabled,
+          defaultLots: (config as any).defaultLots ?? 0.01,
         }
       : undefined,
   });
@@ -413,6 +416,23 @@ export default function Config() {
                         </FormControl>
                         <FormDescription className="text-xs">
                           Threshold in standard deviations (e.g. 2.0). Lower values (like 0.5) trigger trades more frequently.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="defaultLots"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Default Lot Size (Auto-Trade)</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.01" min="0.001" {...field} className="font-mono border-border bg-background" />
+                        </FormControl>
+                        <FormDescription className="text-xs">
+                          Fixed lot size used for all automatic spread trades. (e.g. 0.01 to risk minimum).
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

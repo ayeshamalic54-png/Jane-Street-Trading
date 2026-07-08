@@ -30,6 +30,7 @@ router.get("/config", async (req, res) => {
       forexEnabled: state?.forexEnabled ?? true,
       indicesEnabled: state?.indicesEnabled ?? true,
       riskLimitsEnabled: state?.riskLimitsEnabled ?? true,
+      defaultLots: Number(state?.defaultLots ?? 0.01),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get config");
@@ -45,7 +46,7 @@ router.post("/config", async (req, res) => {
       return;
     }
 
-    const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, indicesEnabled, riskLimitsEnabled } = parsed.data;
+    const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, indicesEnabled, riskLimitsEnabled, defaultLots } = parsed.data;
     const parts = activePair.split("/");
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
       res.status(400).json({ error: "activePair must be SYMBOL_A/SYMBOL_B" });
@@ -59,10 +60,11 @@ router.post("/config", async (req, res) => {
     const indicesExec = indicesEnabled ?? true;
     const riskLimits = riskLimitsEnabled ?? true;
     const zEntry = zEntryThreshold ?? 2.0;
+    const defLots = defaultLots ?? 0.01;
 
     await db.execute(
-      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, risk_limits_enabled, system_status, updated_at)
-          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${riskLimits}, 'BOT OFFLINE', NOW()
+      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, risk_limits_enabled, default_lots, system_status, updated_at)
+          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${riskLimits}, ${defLots.toString()}, 'BOT OFFLINE', NOW()
           WHERE NOT EXISTS (SELECT 1 FROM bot_state)`
     );
 
@@ -79,6 +81,7 @@ router.post("/config", async (req, res) => {
               forex_enabled = ${forexExec},
               indices_enabled = ${indicesExec},
               risk_limits_enabled = ${riskLimits},
+              default_lots = ${defLots.toString()},
               updated_at   = NOW()
           WHERE id = (SELECT MIN(id) FROM bot_state)`
     );
@@ -104,6 +107,7 @@ router.post("/config", async (req, res) => {
       forexEnabled: updated?.forexEnabled ?? forexExec,
       indicesEnabled: updated?.indicesEnabled ?? indicesExec,
       riskLimitsEnabled: updated?.riskLimitsEnabled ?? riskLimits,
+      defaultLots: Number(updated?.defaultLots ?? defLots),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update config");

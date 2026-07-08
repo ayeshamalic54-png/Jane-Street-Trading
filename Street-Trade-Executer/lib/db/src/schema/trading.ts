@@ -60,6 +60,7 @@ export const botStateTable = pgTable("bot_state", {
   indicesEnabled: boolean("indices_enabled").default(true),
   riskLimitsEnabled: boolean("risk_limits_enabled").default(true),
   zEntryThreshold: numeric("z_entry_threshold", { precision: 4, scale: 2 }).default("2.00"),
+  defaultLots: numeric("default_lots", { precision: 5, scale: 2 }).default("0.01"),
   lastHeartbeat: timestamp("last_heartbeat"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

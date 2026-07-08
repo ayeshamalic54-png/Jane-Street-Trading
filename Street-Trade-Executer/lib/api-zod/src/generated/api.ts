@@ -208,7 +208,8 @@ export const UpdateConfigBody = zod.object({
   "metalsEnabled": zod.boolean().optional(),
   "forexEnabled": zod.boolean().optional(),
   "indicesEnabled": zod.boolean().optional(),
-  "riskLimitsEnabled": zod.boolean().optional()
+  "riskLimitsEnabled": zod.boolean().optional(),
+  "defaultLots": zod.number().optional()
 })
 
 export const UpdateConfigResponse = zod.object({
@@ -227,7 +228,8 @@ export const UpdateConfigResponse = zod.object({
   "metalsEnabled": zod.boolean(),
   "forexEnabled": zod.boolean(),
   "indicesEnabled": zod.boolean(),
-  "riskLimitsEnabled": zod.boolean()
+  "riskLimitsEnabled": zod.boolean(),
+  "defaultLots": zod.number().optional()
 })
 
 

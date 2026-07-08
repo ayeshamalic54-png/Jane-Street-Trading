@@ -143,6 +143,7 @@ export interface BotConfig {
   forexEnabled: boolean;
   indicesEnabled: boolean;
   riskLimitsEnabled: boolean;
+  defaultLots?: number;
 }
 
 export interface BotConfigInput {
@@ -157,6 +158,7 @@ export interface BotConfigInput {
   forexEnabled?: boolean;
   indicesEnabled?: boolean;
   riskLimitsEnabled?: boolean;
+  defaultLots?: number;
 }
 
 export type ManualTradeRequestDirection = typeof ManualTradeRequestDirection[keyof typeof ManualTradeRequestDirection];

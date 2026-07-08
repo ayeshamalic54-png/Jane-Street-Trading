@@ -181,6 +181,16 @@ def initialize_database():
             conn.commit()
             print("Added tp_pips column to bot_state table.")
 
+        # Add default_lots column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='default_lots'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN default_lots NUMERIC(5, 2) DEFAULT 0.01")
+            conn.commit()
+            print("Added default_lots column to bot_state table.")
+
         cur.close()
         print("Database initialized successfully!")
     except Exception as e:

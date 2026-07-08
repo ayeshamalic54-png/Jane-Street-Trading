@@ -110,6 +110,7 @@ def fetch_db_config():
                 bool(data.get("indicesEnabled", True)),
                 bool(data.get("riskLimitsEnabled", True)),
                 float(data.get("zEntryThreshold", 2.0)),
+                float(data.get("defaultLots", 0.01)),
             )
     except Exception as e:
         logger.warning(f"Could not fetch DB config: {e}")
@@ -242,6 +243,7 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
 
 
 Z_ENTRY_THRESHOLD = 2.0
+DEFAULT_LOTS = 0.01
 Z_EXIT_MEAN = 0.0
 REQUIRE_SMC_CONFLUENCE = True
 AUTO_EXECUTE = True          # toggled from dashboard via DB
@@ -742,7 +744,7 @@ def main():
     print("   JANE STREET QUANT BOT INITIALIZING    ")
     print("=========================================\n")
 
-    global REQUIRE_SMC_CONFLUENCE, SL_PIPS, TP_PIPS, AUTO_EXECUTE, Z_ENTRY_THRESHOLD
+    global REQUIRE_SMC_CONFLUENCE, SL_PIPS, TP_PIPS, AUTO_EXECUTE, Z_ENTRY_THRESHOLD, DEFAULT_LOTS
     global CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED
 
     load_config()
@@ -788,7 +790,7 @@ def main():
             if db_config_counter % 5 == 0:
                 db_cfg = fetch_db_config()
                 if db_cfg:
-                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry = db_cfg
+                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots = db_cfg
                     parts = new_pair.split("/")
                     if len(parts) == 2 and parts[0] != parts[1]:
                         if GLOBAL_CONFIG["SYMBOL_A"] != parts[0] or GLOBAL_CONFIG["SYMBOL_B"] != parts[1]:
@@ -806,6 +808,7 @@ def main():
                     INDICES_ENABLED = new_indices
                     RISK_LIMITS_ENABLED = new_risk_limits
                     Z_ENTRY_THRESHOLD = new_z_entry
+                    DEFAULT_LOTS = new_def_lots
                     
                     # Clean up disabled categories in the database immediately
                     cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED)
@@ -1218,7 +1221,7 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, "SELL", qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            lots_a = calculate_lots(S_A, sl_dist, acc_info)
+                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0 else calculate_lots(S_A, sl_dist, acc_info)
                             qty_b = get_hedge_quantity(S_A, S_B, lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
                             if execute_three_part_trade(
@@ -1260,7 +1263,7 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, "BUY", qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            lots_a = calculate_lots(S_A, sl_dist, acc_info)
+                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0 else calculate_lots(S_A, sl_dist, acc_info)
                             qty_b = get_hedge_quantity(S_A, S_B, lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
                             if execute_three_part_trade(
