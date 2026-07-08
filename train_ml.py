@@ -140,6 +140,10 @@ def train_model():
     df_data = pd.DataFrame(index=common_idx)
     df_data['price_a'] = prices_a
     df_data['price_b'] = prices_b
+    df_data['high_a'] = df_a['high'].values
+    df_data['low_a'] = df_a['low'].values
+    df_data['high_b'] = df_b['high'].values
+    df_data['low_b'] = df_b['low'].values
     df_data['beta'] = betas
     df_data['spread'] = spreads
     df_data['z_score'] = z_scores
@@ -182,17 +186,19 @@ def train_model():
             outcome = None
             for j in range(i + 1, min(i + 150, len(df_data))):
                 fut_z = df_data['z_score'].iloc[j]
-                fut_p_a = df_data['price_a'].iloc[j]
-                fut_p_b = df_data['price_b'].iloc[j]
+                fut_high_a = df_data['high_a'].iloc[j]
+                fut_low_a = df_data['low_a'].iloc[j]
+                fut_high_b = df_data['high_b'].iloc[j]
+                fut_low_b = df_data['low_b'].iloc[j]
 
                 # Check if TP hit (spread reverted to mean)
                 if (action == "BUY" and fut_z >= Z_EXIT) or (action == "SELL" and fut_z <= Z_EXIT):
                     outcome = 1  # Success
                     break
 
-                # Check if SL hit on either leg
-                hit_sl_a = (action == "BUY" and fut_p_a <= sl_price_a) or (action == "SELL" and fut_p_a >= sl_price_a)
-                hit_sl_b = (action == "BUY" and fut_p_b >= sl_price_b) or (action == "SELL" and fut_p_b <= sl_price_b)
+                # Check if SL hit using High/Low values
+                hit_sl_a = (action == "BUY" and fut_low_a <= sl_price_a) or (action == "SELL" and fut_high_a >= sl_price_a)
+                hit_sl_b = (action == "BUY" and fut_high_b >= sl_price_b) or (action == "SELL" and fut_low_b <= sl_price_b)
 
                 if hit_sl_a or hit_sl_b:
                     outcome = 0  # Failure

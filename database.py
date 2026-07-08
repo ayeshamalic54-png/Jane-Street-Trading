@@ -187,7 +187,7 @@ def initialize_database():
             WHERE table_name='bot_state' AND column_name='default_lots'
         """)
         if not cur.fetchone():
-            cur.execute("ALTER TABLE bot_state ADD COLUMN default_lots NUMERIC(5, 2) DEFAULT 0.01")
+            cur.execute("ALTER TABLE bot_state ADD COLUMN default_lots NUMERIC(5, 3) DEFAULT 0.01")
             conn.commit()
             print("Added default_lots column to bot_state table.")
 
