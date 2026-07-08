@@ -1,0 +1,683 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Jane Street Quant Trading Dashboard API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: dashboard
+    description: Live dashboard telemetry
+  - name: trades
+    description: Trade history
+  - name: signals
+    description: Trading signals
+  - name: metrics
+    description: Daily performance metrics
+  - name: config
+    description: Bot configuration
+  - name: execute
+    description: Manual trade execution
+  - name: prices
+    description: Live market prices
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get live dashboard state
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardData"
+
+  /trades:
+    get:
+      operationId: getTrades
+      tags: [trades]
+      summary: Get trade history
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [OPEN, CLOSED, ALL]
+            default: ALL
+      responses:
+        "200":
+          description: List of trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trade"
+
+  /signals:
+    get:
+      operationId: getSignals
+      tags: [signals]
+      summary: Get recent signals
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        "200":
+          description: List of signals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Signal"
+
+  /metrics:
+    get:
+      operationId: getMetrics
+      tags: [metrics]
+      summary: Get daily performance metrics
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 7
+      responses:
+        "200":
+          description: List of daily metrics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailyMetric"
+
+  /metrics/summary:
+    get:
+      operationId: getMetricsSummary
+      tags: [metrics]
+      summary: Get aggregated performance summary
+      responses:
+        "200":
+          description: Summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsSummary"
+
+  /config:
+    get:
+      operationId: getConfig
+      tags: [config]
+      summary: Get current bot configuration
+      responses:
+        "200":
+          description: Config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotConfig"
+    post:
+      operationId: updateConfig
+      tags: [config]
+      summary: Update bot configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BotConfigInput"
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotConfig"
+
+  /execute-trade:
+    post:
+      operationId: executeTrade
+      tags: [execute]
+      summary: Queue a manual trade for the bot to execute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManualTradeRequest"
+      responses:
+        "200":
+          description: Trade command queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManualTradeResponse"
+
+  /commands/pending:
+    get:
+      operationId: getPendingCommands
+      tags: [execute]
+      summary: Get pending trade commands (polled by bot)
+      responses:
+        "200":
+          description: Pending commands
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TradeCommand"
+
+  /prices:
+    get:
+      operationId: getPrices
+      tags: [prices]
+      summary: Get live market prices (crypto from Binance, forex from bot)
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [forex, crypto, metals, stocks, all]
+            default: all
+      responses:
+        "200":
+          description: Live prices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketPrice"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    DashboardData:
+      type: object
+      properties:
+        systemStatus:
+          type: string
+        currentPair:
+          type: string
+        lastUpdate:
+          type: ["string", "null"]
+        equity:
+          type: number
+        drawdownPercent:
+          type: number
+        floatingProfit:
+          type: number
+        zScore:
+          type: number
+        hedgeRatio:
+          type: number
+        obiA:
+          type: number
+        obiB:
+          type: number
+        tradesToday:
+          type: integer
+        maxTrades:
+          type: integer
+        activePositions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Position"
+        recentTrades:
+          type: array
+          items:
+            $ref: "#/components/schemas/Trade"
+        activeZones:
+          type: array
+          items:
+            $ref: "#/components/schemas/Zone"
+        botOnline:
+          type: boolean
+        autoExecute:
+          type: boolean
+        scannedAssets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScannedAsset"
+      required:
+        - systemStatus
+        - currentPair
+        - equity
+        - drawdownPercent
+        - floatingProfit
+        - zScore
+        - hedgeRatio
+        - obiA
+        - obiB
+        - tradesToday
+        - maxTrades
+        - activePositions
+        - recentTrades
+        - activeZones
+        - botOnline
+        - autoExecute
+        - scannedAssets
+
+    Position:
+      type: object
+      properties:
+        ticket:
+          type: integer
+        symbol:
+          type: string
+        type:
+          type: string
+        lots:
+          type: number
+        entry:
+          type: number
+        current:
+          type: number
+        profit:
+          type: number
+        comment:
+          type: string
+      required:
+        - ticket
+        - symbol
+        - type
+        - lots
+        - entry
+        - profit
+
+    Trade:
+      type: object
+      properties:
+        ticket:
+          type: integer
+        symbol:
+          type: string
+        orderType:
+          type: string
+        lots:
+          type: number
+        entryPrice:
+          type: number
+        closePrice:
+          type: ["number", "null"]
+        profit:
+          type: ["number", "null"]
+        entryTime:
+          type: string
+        closeTime:
+          type: ["string", "null"]
+        status:
+          type: string
+        comment:
+          type: ["string", "null"]
+      required:
+        - ticket
+        - symbol
+        - orderType
+        - lots
+        - entryPrice
+        - entryTime
+        - status
+
+    Signal:
+      type: object
+      properties:
+        id:
+          type: integer
+        timestamp:
+          type: string
+        symbolA:
+          type: string
+        symbolB:
+          type: string
+        priceA:
+          type: number
+        priceB:
+          type: number
+        beta:
+          type: number
+        alpha:
+          type: number
+        zScore:
+          type: number
+        obi:
+          type: number
+        action:
+          type: string
+        totalLots:
+          type: number
+        totalProfit:
+          type: number
+        trades:
+          type: array
+          items:
+            type: object
+            properties:
+              ticket:
+                type: integer
+              symbol:
+                type: string
+              lots:
+                type: number
+              status:
+                type: string
+              profit:
+                type: number
+              comment:
+                type: string
+      required:
+        - id
+        - timestamp
+        - symbolA
+        - symbolB
+        - zScore
+        - action
+
+    DailyMetric:
+      type: object
+      properties:
+        tradingDate:
+          type: string
+        startEquity:
+          type: number
+        currentEquity:
+          type: number
+        maxDrawdownPercent:
+          type: number
+        tradesToday:
+          type: integer
+        pnl:
+          type: number
+      required:
+        - tradingDate
+        - startEquity
+        - currentEquity
+        - maxDrawdownPercent
+        - tradesToday
+        - pnl
+
+    MetricsSummary:
+      type: object
+      properties:
+        totalTrades:
+          type: integer
+        winningTrades:
+          type: integer
+        losingTrades:
+          type: integer
+        winRate:
+          type: number
+        totalPnl:
+          type: number
+        avgPnl:
+          type: number
+        bestTrade:
+          type: number
+        worstTrade:
+          type: number
+        maxDrawdown:
+          type: number
+      required:
+        - totalTrades
+        - winningTrades
+        - losingTrades
+        - winRate
+        - totalPnl
+        - avgPnl
+        - bestTrade
+        - worstTrade
+        - maxDrawdown
+
+    BotConfig:
+      type: object
+      properties:
+        activePair:
+          type: string
+        symbolA:
+          type: string
+        symbolB:
+          type: string
+        zEntryThreshold:
+          type: number
+        maxDailyTrades:
+          type: integer
+        maxDailyLossPercent:
+          type: number
+        requireSmcConfluence:
+          type: boolean
+        slPips:
+          type: number
+        tpPips:
+          type: number
+        smcEnabled:
+          type: boolean
+        autoExecute:
+          type: boolean
+        cryptoEnabled:
+          type: boolean
+        metalsEnabled:
+          type: boolean
+        forexEnabled:
+          type: boolean
+        indicesEnabled:
+          type: boolean
+        riskLimitsEnabled:
+          type: boolean
+      required:
+        - activePair
+        - symbolA
+        - symbolB
+        - zEntryThreshold
+        - maxDailyTrades
+        - maxDailyLossPercent
+        - requireSmcConfluence
+        - slPips
+        - tpPips
+        - smcEnabled
+        - autoExecute
+        - cryptoEnabled
+        - metalsEnabled
+        - forexEnabled
+        - indicesEnabled
+        - riskLimitsEnabled
+
+    BotConfigInput:
+      type: object
+      properties:
+        activePair:
+          type: string
+        slPips:
+          type: number
+        tpPips:
+          type: number
+        zEntryThreshold:
+          type: number
+        smcEnabled:
+          type: boolean
+        autoExecute:
+          type: boolean
+        cryptoEnabled:
+          type: boolean
+        metalsEnabled:
+          type: boolean
+        forexEnabled:
+          type: boolean
+        indicesEnabled:
+          type: boolean
+        riskLimitsEnabled:
+          type: boolean
+      required:
+        - activePair
+
+    ManualTradeRequest:
+      type: object
+      properties:
+        symbol:
+          type: string
+        direction:
+          type: string
+          enum: [BUY, SELL]
+        lots:
+          type: number
+        slPips:
+          type: number
+        tpPips:
+          type: number
+        comment:
+          type: string
+      required:
+        - symbol
+        - direction
+        - lots
+
+    ManualTradeResponse:
+      type: object
+      properties:
+        commandId:
+          type: integer
+        symbol:
+          type: string
+        direction:
+          type: string
+        lots:
+          type: number
+        status:
+          type: string
+        message:
+          type: string
+      required:
+        - commandId
+        - symbol
+        - direction
+        - lots
+        - status
+        - message
+
+    TradeCommand:
+      type: object
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        direction:
+          type: string
+        lots:
+          type: number
+        slPips:
+          type: ["number", "null"]
+        tpPips:
+          type: ["number", "null"]
+        comment:
+          type: ["string", "null"]
+        status:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - symbol
+        - direction
+        - lots
+        - status
+        - createdAt
+
+    MarketPrice:
+      type: object
+      properties:
+        symbol:
+          type: string
+        price:
+          type: number
+        change24h:
+          type: ["number", "null"]
+        changePct24h:
+          type: ["number", "null"]
+        category:
+          type: string
+        source:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - symbol
+        - price
+        - category
+        - source
+        - updatedAt
+
+    Zone:
+      type: object
+      properties:
+        type:
+          type: string
+        label:
+          type: string
+        range:
+          type: string
+      required:
+        - type
+        - label
+        - range
+
+    ScannedAsset:
+      type: object
+      properties:
+        symbolPair:
+          type: string
+        priceA:
+          type: number
+        priceB:
+          type: number
+        winRate:
+          type: number
+        zScore:
+          type: number
+        action:
+          type: string
+      required:
+        - symbolPair
+        - priceA
+        - priceB
+        - winRate
+        - zScore
+        - action
+

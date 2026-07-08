@@ -1,0 +1,38 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="100%" stop-color="#111827" />
+    </linearGradient>
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0369a1" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+    <filter id="glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <!-- Rounded Square Background -->
+  <rect width="180" height="180" rx="42" fill="url(#bgGrad)" stroke="#1f2937" stroke-width="4"/>
+  
+  <!-- Subtle Grid Lines -->
+  <path d="M30 45H150M30 90H150M30 135H150M45 30V150M90 30V150M135 30V150" stroke="#1f2937" stroke-width="1" stroke-dasharray="2 4"/>
+  
+  <!-- Statistical Arb Convergence Loops (Glowing) -->
+  <g filter="url(#glow)">
+    <!-- Leg A Wave (Cyan) -->
+    <path d="M40 115 C 65 50, 115 50, 140 115" stroke="url(#primaryGrad)" stroke-width="8" stroke-linecap="round" opacity="0.95"/>
+    <!-- Leg B Wave (Green) -->
+    <path d="M40 65 C 65 130, 115 130, 140 65" stroke="url(#accentGrad)" stroke-width="8" stroke-linecap="round" opacity="0.95"/>
+    
+    <!-- Convergence Nodes -->
+    <circle cx="62" cy="90" r="5" fill="#ffffff" />
+    <circle cx="118" cy="90" r="5" fill="#ffffff" />
+    <circle cx="90" cy="90" r="7" fill="#38bdf8" />
+  </g>
+</svg>
