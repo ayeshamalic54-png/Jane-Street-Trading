@@ -92,6 +92,10 @@ router.get("/dashboard", async (req, res) => {
       })),
       botOnline: isOnline,
       autoExecute: botState?.autoExecute ?? true,
+      cryptoEnabled: botState?.cryptoEnabled ?? true,
+      metalsEnabled: botState?.metalsEnabled ?? true,
+      forexEnabled: botState?.forexEnabled ?? true,
+      indicesEnabled: botState?.indicesEnabled ?? true,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get dashboard data");

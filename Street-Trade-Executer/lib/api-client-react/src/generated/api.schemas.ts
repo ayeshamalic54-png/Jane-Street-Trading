@@ -73,6 +73,10 @@ export interface DashboardData {
   botOnline: boolean;
   autoExecute: boolean;
   scannedAssets: ScannedAsset[];
+  cryptoEnabled?: boolean;
+  metalsEnabled?: boolean;
+  forexEnabled?: boolean;
+  indicesEnabled?: boolean;
 }
 
 export type SignalTradesItem = {

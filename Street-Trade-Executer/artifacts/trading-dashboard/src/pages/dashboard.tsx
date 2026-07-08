@@ -255,6 +255,52 @@ export default function Dashboard() {
     );
   };
 
+  const handleOneClickExecute = (symbolPair: string, action: string) => {
+    const parts = symbolPair.split("/");
+    if (parts.length !== 2) return;
+    
+    const [symA, symB] = parts;
+    const isBuy = action === "BUY_SPREAD";
+    
+    const dirA = isBuy ? "BUY" : "SELL";
+    const dirB = isBuy ? "SELL" : "BUY";
+    
+    const slPips = parseFloat(manualSl);
+    const tpPips = parseFloat(manualTp);
+    const lots = parseFloat(manualLots);
+    
+    if (isNaN(lots) || lots <= 0) {
+      toast({ title: "Lots required", description: "Set a valid Lot size in the input field first.", variant: "destructive" });
+      return;
+    }
+    
+    executeTrade.mutate(
+      { data: { symbol: symA, direction: dirA, lots, slPips: isNaN(slPips) ? undefined : slPips, tpPips: isNaN(tpPips) ? undefined : tpPips } },
+      {
+        onSuccess: () => {
+          executeTrade.mutate(
+            { data: { symbol: symB, direction: dirB, lots, slPips: isNaN(slPips) ? undefined : slPips, tpPips: isNaN(tpPips) ? undefined : tpPips } },
+            {
+              onSuccess: () => {
+                toast({
+                  title: "🚀 One-Click Spread Executed",
+                  description: `Queued: ${dirA} ${symA} & ${dirB} ${symB} (${lots} lots) successfully!`,
+                });
+                queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
+              },
+              onError: () => {
+                toast({ title: `Failed to queue second leg ${symB}`, variant: "destructive" });
+              }
+            }
+          );
+        },
+        onError: () => {
+          toast({ title: `Failed to queue first leg ${symA}`, variant: "destructive" });
+        }
+      }
+    );
+  };
+
   const zoneBullish = (type: string) => type.startsWith("BULLISH");
 
   return (
@@ -297,10 +343,10 @@ export default function Dashboard() {
           </div>
           <div className="text-zinc-500 font-mono text-[10px] uppercase flex items-center gap-2">
             <span>Scan Feed:</span>
-            <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", (dashboard.scannedAssets && dashboard.scannedAssets.some((s: any) => s.symbolPair.includes("USDT") || ["BTC", "ETH", "SOL", "BNB"].some((x) => s.symbolPair.includes(x)))) ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Crypto</span>
-            <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", (dashboard.scannedAssets && dashboard.scannedAssets.some((s: any) => s.symbolPair.includes("XAU") || s.symbolPair.includes("XAG"))) ? "bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Metals</span>
-            <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", (dashboard.scannedAssets && dashboard.scannedAssets.some((s: any) => !s.symbolPair.includes("USDT") && !s.symbolPair.includes("XAU") && !s.symbolPair.includes("XAG") && !["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "META", "AMZN"].some((x) => s.symbolPair.includes(x)))) ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Forex</span>
-            <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", (dashboard.scannedAssets && dashboard.scannedAssets.some((s: any) => ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "META", "AMZN"].some((x) => s.symbolPair.includes(x)))) ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Stocks</span>
+            <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.cryptoEnabled ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Crypto</span>
+            <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.metalsEnabled ? "bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Metals</span>
+            <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.forexEnabled ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Forex</span>
+            <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.indicesEnabled ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Stocks</span>
           </div>
           <div className="font-mono bg-zinc-900/70 border border-zinc-800 px-2 py-0.5 rounded text-[11px] text-zinc-400 shadow-[0_0_8px_rgba(255,255,255,0.02)]">
             TARGET LEG: <span className="font-bold text-zinc-100">{currentPair}</span>
@@ -562,6 +608,17 @@ export default function Dashboard() {
                   </Badge>
                 </div>
               </div>
+
+              {/* One-Click Execute Button for manual spread entry */}
+              {selectedAssetAction !== "NONE" && !hasActivePosition && (
+                <Button
+                  onClick={() => handleOneClickExecute(matchingAsset ? matchingAsset.symbolPair : selectedChartSymbol, selectedAssetAction)}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-mono font-bold shadow-[0_0_15px_rgba(16,185,129,0.25)] animate-pulse rounded-md py-4 text-xs"
+                  disabled={executeTrade.isPending || !botOnline}
+                >
+                  🚀 ONE-CLICK EXECUTE {selectedAssetAction.replace("_SPREAD", "")}
+                </Button>
+              )}
 
               <div className="p-3 bg-zinc-900/50 border border-zinc-800 rounded-md space-y-2">
                 <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Statistical Metrics</div>

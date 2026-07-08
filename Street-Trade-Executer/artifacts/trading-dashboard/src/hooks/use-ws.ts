@@ -47,6 +47,10 @@ export interface WsDashboardData {
   }>;
   botOnline: boolean;
   autoExecute: boolean;
+  cryptoEnabled?: boolean;
+  metalsEnabled?: boolean;
+  forexEnabled?: boolean;
+  indicesEnabled?: boolean;
 }
 
 export function useLiveDashboard() {

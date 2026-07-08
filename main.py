@@ -838,8 +838,8 @@ def main():
             else:
                 is_limit_breached, daily_loss_p = False, 0.0
 
-            # Detect if it's a demo account
-            is_demo = getattr(acc_info, "trade_mode", 0) == 0  # 0 is ACCOUNT_TRADE_MODE_DEMO
+            # Detect if it's a demo or contest account
+            is_demo = getattr(acc_info, "trade_mode", 0) in (0, 1)  # 0 is DEMO, 1 is CONTEST
 
             if is_limit_breached:
                 if is_demo:
