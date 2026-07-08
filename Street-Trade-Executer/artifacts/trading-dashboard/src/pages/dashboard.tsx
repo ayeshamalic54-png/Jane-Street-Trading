@@ -1,4 +1,4 @@
-import { useGetDashboard, useExecuteTrade, getGetDashboardQueryKey, useGetSignals } from "@workspace/api-client-react";
+import { useGetDashboard, useExecuteTrade, getGetDashboardQueryKey, useGetSignals, useGetConfig } from "@workspace/api-client-react";
 import { useLiveDashboard } from "@/hooks/use-ws";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -142,6 +142,22 @@ export default function Dashboard() {
       queryKey: getGetDashboardQueryKey(),
     },
   });
+
+  const { data: config } = useGetConfig();
+
+  useEffect(() => {
+    if (config) {
+      if (config.defaultLots !== undefined) {
+        setManualLots(config.defaultLots.toString());
+      }
+      if (config.slPips !== undefined) {
+        setManualSl(config.slPips.toString());
+      }
+      if (config.tpPips !== undefined) {
+        setManualTp(config.tpPips.toString());
+      }
+    }
+  }, [config]);
 
   const { data: wsData, wsConnected } = useLiveDashboard();
   const [pnlHistory, setPnlHistory] = useState<{ t: number; pnl: number; eq: number }[]>([]);
