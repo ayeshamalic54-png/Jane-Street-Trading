@@ -155,6 +155,7 @@ export default function Dashboard() {
   }, [wsData]);
 
   const executeTrade = useExecuteTrade();
+  const { data: signalsData } = useGetSignals({ limit: 50 });
 
   const dashboard = wsData ?? httpData;
 
@@ -171,7 +172,6 @@ export default function Dashboard() {
 
   if (!dashboard) return null;
 
-  const { data: signalsData } = useGetSignals({ limit: 50 });
   const recentSymbolSignals = signalsData?.filter(
     (s: any) => s.symbolA.toUpperCase().includes(selectedChartSymbol.toUpperCase()) || s.symbolB.toUpperCase().includes(selectedChartSymbol.toUpperCase())
   ) ?? [];
