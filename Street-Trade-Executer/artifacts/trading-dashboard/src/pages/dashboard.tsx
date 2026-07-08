@@ -687,6 +687,7 @@ export default function Dashboard() {
                     <TableHead className="font-mono text-xs text-right">PRICE B</TableHead>
                     <TableHead className="font-mono text-xs text-right">HISTORICAL WIN RATE</TableHead>
                     <TableHead className="font-mono text-xs text-center">CURRENT SIGNAL</TableHead>
+                    <TableHead className="font-mono text-xs text-center">ACTION</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -718,6 +719,21 @@ export default function Dashboard() {
                         )}>
                           {asset.action === "NONE" ? "WAITING" : asset.action.replace("_SPREAD", "")}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {asset.action !== "NONE" && (
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOneClickExecute(asset.symbolPair, asset.action);
+                            }}
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold h-7 px-2"
+                            disabled={executeTrade.isPending || !botOnline}
+                          >
+                            ⚡ EXECUTE
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
