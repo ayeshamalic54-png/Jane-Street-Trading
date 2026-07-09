@@ -1133,10 +1133,18 @@ def main():
                     z_vel_lim = 0.05
 
                 action = "NONE"
-                if z < -dynamic_z_entry and z_velocity > -z_vel_lim and obi_buy_pass and in_bullish_zone:
-                    action = "BUY_SPREAD"
-                elif z > dynamic_z_entry and z_velocity < z_vel_lim and obi_sell_pass and in_bearish_zone:
-                    action = "SELL_SPREAD"
+                if Z_ENTRY_THRESHOLD <= 0.5:
+                    # Raw Test Mode: Bypass all safety filters for instant verification
+                    if z < -Z_ENTRY_THRESHOLD:
+                        action = "BUY_SPREAD"
+                    elif z > Z_ENTRY_THRESHOLD:
+                        action = "SELL_SPREAD"
+                else:
+                    # Safe Mode: Apply all protections (SMC, OBI, Z-velocity, Volatility protection)
+                    if z < -dynamic_z_entry and z_velocity > -z_vel_lim and obi_buy_pass and in_bullish_zone:
+                        action = "BUY_SPREAD"
+                    elif z > dynamic_z_entry and z_velocity < z_vel_lim and obi_sell_pass and in_bearish_zone:
+                        action = "SELL_SPREAD"
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
                 base_z_triggered = (z < -Z_ENTRY_THRESHOLD) or (z > Z_ENTRY_THRESHOLD)
