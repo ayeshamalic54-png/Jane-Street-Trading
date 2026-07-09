@@ -772,6 +772,26 @@ def main():
     logger.info("Initializing database tables...")
     initialize_database()
     logger.info("Database ready.")
+
+    # Start background heartbeat thread to keep dashboard online during long loops
+    def heartbeat_worker():
+        import threading
+        while True:
+            try:
+                conn = get_connection()
+                cur = conn.cursor()
+                cur.execute("UPDATE bot_state SET last_heartbeat = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = 1")
+                conn.commit()
+                cur.close()
+                conn.close()
+            except Exception:
+                pass
+            time.sleep(10)
+
+    import threading
+    h_thread = threading.Thread(target=heartbeat_worker, daemon=True)
+    h_thread.start()
+    logger.info("Background heartbeat thread started.")
     
     # Clean up any stale disabled categories on startup
     cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED)
@@ -1070,13 +1090,13 @@ def main():
 
                 in_bullish_zone = True
                 in_bearish_zone = True
-                if REQUIRE_SMC_CONFLUENCE and s_a in SMC_ZONES_CACHE:
+                if REQUIRE_SMC_CONFLUENCE and s_a_resolved in SMC_ZONES_CACHE:
                     in_bullish_zone = any(
-                        is_price_in_zones(p_a, SMC_ZONES_CACHE[s_a].get(k, []))
+                        is_price_in_zones(p_a, SMC_ZONES_CACHE[s_a_resolved].get(k, []))
                         for k in ['bullish_ob', 'bullish_breaker', 'bullish_fvg', 'bullish_ifvg']
                     )
                     in_bearish_zone = any(
-                        is_price_in_zones(p_a, SMC_ZONES_CACHE[s_a].get(k, []))
+                        is_price_in_zones(p_a, SMC_ZONES_CACHE[s_a_resolved].get(k, []))
                         for k in ['bearish_ob', 'bearish_breaker', 'bearish_fvg', 'bearish_ifvg']
                     )
 
