@@ -91,53 +91,73 @@ def save_config(pair_str):
 
 def fetch_db_config():
     """
-    Reads active_pair, sl_pips, tp_pips, smc_enabled, and auto_execute from the dashboard DB
-    via the /api/config endpoint. Updates shared_config.json if changed.
-    Returns (active_pair, sl_pips, tp_pips, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, risk_limits_enabled, z_entry_threshold) or None on failure.
+    Reads active_pair, sl_pips, tp_pips, smc_enabled, and auto_execute directly from the postgres database
+    to avoid HTTP dependency and connection issues.
     """
+    query = """
+        SELECT active_pair, sl_pips, tp_pips, smc_enabled, auto_execute,
+               crypto_enabled, metals_enabled, forex_enabled, indices_enabled,
+               risk_limits_enabled, z_entry_threshold, default_lots
+        FROM bot_state
+        WHERE id = 1
+    """
+    conn = None
     try:
-        resp = requests.get(f"{DASHBOARD_API_URL}/config", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(query)
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
             return (
-                data.get("activePair", "EURUSD/GBPUSD"),
-                float(data.get("slPips", 10)),
-                float(data.get("tpPips", 20)),
-                bool(data.get("smcEnabled", True)),
-                bool(data.get("autoExecute", True)),
-                bool(data.get("cryptoEnabled", True)),
-                bool(data.get("metalsEnabled", True)),
-                bool(data.get("forexEnabled", True)),
-                bool(data.get("indicesEnabled", True)),
-                bool(data.get("riskLimitsEnabled", True)),
-                float(data.get("zEntryThreshold", 2.0)),
-                float(data.get("defaultLots", 0.01)),
+                row[0] or "EURUSD/GBPUSD",
+                float(row[1] or 10.0),
+                float(row[2] or 20.0),
+                bool(row[3] if row[3] is not None else True),
+                bool(row[4] if row[4] is not None else True),
+                bool(row[5] if row[5] is not None else True),
+                bool(row[6] if row[6] is not None else True),
+                bool(row[7] if row[7] is not None else True),
+                bool(row[8] if row[8] is not None else True),
+                bool(row[9] if row[9] is not None else True),
+                float(row[10] or 2.0),
+                float(row[11] or 0.01),
             )
     except Exception as e:
-        logger.warning(f"Could not fetch DB config: {e}")
+        logger.warning(f"Could not fetch DB config directly: {e}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
     return None
 
 
 def poll_manual_commands(tick_a, tick_b, sl_pips: float):
     """
-    Checks for pending manual trade commands from the dashboard and executes them via MT5/Binance.
-    Acks each command as EXECUTED or FAILED.
-    Manual commands always execute regardless of the auto_execute flag.
-    Splits the manual order into 3 parts (TP1, TP2, TP3) for scaling out.
+    Checks for pending manual trade commands directly from the database table trade_commands
+    and executes them via MT5/Binance. Acks each command back directly via SQL update.
     """
+    conn = None
     try:
-        resp = requests.get(f"{DASHBOARD_API_URL}/commands/pending", timeout=10)
-        if resp.status_code != 200:
-            return
-        commands = resp.json()
-        for cmd in commands:
-            cmd_id = cmd["id"]
-            symbol = cmd["symbol"]
-            direction = cmd["direction"]
-            lots = float(cmd["lots"])
-            cmd_sl = float(cmd["slPips"]) if cmd.get("slPips") else sl_pips
-            cmd_tp = float(cmd["tpPips"]) if cmd.get("tpPips") else cmd_sl * 2
-            comment = cmd.get("comment") or f"MANUAL_{direction}"
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, symbol, direction, lots, sl_pips, tp_pips, comment 
+            FROM trade_commands 
+            WHERE status = 'PENDING'
+            ORDER BY id ASC
+        """)
+        commands = cur.fetchall()
+        
+        for row in commands:
+            cmd_id, symbol, direction, lots_val, cmd_sl, cmd_tp, comment = row
+            lots = float(lots_val or 0.01)
+            cmd_sl = float(cmd_sl) if cmd_sl is not None else sl_pips
+            cmd_tp = float(cmd_tp) if cmd_tp is not None else cmd_sl * 2
+            comment = comment or f"MANUAL_{direction}"
 
             try:
                 cat = get_symbol_category(symbol)
@@ -170,14 +190,10 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                         tp2 = price - tp_dist
                         tp3 = price - sl_dist * 3.5
                         
-                    # Calculate quantity based on risk percentage
-                    # If user enters e.g. 0.01 lots, treat it as 1.0% risk. If they enter 2.0 lots, treat it as 2.0% risk.
                     risk_pct = lots * 100.0 if lots <= 1.0 else lots
                     usdt_bal, _ = get_binance_usdt_balance()
                     total_qty = calculate_binance_quantity(symbol, sl_dist, usdt_bal, risk_pct=risk_pct)
                     
-                    # Ensure total_qty is at least 3 times the minimum step size
-                    # because we split the order into 3 parts (TP1, TP2, TP3)
                     filters = get_symbol_filters(symbol)
                     min_qty = filters["stepSize"] if filters else 0.001
                     if total_qty < min_qty * 3.0:
@@ -237,18 +253,25 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                 err_msg = str(e)
                 logger.error(f"Manual trade error [{cmd_id}]: {e}")
 
-            try:
-                requests.post(
-                    f"{DASHBOARD_API_URL}/commands/{cmd_id}/ack",
-                    json={"status": status, "errorMsg": err_msg},
-                    timeout=10,
-                )
-                logger.info(f"Command {cmd_id} ({direction} {symbol} {lots}lots): {status}")
-            except Exception as ack_err:
-                logger.error(f"Ack failed for command {cmd_id}: {ack_err}")
+            # Update status in db directly
+            cur.execute("""
+                UPDATE trade_commands 
+                SET status = %s, error_msg = %s, executed_at = CURRENT_TIMESTAMP 
+                WHERE id = %s
+            """, (status, err_msg, cmd_id))
+            conn.commit()
+            logger.info(f"Command {cmd_id} ({direction} {symbol} {lots}lots) status set to: {status}")
 
+        cur.close()
+        conn.close()
     except Exception as e:
         logger.warning(f"poll_manual_commands error: {e}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 Z_ENTRY_THRESHOLD = 2.0
