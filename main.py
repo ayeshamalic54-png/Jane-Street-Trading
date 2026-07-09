@@ -837,17 +837,39 @@ def main():
                             GLOBAL_CONFIG["SYMBOL_A"] = parts[0]
                             GLOBAL_CONFIG["SYMBOL_B"] = parts[1]
                             save_config(new_pair)
-                    SL_PIPS = new_sl
-                    TP_PIPS = new_tp
-                    REQUIRE_SMC_CONFLUENCE = new_smc
-                    AUTO_EXECUTE = new_auto_exec
-                    CRYPTO_ENABLED = new_crypto
-                    METALS_ENABLED = new_metals
-                    FOREX_ENABLED = new_forex
-                    INDICES_ENABLED = new_indices
-                    RISK_LIMITS_ENABLED = new_risk_limits
-                    Z_ENTRY_THRESHOLD = new_z_entry
-                    DEFAULT_LOTS = new_def_lots
+                    if SL_PIPS != new_sl:
+                        logger.info(f"[CONFIG UPDATE] SL Pips updated: {SL_PIPS} -> {new_sl}")
+                        SL_PIPS = new_sl
+                    if TP_PIPS != new_tp:
+                        logger.info(f"[CONFIG UPDATE] TP Pips updated: {TP_PIPS} -> {new_tp}")
+                        TP_PIPS = new_tp
+                    if REQUIRE_SMC_CONFLUENCE != new_smc:
+                        logger.info(f"[CONFIG UPDATE] SMC Confluence updated: {REQUIRE_SMC_CONFLUENCE} -> {new_smc}")
+                        REQUIRE_SMC_CONFLUENCE = new_smc
+                    if AUTO_EXECUTE != new_auto_exec:
+                        logger.info(f"[CONFIG UPDATE] Auto Execute updated: {AUTO_EXECUTE} -> {new_auto_exec}")
+                        AUTO_EXECUTE = new_auto_exec
+                    if CRYPTO_ENABLED != new_crypto:
+                        logger.info(f"[CONFIG UPDATE] Crypto Enabled updated: {CRYPTO_ENABLED} -> {new_crypto}")
+                        CRYPTO_ENABLED = new_crypto
+                    if METALS_ENABLED != new_metals:
+                        logger.info(f"[CONFIG UPDATE] Metals Enabled updated: {METALS_ENABLED} -> {new_metals}")
+                        METALS_ENABLED = new_metals
+                    if FOREX_ENABLED != new_forex:
+                        logger.info(f"[CONFIG UPDATE] Forex Enabled updated: {FOREX_ENABLED} -> {new_forex}")
+                        FOREX_ENABLED = new_forex
+                    if INDICES_ENABLED != new_indices:
+                        logger.info(f"[CONFIG UPDATE] Indices Enabled updated: {INDICES_ENABLED} -> {new_indices}")
+                        INDICES_ENABLED = new_indices
+                    if RISK_LIMITS_ENABLED != new_risk_limits:
+                        logger.info(f"[CONFIG UPDATE] Risk Limits updated: {RISK_LIMITS_ENABLED} -> {new_risk_limits}")
+                        RISK_LIMITS_ENABLED = new_risk_limits
+                    if Z_ENTRY_THRESHOLD != new_z_entry:
+                        logger.info(f"[CONFIG UPDATE] Z-Entry Threshold updated: {Z_ENTRY_THRESHOLD} -> {new_z_entry}")
+                        Z_ENTRY_THRESHOLD = new_z_entry
+                    if DEFAULT_LOTS != new_def_lots:
+                        logger.info(f"[CONFIG UPDATE] Default Lots updated: {DEFAULT_LOTS} -> {new_def_lots}")
+                        DEFAULT_LOTS = new_def_lots
                     
                     # Clean up disabled categories in the database immediately
                     cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED)
