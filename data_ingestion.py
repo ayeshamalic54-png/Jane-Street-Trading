@@ -101,10 +101,14 @@ def resolve_broker_symbol(symbol: str) -> str:
 
     return symbol_upper
 
+SUBSCRIBED_SYMBOLS = set()
+
 def check_and_subscribe_symbol(symbol):
     """Ensures that the symbol is visible in the Market Watch and subscribes to its order book."""
     resolved = resolve_broker_symbol(symbol)
-    
+    if resolved in SUBSCRIBED_SYMBOLS:
+        return True
+        
     # Check if the symbol is valid/exists in MT5
     info = mt5.symbol_info(resolved)
     if info is None:
@@ -121,6 +125,7 @@ def check_and_subscribe_symbol(symbol):
         
     # Subscribe to L2 depth of market book
     book_sub = mt5.market_book_add(resolved)
+    SUBSCRIBED_SYMBOLS.add(resolved)
     if book_sub:
         logger.info(f"Subscribed to Order Book updates for {resolved}")
     else:
