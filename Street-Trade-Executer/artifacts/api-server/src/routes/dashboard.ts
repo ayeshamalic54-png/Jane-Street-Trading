@@ -19,7 +19,7 @@ const ZONE_META: Record<string, { label: string; bullish: boolean }> = {
 router.get("/dashboard", async (req, res) => {
   try {
     const [botStateRows, openDbTrades, recentClosedTradesRows, zoneRows, scannedAssetsRows] = await Promise.all([
-      db.select().from(botStateTable).limit(1),
+      db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
       db.select().from(tradesTable).where(eq(tradesTable.status, "OPEN")),
       db.select().from(tradesTable).where(eq(tradesTable.status, "CLOSED")).orderBy(desc(tradesTable.entryTime)).limit(10),
       db.select().from(fvgZonesTable).orderBy(desc(fvgZonesTable.updatedAt)).limit(30),
