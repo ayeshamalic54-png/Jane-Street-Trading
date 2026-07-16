@@ -75,7 +75,6 @@ export const fvgZonesTable = pgTable("fvg_zones", {
   lowPrice: numeric("low_price", { precision: 15, scale: 5 }).notNull(),
   highPrice: numeric("high_price", { precision: 15, scale: 5 }).notNull(),
   updatedAt: timestamp("updated_at").defaultNow(),
-  maxTrades: integer("max_trades").default(3),
 });
 
 export const dailyMetricsTable = pgTable("daily_metrics", {
@@ -85,7 +84,6 @@ export const dailyMetricsTable = pgTable("daily_metrics", {
   maxDrawdownPercent: numeric("max_drawdown_percent", { precision: 5, scale: 2 }).default("0"),
   tradesToday: integer("trades_today").default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
-  maxTrades: integer("max_trades").default(3),
 });
 
 export const tradeCommandsTable = pgTable("trade_commands", {
