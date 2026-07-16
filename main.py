@@ -85,7 +85,7 @@ def save_config(pair_str):
     try:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump({"active_pair": pair_str}, f)
-        logger.info(f"Saved config: {pair_str}")
+        logger.info(f"Saved config: {pair_str} | Z-Entry: {Z_ENTRY_THRESHOLD}")
     except Exception as e:
         logger.error(f"Error saving config: {e}")
 
@@ -118,7 +118,7 @@ def fetch_db_config():
             
             # If the database pair is crypto, override it to EURUSD/GBPUSD immediately
             if is_crypto:
-                logger.info("Overriding database crypto active_pair config to EURUSD/GBPUSD")
+                logger.info("Overriding database invalid active_pair config to EURUSD/GBPUSD")
                 active_pair = "EURUSD/GBPUSD"
                 cur.execute("UPDATE bot_state SET active_pair = %s, crypto_enabled = false WHERE id = 1", (active_pair,))
                 conn.commit()
@@ -890,8 +890,7 @@ def main():
                         logger.info(f"[CONFIG UPDATE] Auto Execute updated: {AUTO_EXECUTE} -> {new_auto_exec}")
                         AUTO_EXECUTE = new_auto_exec
                     if CRYPTO_ENABLED != new_crypto:
-                        logger.info(f"[CONFIG UPDATE] Crypto Enabled updated: {CRYPTO_ENABLED} -> {new_crypto}")
-                        CRYPTO_ENABLED = new_crypto
+                        CRYPTO_ENABLED = False
                     if METALS_ENABLED != new_metals:
                         logger.info(f"[CONFIG UPDATE] Metals Enabled updated: {METALS_ENABLED} -> {new_metals}")
                         METALS_ENABLED = new_metals

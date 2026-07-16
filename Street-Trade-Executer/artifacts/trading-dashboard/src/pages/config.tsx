@@ -30,7 +30,7 @@ const configSchema = z.object({
 });
 type ConfigFormValues = z.infer<typeof configSchema>;
 
-type Category = "forex" | "metals" | "crypto" | "stocks" | "custom";
+type Category = "forex" | "metals" | "stocks" | "custom";
 
 const PAIR_CATEGORIES: Record<Category, { label: string; pairs: string[] }> = {
   forex: {
@@ -82,8 +82,7 @@ export default function Config() {
     query: { queryKey: getGetConfigQueryKey() },
   });
 
-  const { data: prices } = useGetPrices({ category: "crypto" });
-  const cryptoSymbols = prices ? Array.from(new Set(prices.map((p) => p.symbol))).sort() : [];
+
 
   const updateConfig = useUpdateConfig();
 
@@ -201,71 +200,7 @@ export default function Config() {
                 </div>
 
                 {/* Pair grid */}
-                {activeCategory === "crypto" ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground block">Leg A (First Coin)</label>
-                        <Input
-                          list="crypto-symbols-list"
-                          placeholder="Search Leg A... e.g. BTCUSDT"
-                          value={activePairVal ? activePairVal.split("/")[0] : ""}
-                          onChange={(e) => {
-                            const a = e.target.value.trim().toUpperCase();
-                            const b = activePairVal ? (activePairVal.split("/")[1] || "") : "";
-                            selectPair(`${a}/${b}`);
-                          }}
-                          className="font-mono border-border bg-background"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground block">Leg B (Second Coin)</label>
-                        <Input
-                          list="crypto-symbols-list"
-                          placeholder="Search Leg B... e.g. ETHUSDT"
-                          value={activePairVal ? (activePairVal.split("/")[1] || "") : ""}
-                          onChange={(e) => {
-                            const a = activePairVal ? (activePairVal.split("/")[0] || "") : "";
-                            const b = e.target.value.trim().toUpperCase();
-                            selectPair(`${a}/${b}`);
-                          }}
-                          className="font-mono border-border bg-background"
-                        />
-                      </div>
-                    </div>
-                    
-                    <datalist id="crypto-symbols-list">
-                      {cryptoSymbols.map((sym) => (
-                        <option key={sym} value={sym} />
-                      ))}
-                    </datalist>
-
-                    {/* Popular presets */}
-                    <div className="space-y-2">
-                      <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Quick Select Popular Pairs</div>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {PAIR_CATEGORIES.crypto.pairs.map((pair) => {
-                          const usdtPair = pair.replace(/USD/g, "USDT");
-                          return (
-                            <button
-                              key={pair}
-                              type="button"
-                              onClick={() => selectPair(usdtPair)}
-                              className={cn(
-                                "px-3 py-2 text-xs font-mono rounded-sm border text-left transition-all",
-                                activePairVal === usdtPair
-                                  ? "bg-primary/15 border-primary text-primary"
-                                  : "bg-muted/30 border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                              )}
-                            >
-                              {usdtPair}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                ) : activeCategory !== "custom" ? (
+{activeCategory !== "custom" ? (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                     {currentCatPairs.map((pair) => (
                       <button
