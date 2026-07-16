@@ -20,6 +20,9 @@ def close_all_binance_positions():
 def check_closed_binance_trades(symbol):
     pass
 
+def send_signed_request(method, endpoint, params=None):
+    return None
+
 class MockTick:
     def __init__(self):
         self.bid = 0.0
