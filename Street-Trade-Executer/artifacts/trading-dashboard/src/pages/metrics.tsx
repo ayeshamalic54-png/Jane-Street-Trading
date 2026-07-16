@@ -11,7 +11,7 @@ export default function Metrics() {
     query: { queryKey: getGetMetricsQueryKey({ days: 14 }) }
   });
 
-  const { data: summary, isLoading: loadingSummary } = useGetMetricsSummary(undefined, {
+  const { data: summary, isLoading: loadingSummary } = useGetMetricsSummary({
     query: { queryKey: getGetMetricsSummaryQueryKey() }
   });
 
