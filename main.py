@@ -423,8 +423,7 @@ def cleanup_disabled_scanned_assets(crypto_on, metals_on, forex_on, indices_on):
         conn = get_connection()
         cur = conn.cursor()
         if not crypto_on:
-            for s_a, s_b in CANDIDATE_PAIRS["crypto"]:
-                cur.execute("DELETE FROM scanned_assets WHERE symbol_pair = %s", (f"{s_a}/{s_b}",))
+            cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%USDT%'")
         if not metals_on:
             for s_a, s_b in CANDIDATE_PAIRS["metals"]:
                 cur.execute("DELETE FROM scanned_assets WHERE symbol_pair = %s", (f"{s_a}/{s_b}",))
