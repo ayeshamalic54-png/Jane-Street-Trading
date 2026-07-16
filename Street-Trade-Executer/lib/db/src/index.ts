@@ -108,7 +108,6 @@ export const scannedAssetsTable = pgTable("scanned_assets", {
   zScore: numeric("z_score", { precision: 10, scale: 4 }),
   action: varchar("action", { length: 20 }),
   updatedAt: timestamp("updated_at").defaultNow(),
-  maxTrades: integer("max_trades").default(3),
 });
 
 import { drizzle } from "drizzle-orm/node-postgres";
