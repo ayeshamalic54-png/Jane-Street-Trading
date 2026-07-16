@@ -97,7 +97,7 @@ def fetch_db_config():
     query = """
         SELECT active_pair, sl_pips, tp_pips, smc_enabled, auto_execute,
                crypto_enabled, metals_enabled, forex_enabled, indices_enabled,
-               risk_limits_enabled, z_entry_threshold, default_lots
+               risk_limits_enabled, z_entry_threshold, default_lots, max_trades
         FROM bot_state
         WHERE id = 1
     """
@@ -138,6 +138,7 @@ def fetch_db_config():
                 bool(row[9] if row[9] is not None else True),
                 float(row[10] or 2.0),
                 float(row[11] or 0.01),
+                int(row[12] or 3),
             )
         else:
             cur.close()
@@ -869,7 +870,7 @@ def main():
             if db_config_counter % 5 == 0:
                 db_cfg = fetch_db_config()
                 if db_cfg:
-                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots = db_cfg
+                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades = db_cfg
                     parts = new_pair.split("/")
                     if len(parts) == 2 and parts[0] != parts[1]:
                         if GLOBAL_CONFIG["SYMBOL_A"] != parts[0] or GLOBAL_CONFIG["SYMBOL_B"] != parts[1]:
@@ -909,6 +910,10 @@ def main():
                     if DEFAULT_LOTS != new_def_lots:
                         logger.info(f"[CONFIG UPDATE] Default Lots updated: {DEFAULT_LOTS} -> {new_def_lots}")
                         DEFAULT_LOTS = new_def_lots
+                    import risk_safeguards
+                    if risk_safeguards.MAX_DAILY_TRADES != new_max_trades:
+                        logger.info(f"[CONFIG UPDATE] Max Daily Trades updated: {risk_safeguards.MAX_DAILY_TRADES} -> {new_max_trades}")
+                        risk_safeguards.MAX_DAILY_TRADES = new_max_trades
                     
                     # Clean up disabled categories in the database immediately
                     cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED)
@@ -924,6 +929,10 @@ def main():
             # Resolve broker aliases for active pair
             S_A_resolved = resolve_broker_symbol(S_A) if cat_a != "crypto" else S_A
             S_B_resolved = resolve_broker_symbol(S_B) if cat_b != "crypto" else S_B
+
+            # News Guard check
+            import news_guard
+            is_news_halted, news_msg = news_guard.get_news_halt_status([S_A_resolved, S_B_resolved])
 
             # Determine equity based on asset class
             if cat_a == "crypto":
@@ -1259,7 +1268,7 @@ def main():
             trades_today = get_trades_count_today()
             is_trade_limit_ok = (not RISK_LIMITS_ENABLED) or is_demo or (trades_today < MAX_DAILY_TRADES)
             
-            if AUTO_EXECUTE and not has_positions and is_trade_limit_ok and candidate_signals:
+            if AUTO_EXECUTE and not has_positions and is_trade_limit_ok and not is_news_halted and candidate_signals:
                 # Prioritize current active pair signal first, fallback to scanning highest win-rate signal second
                 active_pair_sig = None
                 for sig in candidate_signals:
@@ -1439,7 +1448,9 @@ def main():
                     modify_sl_for_trade(S_A, leg_a_parts[0].price_open)
 
             # Update dashboard status
-            if low_correlation_warning:
+            if is_news_halted:
+                status_str = f"HALTED ({news_msg})"
+            elif low_correlation_warning:
                 status_str = "RUNNING (Warning: Low Correlation)"
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"

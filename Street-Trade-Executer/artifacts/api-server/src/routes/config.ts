@@ -18,8 +18,8 @@ router.get("/config", async (req, res) => {
       symbolA: parts[0] ?? "EURUSD",
       symbolB: parts[1] ?? "GBPUSD",
       zEntryThreshold: Number(state?.zEntryThreshold ?? 2.0),
-      maxDailyTrades: 3,
-      maxDailyLossPercent: 4.2,
+      maxDailyTrades: Number(state?.maxTrades ?? 3),
+      maxDailyLossPercent: 2.8,
       requireSmcConfluence: state?.smcEnabled ?? true,
       slPips: Number(state?.slPips ?? 10),
       tpPips: Number(state?.tpPips ?? 20),
@@ -46,7 +46,7 @@ router.post("/config", async (req, res) => {
       return;
     }
 
-    const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, indicesEnabled, riskLimitsEnabled, defaultLots } = parsed.data;
+    const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, indicesEnabled, riskLimitsEnabled, defaultLots, maxDailyTrades } = parsed.data;
     const parts = activePair.split("/");
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
       res.status(400).json({ error: "activePair must be SYMBOL_A/SYMBOL_B" });
@@ -63,8 +63,8 @@ router.post("/config", async (req, res) => {
     const defLots = defaultLots ?? 0.01;
 
     await db.execute(
-      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, risk_limits_enabled, default_lots, system_status, updated_at)
-          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${riskLimits}, ${defLots.toString()}, 'BOT OFFLINE', NOW()
+      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at)
+          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${riskLimits}, ${defLots.toString()}, ${maxDailyTrades ?? 3}, 'BOT OFFLINE', NOW()
           WHERE NOT EXISTS (SELECT 1 FROM bot_state)`
     );
 
@@ -82,6 +82,7 @@ router.post("/config", async (req, res) => {
               indices_enabled = ${indicesExec},
               risk_limits_enabled = ${riskLimits},
               default_lots = ${defLots.toString()},
+              max_trades   = ${maxDailyTrades ?? 3},
               updated_at   = NOW()
           WHERE id = (SELECT MIN(id) FROM bot_state)`
     );
@@ -95,8 +96,8 @@ router.post("/config", async (req, res) => {
       symbolA: updatedParts[0] ?? parts[0],
       symbolB: updatedParts[1] ?? parts[1],
       zEntryThreshold: Number(updated?.zEntryThreshold ?? zEntry),
-      maxDailyTrades: 3,
-      maxDailyLossPercent: 4.2,
+      maxDailyTrades: Number(updated?.maxTrades ?? maxDailyTrades ?? 3),
+      maxDailyLossPercent: 2.8,
       requireSmcConfluence: updated?.smcEnabled ?? true,
       slPips: Number(updated?.slPips ?? slPips ?? 10),
       tpPips: Number(updated?.tpPips ?? tpPips ?? 20),

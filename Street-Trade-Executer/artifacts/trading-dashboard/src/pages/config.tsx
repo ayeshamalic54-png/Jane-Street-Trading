@@ -27,6 +27,7 @@ const configSchema = z.object({
   indicesEnabled: z.boolean(),
   riskLimitsEnabled: z.boolean(),
   defaultLots: z.coerce.number().min(0.001).max(500),
+  maxDailyTrades: z.coerce.number().min(1).max(1000),
 });
 type ConfigFormValues = z.infer<typeof configSchema>;
 
@@ -100,6 +101,7 @@ export default function Config() {
       indicesEnabled: true,
       riskLimitsEnabled: true,
       defaultLots: 0.01,
+      maxDailyTrades: 3,
     },
     values: config
       ? {
@@ -114,6 +116,7 @@ export default function Config() {
           indicesEnabled: config.indicesEnabled,
           riskLimitsEnabled: config.riskLimitsEnabled,
           defaultLots: (config as any).defaultLots ?? 0.01,
+          maxDailyTrades: config.maxDailyTrades,
         }
       : undefined,
   });
@@ -361,6 +364,23 @@ export default function Config() {
                         </FormControl>
                         <FormDescription className="text-xs">
                           Fixed lot size used for all automatic spread trades. (e.g. 0.01 to risk minimum).
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="maxDailyTrades"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Max Daily Trades Limit</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="1" {...field} className="font-mono border-border bg-background" />
+                        </FormControl>
+                        <FormDescription className="text-xs">
+                          Maximum number of trades the bot can execute per day. (e.g., set to 100 for no daily limit warnings).
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
