@@ -83,6 +83,7 @@ export default function Signals() {
 
   const getSignalDetails = (sig: any) => {
     const entry = Number(sig.priceA);
+    const entryB = Number(sig.priceB);
     const slPips = config?.slPips ?? 10;
     const tpPips = config?.tpPips ?? 20;
     
@@ -93,6 +94,14 @@ export default function Signals() {
     const tpDist = isCrypto ? tpPips * (entry * 0.001) : tpPips * getPipSize(sig.symbolA);
     const pricePrecision = isCrypto ? 2 : (getPipSize(sig.symbolA) <= 0.0001 ? 5 : getPipSize(sig.symbolA) <= 0.01 ? 3 : 2);
 
+    const sB = sig.symbolB.toUpperCase();
+    const isCryptoB = sB.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB", "AVAX", "XRP", "ADA", "DOGE", "MATIC"].some(x => sB.includes(x));
+    const slDistB = isCryptoB ? slPips * (entryB * 0.001) : slPips * getPipSize(sig.symbolB);
+    const pricePrecisionB = isCryptoB ? 2 : (getPipSize(sig.symbolB) <= 0.0001 ? 5 : getPipSize(sig.symbolB) <= 0.01 ? 3 : 2);
+
+    const isBuy = sig.action === "BUY_SPREAD";
+    const slB = isBuy ? (entryB + slDistB) : (entryB - slDistB);
+
     if (sig.action === "BUY_SPREAD") {
       return {
         entry: entry.toFixed(pricePrecision),
@@ -100,6 +109,8 @@ export default function Signals() {
         tp1: (entry + slDist).toFixed(pricePrecision),
         tp2: (entry + tpDist).toFixed(pricePrecision),
         tp3: (entry + slDist * 3.5).toFixed(pricePrecision),
+        entryB: entryB.toFixed(pricePrecisionB),
+        slB: slB.toFixed(pricePrecisionB),
       };
     } else if (sig.action === "SELL_SPREAD") {
       return {
@@ -108,9 +119,11 @@ export default function Signals() {
         tp1: (entry - slDist).toFixed(pricePrecision),
         tp2: (entry - tpDist).toFixed(pricePrecision),
         tp3: (entry - slDist * 3.5).toFixed(pricePrecision),
+        entryB: entryB.toFixed(pricePrecisionB),
+        slB: slB.toFixed(pricePrecisionB),
       };
     }
-    return { entry: "—", sl: "—", tp1: "—", tp2: "—", tp3: "—" };
+    return { entry: "—", sl: "—", tp1: "—", tp2: "—", tp3: "—", entryB: "—", slB: "—" };
   };
 
   const getTpPill = (partName: string, tradesList: any[] = []) => {
@@ -144,7 +157,12 @@ export default function Signals() {
     const actionEmoji = isBuy ? "🟢" : "🔴";
     const legBDirection = isBuy ? "SELL" : "BUY";
 
-    const text = `📢 *AWAIS JANE STREET SIGNAL* 📢\n\n` +
+    const defaultLots = config?.defaultLots ?? 0.01;
+    const partLotsA = (defaultLots / 3.0).toFixed(2);
+    const totalLotsA = defaultLots.toFixed(2);
+    const lotsB = (defaultLots * Number(sig.beta ?? 1.0)).toFixed(2);
+
+    const text = `📢 *AWAIS JANE STREET QUANTUM ENGINE SIGNAL* 📢\n\n` +
       `${actionEmoji} *ACTION:* ${sig.action} (${sig.symbolA} / ${sig.symbolB})\n` +
       `⏱ *Time:* ${timeStr}\n` +
       `📊 *Z-Score:* ${sig.zScore.toFixed(3)}\n\n` +
@@ -153,8 +171,13 @@ export default function Signals() {
       `  ⛔ *Stop Loss (SL):* ${details.sl}\n` +
       `  🎯 *TP1:* ${details.tp1}\n` +
       `  🎯 *TP2:* ${details.tp2}\n` +
-      `  🎯 *TP3:* ${details.tp3}\n\n` +
+      `  🎯 *TP3:* ${details.tp3}\n` +
+      `  📦 *Lots:* 3 parts of ${partLotsA} (Total ${totalLotsA})\n\n` +
       `⚖ *LEG B (${sig.symbolB}) - Hedge:*\n` +
+      `  📥 *Entry:* ${details.entryB}\n` +
+      `  ⛔ *Stop Loss (SL):* ${details.slB}\n` +
+      `  🎯 *TP:* Dynamic (Spread Reversion)\n` +
+      `  📦 *Lots:* ${lotsB}\n` +
       `  📥 *Position:* ${legBDirection}`;
 
     navigator.clipboard.writeText(text).then(() => {
@@ -189,7 +212,12 @@ export default function Signals() {
     const actionEmoji = isBuy ? "🟢" : "🔴";
     const legBDirection = isBuy ? "SELL" : "BUY";
 
-    const text = `📢 *AWAIS JANE STREET SIGNAL* 📢\n\n` +
+    const defaultLots = config?.defaultLots ?? 0.01;
+    const partLotsA = (defaultLots / 3.0).toFixed(2);
+    const totalLotsA = defaultLots.toFixed(2);
+    const lotsB = (defaultLots * Number(sig.beta ?? 1.0)).toFixed(2);
+
+    const text = `📢 *AWAIS JANE STREET QUANTUM ENGINE SIGNAL* 📢\n\n` +
       `${actionEmoji} *ACTION:* ${sig.action} (${sig.symbolA} / ${sig.symbolB})\n` +
       `⏱ *Time:* ${timeStr}\n` +
       `📊 *Z-Score:* ${sig.zScore.toFixed(3)}\n\n` +
@@ -198,8 +226,13 @@ export default function Signals() {
       `  ⛔ *Stop Loss (SL):* ${details.sl}\n` +
       `  🎯 *TP1:* ${details.tp1}\n` +
       `  🎯 *TP2:* ${details.tp2}\n` +
-      `  🎯 *TP3:* ${details.tp3}\n\n` +
+      `  🎯 *TP3:* ${details.tp3}\n` +
+      `  📦 *Lots:* 3 parts of ${partLotsA} (Total ${totalLotsA})\n\n` +
       `⚖ *LEG B (${sig.symbolB}) - Hedge:*\n` +
+      `  📥 *Entry:* ${details.entryB}\n` +
+      `  ⛔ *Stop Loss (SL):* ${details.slB}\n` +
+      `  🎯 *TP:* Dynamic (Spread Reversion)\n` +
+      `  📦 *Lots:* ${lotsB}\n` +
       `  📥 *Position:* ${legBDirection}`;
 
     navigator.clipboard.writeText(text).then(() => {
@@ -265,7 +298,12 @@ export default function Signals() {
     const actionEmoji = isBuy ? "🟢" : "🔴";
     const legBDirection = isBuy ? "SELL" : "BUY";
 
-    const text = `📢 *AWAIS JANE STREET SIGNAL* 📢\n\n` +
+    const defaultLots = config?.defaultLots ?? 0.01;
+    const partLotsA = (defaultLots / 3.0).toFixed(2);
+    const totalLotsA = defaultLots.toFixed(2);
+    const lotsB = (defaultLots * Number(sig.beta ?? 1.0)).toFixed(2);
+
+    const text = `📢 *AWAIS JANE STREET QUANTUM ENGINE SIGNAL* 📢\n\n` +
       `${actionEmoji} *ACTION:* ${sig.action} (${sig.symbolA} / ${sig.symbolB})\n` +
       `⏱ *Time:* ${timeStr}\n` +
       `📊 *Z-Score:* ${sig.zScore.toFixed(3)}\n\n` +
@@ -274,8 +312,13 @@ export default function Signals() {
       `  ⛔ *Stop Loss (SL):* ${details.sl}\n` +
       `  🎯 *TP1:* ${details.tp1}\n` +
       `  🎯 *TP2:* ${details.tp2}\n` +
-      `  🎯 *TP3:* ${details.tp3}\n\n` +
+      `  🎯 *TP3:* ${details.tp3}\n` +
+      `  📦 *Lots:* 3 parts of ${partLotsA} (Total ${totalLotsA})\n\n` +
       `⚖ *LEG B (${sig.symbolB}) - Hedge:*\n` +
+      `  📥 *Entry:* ${details.entryB}\n` +
+      `  ⛔ *Stop Loss (SL):* ${details.slB}\n` +
+      `  🎯 *TP:* Dynamic (Spread Reversion)\n` +
+      `  📦 *Lots:* ${lotsB}\n` +
       `  📥 *Position:* ${legBDirection}`;
 
     navigator.clipboard.writeText(text).then(() => {
