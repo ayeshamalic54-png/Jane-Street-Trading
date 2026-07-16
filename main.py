@@ -691,13 +691,13 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             entry_t = t["entry_time"]
             if entry_t is not None:
                 elapsed = (datetime.datetime.now() - entry_t).total_seconds()
-                if elapsed < 31.0:
+                if elapsed < 35.0:
                     min_hold_ok = False
                     break
 
         if exit_triggered and not min_hold_ok:
             exit_triggered = False
-            logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 31s minimum hold time (FundedNext compliance).")
+            logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 35s minimum hold time (FundedNext compliance).")
 
         if exit_triggered:
             logger.info(f"Dynamic exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all positions.")
