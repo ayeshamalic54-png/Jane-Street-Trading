@@ -6,12 +6,11 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
-type Category = "all" | "forex" | "crypto" | "metals" | "stocks";
+type Category = "all" | "forex" | "metals" | "stocks";
 
 const CATEGORY_LABELS: Record<Category, string> = {
   all: "All Markets",
   forex: "Forex",
-  crypto: "Crypto",
   metals: "Metals / Commodities",
   stocks: "Stocks / CFD",
 };
@@ -47,7 +46,7 @@ export default function Markets() {
     }
   }
 
-  const categoryOrder: Category[] = ["forex", "crypto", "metals", "stocks"];
+  const categoryOrder: Category[] = ["forex", "metals", "stocks"];
 
   return (
     <div className="flex flex-col h-full overflow-auto bg-background p-6 space-y-6">
@@ -55,7 +54,7 @@ export default function Markets() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Live Markets</h2>
           <p className="text-sm text-muted-foreground">
-            Crypto: Binance live · Forex: Frankfurter · Metals: Binance · Stocks: MT5 CFD
+            Forex: Frankfurter · Metals: MT5 · Stocks: MT5 CFD
             {dataUpdatedAt ? ` · Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ""}
           </p>
         </div>

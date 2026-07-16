@@ -48,14 +48,7 @@ const PAIR_CATEGORIES: Record<Category, { label: string; pairs: string[] }> = {
       "XAUUSD/USDJPY",
     ],
   },
-  crypto: {
-    label: "Crypto",
-    pairs: [
-      "BTCUSD/ETHUSD", "ETHUSD/BTCUSD", "BTCUSD/SOLUSD", "ETHUSD/SOLUSD",
-      "BTCUSD/XRPUSD", "BTCUSD/BNBUSD", "ETHUSD/ADAUSD", "SOLUSD/AVAXUSD",
-      "BTCUSD/DOGEUSD", "ETHUSD/MATICUSD",
-    ],
-  },
+
   stocks: {
     label: "Stocks / CFD",
     pairs: [
@@ -184,7 +177,7 @@ export default function Config() {
                 <CardTitle className="text-sm uppercase tracking-wider text-muted-foreground">Active Trading Pair</CardTitle>
                 <CardDescription>
                   Current: <span className="font-mono text-primary font-bold">{activePairVal || config.activePair}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">· Forex / Crypto / Metals / Stocks / Custom</span>
+                  <span className="ml-2 text-xs text-muted-foreground">· Forex / Metals / Stocks / Custom</span>
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -528,27 +521,7 @@ export default function Config() {
                       )}
                     />
 
-                    {/* Crypto Trading Toggle */}
-                    <FormField
-                      control={form.control}
-                      name="cryptoEnabled"
-                      render={({ field }) => (
-                        <FormItem>
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Cryptocurrencies</FormLabel>
-                              <FormDescription className="text-xs mt-0.5">
-                                Enable trading Bitcoin, Ethereum, etc.
-                              </FormDescription>
-                            </div>
-                            <FormControl>
-                              <Switch checked={field.value} onCheckedChange={field.onChange} />
-                            </FormControl>
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+
 
                     {/* Indices Trading Toggle */}
                     <FormField

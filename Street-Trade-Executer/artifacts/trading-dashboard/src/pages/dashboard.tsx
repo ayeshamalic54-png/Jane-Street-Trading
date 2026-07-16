@@ -359,7 +359,7 @@ export default function Dashboard() {
           </div>
           <div className="text-zinc-500 font-mono text-[10px] uppercase flex items-center gap-2">
             <span>Scan Feed:</span>
-            <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.cryptoEnabled ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Crypto</span>
+            
             <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.metalsEnabled ? "bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Metals</span>
             <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.forexEnabled ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Forex</span>
             <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.indicesEnabled ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Stocks</span>
@@ -705,7 +705,7 @@ export default function Dashboard() {
             <div>
               <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider font-mono">Multi-Asset Live Auto-Scan & Win Rates</CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Bot scans enabled Forex, Crypto, Metals, and Stocks/Indices. Selects the highest win rate symbol with an active signal.
+                Bot scans enabled Forex, Metals, and Stocks/Indices. Selects the highest win rate symbol with an active signal.
               </p>
             </div>
             <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20 font-mono text-[10px] rounded-sm">
