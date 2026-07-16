@@ -78,7 +78,7 @@ router.get("/dashboard", async (req, res) => {
       obiA: Number(botState?.obiA ?? 0),
       obiB: Number(botState?.obiB ?? 0),
       tradesToday: botState?.tradesToday ?? 0,
-      maxTrades: 3,
+      maxTrades: Number(botState?.maxTrades ?? 3),
       activePositions: openPositions,
       recentTrades: recentClosedTrades,
       activeZones,
