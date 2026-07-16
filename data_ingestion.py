@@ -135,9 +135,10 @@ def check_and_subscribe_symbol(symbol):
 
 def get_rates_df(symbol, timeframe, count=200):
     """Fetches historical price candles and returns them as a pandas DataFrame."""
-    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
+    resolved = resolve_broker_symbol(symbol)
+    rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
     if rates is None:
-        logger.error(f"Failed to fetch rates for {symbol}. Error: {mt5.last_error()}")
+        logger.error(f"Failed to fetch rates for {resolved} (requested: {symbol}). Error: {mt5.last_error()}")
         return None
         
     df = pd.DataFrame(rates)
@@ -146,9 +147,10 @@ def get_rates_df(symbol, timeframe, count=200):
 
 def get_live_ticks(symbol):
     """Fetches the latest tick (bid, ask, time) for a symbol."""
-    tick = mt5.symbol_info_tick(symbol)
+    resolved = resolve_broker_symbol(symbol)
+    tick = mt5.symbol_info_tick(resolved)
     if tick is None:
-        logger.warning(f"Failed to get live tick for {symbol}")
+        logger.warning(f"Failed to get live tick for {resolved} (requested: {symbol})")
         return None
     return tick
 
@@ -157,7 +159,8 @@ def get_market_book(symbol):
     Fetches the Level-2 order book depth from MT5.
     Returns: (bids, asks) where each is a list of (price, volume) tuples.
     """
-    book = mt5.market_book_get(symbol)
+    resolved = resolve_broker_symbol(symbol)
+    book = mt5.market_book_get(resolved)
     if book is None:
         # If market depth is unavailable, return empty lists
         return [], []
@@ -188,7 +191,8 @@ def shutdown_mt5(symbol=None):
     """Cleans up subscriptions and shuts down MT5 connection."""
     if symbol:
         try:
-            mt5.market_book_release(symbol)
+            resolved = resolve_broker_symbol(symbol)
+            mt5.market_book_release(resolved)
         except Exception:
             pass
     mt5.shutdown()
