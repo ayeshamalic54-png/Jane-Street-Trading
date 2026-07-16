@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type http from "http";
 import { db } from "@workspace/db";
 import { botStateTable, tradesTable, fvgZonesTable, scannedAssetsTable } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { logger } from "./logger";
 
 let wss: WebSocketServer | null = null;
@@ -55,7 +55,7 @@ async function buildDashboardPayload() {
 
   // Bot state is always fetched fresh (every 1s) to show live Z-score
   const [botStateRows, scannedAssetsRows] = await Promise.all([
-    db.select().from(botStateTable).limit(1),
+    db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
     db.select().from(scannedAssetsTable).orderBy(desc(scannedAssetsTable.winRate)),
   ]);
 
@@ -99,7 +99,7 @@ async function buildDashboardPayload() {
     obiA: Number(botState?.obiA ?? 0),
     obiB: Number(botState?.obiB ?? 0),
     tradesToday: botState?.tradesToday ?? 0,
-    maxTrades: 3,
+    maxTrades: Number(botState?.maxTrades ?? 3),
     activePositions: openPositions,
     recentTrades: cachedRecentTrades.map((t: any) => ({
       ticket: Number(t.ticket),
