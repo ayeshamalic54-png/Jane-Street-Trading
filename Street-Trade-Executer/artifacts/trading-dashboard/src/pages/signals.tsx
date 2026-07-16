@@ -136,7 +136,42 @@ export default function Signals() {
       return <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 rounded-sm font-mono text-[9px] px-1 py-0 h-4">H_OPEN</Badge>;
     }
     const profit = Number(trade.profit ?? 0);
-    return (
+    const handleCopySignal = (sig: any) => {
+    const isBuy = sig.action === "BUY_SPREAD";
+    const details = getSignalDetails(sig);
+    const timeStr = format(new Date(sig.timestamp), "HH:mm:ss");
+    
+    const actionEmoji = isBuy ? "🟢" : "🔴";
+    const legBDirection = isBuy ? "SELL" : "BUY";
+
+    const text = `📢 *AWAIS JANE STREET SIGNAL* 📢\n\n` +
+      `${actionEmoji} *ACTION:* ${sig.action} (${sig.symbolA} / ${sig.symbolB})\n` +
+      `⏱ *Time:* ${timeStr}\n` +
+      `📊 *Z-Score:* ${sig.zScore.toFixed(3)}\n\n` +
+      `🛡 *LEG A (${sig.symbolA}) - 3 Parts:*\n` +
+      `  📥 *Entry:* ${details.entry}\n` +
+      `  ⛔ *Stop Loss (SL):* ${details.sl}\n` +
+      `  🎯 *TP1:* ${details.tp1}\n` +
+      `  🎯 *TP2:* ${details.tp2}\n` +
+      `  🎯 *TP3:* ${details.tp3}\n\n` +
+      `⚖ *LEG B (${sig.symbolB}) - Hedge:*\n` +
+      `  📥 *Position:* ${legBDirection}`;
+
+    navigator.clipboard.writeText(text).then(() => {
+      toast({
+        title: "📋 Copied to Clipboard!",
+        description: "Signal text formatted for WhatsApp has been copied successfully.",
+      });
+    }).catch(() => {
+      toast({
+        title: "❌ Failed to Copy",
+        description: "Could not copy signal to clipboard.",
+        variant: "destructive"
+      });
+    });
+  };
+
+  return (
       <Badge variant="outline" className={cn(
         "rounded-sm font-mono text-[9px] px-1 py-0 h-4",
         profit >= 0 ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-red-500/15 text-red-400 border-red-500/20"
@@ -144,6 +179,41 @@ export default function Signals() {
         H_CLSD
       </Badge>
     );
+  };
+
+  const handleCopySignal = (sig: any) => {
+    const isBuy = sig.action === "BUY_SPREAD";
+    const details = getSignalDetails(sig);
+    const timeStr = format(new Date(sig.timestamp), "HH:mm:ss");
+    
+    const actionEmoji = isBuy ? "🟢" : "🔴";
+    const legBDirection = isBuy ? "SELL" : "BUY";
+
+    const text = `📢 *AWAIS JANE STREET SIGNAL* 📢\n\n` +
+      `${actionEmoji} *ACTION:* ${sig.action} (${sig.symbolA} / ${sig.symbolB})\n` +
+      `⏱ *Time:* ${timeStr}\n` +
+      `📊 *Z-Score:* ${sig.zScore.toFixed(3)}\n\n` +
+      `🛡 *LEG A (${sig.symbolA}) - 3 Parts:*\n` +
+      `  📥 *Entry:* ${details.entry}\n` +
+      `  ⛔ *Stop Loss (SL):* ${details.sl}\n` +
+      `  🎯 *TP1:* ${details.tp1}\n` +
+      `  🎯 *TP2:* ${details.tp2}\n` +
+      `  🎯 *TP3:* ${details.tp3}\n\n` +
+      `⚖ *LEG B (${sig.symbolB}) - Hedge:*\n` +
+      `  📥 *Position:* ${legBDirection}`;
+
+    navigator.clipboard.writeText(text).then(() => {
+      toast({
+        title: "📋 Copied to Clipboard!",
+        description: "Signal text formatted for WhatsApp has been copied successfully.",
+      });
+    }).catch(() => {
+      toast({
+        title: "❌ Failed to Copy",
+        description: "Could not copy signal to clipboard.",
+        variant: "destructive"
+      });
+    });
   };
 
   return (
@@ -187,7 +257,42 @@ export default function Signals() {
                   const details = getSignalDetails(sig);
                   const tradesList = sig.trades ?? [];
                   const totalProfitVal = sig.totalProfit;
-                  return (
+                  const handleCopySignal = (sig: any) => {
+    const isBuy = sig.action === "BUY_SPREAD";
+    const details = getSignalDetails(sig);
+    const timeStr = format(new Date(sig.timestamp), "HH:mm:ss");
+    
+    const actionEmoji = isBuy ? "🟢" : "🔴";
+    const legBDirection = isBuy ? "SELL" : "BUY";
+
+    const text = `📢 *AWAIS JANE STREET SIGNAL* 📢\n\n` +
+      `${actionEmoji} *ACTION:* ${sig.action} (${sig.symbolA} / ${sig.symbolB})\n` +
+      `⏱ *Time:* ${timeStr}\n` +
+      `📊 *Z-Score:* ${sig.zScore.toFixed(3)}\n\n` +
+      `🛡 *LEG A (${sig.symbolA}) - 3 Parts:*\n` +
+      `  📥 *Entry:* ${details.entry}\n` +
+      `  ⛔ *Stop Loss (SL):* ${details.sl}\n` +
+      `  🎯 *TP1:* ${details.tp1}\n` +
+      `  🎯 *TP2:* ${details.tp2}\n` +
+      `  🎯 *TP3:* ${details.tp3}\n\n` +
+      `⚖ *LEG B (${sig.symbolB}) - Hedge:*\n` +
+      `  📥 *Position:* ${legBDirection}`;
+
+    navigator.clipboard.writeText(text).then(() => {
+      toast({
+        title: "📋 Copied to Clipboard!",
+        description: "Signal text formatted for WhatsApp has been copied successfully.",
+      });
+    }).catch(() => {
+      toast({
+        title: "❌ Failed to Copy",
+        description: "Could not copy signal to clipboard.",
+        variant: "destructive"
+      });
+    });
+  };
+
+  return (
                     <TableRow key={sig.id} className="border-border hover:bg-muted/30">
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {format(new Date(sig.timestamp), "HH:mm:ss.SSS")}
@@ -242,17 +347,29 @@ export default function Signals() {
                         {sig.zScore.toFixed(3)}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleExecuteSignal(sig);
-                          }}
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold h-7 px-2"
-                          disabled={executeTrade.isPending}
-                        >
-                          ⚡ EXECUTE
-                        </Button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleExecuteSignal(sig);
+                            }}
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold h-7 px-2"
+                            disabled={executeTrade.isPending}
+                          >
+                            ⚡ EXECUTE
+                          </Button>
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopySignal(sig);
+                            }}
+                            size="sm"
+                            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 font-mono text-[10px] font-bold h-7 px-2"
+                          >
+                            📋 COPY
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
