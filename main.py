@@ -107,16 +107,31 @@ def fetch_db_config():
         cur = conn.cursor()
         cur.execute(query)
         row = cur.fetchone()
-        cur.close()
-        conn.close()
         if row:
+            active_pair = row[0] or "EURUSD/GBPUSD"
+            parts = active_pair.split('/')
+            is_crypto = False
+            if len(parts) == 2:
+                p0, p1 = parts[0].upper(), parts[1].upper()
+                if p0.endswith("USDT") or p1.endswith("USDT") or any(x in p0 or x in p1 for x in ["BTC", "ETH", "SOL", "BNB", "AVAX", "XRP", "ADA", "DOGE", "MATIC", "LTC", "LINK", "DOT", "UNI", "SHIB"]):
+                    is_crypto = True
+            
+            # If the database pair is crypto, override it to EURUSD/GBPUSD immediately
+            if is_crypto:
+                logger.info("Overriding database crypto active_pair config to EURUSD/GBPUSD")
+                active_pair = "EURUSD/GBPUSD"
+                cur.execute("UPDATE bot_state SET active_pair = %s, crypto_enabled = false WHERE id = 1", (active_pair,))
+                conn.commit()
+                
+            cur.close()
+            conn.close()
             return (
-                row[0] or "EURUSD/GBPUSD",
+                active_pair,
                 float(row[1] or 10.0),
                 float(row[2] or 20.0),
                 bool(row[3] if row[3] is not None else True),
                 bool(row[4] if row[4] is not None else True),
-                bool(row[5] if row[5] is not None else True),
+                False, # Hardcoded crypto_enabled to False
                 bool(row[6] if row[6] is not None else True),
                 bool(row[7] if row[7] is not None else True),
                 bool(row[8] if row[8] is not None else True),
@@ -124,6 +139,9 @@ def fetch_db_config():
                 float(row[10] or 2.0),
                 float(row[11] or 0.01),
             )
+        else:
+            cur.close()
+            conn.close()
     except Exception as e:
         logger.warning(f"Could not fetch DB config directly: {e}")
     finally:
@@ -732,8 +750,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
 def get_symbol_category(symbol: str) -> str:
     s = symbol.upper()
-    if s.endswith("USDT") or any(x in s for x in ["BTC", "ETH", "SOL", "BNB", "AVAX", "XRP", "ADA", "DOGE", "MATIC", "LTC", "LINK", "DOT", "UNI", "SHIB"]):
-        return "crypto"
+    # Crypto disabled completely in this Forex/Metals/Indices instance
     if any(x in s for x in ["XAU", "XAG"]):
         return "metals"
     if any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN", "US500", "US30", "NAS100", "GER30", "UK100"]):
