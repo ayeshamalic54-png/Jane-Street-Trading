@@ -502,8 +502,8 @@ export default function Config() {
                   </div>
 
                   <div className="pt-2 border-t border-border space-y-2 text-xs text-muted-foreground">
-                    <div className="flex justify-between"><span>Z-Score Entry</span><span className="font-mono text-foreground">±{config.zEntryThreshold.toFixed(2)}σ</span></div>
-                    <div className="flex justify-between"><span>Max Daily Trades</span><span className="font-mono text-foreground">3</span></div>
+                    <div className="flex justify-between"><span>Z-Score Entry</span><span className="font-mono text-foreground">±{Number(form.watch("zEntryThreshold") ?? 2.0).toFixed(2)}σ</span></div>
+                    <div className="flex justify-between"><span>Max Daily Trades</span><span className="font-mono text-foreground">{form.watch("maxDailyTrades") ?? 3}</span></div>
                     <div className="flex justify-between"><span>Risk Per Trade</span><span className="font-mono text-foreground">1% equity</span></div>
                     <div className="flex justify-between"><span>Execution Model</span><span className="font-mono text-foreground">3-Part TP ladder</span></div>
                   </div>
