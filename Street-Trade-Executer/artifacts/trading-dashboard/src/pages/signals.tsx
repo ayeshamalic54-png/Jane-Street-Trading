@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 export default function Signals() {
   const executeTrade = useExecuteTrade();
   const { toast } = useToast();
+  const isReadOnly = localStorage.getItem("wasee_role") === "user";
   const { data: signals, isLoading: isSignalsLoading } = useGetSignals({ limit: 100 }, {
     query: {
       queryKey: getGetSignalsQueryKey({ limit: 100 })
@@ -398,7 +399,7 @@ export default function Signals() {
                             }}
                             size="sm"
                             className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold h-7 px-2"
-                            disabled={executeTrade.isPending}
+                            disabled={executeTrade.isPending || isReadOnly}
                           >
                             ⚡ EXECUTE
                           </Button>

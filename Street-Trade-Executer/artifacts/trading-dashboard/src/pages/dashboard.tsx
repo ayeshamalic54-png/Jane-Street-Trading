@@ -92,6 +92,7 @@ import { useRef } from "react";
 
 export default function Dashboard() {
   const { toast } = useToast();
+  const isReadOnly = localStorage.getItem("wasee_role") === "user";
   const queryClient = useQueryClient();
   const [manualSymbol, setManualSymbol] = useState("");
   const [selectedChartSymbol, setSelectedChartSymbol] = useState("EURUSD");
@@ -386,7 +387,7 @@ export default function Dashboard() {
             size="sm"
             variant="destructive"
             className="bg-red-600 hover:bg-red-500 text-white font-mono text-[10px] font-bold h-6 px-2 shadow-[0_0_12px_rgba(239,68,68,0.25)] rounded border border-red-500/30 ml-2"
-            disabled={executeTrade.isPending || !botOnline}
+            disabled={executeTrade.isPending || !botOnline || isReadOnly}
           >
             🚨 CLOSE ALL
           </Button>
@@ -653,7 +654,7 @@ export default function Dashboard() {
                 <Button
                   onClick={() => handleOneClickExecute(matchingAsset ? matchingAsset.symbolPair : selectedChartSymbol, selectedAssetAction)}
                   className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-mono font-bold shadow-[0_0_15px_rgba(16,185,129,0.25)] animate-pulse rounded-md py-4 text-xs"
-                  disabled={executeTrade.isPending || !botOnline}
+                  disabled={executeTrade.isPending || !botOnline || isReadOnly}
                 >
                   🚀 ONE-CLICK EXECUTE {selectedAssetAction.replace("_SPREAD", "")}
                 </Button>
@@ -768,7 +769,7 @@ export default function Dashboard() {
                             }}
                             size="sm"
                             className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold h-7 px-2"
-                            disabled={executeTrade.isPending || !botOnline}
+                            disabled={executeTrade.isPending || !botOnline || isReadOnly}
                           >
                             ⚡ EXECUTE
                           </Button>
@@ -876,7 +877,7 @@ export default function Dashboard() {
             <div className="flex gap-3 pt-1">
               <Button
                 onClick={() => handleManualTrade("BUY")}
-                disabled={executeTrade.isPending || !botOnline}
+                disabled={executeTrade.isPending || !botOnline || isReadOnly}
                 className="flex-1 bg-green-600 hover:bg-green-700 text-white font-mono text-sm font-bold"
               >
                 <Send className="h-4 w-4 mr-2" />
@@ -884,7 +885,7 @@ export default function Dashboard() {
               </Button>
               <Button
                 onClick={() => handleManualTrade("SELL")}
-                disabled={executeTrade.isPending || !botOnline}
+                disabled={executeTrade.isPending || !botOnline || isReadOnly}
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white font-mono text-sm font-bold"
               >
                 <Send className="h-4 w-4 mr-2" />
@@ -964,7 +965,7 @@ export default function Dashboard() {
                           size="sm"
                           variant="destructive"
                           className="h-7 px-2 font-mono text-[10px] uppercase font-bold"
-                          disabled={executeTrade.isPending || !botOnline}
+                          disabled={executeTrade.isPending || !botOnline || isReadOnly}
                         >
                           Emergency Close
                         </Button>

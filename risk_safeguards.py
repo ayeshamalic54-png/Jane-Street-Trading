@@ -32,6 +32,21 @@ def increment_trades_count():
     if _cached_trades_count is not None:
         _cached_trades_count += 1
 
+def get_broker_today_date():
+    """
+    Returns today's date adjusted to the broker's MT5 server time.
+    Falls back to system date if MT5 is not connected or symbol tick cannot be read.
+    """
+    try:
+        tick = mt5.symbol_info_tick("EURUSD")
+        if tick:
+            # tick.time is epoch timestamp of the broker server
+            broker_time = datetime.datetime.fromtimestamp(tick.time)
+            return broker_time.date()
+    except Exception:
+        pass
+    return datetime.date.today()
+
 def get_or_create_daily_start_equity(current_equity):
     """
     Retrieves the starting equity for the current day from the database.
@@ -39,7 +54,7 @@ def get_or_create_daily_start_equity(current_equity):
     Uses caching to minimize database connections.
     """
     global _cached_start_equity, _cached_start_equity_date
-    today = datetime.date.today()
+    today = get_broker_today_date()
     
     if _cached_start_equity is not None and _cached_start_equity_date == today:
         return _cached_start_equity
@@ -104,7 +119,7 @@ def check_drawdown_limit(current_equity):
     daily_loss = start_equity - current_equity
     daily_loss_percent = (daily_loss / start_equity) * 100.0 if start_equity > 0 else 0.0
     
-    today = datetime.date.today()
+    today = get_broker_today_date()
     trades_today = get_trades_count_today()
     
     # Throttle metrics database writes to once every 30 seconds
@@ -125,7 +140,7 @@ def check_drawdown_limit(current_equity):
 def get_trades_count_today():
     """Returns the number of trades taken today with caching."""
     global _cached_trades_count, _cached_trades_count_date
-    today = datetime.date.today()
+    today = get_broker_today_date()
     
     if _cached_trades_count is not None and _cached_trades_count_date == today:
         return _cached_trades_count

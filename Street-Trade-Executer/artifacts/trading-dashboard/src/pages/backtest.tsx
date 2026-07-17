@@ -40,6 +40,7 @@ interface BacktestResponse {
 
 export default function Backtest() {
   const { toast } = useToast();
+  const isReadOnly = localStorage.getItem("wasee_role") === "user";
   const [symbolA, setSymbolA] = useState("BTCUSDT");
   const [symbolB, setSymbolB] = useState("ETHUSDT");
   const [zEntry, setZEntry] = useState("2.8");
@@ -123,7 +124,7 @@ export default function Backtest() {
               <Input value={slPercent} onChange={(e) => setSlPercent(e.target.value)} className="font-mono text-xs" />
             </div>
           </div>
-          <Button onClick={handleRunBacktest} disabled={loading} className="w-full md:w-auto mt-4 gap-2 bg-indigo-600 hover:bg-indigo-700 font-mono text-xs tracking-wider">
+          <Button onClick={handleRunBacktest} disabled={loading || isReadOnly} className="w-full md:w-auto mt-4 gap-2 bg-indigo-600 hover:bg-indigo-700 font-mono text-xs tracking-wider">
             <Play className="h-3.5 w-3.5 fill-current" />
             {loading ? "SIMULATING..." : "RUN BACKTEST SIMULATION"}
           </Button>

@@ -14,17 +14,33 @@ export default function Login({ onLoginSuccess }: { onLoginSuccess: () => void }
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsLoading(true);
 
-    if (username.trim() === "wasee" && password === "AWais1133@") {
-      setIsLoading(true);
-      // Simulate authenticating & transition loading exactly like the user's spinner screenshot
-      setTimeout(() => {
-        localStorage.setItem("wasee_auth", "true");
-        onLoginSuccess();
-      }, 1200);
-    } else {
-      setError("Incorrect username or password. Please try again.");
-    }
+    fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password })
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          localStorage.setItem("wasee_auth", "true");
+          localStorage.setItem("wasee_role", data.role); // "admin" or "user"
+          
+          // Keep a short transition delay for UX
+          setTimeout(() => {
+            onLoginSuccess();
+          }, 600);
+        } else {
+          setIsLoading(false);
+          const errData = await res.json();
+          setError(errData.error || "Incorrect username or password. Please try again.");
+        }
+      })
+      .catch(() => {
+        setIsLoading(false);
+        setError("Failed to connect to authentication server.");
+      });
   };
 
   if (isLoading) {

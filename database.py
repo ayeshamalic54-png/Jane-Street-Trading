@@ -191,6 +191,26 @@ def initialize_database():
             conn.commit()
             print("Added default_lots column to bot_state table.")
 
+        # Add admin_username column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='admin_username'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN admin_username VARCHAR(50) DEFAULT 'wasee'")
+            conn.commit()
+            print("Added admin_username column to bot_state table.")
+
+        # Add admin_password column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='admin_password'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN admin_password VARCHAR(100) DEFAULT 'AWais1133@'")
+            conn.commit()
+            print("Added admin_password column to bot_state table.")
+
         cur.close()
         print("Database initialized successfully!")
     except Exception as e:

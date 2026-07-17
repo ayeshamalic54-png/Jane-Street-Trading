@@ -12,6 +12,7 @@ import Config from "@/pages/config";
 import Markets from "@/pages/markets";
 import Backtest from "@/pages/backtest";
 import NotFound from "@/pages/not-found";
+import Backup from "@/pages/backup";
 import Login from "@/pages/login";
 
 const queryClient = new QueryClient({
@@ -34,6 +35,7 @@ function Router() {
         <Route path="/markets" component={Markets} />
         <Route path="/config" component={Config} />
         <Route path="/backtest" component={Backtest} />
+        <Route path="/backup" component={Backup} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

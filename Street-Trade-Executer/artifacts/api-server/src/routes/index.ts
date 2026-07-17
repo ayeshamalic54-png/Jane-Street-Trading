@@ -8,6 +8,8 @@ import pricesRouter from "./prices";
 import signalsRouter from "./signals";
 import tradesRouter from "./trades";
 import backtestRouter from "./backtest";
+import backupRouter from "./backup";
+import authRouter from "./auth";
 
 const router = Router();
 
@@ -20,5 +22,7 @@ router.use(pricesRouter);
 router.use(signalsRouter);
 router.use(tradesRouter);
 router.use(backtestRouter);
+router.use(backupRouter);
+router.use(authRouter);
 
 export default router;

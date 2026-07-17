@@ -22,6 +22,17 @@ def get_symbol_category(symbol: str) -> str:
         return "indices"
     return "forex"
 
+def get_kf_parameters(symbol: str):
+    cat = get_symbol_category(symbol)
+    if cat == "crypto":
+        return 1e-4, 1e4
+    elif cat == "metals":
+        return 1e-10, 1e3
+    elif cat == "indices":
+        return 1e-10, 1e5
+    else: # forex/default
+        return 1e-10, 1e-7
+
 def get_pip_size(symbol: str) -> float:
     s = symbol.upper()
     if "JPY" in s:
@@ -118,7 +129,8 @@ def train_model():
     logger.info(f"Aligned dataset size: {len(common_idx)} candles.")
 
     # Reconstruct Kalman spread
-    kf = KalmanFilterRegression(transition_covariance=1e-4, observation_covariance=1e-4)
+    q_cov, r_cov = get_kf_parameters(s_a)
+    kf = KalmanFilterRegression(transition_covariance=q_cov, observation_covariance=r_cov)
     betas = []
     spreads = []
     z_scores = []

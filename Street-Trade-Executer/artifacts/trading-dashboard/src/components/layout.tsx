@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   X,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/metrics", label: "Metrics", icon: BarChart3 },
     { href: "/backtest", label: "Backtesting", icon: Play },
     { href: "/config", label: "Config", icon: Settings },
+    { href: "/backup", label: "Backup", icon: Database },
   ];
 
   const handleLogout = () => {

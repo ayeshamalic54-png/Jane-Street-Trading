@@ -37,6 +37,8 @@ export const botStateTable = pgTable("bot_state", {
   lastHeartbeat: timestamp("last_heartbeat"),
   updatedAt: timestamp("updated_at").defaultNow(),
   maxTrades: integer("max_trades").default(3),
+  adminUsername: varchar("admin_username", { length: 50 }).default("wasee"),
+  adminPassword: varchar("admin_password", { length: 100 }).default("AWais1133@"),
 });
 
 export const tradesTable = pgTable("trades", {
