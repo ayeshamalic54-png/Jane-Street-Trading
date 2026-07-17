@@ -1,3 +1,10 @@
+import warnings
+try:
+    from sklearn.exceptions import InconsistentVersionWarning
+    warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+except ImportError:
+    pass
+
 import MetaTrader5 as mt5
 import pandas as pd
 import numpy as np
