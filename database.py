@@ -286,13 +286,22 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
             max_equity_peak_val = float(row[1] or equity)
             saved_login = int(row[2] or 0)
 
-        # 3. Detect if a new account has been attached
-        if terminal_active and mt5_login_val > 0 and mt5_login_val != saved_login:
-            # Sync to the new account's metrics!
-            print(f"New MT5 account detected: {mt5_login_val}. Resetting initial_balance and max_equity_peak to current equity: ${equity:.2f}")
+        # 3. Detect if a new account has been attached OR if there is a mismatch on 0 active trades today
+        trades_today_val = int(trades_today)
+        # Check if there are active positions in the database
+        cur.execute("SELECT COUNT(*) FROM trades WHERE status = 'OPEN'")
+        open_trades_count = cur.fetchone()[0] or 0
+        has_positions = (open_trades_count > 0) or (float(floating_profit) != 0.0)
+
+        login_changed = (mt5_login_val > 0 and mt5_login_val != saved_login)
+        mismatch_reset = (mt5_login_val > 0 and mt5_login_val == saved_login and trades_today_val == 0 and not has_positions and abs(initial_balance_val - float(equity)) > 0.01)
+
+        if terminal_active and (login_changed or mismatch_reset):
+            print(f"Syncing account metrics: Resetting initial_balance and max_equity_peak to current equity: ${equity:.2f} (login_changed={login_changed}, mismatch_reset={mismatch_reset})")
             initial_balance_val = float(equity)
             max_equity_peak_val = float(equity)
-            saved_login = mt5_login_val
+            if login_changed:
+                saved_login = mt5_login_val
 
         # 4. Update peak equity if exceeded
         if float(equity) > max_equity_peak_val:
