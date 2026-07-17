@@ -153,7 +153,7 @@ export default function Signals() {
     const handleCopySignal = (sig: any) => {
     const isBuy = sig.action === "BUY_SPREAD";
     const details = getSignalDetails(sig);
-    const timeStr = format(new Date(sig.timestamp), "HH:mm:ss");
+    const timeStr = format(new Date(sig.timestamp), "EEEE, dd/MM/yyyy, hh:mm:ss a");
     
     const actionEmoji = isBuy ? "🟢" : "🔴";
     const legBDirection = isBuy ? "SELL" : "BUY";
@@ -208,7 +208,7 @@ export default function Signals() {
   const handleCopySignal = (sig: any) => {
     const isBuy = sig.action === "BUY_SPREAD";
     const details = getSignalDetails(sig);
-    const timeStr = format(new Date(sig.timestamp), "HH:mm:ss");
+    const timeStr = format(new Date(sig.timestamp), "EEEE, dd/MM/yyyy, hh:mm:ss a");
     
     const actionEmoji = isBuy ? "🟢" : "🔴";
     const legBDirection = isBuy ? "SELL" : "BUY";
@@ -294,7 +294,7 @@ export default function Signals() {
                   const handleCopySignal = (sig: any) => {
     const isBuy = sig.action === "BUY_SPREAD";
     const details = getSignalDetails(sig);
-    const timeStr = format(new Date(sig.timestamp), "HH:mm:ss");
+    const timeStr = format(new Date(sig.timestamp), "EEEE, dd/MM/yyyy, hh:mm:ss a");
     
     const actionEmoji = isBuy ? "🟢" : "🔴";
     const legBDirection = isBuy ? "SELL" : "BUY";
@@ -339,7 +339,7 @@ export default function Signals() {
   return (
                     <TableRow key={sig.id} className="border-border hover:bg-muted/30">
                       <TableCell className="font-mono text-xs text-muted-foreground">
-                        {format(new Date(sig.timestamp), "HH:mm:ss.SSS")}
+                        {format(new Date(sig.timestamp), "EEEE, dd/MM/yyyy, hh:mm:ss a")}
                       </TableCell>
                       <TableCell>{getActionBadge(sig.action)}</TableCell>
                       <TableCell className="font-mono text-sm">

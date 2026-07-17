@@ -94,9 +94,9 @@ export default function Trades() {
                     <TableCell className="font-mono text-xs text-muted-foreground">#{trade.ticket}</TableCell>
                     <TableCell className="font-mono text-xs">
                       <div className="flex flex-col">
-                        <span>{format(new Date(trade.entryTime), "MM/dd HH:mm:ss")}</span>
+                        <span>{format(new Date(trade.entryTime), "EEEE, dd/MM/yyyy, hh:mm:ss a")}</span>
                         {trade.closeTime && (
-                          <span className="text-muted-foreground/70">{format(new Date(trade.closeTime), "MM/dd HH:mm:ss")}</span>
+                          <span className="text-muted-foreground/70">{format(new Date(trade.closeTime), "EEEE, dd/MM/yyyy, hh:mm:ss a")}</span>
                         )}
                       </div>
                     </TableCell>
