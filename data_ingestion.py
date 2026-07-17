@@ -26,7 +26,7 @@ def load_env():
 def initialize_mt5():
     """Initializes MetaTrader 5 terminal and connection, performing login if credentials exist."""
     load_env()
-    terminal_path = "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+    terminal_path = os.getenv("MT5_TERMINAL_PATH")
     
     login = os.getenv("MT5_LOGIN")
     password = os.getenv("MT5_PASSWORD")
@@ -36,7 +36,10 @@ def initialize_mt5():
         logger.info(f"Attempting programmatic login to Server: {server} Account: {login}...")
         try:
             login_int = int(login)
-            if not mt5.initialize(path=terminal_path, login=login_int, password=password, server=server, timeout=60000):
+            init_args = {"login": login_int, "password": password, "server": server, "timeout": 60000}
+            if terminal_path:
+                init_args["path"] = terminal_path
+            if not mt5.initialize(**init_args):
                 logger.error(f"MT5 initialization and login failed. Error code: {mt5.last_error()}")
                 sys.exit(1)
             logger.info("Programmatic login successful!")
@@ -44,11 +47,27 @@ def initialize_mt5():
             logger.error("MT5_LOGIN in .env must be an integer account number.")
             sys.exit(1)
     else:
-        logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")
-        if not mt5.initialize(path=terminal_path, timeout=60000):
-            logger.error(f"MT5 initialization failed. Error code: {mt5.last_error()}")
-            sys.exit(1)
+        init_args = {"timeout": 60000}
+        if terminal_path:
+            init_args["path"] = terminal_path
+            logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")
+        else:
+            logger.info("Initializing MT5 using currently running terminal instance (no path or credentials provided)")
             
+        if not mt5.initialize(**init_args):
+            # Fallback to default path if no path was provided and default initialization failed
+            if not terminal_path:
+                default_path = "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+                logger.info(f"Currently running instance not found. Falling back to default path: {default_path}")
+                if mt5.initialize(path=default_path, timeout=60000):
+                    logger.info("Successfully connected to default MT5 Terminal!")
+                else:
+                    logger.error(f"MT5 initialization failed. Error code: {mt5.last_error()}")
+                    sys.exit(1)
+            else:
+                logger.error(f"MT5 initialization failed. Error code: {mt5.last_error()}")
+                sys.exit(1)
+                
     acc_info = mt5.account_info()
     if acc_info is None:
         logger.error("Failed to retrieve account info. Ensure MT5 terminal is open and logged in.")
@@ -112,7 +131,7 @@ def check_and_subscribe_symbol(symbol):
     # Check if the symbol is valid/exists in MT5
     info = mt5.symbol_info(resolved)
     if info is None:
-        logger.error(f"Symbol {resolved} is invalid or not found in the broker's database.")
+        logger.debug(f"Symbol {resolved} is invalid or not found in the broker's database.")
         return False
         
     # If the symbol is valid but not visible, select/add it to Market Watch
@@ -136,6 +155,8 @@ def check_and_subscribe_symbol(symbol):
 def get_rates_df(symbol, timeframe, count=200):
     """Fetches historical price candles and returns them as a pandas DataFrame."""
     resolved = resolve_broker_symbol(symbol)
+    if not check_and_subscribe_symbol(resolved):
+        return None
     rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
     if rates is None:
         logger.error(f"Failed to fetch rates for {resolved} (requested: {symbol}). Error: {mt5.last_error()}")
@@ -148,6 +169,8 @@ def get_rates_df(symbol, timeframe, count=200):
 def get_live_ticks(symbol):
     """Fetches the latest tick (bid, ask, time) for a symbol."""
     resolved = resolve_broker_symbol(symbol)
+    if not check_and_subscribe_symbol(resolved):
+        return None
     tick = mt5.symbol_info_tick(resolved)
     if tick is None:
         logger.warning(f"Failed to get live tick for {resolved} (requested: {symbol})")
