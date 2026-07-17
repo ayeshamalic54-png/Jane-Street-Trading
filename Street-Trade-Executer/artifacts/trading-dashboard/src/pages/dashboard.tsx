@@ -139,7 +139,7 @@ export default function Dashboard() {
 
   const { data: httpData, isLoading } = useGetDashboard({
     query: {
-      refetchInterval: 10000,
+      refetchInterval: 2000,
       queryKey: getGetDashboardQueryKey(),
     },
   });
