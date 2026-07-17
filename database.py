@@ -211,6 +211,46 @@ def initialize_database():
             conn.commit()
             print("Added admin_password column to bot_state table.")
 
+        # Add initial_balance column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='initial_balance'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN initial_balance NUMERIC(15, 2) DEFAULT 100000.00")
+            conn.commit()
+            print("Added initial_balance column to bot_state table.")
+
+        # Add overall_drawdown column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='overall_drawdown'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN overall_drawdown NUMERIC(5, 2) DEFAULT 0.00")
+            conn.commit()
+            print("Added overall_drawdown column to bot_state table.")
+
+        # Add max_equity_peak column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='max_equity_peak'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN max_equity_peak NUMERIC(15, 2) DEFAULT 0.00")
+            conn.commit()
+            print("Added max_equity_peak column to bot_state table.")
+
+        # Add mt5_login column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='mt5_login'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN mt5_login INTEGER DEFAULT 0")
+            conn.commit()
+            print("Added mt5_login column to bot_state table.")
+
         cur.close()
         print("Database initialized successfully!")
     except Exception as e:
@@ -226,17 +266,18 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
                      trades_today, sl_pips=10.0):
     """
     Upserts live bot telemetry into bot_state table.
-    NOTE: auto_execute is NOT touched here — it is dashboard-controlled only.
+    Tracks overall drawdown, max equity peak, and resets metrics if a new MT5 account is attached.
     """
     query = """
         INSERT INTO bot_state (
             id, active_pair, system_status, equity, drawdown_percent,
             floating_profit, z_score, hedge_ratio, obi_a, obi_b,
-            trades_today, sl_pips, last_heartbeat, updated_at
+            trades_today, sl_pips, last_heartbeat, updated_at,
+            initial_balance, overall_drawdown, max_equity_peak, mt5_login
         )
         VALUES (
             1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, %s, %s, %s, %s
         )
         ON CONFLICT (id) DO UPDATE SET
             system_status      = EXCLUDED.system_status,
@@ -248,6 +289,10 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
             obi_a              = EXCLUDED.obi_a,
             obi_b              = EXCLUDED.obi_b,
             trades_today       = EXCLUDED.trades_today,
+            initial_balance    = EXCLUDED.initial_balance,
+            overall_drawdown   = EXCLUDED.overall_drawdown,
+            max_equity_peak    = EXCLUDED.max_equity_peak,
+            mt5_login          = EXCLUDED.mt5_login,
             last_heartbeat     = CURRENT_TIMESTAMP,
             updated_at         = CURRENT_TIMESTAMP
     """
@@ -255,181 +300,63 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
     try:
         conn = get_connection()
         cur = conn.cursor()
+
+        # 1. Fetch current login info from MT5
+        import MetaTrader5 as mt5
+        mt5_login_val = 0
+        terminal_active = False
+        try:
+            acc_info = mt5.account_info()
+            if acc_info:
+                mt5_login_val = int(acc_info.login)
+                terminal_active = True
+        except Exception:
+            pass
+
+        # 2. Query current saved overall metrics from DB
+        cur.execute("SELECT initial_balance, max_equity_peak, mt5_login FROM bot_state WHERE id = 1")
+        row = cur.fetchone()
+
+        initial_balance_val = float(equity)
+        max_equity_peak_val = float(equity)
+        saved_login = 0
+
+        if row:
+            initial_balance_val = float(row[0] or equity)
+            max_equity_peak_val = float(row[1] or equity)
+            saved_login = int(row[2] or 0)
+
+        # 3. Detect if a new account has been attached
+        if terminal_active and mt5_login_val > 0 and mt5_login_val != saved_login:
+            # Sync to the new account's metrics!
+            print(f"New MT5 account detected: {mt5_login_val}. Resetting initial_balance and max_equity_peak to current equity: ${equity:.2f}")
+            initial_balance_val = float(equity)
+            max_equity_peak_val = float(equity)
+            saved_login = mt5_login_val
+
+        # 4. Update peak equity if exceeded
+        if float(equity) > max_equity_peak_val:
+            max_equity_peak_val = float(equity)
+
+        # 5. Calculate overall drawdown from peak
+        overall_drawdown_val = 0.00
+        if max_equity_peak_val > 0.0:
+            overall_drawdown_val = ((max_equity_peak_val - float(equity)) / max_equity_peak_val) * 100.0
+            overall_drawdown_val = max(0.00, overall_drawdown_val)
+
         cur.execute(query, (
             str(active_pair), str(system_status),
             float(equity), float(drawdown_percent),
             float(floating_profit), float(z_score),
             float(hedge_ratio), float(obi_a), float(obi_b),
-            int(trades_today), float(sl_pips)
+            int(trades_today), float(sl_pips),
+            float(initial_balance_val), float(overall_drawdown_val),
+            float(max_equity_peak_val), int(saved_login)
         ))
         conn.commit()
         cur.close()
     except Exception as e:
         print(f"Error updating bot_state: {e}")
-    finally:
-        if conn:
-            conn.close()
-
-def get_auto_execute():
-    """
-    Reads auto_execute flag from bot_state. Returns True by default.
-    Called by the bot every ~10s to check if auto-trading is enabled from dashboard.
-    """
-    query = "SELECT auto_execute FROM bot_state WHERE id = 1"
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query)
-        row = cur.fetchone()
-        cur.close()
-        if row is not None:
-            return bool(row[0])
-        return True
-    except Exception as e:
-        print(f"Error reading auto_execute: {e}")
-        return True
-    finally:
-        if conn:
-            conn.close()
-
-def log_fvg_zones(symbol, zones_dict):
-    """
-    Replaces all active FVG/OB/Breaker/iFVG zones for a symbol.
-    zones_dict: output of detect_smc_zones() — dict of zone_type -> [(low, high), ...]
-    Called every 10 loops (~20s) when SMC scan updates.
-    """
-    zone_type_map = {
-        'bullish_ob':      'bullish_ob',
-        'bearish_ob':      'bearish_ob',
-        'bullish_fvg':     'bullish_fvg',
-        'bearish_fvg':     'bearish_fvg',
-        'bullish_breaker': 'bullish_breaker',
-        'bearish_breaker': 'bearish_breaker',
-        'bullish_ifvg':    'bullish_ifvg',
-        'bearish_ifvg':    'bearish_ifvg',
-    }
-
-    rows = []
-    for zone_key, db_type in zone_type_map.items():
-        for (low, high) in zones_dict.get(zone_key, []):
-            rows.append((symbol, db_type, float(low), float(high)))
-
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM fvg_zones WHERE symbol = %s", (symbol,))
-        if rows:
-            cur.executemany(
-                "INSERT INTO fvg_zones (symbol, zone_type, low_price, high_price, updated_at) "
-                "VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)",
-                rows
-            )
-        conn.commit()
-        cur.close()
-    except Exception as e:
-        print(f"Error logging FVG zones: {e}")
-        if conn:
-            conn.rollback()
-    finally:
-        if conn:
-            conn.close()
-
-def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action):
-    """Logs a generated mathematical signal. Returns the signal ID."""
-    query = """
-        INSERT INTO signals (symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (
-            symbol_a, symbol_b,
-            float(price_a), float(price_b),
-            float(beta), float(alpha),
-            float(z_score), float(obi),
-            action
-        ))
-        row = cur.fetchone()
-        conn.commit()
-        cur.close()
-        if row:
-            return row[0]
-    except Exception as e:
-        print(f"Error logging signal to database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return None
-
-def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, comment="", signal_id=None):
-    """Logs the entry of a trade."""
-    query = """
-        INSERT INTO trades (ticket, symbol, order_type, lots, entry_price, entry_time, status, comment, signal_id)
-        VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', %s, %s)
-        ON CONFLICT (ticket) DO NOTHING
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (
-            int(ticket), symbol, order_type,
-            float(lots), float(entry_price), entry_time, comment,
-            int(signal_id) if signal_id is not None else None
-        ))
-        conn.commit()
-        cur.close()
-    except Exception as e:
-        print(f"Error logging trade entry: {e}")
-    finally:
-        if conn:
-            conn.close()
-
-def get_open_trades_count(symbol=None):
-    """Returns the number of currently open trades in the database."""
-    query = "SELECT COUNT(*) FROM trades WHERE status = 'OPEN'"
-    params = ()
-    if symbol:
-        query += " AND symbol = %s"
-        params = (symbol,)
-    conn = None
-    count = 0
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, params)
-        count = cur.fetchone()[0]
-        cur.close()
-    except Exception as e:
-        print(f"Error fetching open trades count: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return count
-
-def log_trade_exit(ticket, close_price, profit, close_time):
-    """Updates a trade when it is closed."""
-    query = """
-        UPDATE trades
-        SET close_price = %s, profit = %s, close_time = %s, status = 'CLOSED'
-        WHERE ticket = %s
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (
-            float(close_price), float(profit), close_time, int(ticket)
-        ))
-        conn.commit()
-        cur.close()
-    except Exception as e:
-        print(f"Error logging trade exit: {e}")
     finally:
         if conn:
             conn.close()

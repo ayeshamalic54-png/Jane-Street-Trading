@@ -30,6 +30,7 @@ const configSchema = z.object({
   riskLimitsEnabled: z.boolean(),
   defaultLots: z.coerce.number().min(0.001).max(500),
   maxDailyTrades: z.coerce.number().min(1).max(1000),
+  initialBalance: z.coerce.number().min(100).max(10000000),
 });
 type ConfigFormValues = z.infer<typeof configSchema>;
 
@@ -150,6 +151,7 @@ export default function Config() {
       riskLimitsEnabled: true,
       defaultLots: 0.01,
       maxDailyTrades: 3,
+      initialBalance: 100000,
     },
     values: config
       ? {
@@ -165,6 +167,7 @@ export default function Config() {
           riskLimitsEnabled: config.riskLimitsEnabled,
           defaultLots: (config as any).defaultLots ?? 0.01,
           maxDailyTrades: config.maxDailyTrades,
+          initialBalance: (config as any).initialBalance ?? 100000,
         }
       : undefined,
   });
@@ -440,6 +443,23 @@ export default function Config() {
                         </FormControl>
                         <FormDescription className="text-xs">
                           Maximum number of trades the bot can execute per day. (e.g., set to 100 for no daily limit warnings).
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="initialBalance"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Initial Account Balance ($)</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="100" {...field} className="font-mono border-border bg-background" />
+                        </FormControl>
+                        <FormDescription className="text-xs">
+                          Starting balance of the attached prop firm or live trading account (e.g., 100000). Overall gains and drawdowns will start fresh from this balance.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>

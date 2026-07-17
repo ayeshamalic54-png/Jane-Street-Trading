@@ -180,7 +180,7 @@ export default function Dashboard() {
     return (
       <div className="p-6 space-y-6">
         <Skeleton className="h-[48px] w-full" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-[120px] w-full" />)}
         </div>
       </div>
@@ -209,7 +209,14 @@ export default function Dashboard() {
     activeZones,
     botOnline,
     autoExecute,
+    initialBalance = 100000.00,
+    overallDrawdown = 0.00,
+    maxEquityPeak = 0.00,
+    mt5Login = 0,
   } = dashboard;
+
+  const overallGain = equity - (initialBalance ?? 100000.00);
+  const overallGainPercent = (initialBalance ?? 100000.00) > 0 ? (overallGain / (initialBalance ?? 100000.00)) * 100 : 0;
 
   const matchingAsset = dashboard.scannedAssets?.find(
     (a: any) => a.symbolPair.startsWith(selectedChartSymbol) || a.symbolPair.endsWith(selectedChartSymbol)
@@ -396,13 +403,19 @@ export default function Dashboard() {
 
       <div className="p-6 space-y-6">
         {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card className="bg-zinc-900 border-zinc-800 border-t-2 border-t-sky-500 hover:border-sky-400/40 transition-all shadow-[0_4px_24px_rgba(14,165,233,0.06)] rounded-md">
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono">Account Equity</CardTitle>
+              <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono flex items-center justify-between">
+                <span>Account Equity</span>
+                {mt5Login > 0 && <span className="text-[9px] text-zinc-500 font-mono">ID: {mt5Login}</span>}
+              </CardTitle>
             </CardHeader>
             <CardContent className="pb-2">
               <div className="text-2xl font-mono text-sky-400 font-bold">{formatMoney(equity)}</div>
+              <div className="text-[10px] text-zinc-500 mt-1 mb-2 font-mono">
+                Start: <span className="text-zinc-300">{formatMoney(initialBalance)}</span>
+              </div>
               {pnlHistory.length > 2 && (
                 <ResponsiveContainer width="100%" height={36}>
                   <AreaChart data={pnlHistory} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
@@ -460,6 +473,35 @@ export default function Dashboard() {
                 </div>
               </div>
               <Progress value={Math.min((drawdownPercent / 5) * 100, 100)} className="h-1.5 bg-zinc-800 [&>div]:bg-rose-500" />
+            </CardContent>
+          </Card>
+
+          <Card className="bg-zinc-900 border-zinc-800 border-t-2 border-t-emerald-500 hover:border-emerald-400/40 transition-all shadow-[0_4px_24px_rgba(16,185,129,0.06)] rounded-md">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono">Overall Gain</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className={cn("text-2xl font-mono font-bold", overallGain >= 0 ? "text-emerald-400" : "text-rose-400")}>
+                {overallGain >= 0 ? "+" : ""}{formatMoney(overallGain)}
+              </div>
+              <div className="text-[10px] text-zinc-500 mt-1 font-mono">
+                Gain %: <span className={overallGain >= 0 ? "text-emerald-400" : "text-rose-400"}>{overallGainPercent.toFixed(2)}%</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-zinc-900 border-zinc-800 border-t-2 border-t-rose-500 hover:border-rose-400/40 transition-all shadow-[0_4px_24px_rgba(244,63,94,0.06)] rounded-md">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono">Overall Drawdown</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex justify-between items-end">
+                <div className="text-2xl font-mono text-rose-400">{overallDrawdown.toFixed(2)}%</div>
+                <div className="text-[10px] text-zinc-500 mb-1 font-mono">
+                  Peak: <span className="text-zinc-300">{formatMoney(maxEquityPeak)}</span>
+                </div>
+              </div>
+              <Progress value={Math.min((overallDrawdown / 10) * 100, 100)} className="h-1.5 bg-zinc-800 [&>div]:bg-rose-500" />
             </CardContent>
           </Card>
 

@@ -34,4 +34,8 @@ export interface DashboardData {
   metalsEnabled?: boolean;
   forexEnabled?: boolean;
   indicesEnabled?: boolean;
+  initialBalance?: number;
+  overallDrawdown?: number;
+  maxEquityPeak?: number;
+  mt5Login?: number;
 }

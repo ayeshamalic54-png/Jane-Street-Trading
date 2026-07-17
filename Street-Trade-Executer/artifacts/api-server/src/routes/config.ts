@@ -13,7 +13,7 @@ router.get("/config", async (req, res) => {
     const pair = state?.activePair ?? "EURUSD/GBPUSD";
     const parts = pair.split("/");
 
-    res.json({
+    return res.json({
       activePair: pair,
       symbolA: parts[0] ?? "EURUSD",
       symbolB: parts[1] ?? "GBPUSD",
@@ -31,10 +31,11 @@ router.get("/config", async (req, res) => {
       indicesEnabled: state?.indicesEnabled ?? true,
       riskLimitsEnabled: state?.riskLimitsEnabled ?? true,
       defaultLots: Number(state?.defaultLots ?? 0.01),
+      initialBalance: Number(state?.initialBalance ?? 100000.00),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get config");
-    res.status(500).json({ error: "Failed to get config" });
+    return res.status(500).json({ error: "Failed to get config" });
   }
 });
 
@@ -42,14 +43,14 @@ router.post("/config", async (req, res) => {
   try {
     const parsed = UpdateConfigBody.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: "Invalid request body" });
+      return res.status(400).json({ error: "Invalid request body" });
       return;
     }
 
-    const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, indicesEnabled, riskLimitsEnabled, defaultLots, maxDailyTrades } = parsed.data;
+    const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, indicesEnabled, riskLimitsEnabled, defaultLots, maxDailyTrades, initialBalance } = parsed.data;
     const parts = activePair.split("/");
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      res.status(400).json({ error: "activePair must be SYMBOL_A/SYMBOL_B" });
+      return res.status(400).json({ error: "activePair must be SYMBOL_A/SYMBOL_B" });
       return;
     }
 
@@ -63,8 +64,8 @@ router.post("/config", async (req, res) => {
     const defLots = defaultLots ?? 0.01;
 
     await db.execute(
-      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at)
-          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${riskLimits}, ${defLots.toString()}, ${maxDailyTrades ?? 3}, 'BOT OFFLINE', NOW()
+      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak)
+          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${riskLimits}, ${defLots.toString()}, ${maxDailyTrades ?? 3}, 'BOT OFFLINE', NOW(), ${(initialBalance ?? 100000).toString()}, ${(initialBalance ?? 100000).toString()}
           WHERE NOT EXISTS (SELECT 1 FROM bot_state)`
     );
 
@@ -83,6 +84,8 @@ router.post("/config", async (req, res) => {
               risk_limits_enabled = ${riskLimits},
               default_lots = ${defLots.toString()},
               max_trades   = ${maxDailyTrades ?? 3},
+              initial_balance = ${(initialBalance ?? 100000).toString()},
+              max_equity_peak = ${(initialBalance ?? 100000).toString()},
               updated_at   = NOW()
           WHERE id = (SELECT MIN(id) FROM bot_state)`
     );
@@ -91,7 +94,7 @@ router.post("/config", async (req, res) => {
     const updatedPair = updated?.activePair ?? activePair;
     const updatedParts = updatedPair.split("/");
 
-    res.json({
+    return res.json({
       activePair: updatedPair,
       symbolA: updatedParts[0] ?? parts[0],
       symbolB: updatedParts[1] ?? parts[1],
@@ -109,10 +112,11 @@ router.post("/config", async (req, res) => {
       indicesEnabled: updated?.indicesEnabled ?? indicesExec,
       riskLimitsEnabled: updated?.riskLimitsEnabled ?? riskLimits,
       defaultLots: Number(updated?.defaultLots ?? defLots),
+      initialBalance: Number(updated?.initialBalance ?? initialBalance ?? 100000),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update config");
-    res.status(500).json({ error: "Failed to update config" });
+    return res.status(500).json({ error: "Failed to update config" });
   }
 });
 

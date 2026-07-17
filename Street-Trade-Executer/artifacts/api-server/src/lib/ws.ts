@@ -100,6 +100,10 @@ async function buildDashboardPayload() {
     obiB: Number(botState?.obiB ?? 0),
     tradesToday: botState?.tradesToday ?? 0,
     maxTrades: Number(botState?.maxTrades ?? 3),
+    initialBalance: Number(botState?.initialBalance ?? 100000.00),
+    overallDrawdown: Number(botState?.overallDrawdown ?? 0.00),
+    maxEquityPeak: Number(botState?.maxEquityPeak ?? 0.00),
+    mt5Login: botState?.mt5Login ?? 0,
     activePositions: openPositions,
     recentTrades: cachedRecentTrades.map((t: any) => ({
       ticket: Number(t.ticket),
