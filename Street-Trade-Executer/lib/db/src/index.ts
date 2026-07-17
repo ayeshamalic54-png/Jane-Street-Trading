@@ -42,7 +42,7 @@ export const botStateTable = pgTable("bot_state", {
   initialBalance: numeric("initial_balance", { precision: 15, scale: 2 }).default("100000.00"),
   overallDrawdown: numeric("overall_drawdown", { precision: 5, scale: 2 }).default("0.00"),
   maxEquityPeak: numeric("max_equity_peak", { precision: 15, scale: 2 }).default("0.00"),
-  mt5Login: integer("mt5_login").default(0),
+  mt5Login: bigint("mt5_login", { mode: "number" }).default(0),
 });
 
 export const tradesTable = pgTable("trades", {
