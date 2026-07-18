@@ -500,7 +500,8 @@ def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_
         INSERT INTO daily_metrics (trading_date, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
         VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT (trading_date) DO UPDATE
-        SET current_equity = EXCLUDED.current_equity,
+        SET start_equity = EXCLUDED.start_equity,
+            current_equity = EXCLUDED.current_equity,
             max_drawdown_percent = GREATEST(daily_metrics.max_drawdown_percent, EXCLUDED.max_drawdown_percent),
             trades_today = EXCLUDED.trades_today,
             updated_at = CURRENT_TIMESTAMP
@@ -597,14 +598,7 @@ def reset_database_metrics_for_new_account(login_id, equity):
         if conn:
             conn.close()
             
-    # Also invalidate the local safeguards caches
-    try:
-        import risk_safeguards
-        risk_safeguards._cached_start_equity = float(equity)
-        risk_safeguards._cached_start_equity_date = today
-        risk_safeguards._cached_last_login = int(login_id)
-    except Exception as ex:
-        print(f"Error updating risk_safeguards cache: {ex}")
+
 
 if __name__ == "__main__":
     initialize_database()
