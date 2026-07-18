@@ -880,6 +880,20 @@ def main():
     SMC_ZONES_CACHE = {}
     smc_counter_cache = {}
 
+    active_login_id = None
+    try:
+        from database import get_connection
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT mt5_login FROM bot_state WHERE id = 1")
+        row = cur.fetchone()
+        if row and row[0]:
+            active_login_id = int(row[0])
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error loading initial mt5_login from database: {e}")
+
     while True:
         try:
             if not mt5.initialize():
@@ -890,6 +904,13 @@ def main():
             if acc_info is None:
                 time.sleep(5)
                 continue
+
+            current_login = int(acc_info.login)
+            if active_login_id is not None and active_login_id != current_login:
+                logger.info(f"Account switch detected: {active_login_id} -> {current_login}. Resetting metrics database records.")
+                from database import reset_database_metrics_for_new_account
+                reset_database_metrics_for_new_account(current_login, acc_info.equity)
+            active_login_id = current_login
 
             # ── DB CONFIG SYNC (every ~10s) ─────────────────────────────────
             if db_config_counter % 5 == 0:
