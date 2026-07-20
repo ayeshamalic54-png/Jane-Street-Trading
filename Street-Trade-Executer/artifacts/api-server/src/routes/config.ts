@@ -93,8 +93,6 @@ router.post("/config", async (req, res) => {
               volatility_filter_enabled = ${volExec},
               default_lots = ${defLots.toString()},
               max_trades   = ${maxDailyTrades ?? 3},
-              initial_balance = ${(initialBalance ?? 100000).toString()},
-              max_equity_peak = ${(initialBalance ?? 100000).toString()},
               updated_at   = NOW()
           WHERE id = (SELECT MIN(id) FROM bot_state)`
     );
