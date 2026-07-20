@@ -95,29 +95,33 @@ def get_or_create_daily_start_equity(current_equity):
             
         if row:
             start_equity = float(row[0])
-            logger.info(f"Retrieved daily starting equity for account {current_login} from database: ${start_equity:.2f}")
+            logger.info(f"Retrieved saved daily starting equity for account {current_login} from database: ${start_equity:.2f}")
             
-            # Reset if no open trades currently active OR if account/login changed
-            from database import get_open_trades_count
-            open_count = get_open_trades_count()
-            if (open_count == 0 or login_changed) and abs(start_equity - current_equity) > 0.01:
-                cur.execute(
-                    "UPDATE daily_metrics SET start_equity = %s, current_equity = %s WHERE trading_date = %s AND mt5_login = %s",
-                    (current_equity, current_equity, today, current_login)
-                )
-                conn.commit()
-                logger.info(f"Account changed or new session: Automatically updated daily start equity for account {current_login} to: ${current_equity:.2f}")
-                start_equity = current_equity
+            # Update current equity for today and sync bot_state to this account's saved start equity
+            cur.execute(
+                "UPDATE daily_metrics SET current_equity = %s WHERE trading_date = %s AND mt5_login = %s",
+                (current_equity, today, current_login)
+            )
+            cur.execute(
+                "UPDATE bot_state SET initial_balance = %s, mt5_login = %s, equity = %s WHERE id = 1",
+                (start_equity, current_login, current_equity)
+            )
+            conn.commit()
         else:
             # Create a new record for today for this specific login
+            start_equity = current_equity
             cur.execute(
                 """
                 INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
                 VALUES (%s, %s, %s, %s, 0.0, 0)
                 ON CONFLICT (trading_date, mt5_login) DO UPDATE
-                SET start_equity = EXCLUDED.start_equity, current_equity = EXCLUDED.current_equity
+                SET current_equity = EXCLUDED.current_equity
                 """,
-                (today, current_login, current_equity, current_equity)
+                (today, current_login, start_equity, current_equity)
+            )
+            cur.execute(
+                "UPDATE bot_state SET initial_balance = %s, mt5_login = %s, equity = %s WHERE id = 1",
+                (start_equity, current_login, current_equity)
             )
             conn.commit()
             logger.info(f"Initialized new daily trading session for account {current_login}. Starting equity: ${start_equity:.2f}")
