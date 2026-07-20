@@ -43,6 +43,9 @@ export const botStateTable = pgTable("bot_state", {
   overallDrawdown: numeric("overall_drawdown", { precision: 5, scale: 2 }).default("0.00"),
   maxEquityPeak: numeric("max_equity_peak", { precision: 15, scale: 2 }).default("0.00"),
   mt5Login: bigint("mt5_login", { mode: "number" }).default(0),
+  knifeProtectionEnabled: boolean("knife_protection_enabled").default(true),
+  obiEnabled: boolean("obi_enabled").default(true),
+  volatilityFilterEnabled: boolean("volatility_filter_enabled").default(true),
 });
 
 export const tradesTable = pgTable("trades", {

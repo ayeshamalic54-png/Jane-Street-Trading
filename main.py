@@ -65,6 +65,10 @@ COOLDOWN_DIRECTIONS = {}
 KF_CACHE = {}
 WIN_RATE_CACHE = {}
 
+KNIFE_PROTECTION_ENABLED = True
+OBI_ENABLED = True
+VOLATILITY_FILTER_ENABLED = True
+
 # Dashboard API base URL — update to your Replit URL when deployed
 DASHBOARD_API_URL = os.environ.get("DASHBOARD_API_URL", "http://localhost:80/api")
 
@@ -104,7 +108,8 @@ def fetch_db_config():
     query = """
         SELECT active_pair, sl_pips, tp_pips, smc_enabled, auto_execute,
                crypto_enabled, metals_enabled, forex_enabled, indices_enabled,
-               risk_limits_enabled, z_entry_threshold, default_lots, max_trades
+               risk_limits_enabled, z_entry_threshold, default_lots, max_trades,
+               knife_protection_enabled, obi_enabled, volatility_filter_enabled
         FROM bot_state
         WHERE id = 1
     """
@@ -146,6 +151,9 @@ def fetch_db_config():
                 float(row[10] or 2.0),
                 float(row[11] or 0.01),
                 int(row[12] or 3),
+                bool(row[13] if row[13] is not None else True),
+                bool(row[14] if row[14] is not None else True),
+                bool(row[15] if row[15] is not None else True),
             )
         else:
             cur.close()
@@ -971,7 +979,7 @@ def main():
             if db_config_counter % 5 == 0:
                 db_cfg = fetch_db_config()
                 if db_cfg:
-                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades = db_cfg
+                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol = db_cfg
                     parts = new_pair.split("/")
                     if len(parts) == 2 and parts[0] != parts[1]:
                         if GLOBAL_CONFIG["SYMBOL_A"] != parts[0] or GLOBAL_CONFIG["SYMBOL_B"] != parts[1]:
@@ -1008,6 +1016,15 @@ def main():
                     if Z_ENTRY_THRESHOLD != new_z_entry:
                         logger.info(f"[CONFIG UPDATE] Z-Entry Threshold updated: {Z_ENTRY_THRESHOLD} -> {new_z_entry}")
                         Z_ENTRY_THRESHOLD = new_z_entry
+                    if KNIFE_PROTECTION_ENABLED != new_knife:
+                        logger.info(f"[CONFIG UPDATE] Knife Protection updated: {KNIFE_PROTECTION_ENABLED} -> {new_knife}")
+                        KNIFE_PROTECTION_ENABLED = new_knife
+                    if OBI_ENABLED != new_obi:
+                        logger.info(f"[CONFIG UPDATE] OBI Filter updated: {OBI_ENABLED} -> {new_obi}")
+                        OBI_ENABLED = new_obi
+                    if VOLATILITY_FILTER_ENABLED != new_vol:
+                        logger.info(f"[CONFIG UPDATE] Volatility Filter updated: {VOLATILITY_FILTER_ENABLED} -> {new_vol}")
+                        VOLATILITY_FILTER_ENABLED = new_vol
                     if DEFAULT_LOTS != new_def_lots:
                         logger.info(f"[CONFIG UPDATE] Default Lots updated: {DEFAULT_LOTS} -> {new_def_lots}")
                         DEFAULT_LOTS = new_def_lots
@@ -1286,10 +1303,24 @@ def main():
                     elif z > Z_ENTRY_THRESHOLD:
                         action = "SELL_SPREAD"
                 else:
-                    # Safe Mode: Apply all protections (SMC, OBI, Z-velocity, Volatility protection)
-                    if z < -dynamic_z_entry and z_velocity > -z_vel_lim and obi_buy_pass and in_bullish_zone:
+                    # Safe Mode: Evaluate enabled protections (Volatility, Knife Velocity, OBI, SMC)
+                    effective_dyn_z = dynamic_z_entry if VOLATILITY_FILTER_ENABLED else Z_ENTRY_THRESHOLD
+                    
+                    pass_z_buy = (z < -effective_dyn_z)
+                    pass_z_sell = (z > effective_dyn_z)
+                    
+                    pass_vel_buy = (z_velocity > -z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
+                    pass_vel_sell = (z_velocity < z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
+                    
+                    pass_obi_buy = obi_buy_pass if OBI_ENABLED else True
+                    pass_obi_sell = obi_sell_pass if OBI_ENABLED else True
+                    
+                    pass_smc_buy = in_bullish_zone if REQUIRE_SMC_CONFLUENCE else True
+                    pass_smc_sell = in_bearish_zone if REQUIRE_SMC_CONFLUENCE else True
+                    
+                    if pass_z_buy and pass_vel_buy and pass_obi_buy and pass_smc_buy:
                         action = "BUY_SPREAD"
-                    elif z > dynamic_z_entry and z_velocity < z_vel_lim and obi_sell_pass and in_bearish_zone:
+                    elif pass_z_sell and pass_vel_sell and pass_obi_sell and pass_smc_sell:
                         action = "SELL_SPREAD"
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
@@ -1297,20 +1328,20 @@ def main():
                 if base_z_triggered and action == "NONE":
                     reasons = []
                     if z < -Z_ENTRY_THRESHOLD:
-                        if not (z < -dynamic_z_entry):
+                        if VOLATILITY_FILTER_ENABLED and not (z < -dynamic_z_entry):
                             reasons.append(f"Z-score {z:.3f} not below dynamic threshold {-dynamic_z_entry:.3f} (volatility protection)")
-                        if not (z_velocity > -z_vel_lim):
+                        if KNIFE_PROTECTION_ENABLED and not (z_velocity > -z_vel_lim):
                             reasons.append(f"Z-velocity {z_velocity:.3f} too fast (falling knife protection, limit: {-z_vel_lim})")
-                        if not obi_buy_pass:
+                        if OBI_ENABLED and not obi_buy_pass:
                             reasons.append(f"OBI {net_obi:.3f} too low (min: 0.15)")
                         if REQUIRE_SMC_CONFLUENCE and not in_bullish_zone:
                             reasons.append("Price not in Bullish SMC Zone (Order Block/FVG)")
                     else:
-                        if not (z > dynamic_z_entry):
+                        if VOLATILITY_FILTER_ENABLED and not (z > dynamic_z_entry):
                             reasons.append(f"Z-score {z:.3f} not above dynamic threshold {dynamic_z_entry:.3f} (volatility protection)")
-                        if not (z_velocity < z_vel_lim):
+                        if KNIFE_PROTECTION_ENABLED and not (z_velocity < z_vel_lim):
                             reasons.append(f"Z-velocity {z_velocity:.3f} too fast (rising knife protection, limit: {z_vel_lim})")
-                        if not obi_sell_pass:
+                        if OBI_ENABLED and not obi_sell_pass:
                             reasons.append(f"OBI {net_obi:.3f} too high (max: -0.15)")
                         if REQUIRE_SMC_CONFLUENCE and not in_bearish_zone:
                             reasons.append("Price not in Bearish SMC Zone (Order Block/FVG)")

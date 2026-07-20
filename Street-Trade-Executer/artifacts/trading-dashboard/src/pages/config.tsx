@@ -28,6 +28,9 @@ const configSchema = z.object({
   forexEnabled: z.boolean(),
   indicesEnabled: z.boolean(),
   riskLimitsEnabled: z.boolean(),
+  knifeProtectionEnabled: z.boolean(),
+  obiEnabled: z.boolean(),
+  volatilityFilterEnabled: z.boolean(),
   defaultLots: z.coerce.number().min(0.001).max(500),
   maxDailyTrades: z.coerce.number().min(1).max(1000),
 });
@@ -148,6 +151,9 @@ export default function Config() {
       forexEnabled: true,
       indicesEnabled: true,
       riskLimitsEnabled: true,
+      knifeProtectionEnabled: true,
+      obiEnabled: true,
+      volatilityFilterEnabled: true,
       defaultLots: 0.01,
       maxDailyTrades: 3,
     },
@@ -163,6 +169,9 @@ export default function Config() {
           forexEnabled: config.forexEnabled,
           indicesEnabled: config.indicesEnabled,
           riskLimitsEnabled: config.riskLimitsEnabled,
+          knifeProtectionEnabled: (config as any).knifeProtectionEnabled ?? true,
+          obiEnabled: (config as any).obiEnabled ?? true,
+          volatilityFilterEnabled: (config as any).volatilityFilterEnabled ?? true,
           defaultLots: (config as any).defaultLots ?? 0.01,
           maxDailyTrades: config.maxDailyTrades,
         }
@@ -489,6 +498,76 @@ export default function Config() {
                       </FormItem>
                     )}
                   />
+
+                  <div className="border-t border-border pt-4 space-y-4">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quantitative Safety Filters</h4>
+
+                    {/* Z-Velocity / Knife Protection Toggle */}
+                    <FormField
+                      control={form.control}
+                      name="knifeProtectionEnabled"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Z-Velocity / Knife Protection Filter</FormLabel>
+                              <FormDescription className="text-xs mt-0.5">
+                                Defer entry if spread is moving too fast (falling/rising knife protection).
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch checked={field.value} onCheckedChange={field.onChange} />
+                            </FormControl>
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* OBI Filter Toggle */}
+                    <FormField
+                      control={form.control}
+                      name="obiEnabled"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Order Book Imbalance (OBI) Filter</FormLabel>
+                              <FormDescription className="text-xs mt-0.5">
+                                Require order book bid/ask volume imbalance confluence before entry.
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch checked={field.value} onCheckedChange={field.onChange} />
+                            </FormControl>
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Volatility Protection Toggle */}
+                    <FormField
+                      control={form.control}
+                      name="volatilityFilterEnabled"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Dynamic Volatility Filter</FormLabel>
+                              <FormDescription className="text-xs mt-0.5">
+                                Scale entry Z-threshold dynamically during high market volatility.
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch checked={field.value} onCheckedChange={field.onChange} />
+                            </FormControl>
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
                   <div className="border-t border-border pt-4 space-y-4">
                     <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Allowed Asset Classes</h4>
