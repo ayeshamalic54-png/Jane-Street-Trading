@@ -82,8 +82,8 @@ def get_or_create_daily_start_equity(current_equity):
         conn = get_connection()
         cur = conn.cursor()
         
-        # Check if we already have a record for today
-        cur.execute("SELECT start_equity FROM daily_metrics WHERE trading_date = %s", (today,))
+        # Check if we already have a record for today and this specific login
+        cur.execute("SELECT start_equity FROM daily_metrics WHERE trading_date = %s AND mt5_login = %s", (today, current_login))
         row = cur.fetchone()
         
         # Check if login has changed compared to last saved login in DB
@@ -95,29 +95,31 @@ def get_or_create_daily_start_equity(current_equity):
             
         if row:
             start_equity = float(row[0])
-            logger.info(f"Retrieved daily starting equity from database: ${start_equity:.2f}")
+            logger.info(f"Retrieved daily starting equity for account {current_login} from database: ${start_equity:.2f}")
             
             # Reset if no trades taken today OR if account/login changed
             trades_today = get_trades_count_today()
             if (trades_today == 0 or login_changed) and abs(start_equity - current_equity) > 0.01:
                 cur.execute(
-                    "UPDATE daily_metrics SET start_equity = %s, current_equity = %s WHERE trading_date = %s",
-                    (current_equity, current_equity, today)
+                    "UPDATE daily_metrics SET start_equity = %s, current_equity = %s WHERE trading_date = %s AND mt5_login = %s",
+                    (current_equity, current_equity, today, current_login)
                 )
                 conn.commit()
-                logger.info(f"Account changed or new session: Automatically updated daily start equity to: ${current_equity:.2f}")
+                logger.info(f"Account changed or new session: Automatically updated daily start equity for account {current_login} to: ${current_equity:.2f}")
                 start_equity = current_equity
         else:
-            # Create a new record for today
+            # Create a new record for today for this specific login
             cur.execute(
                 """
-                INSERT INTO daily_metrics (trading_date, start_equity, current_equity, max_drawdown_percent, trades_today)
-                VALUES (%s, %s, %s, 0.0, 0)
+                INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
+                VALUES (%s, %s, %s, %s, 0.0, 0)
+                ON CONFLICT (trading_date, mt5_login) DO UPDATE
+                SET start_equity = EXCLUDED.start_equity, current_equity = EXCLUDED.current_equity
                 """,
-                (today, current_equity, current_equity)
+                (today, current_login, current_equity, current_equity)
             )
             conn.commit()
-            logger.info(f"Initialized new daily trading session. Starting equity: ${start_equity:.2f}")
+            logger.info(f"Initialized new daily trading session for account {current_login}. Starting equity: ${start_equity:.2f}")
             
         cur.close()
         _cached_start_equity = start_equity
@@ -138,6 +140,14 @@ def check_drawdown_limit(current_equity):
     global _last_metrics_update_time
     start_equity = get_or_create_daily_start_equity(current_equity)
     
+    current_login = 0
+    try:
+        acc = mt5.account_info()
+        if acc:
+            current_login = int(acc.login)
+    except Exception:
+        pass
+        
     daily_loss = start_equity - current_equity
     daily_loss_percent = (daily_loss / start_equity) * 100.0 if start_equity > 0 else 0.0
     
@@ -148,7 +158,7 @@ def check_drawdown_limit(current_equity):
     now = time.time()
     if now - _last_metrics_update_time >= 30.0:
         try:
-            update_daily_metrics(today, start_equity, current_equity, max(0.0, daily_loss_percent), trades_today)
+            update_daily_metrics(today, start_equity, current_equity, max(0.0, daily_loss_percent), trades_today, login_id=current_login)
             _last_metrics_update_time = now
         except Exception as e:
             logger.error(f"Error updating daily metrics: {e}")

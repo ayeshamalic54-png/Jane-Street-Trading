@@ -46,12 +46,14 @@ def initialize_database():
     commands = [
         """
         CREATE TABLE IF NOT EXISTS daily_metrics (
-            trading_date DATE PRIMARY KEY,
+            trading_date DATE NOT NULL,
+            mt5_login BIGINT DEFAULT 0,
             start_equity NUMERIC(15, 2) NOT NULL,
             current_equity NUMERIC(15, 2) NOT NULL,
             max_drawdown_percent NUMERIC(5, 2) DEFAULT 0.00,
             trades_today INTEGER DEFAULT 0,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT daily_metrics_unique_date_login UNIQUE (trading_date, mt5_login)
         )
         """,
         """
@@ -494,12 +496,12 @@ def log_trade_exit(ticket, close_price, profit, close_time):
         if conn:
             conn.close()
 
-def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_count):
-    """Updates the daily challenge metrics in database."""
+def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_count, login_id=0):
+    """Updates the daily challenge metrics in database for a specific login_id."""
     query = """
-        INSERT INTO daily_metrics (trading_date, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
-        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        ON CONFLICT (trading_date) DO UPDATE
+        INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (trading_date, mt5_login) DO UPDATE
         SET start_equity = EXCLUDED.start_equity,
             current_equity = EXCLUDED.current_equity,
             max_drawdown_percent = GREATEST(daily_metrics.max_drawdown_percent, EXCLUDED.max_drawdown_percent),
@@ -510,8 +512,9 @@ def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_
     try:
         conn = get_connection()
         cur = conn.cursor()
+        login_val = int(login_id) if login_id else 0
         cur.execute(query, (
-            date_obj,
+            date_obj, login_val,
             float(start_equity), float(current_equity),
             float(max_dd), int(trades_count)
         ))
@@ -565,31 +568,29 @@ def reset_database_metrics_for_new_account(login_id, equity):
     try:
         conn = get_connection()
         cur = conn.cursor()
+        login_val = int(login_id) if login_id else 0
         
         # 1. Update bot_state
         cur.execute("""
             UPDATE bot_state 
-            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s 
+            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, drawdown_percent = 0.00 
             WHERE id = 1
-        """, (float(equity), float(equity), int(login_id), float(equity)))
+        """, (float(equity), float(equity), login_val, float(equity)))
         
-        # 2. Update or Insert daily_metrics for today
-        cur.execute("SELECT 1 FROM daily_metrics WHERE trading_date = %s", (today,))
-        if cur.fetchone():
-            cur.execute("""
-                UPDATE daily_metrics 
-                SET start_equity = %s, current_equity = %s, max_drawdown_percent = 0.00 
-                WHERE trading_date = %s
-            """, (float(equity), float(equity), today))
-        else:
-            cur.execute("""
-                INSERT INTO daily_metrics (trading_date, start_equity, current_equity, max_drawdown_percent, trades_today)
-                VALUES (%s, %s, %s, 0.0, 0)
-            """, (today, float(equity), float(equity)))
+        # 2. Update or Insert daily_metrics for today and this specific login
+        cur.execute("""
+            INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
+            VALUES (%s, %s, %s, %s, 0.0, 0)
+            ON CONFLICT (trading_date, mt5_login) DO UPDATE
+            SET start_equity = EXCLUDED.start_equity,
+                current_equity = EXCLUDED.current_equity,
+                max_drawdown_percent = 0.00,
+                updated_at = CURRENT_TIMESTAMP
+        """, (today, login_val, float(equity), float(equity)))
             
         conn.commit()
         cur.close()
-        print(f"Successfully reset database metrics for new account {login_id} (Equity: ${equity:.2f})")
+        print(f"Successfully reset database metrics for account {login_val} (Equity: ${equity:.2f})")
     except Exception as e:
         print(f"Error resetting database metrics for new account: {e}")
         if conn:
