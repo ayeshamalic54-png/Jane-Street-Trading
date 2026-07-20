@@ -275,17 +275,24 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                         tp2 = price - tp_dist
                         tp3 = price - sl_dist * 3.5
                         
-                    ok = execute_three_part_trade(
-                        symbol=symbol,
-                        is_long=is_long,
-                        entry_price=price,
-                        sl_price=sl_price,
-                        total_lots=lots,
-                        tp1=tp1,
-                        tp2=tp2,
-                        tp3=tp3,
-                        signal_id=manual_signal_id
-                    )
+                    if "JS_HEDGE_MANUAL_LEGB" in comment:
+                        order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
+                        res = send_order(symbol, order_type, price, lots, sl_price, 0.0, comment)
+                        ok = (res is not None and res.retcode == mt5.TRADE_RETCODE_DONE)
+                        if ok:
+                            log_trade_entry(res.order, symbol, direction, lots, res.price, datetime.datetime.now(), comment, manual_signal_id)
+                    else:
+                        ok = execute_three_part_trade(
+                            symbol=symbol,
+                            is_long=is_long,
+                            entry_price=price,
+                            sl_price=sl_price,
+                            total_lots=lots,
+                            tp1=tp1,
+                            tp2=tp2,
+                            tp3=tp3,
+                            signal_id=manual_signal_id
+                        )
                     err_msg = None if ok else "MT5 order rejected"
                     
                 status = "EXECUTED" if ok else "FAILED"

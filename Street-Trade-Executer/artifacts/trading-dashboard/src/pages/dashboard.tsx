@@ -298,19 +298,21 @@ export default function Dashboard() {
       return;
     }
     
-    const comment = `JS_HEDGE_MANUAL_${Date.now()}`;
+    const ts = Date.now();
+    const commentA = `JS_HEDGE_MANUAL_LEGA_${ts}`;
+    const commentB = `JS_HEDGE_MANUAL_LEGB_${ts}`;
     
     executeTrade.mutate(
-      { data: { symbol: symA, direction: dirA, lots, slPips: isNaN(slPips) ? undefined : slPips, tpPips: isNaN(tpPips) ? undefined : tpPips, comment } },
+      { data: { symbol: symA, direction: dirA, lots, slPips: isNaN(slPips) ? undefined : slPips, tpPips: isNaN(tpPips) ? undefined : tpPips, comment: commentA } },
       {
         onSuccess: () => {
           executeTrade.mutate(
-            { data: { symbol: symB, direction: dirB, lots, slPips: isNaN(slPips) ? undefined : slPips, tpPips: isNaN(tpPips) ? undefined : tpPips, comment } },
+            { data: { symbol: symB, direction: dirB, lots, slPips: isNaN(slPips) ? undefined : slPips, tpPips: isNaN(tpPips) ? undefined : tpPips, comment: commentB } },
             {
               onSuccess: () => {
                 toast({
                   title: "🚀 One-Click Spread Executed",
-                  description: `Queued: ${dirA} ${symA} & ${dirB} ${symB} (${lots} lots) successfully!`,
+                  description: `Queued: 3 Leg A (${symA}) + 1 Leg B (${symB}) orders successfully!`,
                 });
                 queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
               },
