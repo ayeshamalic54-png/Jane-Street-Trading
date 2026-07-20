@@ -298,12 +298,14 @@ export default function Dashboard() {
       return;
     }
     
+    const comment = `JS_HEDGE_MANUAL_${Date.now()}`;
+    
     executeTrade.mutate(
-      { data: { symbol: symA, direction: dirA, lots, slPips: isNaN(slPips) ? undefined : slPips, tpPips: isNaN(tpPips) ? undefined : tpPips } },
+      { data: { symbol: symA, direction: dirA, lots, slPips: isNaN(slPips) ? undefined : slPips, tpPips: isNaN(tpPips) ? undefined : tpPips, comment } },
       {
         onSuccess: () => {
           executeTrade.mutate(
-            { data: { symbol: symB, direction: dirB, lots, slPips: isNaN(slPips) ? undefined : slPips, tpPips: isNaN(tpPips) ? undefined : tpPips } },
+            { data: { symbol: symB, direction: dirB, lots, slPips: isNaN(slPips) ? undefined : slPips, tpPips: isNaN(tpPips) ? undefined : tpPips, comment } },
             {
               onSuccess: () => {
                 toast({
