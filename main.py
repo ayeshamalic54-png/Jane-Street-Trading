@@ -188,7 +188,7 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
         
         for row in commands:
             cmd_id, raw_symbol, direction, lots_val, cmd_sl, cmd_tp, comment = row
-            symbol = resolve_symbol_alias(raw_symbol)
+            symbol = resolve_broker_symbol(raw_symbol)
             lots = float(lots_val or 0.01)
             cmd_sl = float(cmd_sl) if cmd_sl is not None else SL_PIPS
             cmd_tp = float(cmd_tp) if cmd_tp is not None else TP_PIPS
