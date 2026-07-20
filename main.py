@@ -276,18 +276,29 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                         tp3 = price - sl_dist * 3.5
                         
                     if "JS_HEDGE_MANUAL_LEGB" in comment:
+                        hedge_lots = round(lots * 3.0, 2)
+                        info_b = mt5.symbol_info(symbol)
+                        min_vol_b = info_b.volume_min if info_b else 0.01
+                        if hedge_lots < min_vol_b:
+                            hedge_lots = min_vol_b
+                            
                         order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
-                        res = send_order(symbol, order_type, price, lots, sl_price, 0.0, comment)
+                        tp_price = price + (tp_dist if is_long else -tp_dist)
+                        res = send_order(symbol, order_type, price, hedge_lots, sl_price, tp_price, comment)
                         ok = (res is not None and res.retcode == mt5.TRADE_RETCODE_DONE)
                         if ok:
-                            log_trade_entry(res.order, symbol, direction, lots, res.price, datetime.datetime.now(), comment, manual_signal_id)
+                            log_trade_entry(res.order, symbol, direction, hedge_lots, res.price, datetime.datetime.now(), comment, manual_signal_id)
+                            logger.info(f"Successfully executed Manual Leg B Hedge order ({symbol} {direction} {hedge_lots}lots). Ticket: {res.order}")
+                        else:
+                            err_reason = res.comment if res else "No response"
+                            logger.error(f"Failed to execute Manual Leg B Hedge order ({symbol} {direction} {hedge_lots}lots): {err_reason}")
                     else:
                         ok = execute_three_part_trade(
                             symbol=symbol,
                             is_long=is_long,
                             entry_price=price,
                             sl_price=sl_price,
-                            total_lots=lots,
+                            total_lots=lots * 3.0,
                             tp1=tp1,
                             tp2=tp2,
                             tp3=tp3,
