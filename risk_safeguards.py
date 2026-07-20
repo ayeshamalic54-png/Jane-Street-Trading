@@ -154,7 +154,7 @@ def check_drawdown_limit(current_equity):
             logger.error(f"Error updating daily metrics: {e}")
     
     if daily_loss_percent >= MAX_DAILY_LOSS_PERCENT:
-        logger.critical(f"DAILY LIMIT BREACHED: Drawdown is {daily_loss_percent:.2f}% (Limit: {MAX_DAILY_LOSS_PERCENT}%)")
+        logger.info(f"Daily drawdown limit reached: {daily_loss_percent:.2f}% (Limit: {MAX_DAILY_LOSS_PERCENT}%)")
         return True, daily_loss_percent
         
     return False, daily_loss_percent

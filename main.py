@@ -1322,7 +1322,7 @@ def main():
                 update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
 
                 # Track telemetry for current active pair
-                if pk == current_pair_context:
+                if pk.upper().strip() == current_pair_context.upper().strip():
                     active_pair_z_score = z
                     active_pair_beta = beta
                     active_pair_obi_a = obi_a
@@ -1391,7 +1391,7 @@ def main():
                 if (best_cat_a == "crypto" or is_spread_valid(best_s_a)) and (best_cat_b == "crypto" or is_spread_valid(best_s_b)):
                     
                     # Machine Learning Filter evaluation
-                    if ML_MODEL is not None and os.getenv("USE_ML_FILTER", "True").lower() in ("true", "1", "yes"):
+                    if ML_MODEL is not None and Z_ENTRY_THRESHOLD > 0.5 and os.getenv("USE_ML_FILTER", "False").lower() in ("true", "1", "yes"):
                         now_dt = datetime.datetime.now()
                         feature_vector = [
                             float(best_sig["z_score"]),
