@@ -276,21 +276,26 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                         tp3 = price - sl_dist * 3.5
                         
                     if "JS_HEDGE_MANUAL_LEGB" in comment:
-                        hedge_lots = round(lots * 3.0, 2)
                         info_b = mt5.symbol_info(symbol)
+                        digits_b = info_b.digits if info_b else 5
                         min_vol_b = info_b.volume_min if info_b else 0.01
+                        
+                        hedge_lots = round(lots * 3.0, 2)
                         if hedge_lots < min_vol_b:
                             hedge_lots = min_vol_b
                             
                         order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
-                        tp_price = price + (tp_dist if is_long else -tp_dist)
-                        res = send_order(symbol, order_type, price, hedge_lots, sl_price, tp_price, comment)
+                        price_b = round(price, digits_b)
+                        sl_b = round(sl_price, digits_b)
+                        tp_b = round(price + (tp_dist if is_long else -tp_dist), digits_b)
+                        
+                        res = send_order(symbol, order_type, price_b, hedge_lots, sl_b, tp_b, comment)
                         ok = (res is not None and res.retcode == mt5.TRADE_RETCODE_DONE)
                         if ok:
                             log_trade_entry(res.order, symbol, direction, hedge_lots, res.price, datetime.datetime.now(), comment, manual_signal_id)
                             logger.info(f"Successfully executed Manual Leg B Hedge order ({symbol} {direction} {hedge_lots}lots). Ticket: {res.order}")
                         else:
-                            err_reason = res.comment if res else "No response"
+                            err_reason = res.comment if res else (f"retcode {res.retcode}" if res else "No response")
                             logger.error(f"Failed to execute Manual Leg B Hedge order ({symbol} {direction} {hedge_lots}lots): {err_reason}")
                     else:
                         ok = execute_three_part_trade(
