@@ -139,8 +139,8 @@ def fetch_db_config():
             conn.close()
             return (
                 active_pair,
-                float(row[1] or 10.0),
-                float(row[2] or 20.0),
+                float(row[1] or 20.0),
+                float(row[2] or 40.0),
                 bool(row[3] if row[3] is not None else True),
                 bool(row[4] if row[4] is not None else True),
                 False, # Hardcoded crypto_enabled to False
@@ -1298,32 +1298,25 @@ def main():
                     z_vel_lim = 0.05
 
                 action = "NONE"
-                if Z_ENTRY_THRESHOLD <= 0.5:
-                    # Raw Test Mode: Bypass all safety filters for instant verification
-                    if z < -Z_ENTRY_THRESHOLD:
-                        action = "BUY_SPREAD"
-                    elif z > Z_ENTRY_THRESHOLD:
-                        action = "SELL_SPREAD"
-                else:
-                    # Safe Mode: Evaluate enabled protections (Volatility, Knife Velocity, OBI, SMC)
-                    effective_dyn_z = dynamic_z_entry if VOLATILITY_FILTER_ENABLED else Z_ENTRY_THRESHOLD
-                    
-                    pass_z_buy = (z < -effective_dyn_z)
-                    pass_z_sell = (z > effective_dyn_z)
-                    
-                    pass_vel_buy = (z_velocity > -z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
-                    pass_vel_sell = (z_velocity < z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
-                    
-                    pass_obi_buy = obi_buy_pass if OBI_ENABLED else True
-                    pass_obi_sell = obi_sell_pass if OBI_ENABLED else True
-                    
-                    pass_smc_buy = in_bullish_zone if REQUIRE_SMC_CONFLUENCE else True
-                    pass_smc_sell = in_bearish_zone if REQUIRE_SMC_CONFLUENCE else True
-                    
-                    if pass_z_buy and pass_vel_buy and pass_obi_buy and pass_smc_buy:
-                        action = "BUY_SPREAD"
-                    elif pass_z_sell and pass_vel_sell and pass_obi_sell and pass_smc_sell:
-                        action = "SELL_SPREAD"
+                # Evaluate active protections based strictly on Dashboard Toggles (at all Z-thresholds)
+                effective_dyn_z = dynamic_z_entry if VOLATILITY_FILTER_ENABLED else Z_ENTRY_THRESHOLD
+                
+                pass_z_buy = (z < -effective_dyn_z)
+                pass_z_sell = (z > effective_dyn_z)
+                
+                pass_vel_buy = (z_velocity > -z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
+                pass_vel_sell = (z_velocity < z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
+                
+                pass_obi_buy = obi_buy_pass if OBI_ENABLED else True
+                pass_obi_sell = obi_sell_pass if OBI_ENABLED else True
+                
+                pass_smc_buy = in_bullish_zone if REQUIRE_SMC_CONFLUENCE else True
+                pass_smc_sell = in_bearish_zone if REQUIRE_SMC_CONFLUENCE else True
+                
+                if pass_z_buy and pass_vel_buy and pass_obi_buy and pass_smc_buy:
+                    action = "BUY_SPREAD"
+                elif pass_z_sell and pass_vel_sell and pass_obi_sell and pass_smc_sell:
+                    action = "SELL_SPREAD"
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
                 base_z_triggered = (z < -Z_ENTRY_THRESHOLD) or (z > Z_ENTRY_THRESHOLD)
