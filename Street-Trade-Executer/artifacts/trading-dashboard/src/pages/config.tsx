@@ -20,6 +20,7 @@ import { Zap, ZapOff } from "lucide-react";
 const configSchema = z.object({
   activePair: z.string().min(1, "Pair is required"),
   slPips: z.coerce.number().min(5).max(500),
+  tpPips: z.coerce.number().min(5).max(1000),
   zEntryThreshold: z.coerce.number().min(0.1).max(5.0),
   smcEnabled: z.boolean(),
   autoExecute: z.boolean(),
@@ -142,7 +143,8 @@ export default function Config() {
     resolver: zodResolver(configSchema),
     defaultValues: {
       activePair: "",
-      slPips: 10,
+      slPips: 35,
+      tpPips: 70,
       zEntryThreshold: 2.0,
       smcEnabled: true,
       autoExecute: true,
@@ -161,6 +163,7 @@ export default function Config() {
       ? {
           activePair: config.activePair,
           slPips: config.slPips,
+          tpPips: (config as any).tpPips ?? 70,
           zEntryThreshold: config.zEntryThreshold,
           smcEnabled: config.smcEnabled,
           autoExecute: config.autoExecute,
@@ -387,22 +390,41 @@ export default function Config() {
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="slPips"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Stop Loss (Pips)</FormLabel>
-                        <FormControl>
-                          <Input type="number" {...field} className="font-mono border-border bg-background" />
-                        </FormControl>
-                        <FormDescription className="text-xs">
-                          Min 5 pips. Broker rejects &lt;5 pips.
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="slPips"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Stop Loss (Pips)</FormLabel>
+                          <FormControl>
+                            <Input type="number" {...field} className="font-mono border-border bg-background" />
+                          </FormControl>
+                          <FormDescription className="text-xs">
+                            Stop Loss in pips (e.g. 35 pips for safe breathing room).
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="tpPips"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Take Profit (Pips)</FormLabel>
+                          <FormControl>
+                            <Input type="number" {...field} className="font-mono border-border bg-background" />
+                          </FormControl>
+                          <FormDescription className="text-xs">
+                            Take Profit in pips (e.g. 70 pips for 1:2 R:R main target).
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
                   <FormField
                     control={form.control}

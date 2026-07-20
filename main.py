@@ -189,8 +189,8 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
         for row in commands:
             cmd_id, symbol, direction, lots_val, cmd_sl, cmd_tp, comment = row
             lots = float(lots_val or 0.01)
-            cmd_sl = float(cmd_sl) if cmd_sl is not None else sl_pips
-            cmd_tp = float(cmd_tp) if cmd_tp is not None else cmd_sl * 2
+            cmd_sl = float(cmd_sl) if cmd_sl is not None else SL_PIPS
+            cmd_tp = float(cmd_tp) if cmd_tp is not None else TP_PIPS
             comment = comment or f"MANUAL_{direction}"
             manual_signal_id = None
             if comment and "JS_HEDGE_MANUAL_" in comment:
