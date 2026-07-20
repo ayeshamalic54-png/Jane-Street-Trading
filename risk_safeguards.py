@@ -97,9 +97,10 @@ def get_or_create_daily_start_equity(current_equity):
             start_equity = float(row[0])
             logger.info(f"Retrieved daily starting equity for account {current_login} from database: ${start_equity:.2f}")
             
-            # Reset if no trades taken today OR if account/login changed
-            trades_today = get_trades_count_today()
-            if (trades_today == 0 or login_changed) and abs(start_equity - current_equity) > 0.01:
+            # Reset if no open trades currently active OR if account/login changed
+            from database import get_open_trades_count
+            open_count = get_open_trades_count()
+            if (open_count == 0 or login_changed) and abs(start_equity - current_equity) > 0.01:
                 cur.execute(
                     "UPDATE daily_metrics SET start_equity = %s, current_equity = %s WHERE trading_date = %s AND mt5_login = %s",
                     (current_equity, current_equity, today, current_login)
