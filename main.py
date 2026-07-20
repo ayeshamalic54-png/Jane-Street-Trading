@@ -184,6 +184,14 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
             cmd_sl = float(cmd_sl) if cmd_sl is not None else sl_pips
             cmd_tp = float(cmd_tp) if cmd_tp is not None else cmd_sl * 2
             comment = comment or f"MANUAL_{direction}"
+            manual_signal_id = None
+            if comment and "JS_HEDGE_MANUAL_" in comment:
+                try:
+                    manual_signal_id = log_signal(
+                        symbol, "NONE", 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, f"MANUAL_{direction}"
+                    )
+                except Exception:
+                    pass
 
             try:
                 cat = get_symbol_category(symbol)
@@ -235,7 +243,7 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                         tp1=tp1,
                         tp2=tp2,
                         tp3=tp3,
-                        signal_id=None
+                        signal_id=manual_signal_id
                     )
                     err_msg = None if ok else "Binance order rejected"
                 else:
@@ -268,7 +276,7 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                         tp1=tp1,
                         tp2=tp2,
                         tp3=tp3,
-                        signal_id=None
+                        signal_id=manual_signal_id
                     )
                     err_msg = None if ok else "MT5 order rejected"
                     
@@ -1047,8 +1055,8 @@ def main():
             is_demo = getattr(acc_info, "trade_mode", 0) in (0, 1)  # 0 is DEMO, 1 is CONTEST
 
             if is_limit_breached:
-                if not RISK_LIMITS_ENABLED:
-                    logger.info(f"Daily drawdown limit breached ({daily_loss_p:.2f}%), but bypassing because Risk Limits are disabled.")
+                if is_demo or not RISK_LIMITS_ENABLED:
+                    logger.info(f"Daily drawdown limit breached ({daily_loss_p:.2f}%), but bypassing on Demo/Contest account or when Risk Limits are disabled.")
                     is_halted = False
                 else:
                     is_halted = True
@@ -1383,7 +1391,7 @@ def main():
                 if (best_cat_a == "crypto" or is_spread_valid(best_s_a)) and (best_cat_b == "crypto" or is_spread_valid(best_s_b)):
                     
                     # Machine Learning Filter evaluation
-                    if ML_MODEL is not None:
+                    if ML_MODEL is not None and os.getenv("USE_ML_FILTER", "True").lower() in ("true", "1", "yes"):
                         now_dt = datetime.datetime.now()
                         feature_vector = [
                             float(best_sig["z_score"]),
