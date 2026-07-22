@@ -1035,16 +1035,13 @@ def main():
                 cur.close()
                 conn.close()
                 
-                # If 0 trades today and 0 open positions, and balance has mismatch > $0.01:
-                if trades_today_val == 0 and open_trades_count == 0 and abs(db_initial - float(acc_info.equity)) > 0.01:
-                    startup_mismatch = True
             except Exception as e:
                 logger.error(f"Error checking startup metrics sync: {e}")
                 
             login_changed = (active_login_id is not None and active_login_id != current_login)
             
-            if login_changed or startup_mismatch:
-                logger.info(f"Syncing metrics (login_changed={login_changed}, startup_mismatch={startup_mismatch}). Resetting metrics to {acc_info.equity:.2f}")
+            if login_changed:
+                logger.info(f"Syncing metrics (login_changed={login_changed}). Resetting metrics to {acc_info.equity:.2f} due to account switch.")
                 from database import reset_database_metrics_for_new_account
                 reset_database_metrics_for_new_account(current_login, acc_info.equity)
                 
