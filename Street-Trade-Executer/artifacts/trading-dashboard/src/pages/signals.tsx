@@ -46,7 +46,7 @@ export default function Signals() {
     const betaVal = Number(sig.beta ?? 1.0);
     const betaPositive = (betaVal >= 0);
     
-    let dirB = "BUY";
+    let dirB: "BUY" | "SELL" | "CLOSE" = "BUY";
     if (isBuy) {
       // BUY_SPREAD: BUY A, SELL B if beta > 0. If beta < 0, BUY B!
       dirB = betaPositive ? "SELL" : "BUY";
