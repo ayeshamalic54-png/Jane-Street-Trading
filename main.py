@@ -780,8 +780,26 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
     max_holding_seconds = half_life_bars * 300.0 * 2.5  # M5 bars * 300s/bar * 2.5 multiplier
 
     for sig_id, trades in signal_groups.items():
-        leg_a_trades = [t for t in trades if t["symbol"].upper() == symbol_a.upper()]
-        leg_b_trades = [t for t in trades if t["symbol"].upper() == symbol_b.upper()]
+        sym_a = None
+        sym_b = None
+        try:
+            conn_sig = get_connection()
+            cur_sig = conn_sig.cursor()
+            cur_sig.execute("SELECT symbol_a, symbol_b FROM signals WHERE id = %s", (int(sig_id),))
+            sig_row = cur_sig.fetchone()
+            cur_sig.close()
+            conn_sig.close()
+            if sig_row:
+                sym_a, sym_b = sig_row
+        except Exception as es:
+            logger.error(f"Error querying symbols for signal_id {sig_id}: {es}")
+
+        if not sym_a or not sym_b:
+            sym_a = symbol_a
+            sym_b = symbol_b
+
+        leg_a_trades = [t for t in trades if t["symbol"].upper() == sym_a.upper()]
+        leg_b_trades = [t for t in trades if t["symbol"].upper() == sym_b.upper()]
 
         open_leg_a_trades = [t for t in leg_a_trades if t["status"] == 'OPEN']
         open_leg_b_trades = [t for t in leg_b_trades if t["status"] == 'OPEN']
@@ -796,61 +814,69 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if not open_leg_a_trades:
             continue
 
-        is_buy_spread = (open_leg_a_trades[0]["order_type"] == "BUY")
-        exit_triggered = False
-        exit_reason = ""
+        is_active_pair = (sym_a.upper() == symbol_a.upper() and sym_b.upper() == symbol_b.upper())
+        if is_active_pair:
+            z_ent_val, z_ex_val, z_sl_val, sl_atr_m = get_strategy_parameters(sym_a)
 
-        # Check statistical half-life time exit first
-        for t in trades:
-            entry_t = t["entry_time"]
-            if entry_t is not None:
-                elapsed = (datetime.datetime.now() - entry_t).total_seconds()
-                if elapsed > max_holding_seconds:
-                    exit_triggered = True
-                    exit_reason = f"OU_HALF_LIFE_EXPIRATION (elapsed {elapsed/60:.1f}m > {max_holding_seconds/60:.1f}m)"
-                    break
+            # Compute Ornstein-Uhlenbeck statistical half-life limit
+            half_life_bars = 45.0
+            if kf is not None:
+                from math_models import calculate_half_life
+                half_life_bars = calculate_half_life(kf.spread_history)
+            max_holding_seconds = half_life_bars * 300.0 * 2.5
 
-        # Check standard Z-score exit conditions if time exit didn't trigger
-        if not exit_triggered:
-            if is_buy_spread:
-                if z_score >= z_ex_val:
-                    exit_triggered = True
-                    exit_reason = f"Z_TP_REVERSION (z={z_score:.2f} >= {z_ex_val})"
-                elif z_score <= -z_sl_val:
-                    exit_triggered = True
-                    exit_reason = f"Z_STOP_LOSS (z={z_score:.2f} <= {-z_sl_val})"
-            else:
-                if z_score <= -z_ex_val:
-                    exit_triggered = True
-                    exit_reason = f"Z_TP_REVERSION (z={z_score:.2f} <= {-z_ex_val})"
-                elif z_score >= z_sl_val:
-                    exit_triggered = True
-                    exit_reason = f"Z_STOP_LOSS (z={z_score:.2f} >= {z_sl_val})"
-
-        # Safeguard: FundedNext Quick Strike Rule (trades closed under 30s violate consistency)
-        # We ensure a minimum holding time of 31 seconds before any exit is executed
-        min_hold_ok = True
-        for t in trades:
-            entry_t = t["entry_time"]
-            if entry_t is not None:
-                elapsed = (datetime.datetime.now() - entry_t).total_seconds()
-                if elapsed < 35.0:
-                    min_hold_ok = False
-                    break
-
-        if exit_triggered and not min_hold_ok:
+            is_buy_spread = (open_leg_a_trades[0]["order_type"] == "BUY")
             exit_triggered = False
-            logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 35s minimum hold time (FundedNext compliance).")
+            exit_reason = ""
 
-        if exit_triggered:
-            logger.info(f"Dynamic exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all positions.")
-            # Close all Leg A parts
-            for t_a in open_leg_a_trades:
-                close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
-            # Close all Leg B parts
-            for t_b in open_leg_b_trades:
-                close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
-            continue
+            # Check statistical half-life time exit first
+            for t in trades:
+                entry_t = t["entry_time"]
+                if entry_t is not None:
+                    elapsed = (datetime.datetime.now() - entry_t).total_seconds()
+                    if elapsed > max_holding_seconds:
+                        exit_triggered = True
+                        exit_reason = f"OU_HALF_LIFE_EXPIRATION (elapsed {elapsed/60:.1f}m > {max_holding_seconds/60:.1f}m)"
+                        break
+
+            # Check standard Z-score exit conditions if time exit didn't trigger
+            if not exit_triggered:
+                if is_buy_spread:
+                    if z_score >= z_ex_val:
+                        exit_triggered = True
+                        exit_reason = f"Z_TP_REVERSION (z={z_score:.2f} >= {z_ex_val})"
+                    elif z_score <= -z_sl_val:
+                        exit_triggered = True
+                        exit_reason = f"Z_STOP_LOSS (z={z_score:.2f} <= {-z_sl_val})"
+                else:
+                    if z_score <= -z_ex_val:
+                        exit_triggered = True
+                        exit_reason = f"Z_TP_REVERSION (z={z_score:.2f} <= {-z_ex_val})"
+                    elif z_score >= z_sl_val:
+                        exit_triggered = True
+                        exit_reason = f"Z_STOP_LOSS (z={z_score:.2f} >= {z_sl_val})"
+
+            # Safeguard: FundedNext Consistency Rule (trades closed under 30s)
+            min_hold_ok = True
+            for t in trades:
+                entry_t = t["entry_time"]
+                if entry_t is not None:
+                    elapsed = (datetime.datetime.now() - entry_t).total_seconds()
+                    if elapsed < 35.0:
+                        min_hold_ok = False
+                        break
+
+            if exit_triggered and not min_hold_ok:
+                exit_triggered = False
+                logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 35s minimum hold time.")
+
+            if exit_triggered:
+                logger.info(f"Dynamic exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all positions.")
+                for t_a in open_leg_a_trades:
+                    close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
+                for t_b in open_leg_b_trades:
+                    close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+                continue
 
         # 2. Sync MT5 open positions with database so closed TP1/TP2 tickets update immediately
         sync_mt5_open_positions_with_db()
@@ -870,8 +896,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             logger.error(f"Error querying all trades for signal_id {sig_id}: {e}")
             continue
 
-        db_leg_a = [t for t in all_db_trades if t[1].upper() == symbol_a.upper()]
-        db_leg_b = [t for t in all_db_trades if t[1].upper() == symbol_b.upper()]
+        db_leg_a = [t for t in all_db_trades if t[1].upper() == sym_a.upper()]
+        db_leg_b = [t for t in all_db_trades if t[1].upper() == sym_b.upper()]
 
         total_a_parts = len(db_leg_a)
         closed_a_parts = len([t for t in db_leg_a if t[2] == 'CLOSED'])
@@ -892,7 +918,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
                     close_vol = min(remaining_to_close_b, t_b_lots)
                     logger.info(f"Syncing Hedge: {closed_a_parts}/{total_a_parts} Leg A closed. Partially closing Leg B {t_b_ticket} by {close_vol:.3f} lots.")
-                    close_single_trade(symbol_b, t_b_ticket, close_vol, t_b_order_type)
+                    close_single_trade(sym_b, t_b_ticket, close_vol, t_b_order_type)
 
 def get_symbol_category(symbol: str) -> str:
     s = symbol.upper()
