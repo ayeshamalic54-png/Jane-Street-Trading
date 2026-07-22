@@ -8,36 +8,48 @@ class KalmanFilterRegression:
     at every tick, outputting the normalized z-score of the spread.
     """
     def __init__(self, transition_covariance=1e-5, observation_covariance=1e-3):
-        # State mean vector: [beta, alpha]^T
+        # Reference prices for normalization
+        self.ref_x = None
+        self.ref_y = None
+        
+        # State mean vector: [beta_norm, alpha_norm]^T
         self.state_mean = np.zeros(2)
-        # State covariance matrix (initial high uncertainty)
+        # State covariance matrix
         self.state_covariance = np.identity(2) * 1.0
         
-        # Process noise covariance (Q) - how fast beta/alpha are expected to drift
+        # Process noise covariance (Q)
         self.Q = np.identity(2) * transition_covariance
-        # Measurement noise covariance (R) - variance of spread around regression line
+        # Measurement noise covariance (R)
         self.R = observation_covariance
         
         # History lists for velocity and volatility calculations
         self.z_history = []
-        self.spread_history = []
+        self.spread_history = []      # Normalized spread history
+        self.raw_spread_history = []  # Raw spread history
 
     def update(self, x, y):
         """
         Runs one step of the Kalman Filter prediction and update loop.
         x: Independent asset price (e.g. Asset B)
         y: Dependent asset price (e.g. Asset A)
-        Returns: (beta, alpha, spread, z_score)
+        Returns: (beta_actual, alpha_actual, raw_spread, z_score)
         """
-        # Observation matrix H = [x, 1]
-        H = np.array([[x, 1.0]])
+        if self.ref_x is None:
+            self.ref_x = float(x) if x > 0 else 1.0
+            self.ref_y = float(y) if y > 0 else 1.0
+            
+        norm_x = x / self.ref_x
+        norm_y = y / self.ref_y
+        
+        # Observation matrix H = [norm_x, 1]
+        H = np.array([[norm_x, 1.0]])
         
         # 1. PREDICT state
         state_covariance_pred = self.state_covariance + self.Q
         
-        # 2. UPDATE state using measurement y
+        # 2. UPDATE state using normalized measurement
         y_pred = np.dot(H, self.state_mean)[0]
-        y_err = y - y_pred  # Spread (residual error)
+        y_err = norm_y - y_pred  # Normalized spread (residual error)
         
         # Innovation (residual) covariance
         S = np.dot(H, np.dot(state_covariance_pred, H.T))[0, 0] + self.R
@@ -49,8 +61,13 @@ class KalmanFilterRegression:
         self.state_mean = self.state_mean + K.flatten() * y_err
         self.state_covariance = state_covariance_pred - np.dot(K, np.dot(H, state_covariance_pred))
         
-        beta = self.state_mean[0]
-        alpha = self.state_mean[1]
+        beta_norm = self.state_mean[0]
+        alpha_norm = self.state_mean[1]
+        
+        # Scale parameters back to actual price scale
+        beta_actual = beta_norm * (self.ref_y / self.ref_x)
+        alpha_actual = alpha_norm * self.ref_y
+        raw_spread = y - (beta_actual * x + alpha_actual)
         
         # Standard deviation of the spread (residual)
         std_dev = np.sqrt(S)
@@ -59,11 +76,13 @@ class KalmanFilterRegression:
         # Track histories
         self.z_history.append(z_score)
         self.spread_history.append(y_err)
+        self.raw_spread_history.append(raw_spread)
         if len(self.z_history) > 1000:
             self.z_history.pop(0)
             self.spread_history.pop(0)
+            self.raw_spread_history.pop(0)
             
-        return beta, alpha, y_err, z_score
+        return beta_actual, alpha_actual, raw_spread, z_score
 
     def get_velocity(self, k=3) -> float:
         """Calculates the change in z-score over the last k periods."""

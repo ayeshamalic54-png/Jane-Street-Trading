@@ -379,6 +379,23 @@ CANDIDATE_PAIRS = {
     ]
 }
 
+EXPECTED_BETA_SIGN = {
+    "EURUSD/GBPUSD": 1,
+    "EURUSD/USDJPY": -1,
+    "GBPUSD/USDJPY": -1,
+    "AUDUSD/NZDUSD": 1,
+    "EURUSD/USDCHF": -1,
+    "GBPUSD/USDCHF": -1,
+    "XAUUSD/XAGUSD": 1,
+    "BTCUSDT/ETHUSDT": 1,
+    "SOLUSDT/BTCUSDT": 1,
+    "ETHUSDT/SOLUSDT": 1,
+    "AAPL/MSFT": 1,
+    "MSFT/GOOGL": 1,
+    "NVDA/AMD": 1,
+    "US500/NAS100": 1
+}
+
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
     """
     Runs a historical Kalman filter spread simulation on the last 150 bars
@@ -567,15 +584,8 @@ def get_atr(symbol: str, timeframe, count=30) -> float:
 
 
 def get_kf_parameters(symbol: str):
-    cat = get_symbol_category(symbol)
-    if cat == "crypto":
-        return 1e-4, 1e4
-    elif cat == "metals":
-        return 1e-10, 1e3
-    elif cat == "indices":
-        return 1e-10, 1e5
-    else: # forex/default
-        return 1e-10, 1e-7
+    # Normalized prices use standard optimal scale-independent parameters
+    return 1e-10, 1e-7
 
 
 def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -> float:
@@ -603,6 +613,55 @@ def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -
         logger.warning(f"Failed to calculate ATR safeguard for {symbol}: {e}")
         
     return base_sl
+
+def sync_mt5_open_positions_with_db():
+    """
+    Syncs open MT5 tickets with the database trades table.
+    If an MT5 ticket was closed (e.g. TP1/TP2 hit), marks it as 'CLOSED' in the database
+    so hedge scale-out sync (partially closing Leg B) triggers immediately!
+    """
+    try:
+        if not mt5.initialize():
+            return
+            
+        positions = mt5.positions_get()
+        if positions is None:
+            # Transient connection lag - abort database sync to prevent false trade closures
+            return
+        open_tickets = {p.ticket for p in positions}
+        
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT ticket, symbol, lots, entry_price, order_type FROM trades WHERE status = 'OPEN'")
+        db_open_trades = cur.fetchall()
+        
+        for ticket, symbol, lots, entry_price, order_type in db_open_trades:
+            # Skip non-MT5 dummy tickets
+            if ticket < 1000:
+                continue
+            if ticket not in open_tickets:
+                # Order closed on MT5 (TP or SL hit). Fetch close price from history
+                history = mt5.history_deals_get(position=ticket)
+                close_price = float(entry_price)
+                profit = 0.0
+                close_time = datetime.datetime.now()
+                
+                if history:
+                    for deal in history:
+                        if deal.entry == mt5.DEAL_ENTRY_OUT:
+                            close_price = float(deal.price)
+                            profit = float(deal.profit)
+                            close_time = datetime.datetime.fromtimestamp(deal.time)
+                            break
+                            
+                log_trade_exit(ticket, close_price, profit, close_time)
+                logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) detected closed on MT5. Logged exit at {close_price:.5f}, profit: ${profit:.2f}")
+                
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error in sync_mt5_open_positions_with_db: {e}")
 
 def get_tp_distance(symbol: str, price: float, tp_pips_override: float = None) -> float:
     """
@@ -756,7 +815,10 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
             continue
 
-        # 2. Hedge scale-out sync:
+        # 2. Sync MT5 open positions with database so closed TP1/TP2 tickets update immediately
+        sync_mt5_open_positions_with_db()
+
+        # 3. Hedge scale-out sync:
         try:
             conn = get_connection()
             cur = conn.cursor()
@@ -1341,6 +1403,17 @@ def main():
                     action = "BUY_SPREAD"
                 elif pass_z_sell and pass_vel_sell and pass_obi_sell and pass_smc_sell:
                     action = "SELL_SPREAD"
+
+                # Validate beta sign and magnitude to prevent same-side hedge order anomalies
+                if action != "NONE":
+                    expected_sign = EXPECTED_BETA_SIGN.get(pk, 1)
+                    beta_sign = 1 if beta >= 0 else -1
+                    if beta_sign != expected_sign:
+                        logger.warning(f"Correlation anomaly for {pk}: estimated beta {beta:.4f} has wrong sign (expected {expected_sign}). Skipping signal.")
+                        action = "NONE"
+                    elif abs(beta) < 0.05:
+                        logger.warning(f"Hedge ratio too low for {pk}: beta {beta:.4f}. Skipping signal.")
+                        action = "NONE"
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
                 base_z_triggered = (z < -Z_ENTRY_THRESHOLD) or (z > Z_ENTRY_THRESHOLD)

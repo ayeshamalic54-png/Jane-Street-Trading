@@ -157,9 +157,18 @@ def get_rates_df(symbol, timeframe, count=200):
     resolved = resolve_broker_symbol(symbol)
     if not check_and_subscribe_symbol(resolved):
         return None
-    rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
-    if rates is None:
-        logger.error(f"Failed to fetch rates for {resolved} (requested: {symbol}). Error: {mt5.last_error()}")
+    
+    import time
+    rates = None
+    for attempt in range(4):
+        rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
+        if rates is not None and len(rates) > 0:
+            break
+        logger.warning(f"Rates for {resolved} not ready yet (attempt {attempt+1}/4). Waiting for chart download...")
+        time.sleep(1.0)
+        
+    if rates is None or len(rates) == 0:
+        logger.error(f"Failed to fetch rates for {resolved} (requested: {symbol}) after retries. Error: {mt5.last_error()}")
         return None
         
     df = pd.DataFrame(rates)

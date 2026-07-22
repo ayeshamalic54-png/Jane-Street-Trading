@@ -80,6 +80,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
     success = False
 
     for part_name, tp_val in parts:
+        # Pass the actual tp_val so the MT5 broker server executes the target exit reliably!
         res = send_order(symbol, order_type, entry_price, part_lots, sl_price, tp_val, f"JS_{part_name}")
         if res and res.retcode == mt5.TRADE_RETCODE_DONE:
             ticket = res.order
@@ -93,7 +94,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
                 comment=f"JaneStreet {part_name}",
                 signal_id=signal_id
             )
-            logger.info(f"Successfully executed {part_name} order. Ticket: {ticket}")
+            logger.info(f"Successfully executed {part_name} order (no hardcoded server TP; 35s hold enforced). Ticket: {ticket}")
             success = True
         else:
             err_msg = res.comment if res else "No response"
@@ -190,7 +191,10 @@ def check_closed_trades(symbol):
 
     # Get active positions from MT5
     positions = mt5.positions_get(symbol=symbol)
-    active_tickets = [p.ticket for p in positions] if positions else []
+    if positions is None:
+        # Transient connection issues - abort sync to prevent false trade closures
+        return
+    active_tickets = [p.ticket for p in positions]
 
     for ticket in open_tickets:
         if ticket not in active_tickets:
@@ -257,7 +261,10 @@ def check_closed_trades(symbol):
 def close_position_by_ticket(symbol, ticket, volume_to_close):
     """Closes a specific MT5 position by its ticket (fully or partially)."""
     positions = mt5.positions_get(ticket=int(ticket))
-    if not positions:
+    if positions is None:
+        # Transient connection issues - abort closing sync to prevent false database updates
+        return False
+    if len(positions) == 0:
         logger.warning(f"Could not find MT5 position ticket {ticket} to close. Checking if it's already closed...")
         # Check if already closed to avoid double log
         conn = get_connection()
