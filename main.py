@@ -694,6 +694,33 @@ def get_tp_distance(symbol: str, price: float, tp_pips_override: float = None) -
         return float(price * (pips / 100.0))
     else:
         return pips * get_pip_size(symbol)
+
+def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
+    """
+    Returns True if a trade for this symbol pair was closed in the last 30 minutes.
+    This acts as a restart-proof database-backed cooldown safeguard.
+    """
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        # Look for trades closed in the last 30 minutes
+        thirty_mins_ago = datetime.datetime.now() - datetime.timedelta(minutes=30)
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM trades 
+            WHERE (symbol = %s OR symbol = %s) 
+              AND (entry_time >= %s OR close_time >= %s)
+            """,
+            (symbol_a, symbol_b, thirty_mins_ago, thirty_mins_ago)
+        )
+        count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return count > 0
+    except Exception as e:
+        logger.error(f"Error checking db cooldown: {e}")
+        return False
+
 def get_strategy_parameters(symbol: str):
     cat = get_symbol_category(symbol)
     if cat == "metals":
@@ -1588,7 +1615,7 @@ def main():
                     COOLDOWN_DIRECTIONS[pk] = None
                     cooldown_dir = None
 
-                if action != "NONE" and cooldown_dir != action:
+                if action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved):
                     candidate_signals.append({
                         "pair": (s_a, s_b),
                         "action": action,
