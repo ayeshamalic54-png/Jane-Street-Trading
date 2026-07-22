@@ -150,52 +150,7 @@ export default function Signals() {
       return <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 rounded-sm font-mono text-[9px] px-1 py-0 h-4">H_OPEN</Badge>;
     }
     const profit = Number(trade.profit ?? 0);
-    const handleCopySignal = (sig: any) => {
-    const isBuy = sig.action === "BUY_SPREAD";
-    const details = getSignalDetails(sig);
-    const timeStr = format(new Date(sig.timestamp), "EEEE, dd/MM/yyyy, hh:mm:ss a");
-    
-    const actionEmoji = isBuy ? "🟢" : "🔴";
-    const legBDirection = isBuy ? "SELL" : "BUY";
-
-    const defaultLots = config?.defaultLots ?? 0.01;
-    const partLotsA = (defaultLots / 3.0).toFixed(2);
-    const totalLotsA = defaultLots.toFixed(2);
-    const lotsB = (defaultLots * Number(sig.beta ?? 1.0)).toFixed(2);
-
-    const text = `📢 *AWAIS JANE STREET QUANTUM ENGINE SIGNAL* 📢\n\n` +
-      `${actionEmoji} *ACTION:* ${sig.action} (${sig.symbolA} / ${sig.symbolB})\n` +
-      `⏱ *Time:* ${timeStr}\n` +
-      `📊 *Z-Score:* ${sig.zScore.toFixed(3)}\n\n` +
-      `🛡 *LEG A (${sig.symbolA}) - 3 Parts:*\n` +
-      `  📥 *Entry:* ${details.entry}\n` +
-      `  ⛔ *Stop Loss (SL):* ${details.sl}\n` +
-      `  🎯 *TP1:* ${details.tp1}\n` +
-      `  🎯 *TP2:* ${details.tp2}\n` +
-      `  🎯 *TP3:* ${details.tp3}\n` +
-      `  📦 *Lots:* 3 parts of ${partLotsA} (Total ${totalLotsA})\n\n` +
-      `⚖ *LEG B (${sig.symbolB}) - Hedge:*\n` +
-      `  📥 *Entry:* ${details.entryB}\n` +
-      `  ⛔ *Stop Loss (SL):* ${details.slB}\n` +
-      `  🎯 *TP:* Dynamic (Spread Reversion)\n` +
-      `  📦 *Lots:* ${lotsB}\n` +
-      `  📥 *Position:* ${legBDirection}`;
-
-    navigator.clipboard.writeText(text).then(() => {
-      toast({
-        title: "📋 Copied to Clipboard!",
-        description: "Signal text formatted for WhatsApp has been copied successfully.",
-      });
-    }).catch(() => {
-      toast({
-        title: "❌ Failed to Copy",
-        description: "Could not copy signal to clipboard.",
-        variant: "destructive"
-      });
-    });
-  };
-
-  return (
+    return (
       <Badge variant="outline" className={cn(
         "rounded-sm font-mono text-[9px] px-1 py-0 h-4",
         profit >= 0 ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-red-500/15 text-red-400 border-red-500/20"
@@ -211,12 +166,39 @@ export default function Signals() {
     const timeStr = format(new Date(sig.timestamp), "EEEE, dd/MM/yyyy, hh:mm:ss a");
     
     const actionEmoji = isBuy ? "🟢" : "🔴";
-    const legBDirection = isBuy ? "SELL" : "BUY";
+    
+    // Check if symbol A is metals/indices to assign category-specific lots if dashboard is 0.0
+    const getSymbolCategory = (sym: string): string => {
+      const s = sym.toUpperCase();
+      if (s.includes("XAU") || s.includes("XAG")) return "metals";
+      if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN") || s.includes("US500") || s.includes("US30") || s.includes("NAS100") || s.includes("GER30") || s.includes("UK100")) return "indices";
+      return "forex";
+    };
 
-    const defaultLots = config?.defaultLots ?? 0.01;
+    const category = getSymbolCategory(sig.symbolA);
+    let defaultLots = config?.defaultLots ?? 0.0;
+    if (defaultLots <= 0.0) {
+      if (category === "metals") defaultLots = 0.15;
+      else if (category === "indices") defaultLots = 0.60;
+      else defaultLots = 1.20; // forex
+    }
+
     const partLotsA = (defaultLots / 3.0).toFixed(2);
     const totalLotsA = defaultLots.toFixed(2);
-    const lotsB = (defaultLots * Number(sig.beta ?? 1.0)).toFixed(2);
+    
+    const betaVal = Number(sig.beta ?? 1.0);
+    const betaPositive = (betaVal >= 0);
+    
+    let legBDirection = "BUY";
+    if (isBuy) {
+      // BUY_SPREAD: BUY A, SELL B if beta > 0. If beta < 0 (negative correlation), BUY B to hedge!
+      legBDirection = betaPositive ? "SELL" : "BUY";
+    } else {
+      // SELL_SPREAD: SELL A, BUY B if beta > 0. If beta < 0 (negative correlation), SELL B to hedge!
+      legBDirection = betaPositive ? "BUY" : "SELL";
+    }
+
+    const lotsB = Math.max(0.01, Math.abs(defaultLots * betaVal)).toFixed(2);
 
     const text = `📢 *AWAIS JANE STREET QUANTUM ENGINE SIGNAL* 📢\n\n` +
       `${actionEmoji} *ACTION:* ${sig.action} (${sig.symbolA} / ${sig.symbolB})\n` +
