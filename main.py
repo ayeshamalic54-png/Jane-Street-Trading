@@ -1683,7 +1683,7 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0.0 else DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
+                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0.005 else DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             # Apply 3-part safeguard scaling correction
                             info_a_check = mt5.symbol_info(S_A)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
@@ -1741,7 +1741,7 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0.0 else DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
+                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0.005 else DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             # Apply 3-part safeguard scaling correction
                             info_a_check = mt5.symbol_info(S_A)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
