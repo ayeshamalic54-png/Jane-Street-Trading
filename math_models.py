@@ -7,13 +7,14 @@ class KalmanFilterRegression:
     Dynamically estimates the hedge ratio (beta) and spread intercept (alpha) 
     at every tick, outputting the normalized z-score of the spread.
     """
-    def __init__(self, transition_covariance=1e-5, observation_covariance=1e-3):
+    def __init__(self, transition_covariance=1e-5, observation_covariance=1e-3, initial_beta=1.0):
         # Reference prices for normalization
         self.ref_x = None
         self.ref_y = None
+        self.initial_beta = float(initial_beta)
         
         # State mean vector: [beta_norm, alpha_norm]^T
-        self.state_mean = np.zeros(2)
+        self.state_mean = np.array([1.0, 0.0]) # Will be re-scaled on first update
         # State covariance matrix
         self.state_covariance = np.identity(2) * 1.0
         
@@ -37,6 +38,9 @@ class KalmanFilterRegression:
         if self.ref_x is None:
             self.ref_x = float(x) if x > 0 else 1.0
             self.ref_y = float(y) if y > 0 else 1.0
+            # Initialize beta_norm to align with initial_beta on raw price scales
+            beta_norm_init = self.initial_beta * (self.ref_x / self.ref_y)
+            self.state_mean = np.array([beta_norm_init, 0.0])
             
         norm_x = x / self.ref_x
         norm_y = y / self.ref_y

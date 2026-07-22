@@ -435,7 +435,8 @@ def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit
         # Run Kalman
         q_cov, r_cov = get_kf_parameters(symbol_a)
         from math_models import KalmanFilterRegression
-        kf = KalmanFilterRegression(transition_covariance=q_cov, observation_covariance=r_cov)
+        init_beta_val = EXPECTED_BETA_SIGN.get(f"{symbol_a}/{symbol_b}", EXPECTED_BETA_SIGN.get(f"{symbol_b}/{symbol_a}", 1))
+        kf = KalmanFilterRegression(transition_covariance=q_cov, observation_covariance=r_cov, initial_beta=init_beta_val)
         
         z_scores = []
         for i in range(min_len):
@@ -508,7 +509,8 @@ def get_kf_for_pair(symbol_a, symbol_b):
     if pair_key not in KF_CACHE:
         q_cov, r_cov = get_kf_parameters(symbol_a)
         from math_models import KalmanFilterRegression
-        kf = KalmanFilterRegression(transition_covariance=q_cov, observation_covariance=r_cov)
+        init_beta_val = EXPECTED_BETA_SIGN.get(f"{symbol_a}/{symbol_b}", EXPECTED_BETA_SIGN.get(f"{symbol_b}/{symbol_a}", 1))
+        kf = KalmanFilterRegression(transition_covariance=q_cov, observation_covariance=r_cov, initial_beta=init_beta_val)
         
         # Warm up the filter with historical data
         try:
@@ -968,7 +970,8 @@ def main():
 
     acc_info = initialize_mt5()
     q_cov, r_cov = get_kf_parameters(GLOBAL_CONFIG["SYMBOL_A"])
-    kf = KalmanFilterRegression(transition_covariance=q_cov, observation_covariance=r_cov)
+    init_beta_val = EXPECTED_BETA_SIGN.get(f"{GLOBAL_CONFIG['SYMBOL_A']}/{GLOBAL_CONFIG['SYMBOL_B']}", 1)
+    kf = KalmanFilterRegression(transition_covariance=q_cov, observation_covariance=r_cov, initial_beta=init_beta_val)
 
     is_halted = False
     smc_update_counter = 0
