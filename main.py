@@ -832,7 +832,22 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             if sym_a.upper() == symbol_a.upper() and sym_b.upper() == symbol_b.upper():
                 z_score_for_pair = z_score
 
+        # Fetch the actual entry Z-score of the signal to calculate a relative Z Stop Loss
+        entry_z = 0.0
+        try:
+            conn_sig = get_connection()
+            cur_sig = conn_sig.cursor()
+            cur_sig.execute("SELECT z_score FROM signals WHERE id = %s", (int(sig_id),))
+            sig_row = cur_sig.fetchone()
+            cur_sig.close()
+            conn_sig.close()
+            if sig_row:
+                entry_z = float(sig_row[0] or 0.0)
+        except Exception as es:
+            logger.error(f"Error querying entry z_score for signal_id {sig_id}: {es}")
+
         z_ent_val, z_ex_val, z_sl_val, sl_atr_m = get_strategy_parameters(sym_a)
+        effective_z_sl = max(z_sl_val, abs(entry_z) + 1.8)
 
         # Compute Ornstein-Uhlenbeck statistical half-life limit
         half_life_bars = 45.0
@@ -862,16 +877,16 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 if z_score_for_pair >= z_ex_val:
                     exit_triggered = True
                     exit_reason = f"Z_TP_REVERSION (z={z_score_for_pair:.2f} >= {z_ex_val})"
-                elif z_score_for_pair <= -z_sl_val:
+                elif z_score_for_pair <= -effective_z_sl:
                     exit_triggered = True
-                    exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} <= {-z_sl_val})"
+                    exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} <= {-effective_z_sl:.2f})"
             else:
                 if z_score_for_pair <= -z_ex_val:
                     exit_triggered = True
                     exit_reason = f"Z_TP_REVERSION (z={z_score_for_pair:.2f} <= {-z_ex_val})"
-                elif z_score_for_pair >= z_sl_val:
+                elif z_score_for_pair >= effective_z_sl:
                     exit_triggered = True
-                    exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} >= {z_sl_val})"
+                    exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} >= {effective_z_sl:.2f})"
 
         # Safeguard: FundedNext Consistency Rule (trades closed under 30s)
         min_hold_ok = True
