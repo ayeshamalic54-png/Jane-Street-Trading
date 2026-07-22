@@ -638,8 +638,7 @@ def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -
 def sync_mt5_open_positions_with_db():
     """
     Syncs open MT5 tickets with the database trades table.
-    If an MT5 ticket was closed (e.g. TP1/TP2 hit), marks it as 'CLOSED' in the database
-    so hedge scale-out sync (partially closing Leg B) triggers immediately!
+    Supports both Hedging and Netting accounts by checking symbol-based volumes.
     """
     try:
         if not mt5.initialize():
@@ -647,37 +646,75 @@ def sync_mt5_open_positions_with_db():
             
         positions = mt5.positions_get()
         if positions is None:
-            # Transient connection lag - abort database sync to prevent false trade closures
             return
-        open_tickets = {p.ticket for p in positions}
+            
+        # Group active positions by symbol (case-insensitive)
+        active_positions_by_symbol = {}
+        for p in positions:
+            active_positions_by_symbol[p.symbol.upper()] = p
         
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("SELECT ticket, symbol, lots, entry_price, order_type FROM trades WHERE status = 'OPEN'")
         db_open_trades = cur.fetchall()
         
-        for ticket, symbol, lots, entry_price, order_type in db_open_trades:
-            # Skip non-MT5 dummy tickets
-            if ticket < 1000:
-                continue
-            if ticket not in open_tickets:
-                # Order closed on MT5 (TP or SL hit). Fetch close price from history
-                history = mt5.history_deals_get(position=ticket)
-                close_price = float(entry_price)
-                profit = 0.0
-                close_time = datetime.datetime.now()
+        # Group db open trades by symbol
+        db_trades_by_symbol = {}
+        for row in db_open_trades:
+            sym = row[1].upper()
+            if sym not in db_trades_by_symbol:
+                db_trades_by_symbol[sym] = []
+            db_trades_by_symbol[sym].append(row)
+
+        for sym, db_rows in db_trades_by_symbol.items():
+            active_pos = active_positions_by_symbol.get(sym)
+            
+            if active_pos is None:
+                # No active position in MT5 for this symbol at all. All db trades for this symbol are closed.
+                for ticket, symbol, lots, entry_price, order_type in db_rows:
+                    if ticket < 1000:
+                        continue
+                    history = mt5.history_deals_get(position=ticket)
+                    close_price = float(entry_price)
+                    profit = 0.0
+                    close_time = datetime.datetime.now()
+                    if history:
+                        for deal in history:
+                            if deal.entry == mt5.DEAL_ENTRY_OUT:
+                                close_price = float(deal.price)
+                                profit = float(deal.profit)
+                                close_time = datetime.datetime.fromtimestamp(deal.time)
+                                break
+                    log_trade_exit(ticket, close_price, profit, close_time)
+                    logger.info(f"[MT5 SYNC] Netting close: Ticket {ticket} ({symbol}) detected closed (no active position).")
+            else:
+                # Active position exists in MT5. Verify volume to handle netting scale-down.
+                db_rows_sorted = sorted(db_rows, key=lambda x: x[0])
+                total_db_volume = sum(float(r[2]) for r in db_rows_sorted)
+                active_volume = float(active_pos.volume)
                 
-                if history:
-                    for deal in history:
-                        if deal.entry == mt5.DEAL_ENTRY_OUT:
-                            close_price = float(deal.price)
-                            profit = float(deal.profit)
-                            close_time = datetime.datetime.fromtimestamp(deal.time)
+                if active_volume < total_db_volume - 0.005:
+                    volume_to_close = total_db_volume - active_volume
+                    for ticket, symbol, lots, entry_price, order_type in db_rows_sorted:
+                        lots_val = float(lots)
+                        if volume_to_close >= lots_val - 0.005:
+                            history = mt5.history_deals_get(position=ticket)
+                            close_price = float(entry_price)
+                            profit = 0.0
+                            close_time = datetime.datetime.now()
+                            if history:
+                                for deal in history:
+                                    if deal.entry == mt5.DEAL_ENTRY_OUT:
+                                        close_price = float(deal.price)
+                                        profit = float(deal.profit)
+                                        close_time = datetime.datetime.fromtimestamp(deal.time)
+                                        break
+                            log_trade_exit(ticket, close_price, profit, close_time)
+                            logger.info(f"[MT5 SYNC] Netting scale-down: Ticket {ticket} ({symbol}) marked closed (volume reduced).")
+                            volume_to_close -= lots_val
+                        else:
                             break
                             
-                log_trade_exit(ticket, close_price, profit, close_time)
-                logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) detected closed on MT5. Logged exit at {close_price:.5f}, profit: ${profit:.2f}")
-                
         conn.commit()
         cur.close()
         conn.close()
