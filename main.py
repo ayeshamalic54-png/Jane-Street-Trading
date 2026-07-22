@@ -1483,9 +1483,10 @@ def main():
                 action = "NONE"
                 # Evaluate active protections based strictly on Dashboard Toggles (at all Z-thresholds)
                 effective_dyn_z = dynamic_z_entry if VOLATILITY_FILTER_ENABLED else Z_ENTRY_THRESHOLD
+                _, _, z_sl_val, _ = get_strategy_parameters(s_a_resolved)
                 
-                pass_z_buy = (z < -effective_dyn_z)
-                pass_z_sell = (z > effective_dyn_z)
+                pass_z_buy = (z < -effective_dyn_z) and (z > -z_sl_val)
+                pass_z_sell = (z > effective_dyn_z) and (z < z_sl_val)
                 
                 pass_vel_buy = (z_velocity > -z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
                 pass_vel_sell = (z_velocity < z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
