@@ -83,7 +83,49 @@ export default function Config() {
   const [currentPass, setCurrentPass] = useState("");
   const [newPass, setNewPass] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
-  const isReadOnly = localStorage.getItem("wasee_role") === "user";
+  const isReadOnly = localStorage.getItem("wasee_role")?.toLowerCase() === "user";
+  const [userNewPass, setUserNewPass] = useState("");
+  const [userConfirmPass, setUserConfirmPass] = useState("");
+
+  const handleChangeUserPassword = async () => {
+    if (userNewPass !== userConfirmPass) {
+      toast({
+        title: "Passwords Mismatch",
+        description: "User new password and confirmation password do not match.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/config/user-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newUserPassword: userNewPass }),
+      });
+
+      if (res.ok) {
+        toast({
+          title: "User Password Updated",
+          description: "User password updated successfully in the database.",
+        });
+        setUserNewPass("");
+        setUserConfirmPass("");
+      } else {
+        toast({
+          title: "Update Failed",
+          description: "Could not update user password.",
+          variant: "destructive"
+        });
+      }
+    } catch (e) {
+      toast({
+        title: "Error occurred",
+        description: "An error occurred while updating the password.",
+        variant: "destructive"
+      });
+    }
+  };
 
   const handleChangePassword = async () => {
     if (newPass !== confirmPass) {
@@ -779,6 +821,50 @@ export default function Config() {
               </div>
             </CardContent>
           </Card>
+
+          {/* USER PASSWORD CHANGE SECTION (ADMIN ONLY) */}
+          {!isReadOnly && (
+            <Card className="bg-card border-border mt-6">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm uppercase tracking-wider text-muted-foreground">User Security Settings</CardTitle>
+                <CardDescription className="text-xs">
+                  Update the login password for the read-only User account.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="max-w-md space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono block">New User Password</label>
+                    <Input 
+                      type="password" 
+                      placeholder="••••••••" 
+                      value={userNewPass}
+                      onChange={(e) => setUserNewPass(e.target.value)}
+                      className="font-mono text-xs border-border bg-zinc-950/40 text-foreground"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono block">Confirm New User Password</label>
+                    <Input 
+                      type="password" 
+                      placeholder="••••••••" 
+                      value={userConfirmPass}
+                      onChange={(e) => setUserConfirmPass(e.target.value)}
+                      className="font-mono text-xs border-border bg-zinc-950/40 text-foreground"
+                    />
+                  </div>
+                  <Button 
+                    type="button" 
+                    onClick={handleChangeUserPassword}
+                    disabled={!userNewPass || !userConfirmPass}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs px-4 h-9 font-bold"
+                  >
+                    CHANGE USER PASSWORD
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </form>
       </Form>
     </div>

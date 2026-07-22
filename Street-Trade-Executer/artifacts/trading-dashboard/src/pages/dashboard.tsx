@@ -92,7 +92,7 @@ import { useRef } from "react";
 
 export default function Dashboard() {
   const { toast } = useToast();
-  const isReadOnly = localStorage.getItem("wasee_role") === "user";
+  const isReadOnly = localStorage.getItem("wasee_role")?.toLowerCase() === "user";
   const queryClient = useQueryClient();
   const [manualSymbol, setManualSymbol] = useState("");
   const [selectedChartSymbol, setSelectedChartSymbol] = useState("EURUSD");

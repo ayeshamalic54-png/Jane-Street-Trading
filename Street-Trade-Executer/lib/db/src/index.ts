@@ -39,6 +39,7 @@ export const botStateTable = pgTable("bot_state", {
   maxTrades: integer("max_trades").default(3),
   adminUsername: varchar("admin_username", { length: 50 }).default("wasee"),
   adminPassword: varchar("admin_password", { length: 100 }).default("AWais1133@"),
+  userPassword: varchar("user_password", { length: 100 }).default("user123"),
   initialBalance: numeric("initial_balance", { precision: 15, scale: 2 }).default("5025.76"),
   overallDrawdown: numeric("overall_drawdown", { precision: 5, scale: 2 }).default("0.00"),
   maxEquityPeak: numeric("max_equity_peak", { precision: 15, scale: 2 }).default("5025.76"),

@@ -396,6 +396,14 @@ EXPECTED_BETA_SIGN = {
     "US500/NAS100": 1
 }
 
+DEFAULT_LOT_SIZES = {
+    "metals": 0.15,
+    "forex": 1.20,
+    "indices": 0.60,
+    "stocks": 6.00,
+    "crypto": 0.06
+}
+
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
     """
     Runs a historical Kalman filter spread simulation on the last 150 bars
@@ -587,7 +595,17 @@ def get_atr(symbol: str, timeframe, count=30) -> float:
 
 def get_kf_parameters(symbol: str):
     # Normalized prices use standard optimal scale-independent parameters
-    return 1e-10, 1e-7
+    cat = get_symbol_category(symbol)
+    if cat == "metals":
+        return 1e-8, 1e-5
+    elif cat == "indices":
+        return 1e-7, 1e-4
+    elif cat == "crypto":
+        return 1e-8, 1e-5
+    elif cat == "forex":
+        return 1e-9, 1e-6
+    else: # stocks/default
+        return 1e-7, 1e-4
 
 
 def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -> float:
@@ -1604,7 +1622,7 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0 else calculate_lots(S_A, sl_dist, acc_info)
+                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0.0 else DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             # Apply 3-part safeguard scaling correction
                             info_a_check = mt5.symbol_info(S_A)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
@@ -1662,7 +1680,7 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0 else calculate_lots(S_A, sl_dist, acc_info)
+                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0.0 else DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             # Apply 3-part safeguard scaling correction
                             info_a_check = mt5.symbol_info(S_A)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01

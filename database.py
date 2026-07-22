@@ -213,6 +213,16 @@ def initialize_database():
             conn.commit()
             print("Added admin_password column to bot_state table.")
 
+        # Add user_password column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='user_password'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN user_password VARCHAR(100) DEFAULT 'user123'")
+            conn.commit()
+            print("Added user_password column to bot_state table.")
+
         cur.close()
         print("Database initialized successfully!")
     except Exception as e:
