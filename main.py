@@ -149,7 +149,7 @@ def fetch_db_config():
                 bool(row[8] if row[8] is not None else True),
                 bool(row[9] if row[9] is not None else True),
                 float(row[10] or 2.0),
-                float(row[11] or 0.01),
+                float(row[11]) if row[11] is not None else 0.01,
                 int(row[12] or 3),
                 bool(row[13] if row[13] is not None else True),
                 bool(row[14] if row[14] is not None else True),
