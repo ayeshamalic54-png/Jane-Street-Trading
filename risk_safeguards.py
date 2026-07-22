@@ -172,7 +172,7 @@ def check_drawdown_limit(current_equity):
         logger.info(f"Daily drawdown limit reached: {daily_loss_percent:.2f}% (Limit: {MAX_DAILY_LOSS_PERCENT}%)")
         return True, daily_loss_percent
         
-    return False, daily_loss_percent
+    return False, max(0.0, daily_loss_percent)
 
 def get_trades_count_today():
     """Returns the number of trades taken today with caching."""
