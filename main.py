@@ -726,23 +726,36 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
     try:
         conn = get_connection()
         cur = conn.cursor()
+        # Find signal_ids that have at least one OPEN trade for these symbols
         cur.execute(
-            "SELECT ticket, symbol, order_type, lots, comment, signal_id, entry_time FROM trades WHERE status = 'OPEN' AND symbol IN (%s, %s)",
+            "SELECT DISTINCT signal_id FROM trades WHERE status = 'OPEN' AND symbol IN (%s, %s) AND signal_id IS NOT NULL",
             (symbol_a, symbol_b)
         )
-        open_trades = cur.fetchall()
+        active_signal_ids = [row[0] for row in cur.fetchall()]
+        
+        if not active_signal_ids:
+            cur.close()
+            conn.close()
+            return
+
+        # Fetch ALL trades (both OPEN and CLOSED) for these active signal_ids so we can detect closed Leg A parts
+        cur.execute(
+            "SELECT ticket, symbol, order_type, lots, comment, signal_id, entry_time, status FROM trades WHERE signal_id IN %s",
+            (tuple(active_signal_ids),)
+        )
+        all_trades_for_signals = cur.fetchall()
         cur.close()
         conn.close()
     except Exception as e:
-        logger.error(f"Error fetching open trades in manage_spread_positions: {e}")
+        logger.error(f"Error fetching active trades in manage_spread_positions: {e}")
         return
 
-    if not open_trades:
+    if not all_trades_for_signals:
         return
 
     # Group trades by signal_id
     signal_groups = {}
-    for ticket, symbol, order_type, lots, comment, signal_id, entry_time in open_trades:
+    for ticket, symbol, order_type, lots, comment, signal_id, entry_time, status in all_trades_for_signals:
         if signal_id is None:
             continue
         if signal_id not in signal_groups:
@@ -753,7 +766,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             "order_type": order_type,
             "lots": float(lots),
             "comment": comment,
-            "entry_time": entry_time
+            "entry_time": entry_time,
+            "status": status
         })
 
     z_ent_val, z_ex_val, z_sl_val, sl_atr_m = get_strategy_parameters(symbol_a)
@@ -769,17 +783,20 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         leg_a_trades = [t for t in trades if t["symbol"].upper() == symbol_a.upper()]
         leg_b_trades = [t for t in trades if t["symbol"].upper() == symbol_b.upper()]
 
-        # 1. Cleanup check: If Leg A is fully closed but Leg B is still open, close Leg B immediately
-        if not leg_a_trades and leg_b_trades:
+        open_leg_a_trades = [t for t in leg_a_trades if t["status"] == 'OPEN']
+        open_leg_b_trades = [t for t in leg_b_trades if t["status"] == 'OPEN']
+
+        # 1. Cleanup check: If Leg A has NO open trades left but Leg B still has open trades, close Leg B immediately
+        if not open_leg_a_trades and open_leg_b_trades:
             logger.info(f"Cleanup: Leg A is fully closed for signal_id {sig_id}. Closing remaining Leg B trades.")
-            for t_b in leg_b_trades:
+            for t_b in open_leg_b_trades:
                 close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
             continue
 
-        if not leg_a_trades:
+        if not open_leg_a_trades:
             continue
 
-        is_buy_spread = (leg_a_trades[0]["order_type"] == "BUY")
+        is_buy_spread = (open_leg_a_trades[0]["order_type"] == "BUY")
         exit_triggered = False
         exit_reason = ""
 
@@ -828,10 +845,10 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if exit_triggered:
             logger.info(f"Dynamic exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all positions.")
             # Close all Leg A parts
-            for t_a in leg_a_trades:
+            for t_a in open_leg_a_trades:
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
             # Close all Leg B parts
-            for t_b in leg_b_trades:
+            for t_b in open_leg_b_trades:
                 close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
             continue
 
