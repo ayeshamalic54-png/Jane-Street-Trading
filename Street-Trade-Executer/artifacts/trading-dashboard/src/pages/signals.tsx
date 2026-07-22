@@ -25,23 +25,53 @@ export default function Signals() {
   const handleExecuteSignal = (sig: any) => {
     const isBuy = sig.action === "BUY_SPREAD";
     const dirA = isBuy ? "BUY" : "SELL";
-    const dirB = isBuy ? "SELL" : "BUY";
     
-    const lots = config?.defaultLots ?? 0.01;
+    // Check if symbol A is metals/indices to assign category-specific lots if dashboard is 0.0
+    const getSymbolCategory = (sym: string): string => {
+      const s = sym.toUpperCase();
+      if (s.includes("XAU") || s.includes("XAG")) return "metals";
+      if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN") || s.includes("US500") || s.includes("US30") || s.includes("NAS100") || s.includes("GER30") || s.includes("UK100")) return "indices";
+      return "forex";
+    };
+
+    const category = getSymbolCategory(sig.symbolA);
+    let defaultLots = config?.defaultLots ?? 0.0;
+    if (defaultLots <= 0.0) {
+      if (category === "metals") defaultLots = 0.15;
+      else if (category === "indices") defaultLots = 0.60;
+      else defaultLots = 1.20; // forex
+    }
+
+    const partLotsA = defaultLots / 3.0;
+    const betaVal = Number(sig.beta ?? 1.0);
+    const betaPositive = (betaVal >= 0);
+    
+    let dirB = "BUY";
+    if (isBuy) {
+      // BUY_SPREAD: BUY A, SELL B if beta > 0. If beta < 0, BUY B!
+      dirB = betaPositive ? "SELL" : "BUY";
+    } else {
+      // SELL_SPREAD: SELL A, BUY B if beta > 0. If beta < 0, SELL B!
+      dirB = betaPositive ? "BUY" : "SELL";
+    }
+
+    // Hedge lots are multiplied by 3.0 in main.py, so we pass the part scale here
+    const partLotsB = Math.max(0.01, Math.abs(partLotsA * betaVal));
+
     const slPips = config?.slPips ?? 10;
     const tpPips = config?.tpPips ?? 20;
 
     executeTrade.mutate(
-      { data: { symbol: sig.symbolA, direction: dirA, lots, slPips, tpPips } },
+      { data: { symbol: sig.symbolA, direction: dirA, lots: partLotsA, slPips, tpPips } },
       {
         onSuccess: () => {
           executeTrade.mutate(
-            { data: { symbol: sig.symbolB, direction: dirB, lots, slPips, tpPips } },
+            { data: { symbol: sig.symbolB, direction: dirB, lots: partLotsB, slPips, tpPips, comment: "JS_HEDGE_MANUAL_LEGB" } },
             {
               onSuccess: () => {
                 toast({
                   title: "🚀 One-Click Spread Executed",
-                  description: `Queued: ${dirA} ${sig.symbolA} & ${dirB} ${sig.symbolB} (${lots} lots) successfully!`,
+                  description: `Queued: ${dirA} ${sig.symbolA} (${defaultLots.toFixed(2)} lots) & ${dirB} ${sig.symbolB} (${(partLotsB * 3.0).toFixed(2)} lots) successfully!`,
                 });
               },
               onError: () => {
