@@ -1,18 +1,18 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { botStateTable, tradesTable, signalsTable, fvgZonesTable, scannedAssetsTable, dailyMetricsTable } from "@workspace/db";
+import { db, pool, botStateTable, tradesTable, signalsTable, fvgZonesTable, scannedAssetsTable, dailyMetricsTable, tradeCommandsTable } from "@workspace/db";
 
 const router = Router();
 
 router.get("/backup/export", async (req, res) => {
   try {
-    const [botState, trades, signals, fvgZones, scannedAssets, dailyMetrics] = await Promise.all([
+    const [botState, trades, signals, fvgZones, scannedAssets, dailyMetrics, tradeCommands] = await Promise.all([
       db.select().from(botStateTable),
       db.select().from(tradesTable),
       db.select().from(signalsTable),
       db.select().from(fvgZonesTable),
       db.select().from(scannedAssetsTable),
       db.select().from(dailyMetricsTable),
+      db.select().from(tradeCommandsTable),
     ]);
 
     const backupData = {
@@ -23,7 +23,8 @@ router.get("/backup/export", async (req, res) => {
       signals,
       fvgZones,
       scannedAssets,
-      dailyMetrics
+      dailyMetrics,
+      tradeCommands,
     };
 
     res.setHeader("Content-Disposition", `attachment; filename=forex_system_backup_${Date.now()}.json`);
@@ -50,9 +51,10 @@ router.post("/backup/import", async (req, res) => {
       return res.status(400).json({ error: "Invalid backup file format" });
     }
 
-    const { botState, trades, signals, fvgZones, scannedAssets, dailyMetrics } = backupData;
+    const { botState, trades, signals, fvgZones, scannedAssets, dailyMetrics, tradeCommands } = backupData;
 
-    // Purge existing tables
+    // Purge existing tables in dependency order
+    await db.delete(tradeCommandsTable);
     await db.delete(tradesTable);
     await db.delete(signalsTable);
     await db.delete(fvgZonesTable);
@@ -122,6 +124,28 @@ router.post("/backup/import", async (req, res) => {
         updatedAt: m.updatedAt ? new Date(m.updatedAt) : new Date(),
       }));
       await db.insert(dailyMetricsTable).values(formattedMetrics);
+    }
+
+    // Sanitize and Insert tradeCommands
+    if (Array.isArray(tradeCommands) && tradeCommands.length > 0) {
+      const formattedCmds = tradeCommands.map((c: any) => ({
+        ...c,
+        id: Number(c.id),
+        createdAt: c.createdAt ? new Date(c.createdAt) : new Date(),
+        executedAt: c.executedAt ? new Date(c.executedAt) : null,
+      }));
+      await db.insert(tradeCommandsTable).values(formattedCmds);
+    }
+
+    // Reset PostgreSQL auto-increment sequences so future entries don't throw unique constraint errors
+    const resetSequences = [
+      "SELECT setval('bot_state_id_seq', COALESCE((SELECT MAX(id) FROM bot_state), 1), false);",
+      "SELECT setval('signals_id_seq', COALESCE((SELECT MAX(id) FROM signals), 1), false);",
+      "SELECT setval('fvg_zones_id_seq', COALESCE((SELECT MAX(id) FROM fvg_zones), 1), false);",
+      "SELECT setval('trade_commands_id_seq', COALESCE((SELECT MAX(id) FROM trade_commands), 1), false);"
+    ];
+    for (const query of resetSequences) {
+      await pool.query(query);
     }
 
     return res.json({ success: true, message: "Backup restored successfully!" });
