@@ -52,9 +52,7 @@ def get_or_create_daily_start_equity(current_equity):
     """
     Retrieves the starting equity for the current day from the database.
     If it doesn't exist, date/account ID mismatches, initializes it with the current equity.
-    Uses caching to minimize database connections.
     """
-    global _cached_start_equity, _cached_start_equity_date, _cached_last_login
     today = get_broker_today_date()
     
     current_login = 0
@@ -65,16 +63,6 @@ def get_or_create_daily_start_equity(current_equity):
     except Exception:
         pass
         
-    if _cached_last_login is not None and current_login > 0 and _cached_last_login != current_login:
-        logger.info(f"Safeguards: Account switch detected ({_cached_last_login} -> {current_login}). Resetting daily start equity cache to ${current_equity:.2f}")
-        _cached_start_equity = None
-        _cached_start_equity_date = None
-        
-    _cached_last_login = current_login if current_login > 0 else _cached_last_login
-    
-    if _cached_start_equity is not None and _cached_start_equity_date == today:
-        return _cached_start_equity
-        
     conn = None
     start_equity = current_equity
     
@@ -82,34 +70,39 @@ def get_or_create_daily_start_equity(current_equity):
         conn = get_connection()
         cur = conn.cursor()
         
+        # Check if database has a different initial_balance (suggesting user manually reset it)
+        cur.execute("SELECT initial_balance FROM bot_state WHERE id = 1")
+        state_row = cur.fetchone()
+        db_initial_balance = None
+        if state_row and state_row[0] is not None:
+            db_initial_balance = float(state_row[0])
+            
         # Check if we already have a record for today and this specific login
         cur.execute("SELECT start_equity FROM daily_metrics WHERE trading_date = %s AND mt5_login = %s", (today, current_login))
         row = cur.fetchone()
         
-        # Check if login has changed compared to last saved login in DB
-        login_changed = False
-        cur.execute("SELECT mt5_login FROM bot_state WHERE id = 1")
-        state_row = cur.fetchone()
-        if state_row and current_login > 0 and state_row[0] is not None and int(state_row[0]) != current_login:
-            login_changed = True
-            
         if row:
             start_equity = float(row[0])
-            logger.info(f"Retrieved saved daily starting equity for account {current_login} from database: ${start_equity:.2f}")
-            
-            # Update current equity for today and sync bot_state to this account's saved start equity
+            # If database has a different initial_balance (suggesting manual reset), sync it to start_equity
+            if db_initial_balance is not None and abs(start_equity - db_initial_balance) > 0.01:
+                start_equity = db_initial_balance
+                cur.execute(
+                    "UPDATE daily_metrics SET start_equity = %s WHERE trading_date = %s AND mt5_login = %s",
+                    (db_initial_balance, today, current_login)
+                )
+                
             cur.execute(
                 "UPDATE daily_metrics SET current_equity = %s WHERE trading_date = %s AND mt5_login = %s",
                 (current_equity, today, current_login)
             )
             cur.execute(
-                "UPDATE bot_state SET initial_balance = %s, mt5_login = %s, equity = %s WHERE id = 1",
-                (start_equity, current_login, current_equity)
+                "UPDATE bot_state SET mt5_login = %s, equity = %s WHERE id = 1",
+                (current_login, current_equity)
             )
             conn.commit()
         else:
             # Create a new record for today for this specific login
-            start_equity = current_equity
+            start_equity = db_initial_balance if db_initial_balance is not None else current_equity
             cur.execute(
                 """
                 INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
@@ -127,8 +120,6 @@ def get_or_create_daily_start_equity(current_equity):
             logger.info(f"Initialized new daily trading session for account {current_login}. Starting equity: ${start_equity:.2f}")
             
         cur.close()
-        _cached_start_equity = start_equity
-        _cached_start_equity_date = today
     except Exception as e:
         logger.error(f"Error in get_or_create_daily_start_equity: {e}")
     finally:
