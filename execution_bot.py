@@ -265,18 +265,26 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
         # Transient connection issues - abort closing sync to prevent false database updates
         return False
     if len(positions) == 0:
-        logger.warning(f"Could not find MT5 position ticket {ticket} to close. Checking if it's already closed...")
-        # Check if already closed to avoid double log
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT status FROM trades WHERE ticket = %s", (int(ticket),))
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        if row and row[0] == 'OPEN':
-            logger.info(f"Ticket {ticket} still open in DB but missing in MT5. Marking as CLOSED in DB.")
-            log_trade_exit(ticket, 0.0, 0.0, datetime.datetime.now())
-        return False
+        # Check if there is an active position for this symbol (Netting account support)
+        sym_positions = mt5.positions_get(symbol=symbol)
+        if sym_positions:
+            pos = sym_positions[0]
+            ticket = pos.ticket
+            logger.info(f"[NETTING AUTO-RESOLVE] Ticket not found, but active position exists for {symbol}. Using merged ticket {pos.ticket} to close.")
+            positions = [pos]
+        else:
+            logger.warning(f"Could not find MT5 position ticket {ticket} to close. Checking if it's already closed...")
+            # Check if already closed to avoid double log
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT status FROM trades WHERE ticket = %s", (int(ticket),))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row and row[0] == 'OPEN':
+                logger.info(f"Ticket {ticket} still open in DB but missing in MT5. Marking as CLOSED in DB.")
+                log_trade_exit(ticket, 0.0, 0.0, datetime.datetime.now())
+            return False
         
     pos = positions[0]
     order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
