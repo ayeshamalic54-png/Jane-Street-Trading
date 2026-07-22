@@ -1355,8 +1355,8 @@ def main():
                 net_obi = obi_a - obi_b
                 bids_a_supported = len(bids_a_scan) > 0
                 bids_b_supported = len(bids_b_scan) > 0
-                obi_buy_pass = (net_obi > 0.15) if (bids_a_supported and bids_b_supported) else True
-                obi_sell_pass = (net_obi < -0.15) if (bids_a_supported and bids_b_supported) else True
+                obi_buy_pass = (net_obi >= -0.20) if (bids_a_supported and bids_b_supported) else True
+                obi_sell_pass = (net_obi <= 0.20) if (bids_a_supported and bids_b_supported) else True
 
                 in_bullish_zone = True
                 in_bearish_zone = True
@@ -1422,7 +1422,7 @@ def main():
                         if KNIFE_PROTECTION_ENABLED and not (z_velocity > -z_vel_lim):
                             reasons.append(f"Z-velocity {z_velocity:.3f} too fast (falling knife protection, limit: {-z_vel_lim})")
                         if OBI_ENABLED and not obi_buy_pass:
-                            reasons.append(f"OBI {net_obi:.3f} too low (min: 0.15)")
+                            reasons.append(f"Adverse OBI pressure {net_obi:.3f} < -0.20 (sell wall)")
                         if REQUIRE_SMC_CONFLUENCE and not in_bullish_zone:
                             reasons.append("Price not in Bullish SMC Zone (Order Block/FVG)")
                     else:
@@ -1431,7 +1431,7 @@ def main():
                         if KNIFE_PROTECTION_ENABLED and not (z_velocity < z_vel_lim):
                             reasons.append(f"Z-velocity {z_velocity:.3f} too fast (rising knife protection, limit: {z_vel_lim})")
                         if OBI_ENABLED and not obi_sell_pass:
-                            reasons.append(f"OBI {net_obi:.3f} too high (max: -0.15)")
+                            reasons.append(f"Adverse OBI pressure {net_obi:.3f} > 0.20 (buy wall)")
                         if REQUIRE_SMC_CONFLUENCE and not in_bearish_zone:
                             reasons.append("Price not in Bearish SMC Zone (Order Block/FVG)")
                     
