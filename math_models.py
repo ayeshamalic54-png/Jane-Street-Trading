@@ -88,6 +88,20 @@ class KalmanFilterRegression:
             
         return beta_actual, alpha_actual, raw_spread, z_score
 
+    def get_current_z(self, x, y) -> float:
+        """Calculates the current z-score of the spread without updating filter state."""
+        if self.ref_x is None:
+            return 0.0
+        norm_x = x / self.ref_x
+        norm_y = y / self.ref_y
+        H = np.array([[norm_x, 1.0]])
+        y_pred = np.dot(H, self.state_mean)[0]
+        y_err = norm_y - y_pred
+        state_covariance_pred = self.state_covariance + self.Q
+        S = np.dot(H, np.dot(state_covariance_pred, H.T))[0, 0] + self.R
+        std_dev = np.sqrt(S)
+        return float(y_err / std_dev) if std_dev > 0 else 0.0
+
     def get_velocity(self, k=3) -> float:
         """Calculates the change in z-score over the last k periods."""
         if len(self.z_history) <= k:
