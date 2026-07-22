@@ -1001,6 +1001,7 @@ def main():
     except Exception as e:
         logger.error(f"Error loading initial mt5_login from database: {e}")
 
+    peak_floating_profit = 0.0
     while True:
         try:
             if not mt5.initialize():
@@ -1244,6 +1245,7 @@ def main():
             # Fetch active positions in MT5/Binance
             has_positions = False
             floating_profit = 0.0
+            active_js_positions = []
             try:
                 has_positions = get_open_trades_count() > 0
                 positions = mt5.positions_get()
@@ -1251,8 +1253,25 @@ def main():
                 floating_profit += sum(p.profit for p in active_js_positions)
                 if len(active_js_positions) > 0:
                     has_positions = True
+                else:
+                    peak_floating_profit = 0.0
             except Exception:
                 pass
+
+            # ── Equity Trailing Stop Safeguard (Profit Lock) ──
+            if has_positions and floating_profit >= 60.00:
+                if floating_profit > peak_floating_profit:
+                    peak_floating_profit = floating_profit
+                    logger.info(f"[EQUITY TRAIL] New peak floating profit: ${peak_floating_profit:.2f}")
+                
+                trail_stop_level = peak_floating_profit * 0.85 # 15% trailing distance (locks in 85% of peak profit)
+                if floating_profit <= trail_stop_level:
+                    logger.info(f"[EQUITY TRAIL] Floating profit ${floating_profit:.2f} fell below trailing stop level ${trail_stop_level:.2f} (Peak: ${peak_floating_profit:.2f}). Closing all positions to lock profits.")
+                    for pos in active_js_positions:
+                        pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+                        close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+                    peak_floating_profit = 0.0
+                    has_positions = False
 
             # Sync open trades live prices and profit/loss in DB
             try:
