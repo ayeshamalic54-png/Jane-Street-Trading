@@ -63,6 +63,7 @@ GLOBAL_CONFIG = {
 COOLDOWN_DIRECTIONS = {}
 
 KF_CACHE = {}
+LAST_KF_UPDATE_BAR = {}
 WIN_RATE_CACHE = {}
 
 KNIFE_PROTECTION_ENABLED = True
@@ -1444,9 +1445,23 @@ def main():
                 p_a = (tick_a_scan.bid + tick_a_scan.ask) / 2.0
                 p_b = (tick_b_scan.bid + tick_b_scan.ask) / 2.0
 
-                # Kalman update
+                # Kalman update (Only update parameters once per M5 bar; compute Z dynamically in between)
                 kf_pair = get_kf_for_pair(s_a_resolved, s_b_resolved)
-                beta, alpha, spread, z = kf_pair.update(p_b, p_a)
+                now_dt = datetime.datetime.now()
+                bar_key = (now_dt.year, now_dt.month, now_dt.day, now_dt.hour, now_dt.minute // 5)
+                if LAST_KF_UPDATE_BAR.get(pk) != bar_key:
+                    beta, alpha, spread, z = kf_pair.update(p_b, p_a)
+                    LAST_KF_UPDATE_BAR[pk] = bar_key
+                else:
+                    z = kf_pair.get_current_z(p_b, p_a)
+                    if kf_pair.ref_x is not None:
+                        beta_norm = kf_pair.state_mean[0]
+                        alpha_norm = kf_pair.state_mean[1]
+                        beta = beta_norm * (kf_pair.ref_y / kf_pair.ref_x)
+                        alpha = alpha_norm * kf_pair.ref_y
+                        spread = p_a - (beta * p_b + alpha)
+                    else:
+                        beta, alpha, spread = 1.0, 0.0, p_a - p_b
 
                 # SMC update
                 if s_a_resolved not in SMC_ZONES_CACHE or smc_counter_cache.get(s_a_resolved, 0) >= 15:
