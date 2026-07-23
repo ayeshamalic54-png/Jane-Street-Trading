@@ -358,8 +358,6 @@ LOOP_INTERVAL = 2
 CANDIDATE_PAIRS = {
     "forex": [
         ("EURUSD", "GBPUSD"),
-        ("EURUSD", "USDJPY"),
-        ("GBPUSD", "USDJPY"),
         ("AUDUSD", "NZDUSD"),
         ("EURUSD", "USDCHF"),
         ("GBPUSD", "USDCHF"),
