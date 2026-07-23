@@ -32,7 +32,7 @@ const configSchema = z.object({
   knifeProtectionEnabled: z.boolean(),
   obiEnabled: z.boolean(),
   volatilityFilterEnabled: z.boolean(),
-  defaultLots: z.coerce.number().min(0.001).max(500),
+  defaultLots: z.coerce.number().min(0).max(500),
   maxDailyTrades: z.coerce.number().min(1).max(1000),
 });
 type ConfigFormValues = z.infer<typeof configSchema>;
@@ -492,7 +492,7 @@ export default function Config() {
                       <FormItem>
                         <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Default Lot Size (Auto-Trade)</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.01" min="0.001" {...field} className="font-mono border-border bg-background" />
+                          <Input type="number" step="0.001" min="0" {...field} className="font-mono border-border bg-background" />
                         </FormControl>
                         <FormDescription className="text-xs">
                           Fixed lot size used for all automatic spread trades. (e.g. 0.01 to risk minimum).
