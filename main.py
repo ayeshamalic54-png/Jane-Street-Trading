@@ -1423,11 +1423,15 @@ def main():
                 trail_stop_level = peak_floating_profit * 0.85 # 15% trailing distance (locks in 85% of peak profit)
                 if floating_profit <= trail_stop_level:
                     logger.info(f"[EQUITY TRAIL] Floating profit ${floating_profit:.2f} fell below trailing stop level ${trail_stop_level:.2f} (Peak: ${peak_floating_profit:.2f}). Closing all positions to lock profits.")
+                    all_success = True
                     for pos in active_js_positions:
                         pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
-                        close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
-                    peak_floating_profit = 0.0
-                    has_positions = False
+                        success = close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+                        if not success:
+                            all_success = False
+                    if all_success:
+                        peak_floating_profit = 0.0
+                        has_positions = False
 
             # Sync open trades live prices and profit/loss in DB
             try:
