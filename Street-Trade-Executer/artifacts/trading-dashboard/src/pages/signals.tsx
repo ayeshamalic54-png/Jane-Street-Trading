@@ -207,7 +207,7 @@ export default function Signals() {
 
     const category = getSymbolCategory(sig.symbolA);
     let defaultLots = config?.defaultLots ?? 0.0;
-    if (defaultLots <= 0.0) {
+    if (defaultLots < 0.005) {
       if (category === "metals") defaultLots = 0.15;
       else if (category === "indices") defaultLots = 0.60;
       else defaultLots = 1.20; // forex
@@ -303,52 +303,7 @@ export default function Signals() {
                   const details = getSignalDetails(sig);
                   const tradesList = sig.trades ?? [];
                   const totalProfitVal = sig.totalProfit;
-                  const handleCopySignal = (sig: any) => {
-    const isBuy = sig.action === "BUY_SPREAD";
-    const details = getSignalDetails(sig);
-    const timeStr = format(new Date(sig.timestamp), "EEEE, dd/MM/yyyy, hh:mm:ss a");
-    
-    const actionEmoji = isBuy ? "🟢" : "🔴";
-    const legBDirection = isBuy ? "SELL" : "BUY";
-
-    const defaultLots = config?.defaultLots ?? 0.01;
-    const partLotsA = (defaultLots / 3.0).toFixed(2);
-    const totalLotsA = defaultLots.toFixed(2);
-    const lotsB = (defaultLots * Number(sig.beta ?? 1.0)).toFixed(2);
-
-    const text = `📢 *AWAIS JANE STREET QUANTUM ENGINE SIGNAL* 📢\n\n` +
-      `${actionEmoji} *ACTION:* ${sig.action} (${sig.symbolA} / ${sig.symbolB})\n` +
-      `⏱ *Time:* ${timeStr}\n` +
-      `📊 *Z-Score:* ${sig.zScore.toFixed(3)}\n\n` +
-      `🛡 *LEG A (${sig.symbolA}) - 3 Parts:*\n` +
-      `  📥 *Entry:* ${details.entry}\n` +
-      `  ⛔ *Stop Loss (SL):* ${details.sl}\n` +
-      `  🎯 *TP1:* ${details.tp1}\n` +
-      `  🎯 *TP2:* ${details.tp2}\n` +
-      `  🎯 *TP3:* ${details.tp3}\n` +
-      `  📦 *Lots:* 3 parts of ${partLotsA} (Total ${totalLotsA})\n\n` +
-      `⚖ *LEG B (${sig.symbolB}) - Hedge:*\n` +
-      `  📥 *Entry:* ${details.entryB}\n` +
-      `  ⛔ *Stop Loss (SL):* ${details.slB}\n` +
-      `  🎯 *TP:* Dynamic (Spread Reversion)\n` +
-      `  📦 *Lots:* ${lotsB}\n` +
-      `  📥 *Position:* ${legBDirection}`;
-
-    navigator.clipboard.writeText(text).then(() => {
-      toast({
-        title: "📋 Copied to Clipboard!",
-        description: "Signal text formatted for WhatsApp has been copied successfully.",
-      });
-    }).catch(() => {
-      toast({
-        title: "❌ Failed to Copy",
-        description: "Could not copy signal to clipboard.",
-        variant: "destructive"
-      });
-    });
-  };
-
-  return (
+                  return (
                     <TableRow key={sig.id} className="border-border hover:bg-muted/30">
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {format(new Date(sig.timestamp), "EEEE, dd/MM/yyyy, hh:mm:ss a")}
