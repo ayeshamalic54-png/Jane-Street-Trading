@@ -138,8 +138,8 @@ export default function Signals() {
         entry: entry.toFixed(pricePrecision),
         sl: (entry - slDist).toFixed(pricePrecision),
         tp1: (entry + slDist).toFixed(pricePrecision),
-        tp2: (entry + tpDist).toFixed(pricePrecision),
-        tp3: (entry + slDist * 3.5).toFixed(pricePrecision),
+        tp2: (entry + Math.max(tpDist, slDist * 1.5)).toFixed(pricePrecision),
+        tp3: (entry + Math.max(tpDist * 1.5, slDist * 3.5)).toFixed(pricePrecision),
         entryB: entryB.toFixed(pricePrecisionB),
         slB: slB.toFixed(pricePrecisionB),
       };
@@ -148,8 +148,8 @@ export default function Signals() {
         entry: entry.toFixed(pricePrecision),
         sl: (entry + slDist).toFixed(pricePrecision),
         tp1: (entry - slDist).toFixed(pricePrecision),
-        tp2: (entry - tpDist).toFixed(pricePrecision),
-        tp3: (entry - slDist * 3.5).toFixed(pricePrecision),
+        tp2: (entry - Math.max(tpDist, slDist * 1.5)).toFixed(pricePrecision),
+        tp3: (entry - Math.max(tpDist * 1.5, slDist * 3.5)).toFixed(pricePrecision),
         entryB: entryB.toFixed(pricePrecisionB),
         slB: slB.toFixed(pricePrecisionB),
       };

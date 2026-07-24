@@ -226,13 +226,13 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                     if is_long:
                         sl_price = price - sl_dist
                         tp1 = price + sl_dist
-                        tp2 = price + tp_dist
-                        tp3 = price + sl_dist * 3.5
+                        tp2 = price + max(tp_dist, sl_dist * 1.5)
+                        tp3 = price + max(tp_dist * 1.5, sl_dist * 3.5)
                     else:
                         sl_price = price + sl_dist
                         tp1 = price - sl_dist
-                        tp2 = price - tp_dist
-                        tp3 = price - sl_dist * 3.5
+                        tp2 = price - max(tp_dist, sl_dist * 1.5)
+                        tp3 = price - max(tp_dist * 1.5, sl_dist * 3.5)
                         
                     risk_pct = lots * 100.0 if lots <= 1.0 else lots
                     usdt_bal, _ = get_binance_usdt_balance()
@@ -269,13 +269,13 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                     if is_long:
                         sl_price = price - sl_dist
                         tp1 = price + sl_dist
-                        tp2 = price + tp_dist
-                        tp3 = price + sl_dist * 3.5
+                        tp2 = price + max(tp_dist, sl_dist * 1.5)
+                        tp3 = price + max(tp_dist * 1.5, sl_dist * 3.5)
                     else:
                         sl_price = price + sl_dist
                         tp1 = price - sl_dist
-                        tp2 = price - tp_dist
-                        tp3 = price - sl_dist * 3.5
+                        tp2 = price - max(tp_dist, sl_dist * 1.5)
+                        tp3 = price - max(tp_dist * 1.5, sl_dist * 3.5)
                         
                     if "JS_HEDGE_MANUAL_LEGB" in comment:
                         info_b = mt5.symbol_info(symbol)
@@ -1763,7 +1763,7 @@ def main():
                             
                             if execute_three_part_binance_trade(
                                 S_A, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, qty_a,
-                                best_sig["price_a"] + sl_dist, best_sig["price_a"] + tp_dist, best_sig["price_a"] + sl_dist * 3.5,
+                                best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             ):
                                 order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(best_action, best_sig["beta"], best_sig["tick_b"])
@@ -1795,7 +1795,7 @@ def main():
                             
                             if execute_three_part_trade(
                                 S_A, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, lots_a,
-                                best_sig["price_a"] + sl_dist, best_sig["price_a"] + tp_dist, best_sig["price_a"] + sl_dist * 3.5,
+                                best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             ):
                                 order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(best_action, best_sig["beta"], best_sig["tick_b"])
@@ -1821,7 +1821,7 @@ def main():
                             
                             if execute_three_part_binance_trade(
                                 S_A, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, qty_a,
-                                best_sig["price_a"] - sl_dist, best_sig["price_a"] - tp_dist, best_sig["price_a"] - sl_dist * 3.5,
+                                best_sig["price_a"] - sl_dist, best_sig["price_a"] - max(tp_dist, sl_dist * 1.5), best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             ):
                                 order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(best_action, best_sig["beta"], best_sig["tick_b"])
@@ -1853,7 +1853,7 @@ def main():
                             
                             if execute_three_part_trade(
                                 S_A, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, lots_a,
-                                best_sig["price_a"] - sl_dist, best_sig["price_a"] - tp_dist, best_sig["price_a"] - sl_dist * 3.5,
+                                best_sig["price_a"] - sl_dist, best_sig["price_a"] - max(tp_dist, sl_dist * 1.5), best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             ):
                                 order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(best_action, best_sig["beta"], best_sig["tick_b"])
