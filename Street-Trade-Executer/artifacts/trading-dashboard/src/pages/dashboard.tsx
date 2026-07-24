@@ -465,18 +465,29 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className="bg-zinc-900 border-zinc-800 border-t-2 border-t-amber-500 hover:border-amber-400/40 transition-all shadow-[0_4px_24px_rgba(245,158,11,0.06)] rounded-md">
+          <Card className={cn("bg-zinc-900 border-zinc-800 border-t-2 transition-all rounded-md", 
+            drawdownPercent < 0 
+              ? "border-t-emerald-500 hover:border-emerald-400/40 shadow-[0_4px_24px_rgba(16,185,129,0.06)]" 
+              : "border-t-amber-500 hover:border-amber-400/40 shadow-[0_4px_24px_rgba(245,158,11,0.06)]"
+          )}>
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono">Daily Drawdown</CardTitle>
+              <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono">
+                {drawdownPercent < 0 ? "Daily Gain" : "Daily Drawdown"}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between items-end">
-                <div className="text-2xl font-mono text-amber-400">{drawdownPercent.toFixed(2)}%</div>
+                <div className={cn("text-2xl font-mono", drawdownPercent < 0 ? "text-emerald-400" : "text-amber-400")}>
+                  {drawdownPercent < 0 ? "+" : ""}{Math.abs(drawdownPercent).toFixed(2)}%
+                </div>
                 <div className="text-[10px] text-zinc-500 mb-1 font-mono">
                   Halt: <span className="text-amber-500">4.2%</span> · Limit: <span className="text-red-500">5%</span>
                 </div>
               </div>
-              <Progress value={Math.min((drawdownPercent / 5) * 100, 100)} className="h-1.5 bg-zinc-800 [&>div]:bg-rose-500" />
+              <Progress 
+                value={drawdownPercent < 0 ? 0 : Math.min((drawdownPercent / 5) * 100, 100)} 
+                className="h-1.5 bg-zinc-800 [&>div]:bg-rose-500" 
+              />
             </CardContent>
           </Card>
 
