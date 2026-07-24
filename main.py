@@ -1909,6 +1909,7 @@ def main():
                 current_equity=current_equity,
                 max_dd=daily_loss_p,
                 trades_count=trades_today,
+                login_id=current_login,
             )
 
             if loop_log_counter % 15 == 0:
