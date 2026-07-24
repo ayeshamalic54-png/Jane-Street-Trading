@@ -1140,6 +1140,7 @@ def main():
 
     logger.info("Quantitative core pipeline active.")
     win_rate_loop_counter = 0
+    loop_log_counter = 0
     SMC_ZONES_CACHE = {}
     smc_counter_cache = {}
 
@@ -1420,7 +1421,7 @@ def main():
                     peak_floating_profit = floating_profit
                     logger.info(f"[EQUITY TRAIL] New peak floating profit: ${peak_floating_profit:.2f}")
                 
-                trail_stop_level = peak_floating_profit * 0.85 # 15% trailing distance (locks in 85% of peak profit)
+                trail_stop_level = peak_floating_profit * 0.89 # 11% trailing distance (locks in 89% of peak profit)
                 if floating_profit <= trail_stop_level:
                     logger.info(f"[EQUITY TRAIL] Floating profit ${floating_profit:.2f} fell below trailing stop level ${trail_stop_level:.2f} (Peak: ${peak_floating_profit:.2f}). Closing all positions to lock profits.")
                     all_success = True
@@ -1471,6 +1472,7 @@ def main():
             active_pair_beta = 0.0
             active_pair_obi_a = 0.0
             active_pair_obi_b = 0.0
+            active_pair_velocity = 0.0
 
             for s_a, s_b in pairs_to_scan:
                 pk = f"{s_a}/{s_b}"
@@ -1644,6 +1646,7 @@ def main():
                     active_pair_beta = beta
                     active_pair_obi_a = obi_a
                     active_pair_obi_b = obi_b
+                    active_pair_velocity = z_velocity
 
                 # Cooldown checks
                 cooldown_dir = COOLDOWN_DIRECTIONS.get(pk)
@@ -1907,6 +1910,14 @@ def main():
                 max_dd=daily_loss_p,
                 trades_count=trades_today,
             )
+
+            if loop_log_counter % 15 == 0:
+                logger.info(
+                    f"[LIVE SCAN] Active: {S_A}/{S_B} | Z-Score: {active_pair_z_score:.3f} "
+                    f"| Z-Velocity: {active_pair_velocity:.3f} | OBI A/B: {active_pair_obi_a:.1f}/{active_pair_obi_b:.1f} "
+                    f"| Status: {status_str}"
+                )
+            loop_log_counter += 1
 
         except Exception as loop_err:
             logger.error(f"Error in main run loop: {loop_err}")
