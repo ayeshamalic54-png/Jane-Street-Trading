@@ -575,7 +575,7 @@ def reset_database_metrics_for_new_account(login_id, equity):
         # 1. Update bot_state
         cur.execute("""
             UPDATE bot_state 
-            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, drawdown_percent = 0.00 
+            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, drawdown_percent = 0.00, trades_today = 0, overall_drawdown = 0.00 
             WHERE id = 1
         """, (float(equity), float(equity), login_val, float(equity)))
         

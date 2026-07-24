@@ -135,7 +135,7 @@ def check_drawdown_limit(current_equity):
     Checks if the daily drawdown limit has been breached.
     Returns: (is_breached, daily_loss_percent)
     """
-    global _last_metrics_update_time, _peak_drawdown_today, _peak_drawdown_date
+    global _last_metrics_update_time, _peak_drawdown_today, _peak_drawdown_date, _cached_last_login
     start_equity = get_or_create_daily_start_equity(current_equity)
     
     current_login = 0
@@ -151,11 +151,12 @@ def check_drawdown_limit(current_equity):
     
     today = get_broker_today_date()
     
-    # Reset peak drawdown on new day
-    if _peak_drawdown_date != today:
+    # Reset peak drawdown on new day OR account switch
+    if _peak_drawdown_date != today or (_cached_last_login is not None and _cached_last_login != current_login):
         _peak_drawdown_today = 0.0
         _peak_drawdown_date = today
         
+    _cached_last_login = current_login
     _peak_drawdown_today = max(_peak_drawdown_today, daily_loss_percent)
     
     trades_today = get_trades_count_today()
@@ -164,16 +165,16 @@ def check_drawdown_limit(current_equity):
     now = time.time()
     if now - _last_metrics_update_time >= 30.0:
         try:
-            update_daily_metrics(today, start_equity, current_equity, max(0.0, daily_loss_percent), trades_today, login_id=current_login)
+            update_daily_metrics(today, start_equity, current_equity, max(0.0, _peak_drawdown_today), trades_today, login_id=current_login)
             _last_metrics_update_time = now
         except Exception as e:
             logger.error(f"Error updating daily metrics: {e}")
     
-    if daily_loss_percent >= MAX_DAILY_LOSS_PERCENT:
-        logger.info(f"Daily drawdown limit reached: {daily_loss_percent:.2f}% (Limit: {MAX_DAILY_LOSS_PERCENT}%)")
-        return True, daily_loss_percent
+    if _peak_drawdown_today >= MAX_DAILY_LOSS_PERCENT:
+        logger.info(f"Daily drawdown limit reached: {_peak_drawdown_today:.2f}% (Limit: {MAX_DAILY_LOSS_PERCENT}%)")
+        return True, _peak_drawdown_today
         
-    return False, max(0.0, daily_loss_percent)
+    return False, max(0.0, _peak_drawdown_today)
 
 def get_trades_count_today():
     """Returns the number of trades taken today with caching."""
