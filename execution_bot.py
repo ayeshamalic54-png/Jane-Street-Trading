@@ -258,6 +258,32 @@ def check_closed_trades(symbol):
             log_trade_exit(ticket, close_price, profit, close_time)
             logger.info(f"Logged closed trade ticket {ticket} | Exit: {close_price:.5f} | Profit: ${profit:.2f}")
 
+            # Send Discord exit notification
+            try:
+                conn_info = get_connection()
+                cur_info = conn_info.cursor()
+                cur_info.execute("SELECT symbol, order_type, lots, comment FROM trades WHERE ticket = %s", (int(ticket),))
+                row_info = cur_info.fetchone()
+                cur_info.close()
+                conn_info.close()
+                if row_info:
+                    sym_name, o_type, lts, cmt = row_info
+                    pnl_emoji = "🟢" if profit >= 0 else "🔴"
+                    pnl_word = "PROFIT" if profit >= 0 else "LOSS"
+                    
+                    disc_msg = (
+                        f"⏹ **JANE STREET POSITION CLOSED** ⏹\n\n"
+                        f"🎫 **Ticket:** `{ticket}`\n"
+                        f"💱 **Symbol:** `{sym_name}` ({cmt})\n"
+                        f"📦 **Size:** `{lts:.2f} lots` ({o_type})\n"
+                        f"💵 **Exit Price:** `{close_price:.5f}`\n"
+                        f"{pnl_emoji} **P&L:** **${profit:+.2f}** ({pnl_word})\n"
+                    )
+                    from database import send_discord_message
+                    send_discord_message(disc_msg)
+            except Exception as e_disc:
+                logger.error(f"Error sending Discord exit message: {e_disc}")
+
 def close_position_by_ticket(symbol, ticket, volume_to_close):
     """Closes a specific MT5 position by its ticket (fully or partially)."""
     positions = mt5.positions_get(ticket=int(ticket))

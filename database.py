@@ -476,8 +476,23 @@ def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, 
             conn.close()
     return None
 
+def send_discord_message(content):
+    """Sends a general plain text message or embed to the Discord Webhook."""
+    import os
+    import requests
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        return False
+    try:
+        payload = {"content": content}
+        res = requests.post(webhook_url, json=payload, timeout=5)
+        return res.status_code == 204
+    except Exception as e:
+        print(f"Error sending general Discord notification: {e}")
+        return False
+
 def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, comment="", signal_id=None):
-    """Logs the entry of a trade."""
+    """Logs the entry of a trade and sends a Discord notification."""
     query = """
         INSERT INTO trades (ticket, symbol, order_type, lots, entry_price, entry_time, status, comment, signal_id)
         VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', %s, %s)
@@ -494,6 +509,16 @@ def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, c
         ))
         conn.commit()
         cur.close()
+        
+        # Send Discord entry notification
+        disc_msg = (
+            f"🚀 **JANE STREET POSITION OPENED** 🚀\n\n"
+            f"🎫 **Ticket:** `{ticket}`\n"
+            f"💱 **Symbol:** `{symbol}` ({comment})\n"
+            f"📦 **Size:** `{lots:.2f} lots` ({order_type})\n"
+            f"💵 **Entry Price:** `{entry_price:.5f}`\n"
+        )
+        send_discord_message(disc_msg)
     except Exception as e:
         print(f"Error logging trade entry: {e}")
     finally:

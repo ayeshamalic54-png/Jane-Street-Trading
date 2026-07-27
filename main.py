@@ -1031,6 +1031,43 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
             for t_b in open_leg_b_trades:
                 close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+                
+            # Sync closed details immediately to database
+            try:
+                check_closed_trades(S_A_resolved)
+                check_closed_trades(S_B_resolved)
+                
+                # Query the database to get the total profit/loss of this signal set
+                conn_pnl = get_connection()
+                cur_pnl = conn_pnl.cursor()
+                cur_pnl.execute("SELECT symbol, lots, entry_price, close_price, profit, comment FROM trades WHERE signal_id = %s", (int(sig_id),))
+                rows_pnl = cur_pnl.fetchall()
+                cur_pnl.close()
+                conn_pnl.close()
+                
+                total_pnl = 0.0
+                trade_lines = []
+                for sym_name, lots_val, ent_p, cls_p, prf, cmt in rows_pnl:
+                    pnl_val = float(prf or 0.0)
+                    total_pnl += pnl_val
+                    trade_lines.append(f"  • **{sym_name}** ({cmt}): {lots_val} lots | Entry: {ent_p} | Close: {cls_p} | P&L: **${pnl_val:+.2f}**")
+                
+                pnl_emoji = "✅" if total_pnl >= 0 else "❌"
+                status_word = "PROFIT" if total_pnl >= 0 else "LOSS"
+                now_str = datetime.datetime.now().strftime("%I:%M:%S %p")
+                
+                discord_msg = (
+                    f"⏹ **JANE STREET SIGNAL SET CLOSED ({sym_a} / {sym_b})** ⏹\n\n"
+                    f"⏱ **Exit Time:** {now_str}\n"
+                    f"💡 **Reason:** {exit_reason}\n\n"
+                    f"📊 **Individual Parts:**\n" + "\n".join(trade_lines) + "\n\n"
+                    f"{pnl_emoji} **TOTAL SET P&L:** **${total_pnl:+.2f}** ({status_word})\n"
+                )
+                from database import send_discord_message
+                send_discord_message(discord_msg)
+            except Exception as ex_pnl:
+                logger.error(f"Error compiling Discord P&L notification: {ex_pnl}")
+                
             continue
 
         # 2. Sync MT5 open positions with database so closed TP1/TP2 tickets update immediately
