@@ -1914,7 +1914,12 @@ def main():
                                 best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             ):
-                                order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(best_action, best_sig["beta"], best_sig["tick_b"])
+                                fresh_tick_b = mt5.symbol_info_tick(S_B) if best_cat_b != "crypto" else None
+                                if fresh_tick_b is None and best_cat_b != "crypto":
+                                    fresh_tick_b = best_sig["tick_b"]
+                                order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(
+                                    best_action, best_sig["beta"], fresh_tick_b if best_cat_b != "crypto" else best_sig["tick_b"]
+                                )
                                 sl_b = price_b + sl_sign_b * sl_dist_b
                                 if best_cat_b == "crypto":
                                     hedge_params = {"symbol": S_B, "side": side_b, "type": "MARKET", "quantity": qty_b}
@@ -1975,7 +1980,12 @@ def main():
                                 best_sig["price_a"] - sl_dist, best_sig["price_a"] - max(tp_dist, sl_dist * 1.5), best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             ):
-                                order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(best_action, best_sig["beta"], best_sig["tick_b"])
+                                fresh_tick_b = mt5.symbol_info_tick(S_B) if best_cat_b != "crypto" else None
+                                if fresh_tick_b is None and best_cat_b != "crypto":
+                                    fresh_tick_b = best_sig["tick_b"]
+                                order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(
+                                    best_action, best_sig["beta"], fresh_tick_b if best_cat_b != "crypto" else best_sig["tick_b"]
+                                )
                                 sl_b = price_b + sl_sign_b * sl_dist_b
                                 if best_cat_b == "crypto":
                                     hedge_params = {"symbol": S_B, "side": side_b, "type": "MARKET", "quantity": qty_b}
