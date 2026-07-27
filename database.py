@@ -344,10 +344,10 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
         if float(equity) > max_equity_peak_val:
             max_equity_peak_val = float(equity)
 
-        # 5. Calculate overall drawdown from peak
+        # 5. Calculate overall drawdown from initial balance (Absolute Drawdown)
         overall_drawdown_val = 0.00
-        if max_equity_peak_val > 0.0:
-            overall_drawdown_val = ((max_equity_peak_val - float(equity)) / max_equity_peak_val) * 100.0
+        if initial_balance_val > 0.0:
+            overall_drawdown_val = ((initial_balance_val - float(equity)) / initial_balance_val) * 100.0
             overall_drawdown_val = max(0.00, overall_drawdown_val)
 
         cur.execute(query, (

@@ -2008,13 +2008,30 @@ def main():
                                         log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                     invalidate_trades_cache()
 
-            # Trail Stop Loss if active
+            # Trail Stop Loss if active (move to breakeven once TP1 is closed/hit in database)
             best_cat_a_check = get_symbol_category(S_A)
             if best_cat_a_check != "crypto" and len(active_js_positions) > 0:
-                leg_a_parts = [p for p in active_js_positions if p.symbol == S_A]
-                comments = [p.comment for p in leg_a_parts]
-                if not any("JS_TP1" in c for c in comments) and leg_a_parts:
-                    modify_sl_for_trade(S_A, leg_a_parts[0].price_open)
+                leg_a_parts = [p for p in active_js_positions if p.symbol == S_A_resolved]
+                if leg_a_parts:
+                    sample_ticket = leg_a_parts[0].ticket
+                    try:
+                        conn_sl = get_connection()
+                        cur_sl = conn_sl.cursor()
+                        cur_sl.execute("""
+                            SELECT t2.status 
+                            FROM trades t1
+                            JOIN trades t2 ON t1.signal_id = t2.signal_id
+                            WHERE t1.ticket = %s AND t2.comment = 'JaneStreet TP1'
+                        """, (sample_ticket,))
+                        row_sl = cur_sl.fetchone()
+                        tp1_closed = (row_sl is not None and row_sl[0] == 'CLOSED')
+                        cur_sl.close()
+                        conn_sl.close()
+                        
+                        if tp1_closed:
+                            modify_sl_for_trade(S_A_resolved, leg_a_parts[0].price_open)
+                    except Exception as ex_sl:
+                        logger.error(f"Error evaluating breakeven trail SL: {ex_sl}")
 
             # Update dashboard status
             if is_news_halted:
