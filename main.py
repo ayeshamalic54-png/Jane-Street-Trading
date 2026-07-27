@@ -1910,7 +1910,7 @@ def main():
                             qty_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
                             if execute_three_part_trade(
-                                S_A, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, lots_a,
+                                S_A, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, actual_lots_a,
                                 best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             ):
@@ -1971,7 +1971,7 @@ def main():
                             qty_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
                             if execute_three_part_trade(
-                                S_A, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, lots_a,
+                                S_A, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, actual_lots_a,
                                 best_sig["price_a"] - sl_dist, best_sig["price_a"] - max(tp_dist, sl_dist * 1.5), best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             ):
