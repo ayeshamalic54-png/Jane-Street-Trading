@@ -215,6 +215,51 @@ router.get("/prices", async (req, res) => {
           });
           seenSymbols.add("XAGUSD");
         }
+        if (!seenSymbols.has("XPTUSD")) {
+          let platPrice = 0;
+          try {
+            const platResp = await fetch("https://api.gold-api.com/price/XPT", { signal: AbortSignal.timeout(4000) });
+            if (platResp.ok) {
+              const platData = (await platResp.json()) as { price: number };
+              platPrice = Number(platData.price);
+            }
+          } catch {}
+          if (platPrice > 0) {
+            prices.push({
+              symbol: "XPTUSD",
+              price: platPrice,
+              change24h: null,
+              changePct24h: null,
+              category: "metals",
+              source: "GoldAPI",
+              updatedAt: new Date().toISOString(),
+            });
+            seenSymbols.add("XPTUSD");
+          }
+        }
+
+        if (!seenSymbols.has("XPDUSD")) {
+          let pallPrice = 0;
+          try {
+            const pallResp = await fetch("https://api.gold-api.com/price/XPD", { signal: AbortSignal.timeout(4000) });
+            if (pallResp.ok) {
+              const pallData = (await pallResp.json()) as { price: number };
+              pallPrice = Number(pallData.price);
+            }
+          } catch {}
+          if (pallPrice > 0) {
+            prices.push({
+              symbol: "XPDUSD",
+              price: pallPrice,
+              change24h: null,
+              changePct24h: null,
+              category: "metals",
+              source: "GoldAPI",
+              updatedAt: new Date().toISOString(),
+            });
+            seenSymbols.add("XPDUSD");
+          }
+        }
       }
     }
 
