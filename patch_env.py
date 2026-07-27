@@ -3,7 +3,9 @@ import os
 def main():
     env_path = ".env"
     
-    # Default MT5 credentials (will preserve existing ones if present)
+    # We comment out MT5 credentials so the bot automatically connects to the currently running MT5 terminal instance.
+    # This allows you to trade on any account (like your MetaQuotes-Demo 5053167592) by just keeping it open in the MT5 GUI.
+    
     mt5_login = "34220059"
     mt5_password = "gftUE95##"
     mt5_server = "FundedNext-Server 3"
@@ -34,9 +36,11 @@ def main():
     new_env_content = f"""# ==============================================================================
 # MetaTrader 5 (MT5) Login Credentials
 # ==============================================================================
-MT5_LOGIN={mt5_login}
-MT5_PASSWORD={mt5_password}
-MT5_SERVER={mt5_server}
+# (Commented out to automatically connect to your currently active terminal account, e.g. Demo 5053167592)
+# To force login to a specific account, uncomment these lines and update details:
+# MT5_LOGIN={mt5_login}
+# MT5_PASSWORD={mt5_password}
+# MT5_SERVER={mt5_server}
 
 # ==============================================================================
 # Quantitative Database Configuration (Neon PostgreSQL)
@@ -70,9 +74,10 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/1531099383565783070/USKQReq
     with open(env_path, "w", encoding="utf-8") as f:
         f.write(new_env_content)
         
-    print("=========================================================")
+    print("=====================================================================")
     print(" SUCCESS: .env file has been automatically patched on VPS!")
-    print("=========================================================")
+    print(" MT5 credentials commented out so it connects to active MT5 GUI.")
+    print("=====================================================================")
 
 if __name__ == "__main__":
     main()
