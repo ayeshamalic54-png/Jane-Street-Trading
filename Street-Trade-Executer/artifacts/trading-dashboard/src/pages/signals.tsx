@@ -36,7 +36,16 @@ export default function Signals() {
 
     const category = getSymbolCategory(sig.symbolA);
     let defaultLots = config?.defaultLots ?? 0.0;
-    if (defaultLots <= 0.0) {
+    if (defaultLots > 0.005) {
+      const leverageFactors: Record<string, number> = {
+        forex: 1.0,
+        metals: 0.25,
+        indices: 0.25,
+        stocks: 0.10,
+        crypto: 0.01
+      };
+      defaultLots = defaultLots * (leverageFactors[category] ?? 1.0);
+    } else {
       if (category === "metals") defaultLots = 0.15;
       else if (category === "indices") defaultLots = 0.60;
       else defaultLots = 1.20; // forex
@@ -207,7 +216,16 @@ export default function Signals() {
 
     const category = getSymbolCategory(sig.symbolA);
     let defaultLots = config?.defaultLots ?? 0.0;
-    if (defaultLots < 0.005) {
+    if (defaultLots > 0.005) {
+      const leverageFactors: Record<string, number> = {
+        forex: 1.0,
+        metals: 0.25,
+        indices: 0.25,
+        stocks: 0.10,
+        crypto: 0.01
+      };
+      defaultLots = defaultLots * (leverageFactors[category] ?? 1.0);
+    } else {
       if (category === "metals") defaultLots = 0.15;
       else if (category === "indices") defaultLots = 0.60;
       else defaultLots = 1.20; // forex

@@ -403,6 +403,14 @@ DEFAULT_LOT_SIZES = {
     "crypto": 0.06
 }
 
+LEVERAGE_FACTORS = {
+    "forex": 1.0,
+    "metals": 0.25,   # FundedNext 1:25 vs 1:100 Forex (4x lower leverage)
+    "indices": 0.25,  # FundedNext 1:25 vs 1:100 Forex (4x lower leverage)
+    "stocks": 0.10,   # FundedNext 1:10 vs 1:100 Forex (10x lower leverage)
+    "crypto": 0.01    # FundedNext 1:1 vs 1:100 Forex (100x lower leverage)
+}
+
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
     """
     Runs a historical Kalman filter spread simulation on the last 150 bars
@@ -729,6 +737,54 @@ def get_tp_distance(symbol: str, price: float, tp_pips_override: float = None) -
         return float(price * (pips / 100.0))
     else:
         return pips * get_pip_size(symbol)
+
+def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_a, sl_a, tp1, tp2, tp3, lots_a, entry_b, sl_b, lots_b, side_b):
+    import os
+    import requests
+    import datetime
+    
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        return
+        
+    try:
+        now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
+        action_emoji = "🟢" if "BUY" in action else "🔴"
+        
+        part_lots_a = round(lots_a / 3.0, 2)
+        info_a = mt5.symbol_info(symbol_a)
+        digits_a = info_a.digits if info_a else 5
+        info_b = mt5.symbol_info(symbol_b)
+        digits_b = info_b.digits if info_b else 5
+        
+        message = (
+            f"📢 **AWAIS JANE STREET QUANTUM ENGINE SIGNAL** 📢\n\n"
+            f"{action_emoji} **ACTION:** {action} ({symbol_a} / {symbol_b})\n"
+            f"⏱ **Time:** {now_str}\n"
+            f"📊 **Z-Score:** {z_score:.3f}\n\n"
+            f"🛡 **LEG A ({symbol_a}) - 3 Parts:**\n"
+            f"  📥 **Entry:** {entry_a:.{digits_a}f}\n"
+            f"  ⛔ **Stop Loss (SL):** {sl_a:.{digits_a}f}\n"
+            f"  🎯 **TP1:** {tp1:.{digits_a}f}\n"
+            f"  🎯 **TP2:** {tp2:.{digits_a}f}\n"
+            f"  🎯 **TP3:** {tp3:.{digits_a}f}\n"
+            f"  📦 **Lots:** 3 parts of {part_lots_a:.2f} (Total {lots_a:.2f})\n\n"
+            f"⚖ **LEG B ({symbol_b}) - Hedge:**\n"
+            f"  📥 **Entry:** {entry_b:.{digits_b}f}\n"
+            f"  ⛔ **Stop Loss (SL):** {sl_b:.{digits_b}f}\n"
+            f"  🎯 **TP:** Dynamic (Spread Reversion)\n"
+            f"  📦 **Lots:** {lots_b:.2f}\n"
+            f"  📥 **Position:** {side_b}\n"
+        )
+        
+        payload = {"content": message}
+        res = requests.post(webhook_url, json=payload, timeout=5)
+        if res.status_code != 204:
+            logger.error(f"Failed to send Discord webhook: {res.status_code} - {res.text}")
+        else:
+            logger.info("Successfully sent signal notification to Discord webhook.")
+    except Exception as e:
+        logger.error(f"Error sending Discord notification: {e}")
 
 def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
     """
@@ -1755,6 +1811,59 @@ def main():
                     COOLDOWN_DIRECTIONS[current_pair_context] = best_action
                     is_long = (best_action == "BUY_SPREAD")
                     
+                    try:
+                        best_cat_a = get_symbol_category(S_A)
+                        best_cat_b = get_symbol_category(S_B)
+                        
+                        entry_a = best_sig["tick_a"].ask if is_long else best_sig["tick_a"].bid
+                        entry_b = best_sig["tick_b"].bid if is_long else best_sig["tick_b"].ask
+                        
+                        sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
+                        if is_long:
+                            tp1_val = best_sig["price_a"] + sl_dist
+                            tp2_val = best_sig["price_a"] + max(tp_dist, sl_dist * 1.5)
+                            tp3_val = best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5)
+                        else:
+                            tp1_val = best_sig["price_a"] - sl_dist
+                            tp2_val = best_sig["price_a"] - max(tp_dist, sl_dist * 1.5)
+                            tp3_val = best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5)
+                            
+                        if DEFAULT_LOTS > 0.005:
+                            lots_a = DEFAULT_LOTS * LEVERAGE_FACTORS.get(best_cat_a, 1.0)
+                        else:
+                            lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
+                            
+                        part_lots_a = round(lots_a / 3.0, 2)
+                        info_a_check = mt5.symbol_info(S_A)
+                        min_vol_a = info_a_check.volume_min if info_a_check else 0.01
+                        if part_lots_a < min_vol_a:
+                            part_lots_a = min_vol_a
+                        actual_lots_a = part_lots_a * 3.0
+                        
+                        lots_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
+                        
+                        order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(best_action, best_sig["beta"], best_sig["tick_b"])
+                        sl_b = price_b + sl_sign_b * sl_dist_b
+                        
+                        send_discord_signal_notification(
+                            action=best_action,
+                            symbol_a=S_A,
+                            symbol_b=S_B,
+                            z_score=best_sig["z_score"],
+                            entry_a=entry_a,
+                            sl_a=sl_a,
+                            tp1=tp1_val,
+                            tp2=tp2_val,
+                            tp3=tp3_val,
+                            lots_a=actual_lots_a,
+                            entry_b=entry_b,
+                            sl_b=sl_b,
+                            lots_b=lots_b,
+                            side_b=side_b
+                        )
+                    except Exception as e_notify:
+                        logger.error(f"Error preparing Discord notification: {e_notify}")
+                    
                     if is_long:
                         if best_cat_a == "crypto":
                             usdt_bal, _ = get_binance_usdt_balance()
@@ -1782,7 +1891,10 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0.005 else DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
+                            if DEFAULT_LOTS > 0.005:
+                                lots_a = DEFAULT_LOTS * LEVERAGE_FACTORS.get(best_cat_a, 1.0)
+                            else:
+                                lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             # Apply 3-part safeguard scaling correction
                             info_a_check = mt5.symbol_info(S_A)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
@@ -1840,7 +1952,10 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            lots_a = DEFAULT_LOTS if DEFAULT_LOTS > 0.005 else DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
+                            if DEFAULT_LOTS > 0.005:
+                                lots_a = DEFAULT_LOTS * LEVERAGE_FACTORS.get(best_cat_a, 1.0)
+                            else:
+                                lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             # Apply 3-part safeguard scaling correction
                             info_a_check = mt5.symbol_info(S_A)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
