@@ -1799,6 +1799,12 @@ def main():
                     current_pair_context = f"{S_A}/{S_B}"
                     save_config(current_pair_context)
                     
+                    # Force broker-specific symbol resolution for execution immediately
+                    cat_a_new = get_symbol_category(S_A)
+                    cat_b_new = get_symbol_category(S_B)
+                    S_A_resolved = resolve_broker_symbol(S_A) if cat_a_new != "crypto" else S_A
+                    S_B_resolved = resolve_broker_symbol(S_B) if cat_b_new != "crypto" else S_B
+                    
                     # Log signal
                     signal_id = log_signal(
                         S_A, S_B, 
@@ -1900,21 +1906,21 @@ def main():
                             else:
                                 lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             # Apply 3-part safeguard scaling correction
-                            info_a_check = mt5.symbol_info(S_A)
+                            info_a_check = mt5.symbol_info(S_A_resolved)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
                             part_lots_a = round(lots_a / 3.0, 2)
                             if part_lots_a < min_vol_a:
                                 part_lots_a = min_vol_a
                             actual_lots_a = part_lots_a * 3.0
                             
-                            qty_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
+                            qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
                             if execute_three_part_trade(
-                                S_A, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, actual_lots_a,
+                                S_A_resolved, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, actual_lots_a,
                                 best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             ):
-                                fresh_tick_b = mt5.symbol_info_tick(S_B) if best_cat_b != "crypto" else None
+                                fresh_tick_b = mt5.symbol_info_tick(S_B_resolved) if best_cat_b != "crypto" else None
                                 if fresh_tick_b is None and best_cat_b != "crypto":
                                     fresh_tick_b = best_sig["tick_b"]
                                 order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(
@@ -1922,18 +1928,18 @@ def main():
                                 )
                                 sl_b = price_b + sl_sign_b * sl_dist_b
                                 if best_cat_b == "crypto":
-                                    hedge_params = {"symbol": S_B, "side": side_b, "type": "MARKET", "quantity": qty_b}
+                                    hedge_params = {"symbol": S_B_resolved, "side": side_b, "type": "MARKET", "quantity": qty_b}
                                     h_res = send_signed_request("POST", "/fapi/v1/order", hedge_params)
                                     if h_res and h_res.status_code == 200:
                                         avg_price_b = float(h_res.json().get("avgPrice") or price_b)
-                                        log_trade_entry(h_res.json()["orderId"], S_B, side_b, qty_b, avg_price_b, datetime.datetime.now(), "Binance JS_HEDGE", signal_id)
-                                        price_prec = get_symbol_filters(S_B)["pricePrecision"] if get_symbol_filters(S_B) else 2
+                                        log_trade_entry(h_res.json()["orderId"], S_B_resolved, side_b, qty_b, avg_price_b, datetime.datetime.now(), "Binance JS_HEDGE", signal_id)
+                                        price_prec = get_symbol_filters(S_B_resolved)["pricePrecision"] if get_symbol_filters(S_B_resolved) else 2
                                         opp_side_b = "BUY" if side_b == "SELL" else "SELL"
-                                        send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
+                                        send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
-                                    res_hedge = send_order(S_B, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
+                                    res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
-                                        log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
+                                        log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                     else:
                         if best_cat_a == "crypto":
                             usdt_bal, _ = get_binance_usdt_balance()
@@ -1966,21 +1972,21 @@ def main():
                             else:
                                 lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             # Apply 3-part safeguard scaling correction
-                            info_a_check = mt5.symbol_info(S_A)
+                            info_a_check = mt5.symbol_info(S_A_resolved)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
                             part_lots_a = round(lots_a / 3.0, 2)
                             if part_lots_a < min_vol_a:
                                 part_lots_a = min_vol_a
                             actual_lots_a = part_lots_a * 3.0
                             
-                            qty_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
+                            qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
                             if execute_three_part_trade(
-                                S_A, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, actual_lots_a,
+                                S_A_resolved, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, actual_lots_a,
                                 best_sig["price_a"] - sl_dist, best_sig["price_a"] - max(tp_dist, sl_dist * 1.5), best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             ):
-                                fresh_tick_b = mt5.symbol_info_tick(S_B) if best_cat_b != "crypto" else None
+                                fresh_tick_b = mt5.symbol_info_tick(S_B_resolved) if best_cat_b != "crypto" else None
                                 if fresh_tick_b is None and best_cat_b != "crypto":
                                     fresh_tick_b = best_sig["tick_b"]
                                 order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(
@@ -1988,18 +1994,18 @@ def main():
                                 )
                                 sl_b = price_b + sl_sign_b * sl_dist_b
                                 if best_cat_b == "crypto":
-                                    hedge_params = {"symbol": S_B, "side": side_b, "type": "MARKET", "quantity": qty_b}
+                                    hedge_params = {"symbol": S_B_resolved, "side": side_b, "type": "MARKET", "quantity": qty_b}
                                     h_res = send_signed_request("POST", "/fapi/v1/order", hedge_params)
                                     if h_res and h_res.status_code == 200:
                                         avg_price_b = float(h_res.json().get("avgPrice") or price_b)
-                                        log_trade_entry(h_res.json()["orderId"], S_B, side_b, qty_b, avg_price_b, datetime.datetime.now(), "Binance JS_HEDGE", signal_id)
-                                        price_prec = get_symbol_filters(S_B)["pricePrecision"] if get_symbol_filters(S_B) else 2
+                                        log_trade_entry(h_res.json()["orderId"], S_B_resolved, side_b, qty_b, avg_price_b, datetime.datetime.now(), "Binance JS_HEDGE", signal_id)
+                                        price_prec = get_symbol_filters(S_B_resolved)["pricePrecision"] if get_symbol_filters(S_B_resolved) else 2
                                         opp_side_b = "BUY" if side_b == "SELL" else "SELL"
-                                        send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
+                                        send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
-                                    res_hedge = send_order(S_B, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
+                                    res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
-                                        log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
+                                        log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                     invalidate_trades_cache()
 
             # Trail Stop Loss if active
