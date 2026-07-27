@@ -562,7 +562,7 @@ def get_pip_size(symbol: str) -> float:
     s = symbol.upper()
     if "JPY" in s:
         return 0.01
-    if "XAU" in s:
+    if any(x in s for x in ["XAU", "XPT", "XPD", "PLAT", "PALL"]):
         return 1.0
     if "XAG" in s:
         return 0.1
@@ -1074,7 +1074,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 def get_symbol_category(symbol: str) -> str:
     s = symbol.upper()
     # Crypto disabled completely in this Forex/Metals/Indices instance
-    if any(x in s for x in ["XAU", "XAG"]):
+    if any(x in s for x in ["XAU", "XAG", "XPT", "XPD", "PLAT", "PALL"]):
         return "metals"
     if any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN", "US500", "US30", "NAS100", "GER30", "UK100"]):
         return "indices"

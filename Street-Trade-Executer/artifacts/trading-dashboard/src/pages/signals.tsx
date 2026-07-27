@@ -29,7 +29,7 @@ export default function Signals() {
     // Check if symbol A is metals/indices to assign category-specific lots if dashboard is 0.0
     const getSymbolCategory = (sym: string): string => {
       const s = sym.toUpperCase();
-      if (s.includes("XAU") || s.includes("XAG")) return "metals";
+      if (["XAU", "XAG", "XPT", "XPD", "PLAT", "PALL"].some(x => s.includes(x))) return "metals";
       if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN") || s.includes("US500") || s.includes("US30") || s.includes("NAS100") || s.includes("GER30") || s.includes("UK100")) return "indices";
       return "forex";
     };
@@ -99,7 +99,7 @@ export default function Signals() {
   const getPipSize = (sym: string): number => {
     const s = sym.toUpperCase();
     if (s.includes("JPY")) return 0.01;
-    if (s.includes("XAU")) return 1.0;
+    if (["XAU", "XPT", "XPD", "PLAT", "PALL"].some(x => s.includes(x))) return 1.0;
     if (s.includes("XAG")) return 0.1;
     if (s.includes("BTC")) return 1.0;
     if (s.includes("ETH")) return 0.1;
@@ -209,7 +209,7 @@ export default function Signals() {
     // Check if symbol A is metals/indices to assign category-specific lots if dashboard is 0.0
     const getSymbolCategory = (sym: string): string => {
       const s = sym.toUpperCase();
-      if (s.includes("XAU") || s.includes("XAG")) return "metals";
+      if (["XAU", "XAG", "XPT", "XPD", "PLAT", "PALL"].some(x => s.includes(x))) return "metals";
       if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN") || s.includes("US500") || s.includes("US30") || s.includes("NAS100") || s.includes("GER30") || s.includes("UK100")) return "indices";
       return "forex";
     };

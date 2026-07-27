@@ -104,8 +104,8 @@ export default function Dashboard() {
   const getPipSize = (sym: string): number => {
     const s = sym.toUpperCase();
     if (s.includes("JPY")) return 0.01;
-    if (s.includes("XAU")) return 0.1;
-    if (s.includes("XAG")) return 0.01;
+    if (["XAU", "XPT", "XPD", "PLAT", "PALL"].some(x => s.includes(x))) return 1.0;
+    if (s.includes("XAG")) return 0.1;
     if (s.includes("BTC")) return 1.0;
     if (s.includes("ETH")) return 0.1;
     if (s.includes("SOL") || s.includes("BNB") || s.includes("AVAX")) return 0.01;

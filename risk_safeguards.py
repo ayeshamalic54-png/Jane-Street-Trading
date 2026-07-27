@@ -239,7 +239,7 @@ def get_pip_size(symbol: str) -> float:
     s = symbol.upper()
     if "JPY" in s:
         return 0.01
-    if "XAU" in s:
+    if any(x in s for x in ["XAU", "XPT", "XPD", "PLAT", "PALL"]):
         return 1.0
     if "XAG" in s:
         return 0.1
@@ -277,8 +277,8 @@ def is_spread_valid(symbol):
         # For crypto, use 0.1% of current price as the threshold in pips
         price = (tick.bid + tick.ask) / 2.0
         max_spread = (price * 0.001) / pip_size
-    elif "XAU" in s:
-        max_spread = 5.0
+    elif any(x in s for x in ["XAU", "XPT", "XPD", "PLAT", "PALL"]):
+        max_spread = 5.0  # standard threshold for major precious metals
     elif "XAG" in s:
         max_spread = 10.0
     elif any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"]):

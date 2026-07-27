@@ -121,7 +121,7 @@ router.get("/prices", async (req, res) => {
           const getCategoryOfSymbol = (sym: string): string => {
             const s = sym.toUpperCase();
             if (s.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB", "AVAX", "XRP", "ADA", "DOGE", "MATIC"].some(x => s.includes(x))) return "crypto";
-            if (s.includes("XAU") || s.includes("XAG")) return "metals";
+            if (["XAU", "XAG", "XPT", "XPD", "PLAT", "PALL"].some(x => s.includes(x))) return "metals";
             if (["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"].some(x => s.includes(x))) return "stocks";
             if (["US500", "US30", "NAS100", "GER30", "UK100", "SPX", "DJI", "NDX"].some(x => s.includes(x))) return "indices";
             return "forex";
