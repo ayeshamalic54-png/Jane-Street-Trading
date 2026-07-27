@@ -307,17 +307,31 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
             max_equity_peak_val = float(row[1] or equity)
             saved_login = int(row[2] or 0)
 
-        # 3. Detect if a new account has been attached
+        # 3. Detect if a new account has been attached or if database metrics are out-of-sync
         login_changed = (mt5_login_val > 0 and mt5_login_val != saved_login)
-
-        if terminal_active and login_changed:
-            # Query if we have saved account metrics for mt5_login_val in account_states
+        
+        needs_restore = False
+        saved_initial = None
+        saved_peak = None
+        saved_dd = None
+        
+        if mt5_login_val > 0:
             cur.execute("SELECT initial_balance, max_equity_peak, overall_drawdown FROM account_states WHERE mt5_login = %s", (mt5_login_val,))
             acc_row = cur.fetchone()
             if acc_row:
-                initial_balance_val = float(acc_row[0])
-                max_equity_peak_val = float(acc_row[1])
-                overall_drawdown_val = float(acc_row[2])
+                saved_initial = float(acc_row[0])
+                saved_peak = float(acc_row[1])
+                saved_dd = float(acc_row[2])
+                if login_changed or abs(initial_balance_val - saved_initial) > 0.01:
+                    needs_restore = True
+            else:
+                needs_restore = True
+
+        if terminal_active and needs_restore:
+            if saved_initial is not None:
+                initial_balance_val = saved_initial
+                max_equity_peak_val = saved_peak
+                overall_drawdown_val = saved_dd
                 print(f"Syncing account metrics: Restoring saved metrics for account {mt5_login_val}: Initial Balance: ${initial_balance_val:.2f}, Peak: ${max_equity_peak_val:.2f}")
             else:
                 print(f"Syncing account metrics: Initializing metrics for new account {mt5_login_val} with equity: ${equity:.2f}")
