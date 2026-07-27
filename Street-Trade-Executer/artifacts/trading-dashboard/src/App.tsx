@@ -45,17 +45,69 @@ function Router() {
 
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("wasee_auth") === "true");
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const isAuth = localStorage.getItem("wasee_auth") === "true";
+    const lastActivity = localStorage.getItem("wasee_last_activity");
+    if (isAuth && lastActivity) {
+      const elapsed = Date.now() - Number(lastActivity);
+      if (elapsed > 60 * 60 * 1000) { // 1 hour inactivity timeout
+        localStorage.removeItem("wasee_auth");
+        localStorage.removeItem("wasee_role");
+        localStorage.removeItem("wasee_last_activity");
+        return false;
+      }
+      return true;
+    }
+    return isAuth;
+  });
 
   useEffect(() => {
     document.documentElement.classList.add("dark");
   }, []);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Track user activity events to keep session alive
+    const updateActivity = () => {
+      localStorage.setItem("wasee_last_activity", Date.now().toString());
+    };
+
+    const events = ["mousedown", "keydown", "scroll", "click", "mousemove"];
+    events.forEach((ev) => {
+      window.addEventListener(ev, updateActivity, { passive: true });
+    });
+
+    // Check session timeout every 10 seconds
+    const interval = setInterval(() => {
+      const lastActivity = localStorage.getItem("wasee_last_activity");
+      if (lastActivity) {
+        const elapsed = Date.now() - Number(lastActivity);
+        if (elapsed > 60 * 60 * 1000) { // 1 hour inactivity timeout
+          localStorage.removeItem("wasee_auth");
+          localStorage.removeItem("wasee_role");
+          localStorage.removeItem("wasee_last_activity");
+          setIsAuthenticated(false);
+        }
+      }
+    }, 1000);
+
+    return () => {
+      events.forEach((ev) => {
+        window.removeEventListener(ev, updateActivity);
+      });
+      clearInterval(interval);
+    };
+  }, [isAuthenticated]);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         {!isAuthenticated ? (
-          <Login onLoginSuccess={() => setIsAuthenticated(true)} />
+          <Login onLoginSuccess={() => {
+            localStorage.setItem("wasee_last_activity", Date.now().toString());
+            setIsAuthenticated(true);
+          }} />
         ) : (
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <Router />
