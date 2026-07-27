@@ -132,6 +132,15 @@ def initialize_database():
             action VARCHAR(20),
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS account_states (
+            mt5_login BIGINT PRIMARY KEY,
+            initial_balance NUMERIC(15, 2) NOT NULL,
+            max_equity_peak NUMERIC(15, 2) NOT NULL,
+            overall_drawdown NUMERIC(5, 2) DEFAULT 0.00,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
         """
     ]
 
@@ -302,9 +311,19 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
         login_changed = (mt5_login_val > 0 and mt5_login_val != saved_login)
 
         if terminal_active and login_changed:
-            print(f"Syncing account metrics: Resetting initial_balance and max_equity_peak to current equity: ${equity:.2f} due to MT5 login change")
-            initial_balance_val = float(equity)
-            max_equity_peak_val = float(equity)
+            # Query if we have saved account metrics for mt5_login_val in account_states
+            cur.execute("SELECT initial_balance, max_equity_peak, overall_drawdown FROM account_states WHERE mt5_login = %s", (mt5_login_val,))
+            acc_row = cur.fetchone()
+            if acc_row:
+                initial_balance_val = float(acc_row[0])
+                max_equity_peak_val = float(acc_row[1])
+                overall_drawdown_val = float(acc_row[2])
+                print(f"Syncing account metrics: Restoring saved metrics for account {mt5_login_val}: Initial Balance: ${initial_balance_val:.2f}, Peak: ${max_equity_peak_val:.2f}")
+            else:
+                print(f"Syncing account metrics: Initializing metrics for new account {mt5_login_val} with equity: ${equity:.2f}")
+                initial_balance_val = float(equity)
+                max_equity_peak_val = float(equity)
+                overall_drawdown_val = 0.00
             saved_login = mt5_login_val
 
         # 4. Update peak equity if exceeded
@@ -326,6 +345,19 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
             float(initial_balance_val), float(overall_drawdown_val),
             float(max_equity_peak_val), int(saved_login)
         ))
+        
+        # Save back to account_states for persistence across switches
+        if saved_login > 0:
+            cur.execute("""
+                INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown, updated_at)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (mt5_login) DO UPDATE SET
+                    initial_balance = EXCLUDED.initial_balance,
+                    max_equity_peak = EXCLUDED.max_equity_peak,
+                    overall_drawdown = EXCLUDED.overall_drawdown,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (int(saved_login), float(initial_balance_val), float(max_equity_peak_val), float(overall_drawdown_val)))
+            
         conn.commit()
         cur.close()
     except Exception as e:
@@ -562,7 +594,7 @@ def update_scanned_asset(symbol_pair, price_a, price_b, win_rate, z_score, actio
 def reset_database_metrics_for_new_account(login_id, equity):
     """
     Force-updates the database metrics (both bot_state and daily_metrics for today)
-    to match the new connected account's starting balance.
+    to match the new connected account's starting balance, restoring saved values if available.
     """
     import datetime
     today = datetime.date.today()
@@ -571,13 +603,37 @@ def reset_database_metrics_for_new_account(login_id, equity):
         conn = get_connection()
         cur = conn.cursor()
         login_val = int(login_id) if login_id else 0
+        if login_val == 0:
+            return
+
+        # Query if we have saved account metrics for login_val in account_states
+        cur.execute("SELECT initial_balance, max_equity_peak, overall_drawdown FROM account_states WHERE mt5_login = %s", (login_val,))
+        acc_row = cur.fetchone()
+        
+        if acc_row:
+            initial_balance_val = float(acc_row[0])
+            max_equity_peak_val = float(acc_row[1])
+            overall_drawdown_val = float(acc_row[2])
+            print(f"Restoring saved account metrics for account {login_val}: Initial Balance: ${initial_balance_val:.2f}, Peak: ${max_equity_peak_val:.2f}, Overall DD: {overall_drawdown_val:.2f}%")
+        else:
+            print(f"Initializing metrics for new account {login_val} with equity: ${equity:.2f}")
+            initial_balance_val = float(equity)
+            max_equity_peak_val = float(equity)
+            overall_drawdown_val = 0.00
+            
+            # Save initialized state
+            cur.execute("""
+                INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (mt5_login) DO NOTHING
+            """, (login_val, initial_balance_val, max_equity_peak_val, overall_drawdown_val))
         
         # 1. Update bot_state
         cur.execute("""
             UPDATE bot_state 
-            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, drawdown_percent = 0.00, trades_today = 0, overall_drawdown = 0.00 
+            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, drawdown_percent = 0.00, trades_today = 0, overall_drawdown = %s 
             WHERE id = 1
-        """, (float(equity), float(equity), login_val, float(equity)))
+        """, (initial_balance_val, max_equity_peak_val, login_val, float(equity), overall_drawdown_val))
         
         # 2. Update or Insert daily_metrics for today and this specific login
         cur.execute("""
@@ -588,11 +644,11 @@ def reset_database_metrics_for_new_account(login_id, equity):
                 current_equity = EXCLUDED.current_equity,
                 max_drawdown_percent = 0.00,
                 updated_at = CURRENT_TIMESTAMP
-        """, (today, login_val, float(equity), float(equity)))
+        """, (today, login_val, initial_balance_val, float(equity)))
             
         conn.commit()
         cur.close()
-        print(f"Successfully reset database metrics for account {login_val} (Equity: ${equity:.2f})")
+        print(f"Successfully reset/restored database metrics for account {login_val} (Equity: ${equity:.2f})")
     except Exception as e:
         print(f"Error resetting database metrics for new account: {e}")
         if conn:
