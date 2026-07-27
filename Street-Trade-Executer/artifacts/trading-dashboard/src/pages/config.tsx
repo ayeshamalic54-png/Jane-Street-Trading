@@ -51,8 +51,8 @@ const PAIR_CATEGORIES: Record<Category, { label: string; pairs: string[] }> = {
   metals: {
     label: "Metals",
     pairs: [
-      "XAUUSD/XAGUSD", "XAGUSD/XAUUSD", "XAUUSD/EURUSD", "XAUUSD/GBPUSD",
-      "XAUUSD/USDJPY",
+      "XAUUSD/XAGUSD", "XAGUSD/XAUUSD", "XPTUSD/XPDUSD", "XAUUSD/XPTUSD",
+      "XAUUSD/EURUSD", "XAUUSD/GBPUSD", "XAUUSD/USDJPY",
     ],
   },
 

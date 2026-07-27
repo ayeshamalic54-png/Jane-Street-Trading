@@ -364,6 +364,8 @@ CANDIDATE_PAIRS = {
     ],
     "metals": [
         ("XAUUSD", "XAGUSD"),
+        ("XPTUSD", "XPDUSD"),
+        ("XAUUSD", "XPTUSD"),
     ],
     "crypto": [
         ("BTCUSDT", "ETHUSDT"),
@@ -386,6 +388,8 @@ EXPECTED_BETA_SIGN = {
     "EURUSD/USDCHF": -1,
     "GBPUSD/USDCHF": -1,
     "XAUUSD/XAGUSD": 1,
+    "XPTUSD/XPDUSD": 1,
+    "XAUUSD/XPTUSD": 1,
     "BTCUSDT/ETHUSDT": 1,
     "SOLUSDT/BTCUSDT": 1,
     "ETHUSDT/SOLUSDT": 1,
