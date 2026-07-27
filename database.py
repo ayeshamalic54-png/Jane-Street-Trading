@@ -642,7 +642,6 @@ def reset_database_metrics_for_new_account(login_id, equity):
             ON CONFLICT (trading_date, mt5_login) DO UPDATE
             SET start_equity = EXCLUDED.start_equity,
                 current_equity = EXCLUDED.current_equity,
-                max_drawdown_percent = 0.00,
                 updated_at = CURRENT_TIMESTAMP
         """, (today, login_val, initial_balance_val, float(equity)))
             

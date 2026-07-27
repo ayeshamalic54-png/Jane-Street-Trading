@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { dailyMetricsTable, tradesTable } from "@workspace/db";
-import { desc, gte } from "drizzle-orm";
+import { dailyMetricsTable, tradesTable, botStateTable } from "@workspace/db";
+import { desc, gte, eq, and } from "drizzle-orm";
 import { GetMetricsQueryParams } from "@workspace/api-zod";
 
 const router = Router();
@@ -15,10 +15,19 @@ router.get("/metrics", async (req, res) => {
     cutoff.setDate(cutoff.getDate() - days);
     const cutoffStr = cutoff.toISOString().split("T")[0]!;
 
+    // Fetch active login first to filter daily metrics records
+    const botState = await db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1);
+    const activeLogin = botState[0]?.mt5Login ?? 0;
+
     const rows = await db
       .select()
       .from(dailyMetricsTable)
-      .where(gte(dailyMetricsTable.tradingDate, cutoffStr))
+      .where(
+        and(
+          gte(dailyMetricsTable.tradingDate, cutoffStr),
+          eq(dailyMetricsTable.mt5Login, activeLogin)
+        )
+      )
       .orderBy(desc(dailyMetricsTable.tradingDate))
       .limit(days);
 
