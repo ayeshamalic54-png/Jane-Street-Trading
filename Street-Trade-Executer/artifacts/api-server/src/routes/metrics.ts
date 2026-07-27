@@ -22,15 +22,47 @@ router.get("/metrics", async (req, res) => {
       .orderBy(desc(dailyMetricsTable.tradingDate))
       .limit(days);
 
+    // Fetch all trades closed since cutoff to calculate actual daily metrics
+    const trades = await db
+      .select()
+      .from(tradesTable)
+      .where(gte(tradesTable.closeTime, cutoff));
+
+    // Group profits and trade counts by local date string (YYYY-MM-DD)
+    const profitByDate: Record<string, number> = {};
+    const tradesCountByDate: Record<string, number> = {};
+
+    for (const t of trades) {
+      if (t.closeTime && t.profit != null) {
+        // Use timezone-safe local date string matching dailyMetricsTable format
+        const offset = t.closeTime.getTimezoneOffset();
+        const localDate = new Date(t.closeTime.getTime() - (offset * 60 * 1000));
+        const dateStr = localDate.toISOString().split("T")[0]!;
+        
+        profitByDate[dateStr] = (profitByDate[dateStr] ?? 0) + Number(t.profit);
+        
+        const c = t.comment ?? "";
+        if (c.includes("TP1") || c.includes("Manual") || c.includes("MANUAL")) {
+          tradesCountByDate[dateStr] = (tradesCountByDate[dateStr] ?? 0) + 1;
+        }
+      }
+    }
+
     res.json(
-      rows.map((m) => ({
-        tradingDate: m.tradingDate,
-        startEquity: Number(m.startEquity),
-        currentEquity: Number(m.currentEquity),
-        maxDrawdownPercent: Number(m.maxDrawdownPercent ?? 0),
-        tradesToday: m.tradesToday ?? 0,
-        pnl: Number(m.currentEquity) - Number(m.startEquity),
-      }))
+      rows.map((m) => {
+        const dateStr = m.tradingDate;
+        const dynamicPnl = profitByDate[dateStr] ?? 0.0;
+        const dynamicTrades = tradesCountByDate[dateStr] ?? m.tradesToday ?? 0;
+
+        return {
+          tradingDate: m.tradingDate,
+          startEquity: Number(m.startEquity),
+          currentEquity: Number(m.currentEquity),
+          maxDrawdownPercent: Number(m.maxDrawdownPercent ?? 0),
+          tradesToday: dynamicTrades,
+          pnl: dynamicPnl,
+        };
+      })
     );
   } catch (err) {
     req.log.error({ err }, "Failed to get metrics");
