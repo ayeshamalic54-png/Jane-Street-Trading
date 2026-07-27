@@ -2042,8 +2042,23 @@ def main():
             )
 
             if loop_log_counter % 15 == 0:
+                try:
+                    summary_parts = []
+                    conn_scan = get_connection()
+                    cur_scan = conn_scan.cursor()
+                    cur_scan.execute("SELECT symbol_pair, z_score FROM scanned_assets ORDER BY symbol_pair")
+                    scanned_rows = cur_scan.fetchall()
+                    cur_scan.close()
+                    conn_scan.close()
+                    for pair_name, z_val in scanned_rows:
+                        summary_parts.append(f"{pair_name}: {float(z_val):.2f}")
+                    scan_summary_str = " | ".join(summary_parts)
+                    logger.info(f"[LIVE SCAN SUMMARY] {scan_summary_str}")
+                except Exception as ex_sum:
+                    logger.error(f"Error compiling scan summary log: {ex_sum}")
+
                 logger.info(
-                    f"[LIVE SCAN] Active: {S_A}/{S_B} | Z-Score: {active_pair_z_score:.3f} "
+                    f"[LIVE SCAN DETAIL] Active Focus: {S_A}/{S_B} | Z-Score: {active_pair_z_score:.3f} "
                     f"| Z-Velocity: {active_pair_velocity:.3f} | OBI A/B: {active_pair_obi_a:.1f}/{active_pair_obi_b:.1f} "
                     f"| Status: {status_str}"
                 )
