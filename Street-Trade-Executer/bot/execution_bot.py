@@ -143,6 +143,10 @@ def check_closed_trades(symbol):
     """
     Checks if any open trades in the database have been closed in MT5.
     Queries the MT5 history deals to log close price and profit to the database.
+
+    BUG FIX: Use positions_get() with NO symbol filter and guard against None return.
+    Using positions_get(symbol=...) was returning None on transient MT5 errors,
+    which caused active_tickets=[] and marked ALL open trades as CLOSED.
     """
     conn = None
     open_tickets = []
@@ -161,41 +165,47 @@ def check_closed_trades(symbol):
     if not open_tickets:
         return
 
-    # Get active positions from MT5
-    positions = mt5.positions_get(symbol=symbol)
-    active_tickets = [p.ticket for p in positions] if positions else []
+    # BUG FIX: Fetch ALL positions (no symbol filter) and guard against None.
+    # If MT5 returns None it means a transient connection issue — abort to prevent
+    # false trade closures where all trades get incorrectly marked CLOSED.
+    positions = mt5.positions_get()
+    if positions is None:
+        logger.warning(f"check_closed_trades({symbol}): MT5 positions_get() returned None. Aborting sync to prevent false closures.")
+        return
+    active_tickets = [p.ticket for p in positions]
 
     for ticket in open_tickets:
         if ticket not in active_tickets:
-            # Trade is closed. Let's find exit deal details in MT5 history
+            # Trade is closed. Find exit deal details from MT5 history.
             logger.info(f"Detected closed trade ticket: {ticket}. Fetching details from MT5 history...")
-            
-            # Fetch history for past 2 days
-            from_date = datetime.datetime.now() - datetime.timedelta(days=2)
-            to_date = datetime.datetime.now() + datetime.timedelta(days=1)
-            
-            history_deals = mt5.history_deals_get(from_date, to_date)
+
+            # Primary: look up by position ID directly (most reliable, no date range needed)
+            history_deals = mt5.history_deals_get(position=ticket)
+
+            # Fallback: search last 30 days if direct lookup returns nothing
+            if not history_deals:
+                from_date = datetime.datetime.now() - datetime.timedelta(days=30)
+                to_date = datetime.datetime.now() + datetime.timedelta(days=1)
+                history_deals = mt5.history_deals_get(from_date, to_date)
+
+            close_price = 0.0
+            profit = 0.0
+            close_time = datetime.datetime.now()
+
             if history_deals:
-                close_price = None
-                profit = 0.0
-                close_time = datetime.datetime.now()
-                
-                # Exit deals have entry Out (mt5.DEAL_ENTRY_OUT = 1)
                 exit_deals = [d for d in history_deals if d.position_id == ticket and d.entry == mt5.DEAL_ENTRY_OUT]
-                
                 if exit_deals:
                     deal = exit_deals[0]
-                    close_price = deal.price
-                    
-                    # Sum profit/commission/swaps for all deals associated with this ticket
+                    close_price = float(deal.price)
                     all_deals_for_pos = [d for d in history_deals if d.position_id == ticket]
-                    profit = sum(d.profit + d.commission + d.storage for d in all_deals_for_pos if d.entry == mt5.DEAL_ENTRY_OUT)
+                    profit = sum(d.profit + d.commission + d.swap for d in all_deals_for_pos if d.entry == mt5.DEAL_ENTRY_OUT)
                     close_time = datetime.datetime.fromtimestamp(deal.time)
-                    
                     log_trade_exit(ticket, close_price, profit, close_time)
                     logger.info(f"Logged closed trade ticket {ticket} | Exit: {close_price:.5f} | Profit: ${profit:.2f}")
                 else:
-                    # Fallback close
-                    log_trade_exit(ticket, 0.0, 0.0, close_time)
+                    # No exit deal found yet — do NOT mark as closed yet (may still be partial)
+                    logger.warning(f"Ticket {ticket} not in active positions but no exit deal found. Skipping close to be safe.")
             else:
+                # No history at all — mark closed with zero values as last resort
                 log_trade_exit(ticket, 0.0, 0.0, datetime.datetime.now())
+                logger.warning(f"No MT5 history found for ticket {ticket}. Marked CLOSED with zero values.")

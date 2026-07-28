@@ -648,83 +648,90 @@ def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -
 def sync_mt5_open_positions_with_db():
     """
     Syncs open MT5 tickets with the database trades table.
-    Supports both Hedging and Netting accounts by checking symbol-based volumes.
+    BUG FIX: Uses per-TICKET matching as the primary check so that
+    hedging accounts with multiple positions per symbol (TP1/TP2/TP3)
+    are not falsely closed. Netting accounts are handled by checking
+    whether any active position exists for the symbol base name.
     """
     try:
         if not mt5.initialize():
             return
-            
+
         positions = mt5.positions_get()
         if positions is None:
+            # Transient MT5 connection issue — abort to prevent false trade closures
+            logger.warning("[MT5 SYNC] positions_get() returned None. Aborting sync to prevent false closures.")
             return
-            
-        # Group active positions by symbol (case-insensitive)
-        active_positions_by_symbol = {}
+
+        # Build a set of ALL active MT5 tickets (works for both hedging and netting accounts)
+        active_tickets = {p.ticket for p in positions}
+
+        # Also build per-symbol total active volume for netting scale-down detection
+        # Use base symbol (without broker suffix like .m .p) to avoid mismatches
+        active_volume_by_base_symbol = {}
         for p in positions:
-            active_positions_by_symbol[p.symbol.upper()] = p
-        
+            base = p.symbol.upper().split('.')[0]
+            active_volume_by_base_symbol[base] = active_volume_by_base_symbol.get(base, 0.0) + float(p.volume)
+
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("SELECT ticket, symbol, lots, entry_price, order_type FROM trades WHERE status = 'OPEN'")
         db_open_trades = cur.fetchall()
-        
-        # Group db open trades by symbol
-        db_trades_by_symbol = {}
-        for row in db_open_trades:
-            sym = row[1].upper()
-            if sym not in db_trades_by_symbol:
-                db_trades_by_symbol[sym] = []
-            db_trades_by_symbol[sym].append(row)
 
-        for sym, db_rows in db_trades_by_symbol.items():
-            active_pos = active_positions_by_symbol.get(sym)
-            
-            if active_pos is None:
-                # No active position in MT5 for this symbol at all. All db trades for this symbol are closed.
-                for ticket, symbol, lots, entry_price, order_type in db_rows:
-                    if ticket < 1000:
-                        continue
-                    history = mt5.history_deals_get(position=ticket)
-                    close_price = float(entry_price)
-                    profit = 0.0
-                    close_time = datetime.datetime.now()
-                    if history:
-                        for deal in history:
-                            if deal.entry == mt5.DEAL_ENTRY_OUT:
-                                close_price = float(deal.price)
-                                profit = float(deal.profit)
-                                close_time = datetime.datetime.fromtimestamp(deal.time)
-                                break
-                    log_trade_exit(ticket, close_price, profit, close_time)
-                    logger.info(f"[MT5 SYNC] Netting close: Ticket {ticket} ({symbol}) detected closed (no active position).")
-            else:
-                # Active position exists in MT5. Verify volume to handle netting scale-down.
-                db_rows_sorted = sorted(db_rows, key=lambda x: x[0])
-                total_db_volume = sum(float(r[2]) for r in db_rows_sorted)
-                active_volume = float(active_pos.volume)
-                
-                if active_volume < total_db_volume - 0.005:
-                    volume_to_close = total_db_volume - active_volume
-                    for ticket, symbol, lots, entry_price, order_type in db_rows_sorted:
-                        lots_val = float(lots)
-                        if volume_to_close >= lots_val - 0.005:
-                            history = mt5.history_deals_get(position=ticket)
-                            close_price = float(entry_price)
-                            profit = 0.0
-                            close_time = datetime.datetime.now()
-                            if history:
-                                for deal in history:
-                                    if deal.entry == mt5.DEAL_ENTRY_OUT:
-                                        close_price = float(deal.price)
-                                        profit = float(deal.profit)
-                                        close_time = datetime.datetime.fromtimestamp(deal.time)
-                                        break
-                            log_trade_exit(ticket, close_price, profit, close_time)
-                            logger.info(f"[MT5 SYNC] Netting scale-down: Ticket {ticket} ({symbol}) marked closed (volume reduced).")
-                            volume_to_close -= lots_val
-                        else:
-                            break
-                            
+        for ticket, symbol, lots, entry_price, order_type in db_open_trades:
+            if ticket < 1000:
+                continue
+
+            if ticket in active_tickets:
+                # Ticket is still active in MT5 — no action needed
+                continue
+
+            # Ticket is NOT in active MT5 positions. Determine if it is a true close
+            # or a netting scale-down where the symbol position still exists.
+            sym_base = symbol.upper().split('.')[0]
+            active_vol_for_symbol = active_volume_by_base_symbol.get(sym_base, 0.0)
+
+            # Calculate total DB open volume for this base symbol
+            total_db_vol_for_sym = sum(
+                float(r[2]) for r in db_open_trades
+                if r[1].upper().split('.')[0] == sym_base
+            )
+
+            if active_vol_for_symbol > 0.0 and active_vol_for_symbol >= total_db_vol_for_sym - 0.005:
+                # Symbol still has the same (or more) volume in MT5 vs DB.
+                # This ticket was likely merged/re-ticketed by a netting broker — skip.
+                continue
+
+            # Ticket is truly closed (or partially netted out). Look up exit details.
+            history = mt5.history_deals_get(position=ticket)
+            close_price = float(entry_price)
+            profit = 0.0
+            close_time = datetime.datetime.now()
+            found_exit = False
+
+            if history:
+                exit_deals = [d for d in history if d.entry == mt5.DEAL_ENTRY_OUT]
+                if exit_deals:
+                    deal = exit_deals[0]
+                    close_price = float(deal.price)
+                    profit = sum(
+                        d.profit + d.commission + d.swap
+                        for d in history if d.entry == mt5.DEAL_ENTRY_OUT
+                    )
+                    close_time = datetime.datetime.fromtimestamp(deal.time)
+                    found_exit = True
+
+            if not found_exit and active_vol_for_symbol <= 0.0:
+                # No history and no active position for symbol — safe to mark closed
+                pass
+            elif not found_exit:
+                # No exit deal found but symbol still partially active — be conservative, skip
+                logger.warning(f"[MT5 SYNC] Ticket {ticket} ({symbol}) not in active tickets but no exit deal found and symbol still active. Skipping to avoid false closure.")
+                continue
+
+            log_trade_exit(ticket, close_price, profit, close_time)
+            logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) marked closed. Exit: {close_price:.5f} | Profit: ${profit:.2f}")
+
         conn.commit()
         cur.close()
         conn.close()
@@ -927,11 +934,43 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         open_leg_a_trades = [t for t in leg_a_trades if t["status"] == 'OPEN']
         open_leg_b_trades = [t for t in leg_b_trades if t["status"] == 'OPEN']
 
-        # 1. Cleanup check: If Leg A has NO open trades left but Leg B still has open trades, close Leg B immediately
+        # 1. Cleanup check: If Leg A has NO open trades left but Leg B still has open trades, close Leg B immediately.
+        # BUG FIX: Before closing hedge (Leg B), VERIFY against live MT5 that Leg A is truly closed.
+        # The DB can be momentarily stale (e.g. after sync_mt5_open_positions_with_db runs).
+        # If any Leg A ticket is still active in MT5, do NOT close the hedge yet.
         if not open_leg_a_trades and open_leg_b_trades:
-            logger.info(f"Cleanup: Leg A is fully closed for signal_id {sig_id}. Closing remaining Leg B trades.")
-            for t_b in open_leg_b_trades:
-                close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+            leg_a_truly_closed = True
+            try:
+                leg_a_cat = get_symbol_category(sym_a)
+                if leg_a_cat != "crypto":
+                    all_mt5_positions = mt5.positions_get()
+                    if all_mt5_positions is None:
+                        # MT5 connection issue — abort to prevent false hedge closure
+                        logger.warning(f"[HEDGE GUARD] MT5 positions_get() returned None while checking Leg A for signal_id {sig_id}. Skipping hedge close to prevent false closure.")
+                        leg_a_truly_closed = False
+                    else:
+                        active_mt5_tickets = {p.ticket for p in all_mt5_positions}
+                        sym_a_base = sym_a.upper().split('.')[0]
+                        # Check if any Leg A ticket from all trades (not just DB open) is still live in MT5
+                        for t_a in leg_a_trades:
+                            if t_a["ticket"] in active_mt5_tickets:
+                                logger.warning(f"[HEDGE GUARD] DB shows Leg A closed for signal_id {sig_id} but ticket {t_a['ticket']} is still active in MT5. Skipping hedge close — DB sync lag.")
+                                leg_a_truly_closed = False
+                                break
+                        # Also check by symbol: if any position for Leg A symbol is open in MT5, be conservative
+                        if leg_a_truly_closed:
+                            leg_a_mt5_positions = [p for p in all_mt5_positions if p.symbol.upper().split('.')[0] == sym_a_base and p.magic == MAGIC_NUMBER]
+                            if leg_a_mt5_positions:
+                                logger.warning(f"[HEDGE GUARD] DB shows Leg A closed for signal_id {sig_id} but {len(leg_a_mt5_positions)} Leg A position(s) still active in MT5 by symbol. Skipping hedge close.")
+                                leg_a_truly_closed = False
+            except Exception as eg:
+                logger.error(f"[HEDGE GUARD] Error verifying Leg A MT5 state for signal_id {sig_id}: {eg}. Skipping hedge close to be safe.")
+                leg_a_truly_closed = False
+
+            if leg_a_truly_closed:
+                logger.info(f"Cleanup: Leg A is fully closed (MT5 verified) for signal_id {sig_id}. Closing remaining Leg B trades.")
+                for t_b in open_leg_b_trades:
+                    close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
             continue
 
         if not open_leg_a_trades:

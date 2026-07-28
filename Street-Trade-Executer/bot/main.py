@@ -12,7 +12,7 @@ from data_ingestion import initialize_mt5, check_and_subscribe_symbol, get_live_
 from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache
 from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order
 from smc_indicators import detect_smc_zones, is_price_in_zones
-from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute
+from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, log_trade_entry
 
 # Setup Logging
 logger = logging.getLogger("SMC_Forex_Bot")
@@ -342,7 +342,11 @@ def main():
                             S_A, True, tick_a.ask, tick_a.ask - sl_dist, lots_a,
                             price_a + sl_dist, price_a + sl_dist * 2, price_a + sl_dist * 3.5
                         ):
-                            send_order(S_B, mt5.ORDER_TYPE_SELL, tick_b.bid, lots_b, 0.0, 0.0, "JS_HEDGE")
+                            # BUG FIX: Log hedge (Leg B) entry to database so it shows in app
+                            res_hedge = send_order(S_B, mt5.ORDER_TYPE_SELL, tick_b.bid, lots_b, 0.0, 0.0, "JS_HEDGE")
+                            if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
+                                log_trade_entry(res_hedge.order, S_B, "SELL", lots_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE")
+                                logger.info(f"Hedge (Leg B) logged to DB. Ticket: {res_hedge.order}")
                             invalidate_trades_cache()
 
                     elif z_score > Z_ENTRY_THRESHOLD and net_obi < -0.15 and in_bearish_zone:
@@ -352,7 +356,11 @@ def main():
                             S_A, False, tick_a.bid, tick_a.bid + sl_dist, lots_a,
                             price_a - sl_dist, price_a - sl_dist * 2, price_a - sl_dist * 3.5
                         ):
-                            send_order(S_B, mt5.ORDER_TYPE_BUY, tick_b.ask, lots_b, 0.0, 0.0, "JS_HEDGE")
+                            # BUG FIX: Log hedge (Leg B) entry to database so it shows in app
+                            res_hedge = send_order(S_B, mt5.ORDER_TYPE_BUY, tick_b.ask, lots_b, 0.0, 0.0, "JS_HEDGE")
+                            if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
+                                log_trade_entry(res_hedge.order, S_B, "BUY", lots_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE")
+                                logger.info(f"Hedge (Leg B) logged to DB. Ticket: {res_hedge.order}")
                             invalidate_trades_cache()
 
             elif len(active_js_positions) > 0:
