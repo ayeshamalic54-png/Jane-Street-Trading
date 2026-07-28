@@ -1169,6 +1169,69 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
         return round_volume(symbol_b, raw_qty)
 
 
+def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float, is_long: bool) -> tuple:
+    """
+    Checks the free margin in MT5 and dynamically scales down qty_a and qty_b
+    if the combined margin requirement exceeds 75% of available free margin.
+    Returns (scaled_qty_a, scaled_qty_b).
+    """
+    acc = mt5.account_info()
+    if not acc:
+        return qty_a, qty_b
+        
+    free_margin = float(acc.margin_free)
+    margin_limit = free_margin * 0.75  # Limit to 75% of free margin
+    
+    # Resolving order types for margin calculation
+    action_a = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
+    action_b = mt5.ORDER_TYPE_SELL if is_long else mt5.ORDER_TYPE_BUY
+    
+    tick_a = mt5.symbol_info_tick(symbol_a)
+    price_a = tick_a.ask if action_a == mt5.ORDER_TYPE_BUY else (tick_a.bid if tick_a else mt5.symbol_info(symbol_a).bid)
+    
+    tick_b = mt5.symbol_info_tick(symbol_b)
+    price_b = tick_b.ask if action_b == mt5.ORDER_TYPE_BUY else (tick_b.bid if tick_b else mt5.symbol_info(symbol_b).bid)
+    
+    margin_a = mt5.order_calc_margin(action_a, symbol_a, qty_a, price_a)
+    margin_b = mt5.order_calc_margin(action_b, symbol_b, qty_b, price_b)
+    
+    if margin_a is None or margin_b is None:
+        logger.warning(f"[MARGIN GUARD] Failed to calculate margin using order_calc_margin. Proceeding with original sizes.")
+        return qty_a, qty_b
+        
+    total_margin_req = float(margin_a + margin_b)
+    logger.info(f"[MARGIN GUARD] Free Margin: ${free_margin:.2f} | Margin Required: ${total_margin_req:.2f} (Leg A: ${margin_a:.2f}, Leg B: ${margin_b:.2f})")
+    
+    if total_margin_req > margin_limit:
+        scale_factor = margin_limit / total_margin_req
+        logger.warning(f"[MARGIN GUARD] Margin required (${total_margin_req:.2f}) exceeds 75% limit (${margin_limit:.2f}). Scaling down trades by factor: {scale_factor:.4f}")
+        
+        scaled_a = qty_a * scale_factor
+        scaled_b = qty_b * scale_factor
+        
+        # Ensure scaled_a is divisible by 3 (for 3-part split)
+        info_a = mt5.symbol_info(symbol_a)
+        min_vol_a = info_a.volume_min if info_a else 0.01
+        step_a = info_a.volume_step if info_a else 0.01
+        
+        part_lots_scaled = round(scaled_a / 3.0 / step_a) * step_a
+        if part_lots_scaled < min_vol_a:
+            part_lots_scaled = min_vol_a
+        final_a = round(part_lots_scaled * 3.0, 2)
+        
+        from risk_safeguards import round_volume
+        final_b = round_volume(symbol_b, scaled_b)
+        
+        # Recalculate margin for logs
+        new_margin_a = mt5.order_calc_margin(action_a, symbol_a, final_a, price_a) or 0.0
+        new_margin_b = mt5.order_calc_margin(action_b, symbol_b, final_b, price_b) or 0.0
+        logger.info(f"[MARGIN GUARD] Scaled lot sizes: Leg A: {qty_a:.2f} -> {final_a:.2f} | Leg B: {qty_b:.2f} -> {final_b:.2f}. New Total Margin: ${new_margin_a + new_margin_b:.2f}")
+        
+        return final_a, final_b
+        
+    return qty_a, qty_b
+
+
 # ==============================================================================
 # MAIN TRADING ENGINE RUN LOOP
 # ==============================================================================
@@ -1952,6 +2015,9 @@ def main():
                             
                             qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
+                            # Apply Margin Guard to dynamically scale down lots to fit within available margin
+                            actual_lots_a, qty_b = apply_margin_guard(S_A_resolved, S_B_resolved, actual_lots_a, qty_b, True)
+                            
                             if execute_three_part_trade(
                                 S_A_resolved, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, actual_lots_a,
                                 best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5),
@@ -2017,6 +2083,9 @@ def main():
                             actual_lots_a = part_lots_a * 3.0
                             
                             qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
+                            
+                            # Apply Margin Guard to dynamically scale down lots to fit within available margin
+                            actual_lots_a, qty_b = apply_margin_guard(S_A_resolved, S_B_resolved, actual_lots_a, qty_b, False)
                             
                             if execute_three_part_trade(
                                 S_A_resolved, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, actual_lots_a,
