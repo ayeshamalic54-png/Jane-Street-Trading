@@ -94,6 +94,8 @@ export const dailyMetricsTable = pgTable("daily_metrics", {
   maxDrawdownPercent: numeric("max_drawdown_percent", { precision: 5, scale: 2 }).default("0"),
   tradesToday: integer("trades_today").default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
+  botId: integer("bot_id").default(1),
+  mt5Login: bigint("mt5_login", { mode: "number" }).default(0),
 });
 
 export const tradeCommandsTable = pgTable("trade_commands", {
