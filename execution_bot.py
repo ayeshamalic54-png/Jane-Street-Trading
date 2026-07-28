@@ -108,6 +108,16 @@ def close_all_positions(symbol, comment_filter="JS_"):
         positions = mt5.positions_get()
     else:
         positions = mt5.positions_get(symbol=symbol)
+        if not positions:
+            from data_ingestion import resolve_broker_symbol
+            resolved = resolve_broker_symbol(symbol)
+            if resolved != symbol:
+                positions = mt5.positions_get(symbol=resolved)
+        if not positions:
+            all_pos = mt5.positions_get()
+            if all_pos:
+                base_sym = symbol.split('.')[0].upper()
+                positions = [p for p in all_pos if p.symbol.split('.')[0].upper() == base_sym]
         
     if not positions:
         return
@@ -147,6 +157,17 @@ def close_all_positions(symbol, comment_filter="JS_"):
 def modify_sl_for_trade(symbol, new_sl):
     """Modifies the Stop Loss of all active trade parts to the new_sl price."""
     positions = mt5.positions_get(symbol=symbol)
+    if not positions:
+        from data_ingestion import resolve_broker_symbol
+        resolved = resolve_broker_symbol(symbol)
+        if resolved != symbol:
+            positions = mt5.positions_get(symbol=resolved)
+    if not positions:
+        all_pos = mt5.positions_get()
+        if all_pos:
+            base_sym = symbol.split('.')[0].upper()
+            positions = [p for p in all_pos if p.symbol.split('.')[0].upper() == base_sym]
+            
     if not positions:
         return
         
@@ -189,8 +210,8 @@ def check_closed_trades(symbol):
     if not open_tickets:
         return
 
-    # Get active positions from MT5
-    positions = mt5.positions_get(symbol=symbol)
+    # Get active positions from MT5 (without symbol filter to avoid suffix/naming mismatches)
+    positions = mt5.positions_get()
     if positions is None:
         # Transient connection issues - abort sync to prevent false trade closures
         return
@@ -293,6 +314,16 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
     if len(positions) == 0:
         # Check if there is an active position for this symbol (Netting account support)
         sym_positions = mt5.positions_get(symbol=symbol)
+        if not sym_positions:
+            from data_ingestion import resolve_broker_symbol
+            resolved = resolve_broker_symbol(symbol)
+            if resolved != symbol:
+                sym_positions = mt5.positions_get(symbol=resolved)
+        if not sym_positions:
+            all_pos = mt5.positions_get()
+            if all_pos:
+                base_sym = symbol.split('.')[0].upper()
+                sym_positions = [p for p in all_pos if p.symbol.split('.')[0].upper() == base_sym]
         if sym_positions:
             pos = sym_positions[0]
             ticket = pos.ticket

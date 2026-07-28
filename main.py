@@ -921,8 +921,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             sym_a = symbol_a
             sym_b = symbol_b
 
-        leg_a_trades = [t for t in trades if t["symbol"].upper() == sym_a.upper()]
-        leg_b_trades = [t for t in trades if t["symbol"].upper() == sym_b.upper()]
+        leg_a_trades = [t for t in trades if t["symbol"].split('.')[0].upper() == sym_a.split('.')[0].upper()]
+        leg_b_trades = [t for t in trades if t["symbol"].split('.')[0].upper() == sym_b.split('.')[0].upper()]
 
         open_leg_a_trades = [t for t in leg_a_trades if t["status"] == 'OPEN']
         open_leg_b_trades = [t for t in leg_b_trades if t["status"] == 'OPEN']
@@ -948,11 +948,11 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 kf_pair = get_kf_for_pair(sym_a, sym_b)
                 z_score_for_pair = kf_pair.get_current_z(p_b, p_a)
             else:
-                if sym_a.upper() == symbol_a.upper() and sym_b.upper() == symbol_b.upper():
+                if sym_a.split('.')[0].upper() == symbol_a.split('.')[0].upper() and sym_b.split('.')[0].upper() == symbol_b.split('.')[0].upper():
                     z_score_for_pair = z_score
         except Exception as ez:
             logger.error(f"Error calculating dynamic z_score for {sym_a}/{sym_b}: {ez}")
-            if sym_a.upper() == symbol_a.upper() and sym_b.upper() == symbol_b.upper():
+            if sym_a.split('.')[0].upper() == symbol_a.split('.')[0].upper() and sym_b.split('.')[0].upper() == symbol_b.split('.')[0].upper():
                 z_score_for_pair = z_score
 
         # Fetch the actual entry Z-score of the signal to calculate a relative Z Stop Loss
@@ -1088,8 +1088,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             logger.error(f"Error querying all trades for signal_id {sig_id}: {e}")
             continue
 
-        db_leg_a = [t for t in all_db_trades if t[1].upper() == sym_a.upper()]
-        db_leg_b = [t for t in all_db_trades if t[1].upper() == sym_b.upper()]
+        db_leg_a = [t for t in all_db_trades if t[1].split('.')[0].upper() == sym_a.split('.')[0].upper()]
+        db_leg_b = [t for t in all_db_trades if t[1].split('.')[0].upper() == sym_b.split('.')[0].upper()]
 
         total_a_parts = len(db_leg_a)
         closed_a_parts = len([t for t in db_leg_a if t[2] == 'CLOSED'])
