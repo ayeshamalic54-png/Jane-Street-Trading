@@ -1034,8 +1034,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 
             # Sync closed details immediately to database
             try:
-                check_closed_trades(S_A_resolved)
-                check_closed_trades(S_B_resolved)
+                check_closed_trades(sym_a)
+                check_closed_trades(sym_b)
                 
                 # Query the database to get the total profit/loss of this signal set
                 conn_pnl = get_connection()
