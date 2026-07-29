@@ -276,7 +276,7 @@ export default function Config() {
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Bot Configuration</h2>
         <p className="text-sm text-muted-foreground">
-          Trading pair · execution parameters · auto/manual mode · FundedNext rules
+          Trading pair · execution parameters · auto/manual mode · Blue Guardian rules
         </p>
       </div>
 

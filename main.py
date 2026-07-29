@@ -409,10 +409,10 @@ DEFAULT_LOT_SIZES = {
 
 LEVERAGE_FACTORS = {
     "forex": 1.0,
-    "metals": 0.25,   # FundedNext 1:25 vs 1:100 Forex (4x lower leverage)
-    "indices": 0.25,  # FundedNext 1:25 vs 1:100 Forex (4x lower leverage)
-    "stocks": 0.10,   # FundedNext 1:10 vs 1:100 Forex (10x lower leverage)
-    "crypto": 0.01    # FundedNext 1:1 vs 1:100 Forex (100x lower leverage)
+    "metals": 0.25,   # 4x lower leverage than Forex
+    "indices": 0.25,  # 4x lower leverage than Forex
+    "stocks": 0.10,   # 10x lower leverage than Forex
+    "crypto": 0.01    # 100x lower leverage than Forex
 }
 
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
