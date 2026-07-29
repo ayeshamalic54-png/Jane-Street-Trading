@@ -1984,28 +1984,25 @@ def main():
             is_trade_limit_ok = (not RISK_LIMITS_ENABLED) or is_demo or (trades_today < MAX_DAILY_TRADES)
             
             if AUTO_EXECUTE and not has_positions and is_trade_limit_ok and not is_news_halted and candidate_signals:
-                # Prioritize current active pair signal first, fallback to scanning highest win-rate signal second
-                active_pair_sig = None
-                for sig in candidate_signals:
-                    if sig["pair"] == (S_A, S_B) or sig["pair"] == (GLOBAL_CONFIG["SYMBOL_A"], GLOBAL_CONFIG["SYMBOL_B"]):
-                        active_pair_sig = sig
+                # Sort candidate signals by win rate descending, with active pair at the top if present
+                sorted_candidates = list(candidate_signals)
+                sorted_candidates.sort(key=lambda x: (x["pair"] == (S_A, S_B) or x["pair"] == (GLOBAL_CONFIG["SYMBOL_A"], GLOBAL_CONFIG["SYMBOL_B"]), x["win_rate"]), reverse=True)
+                
+                best_sig = None
+                for cand in sorted_candidates:
+                    cand_s_a, cand_s_b = cand["pair"]
+                    cand_cat_a = get_symbol_category(cand_s_a)
+                    cand_cat_b = get_symbol_category(cand_s_b)
+                    if (cand_cat_a == "crypto" or is_spread_valid(cand_s_a)) and (cand_cat_b == "crypto" or is_spread_valid(cand_s_b)):
+                        best_sig = cand
                         break
-
-                if active_pair_sig:
-                    logger.info(f"Signal detected on current active pair {S_A}/{S_B}. Executing active pair trade.")
-                    best_sig = active_pair_sig
-                else:
-                    # Sort candidate signals by win rate descending
-                    candidate_signals.sort(key=lambda x: x["win_rate"], reverse=True)
-                    best_sig = candidate_signals[0]
                 
-                best_pair = best_sig["pair"]
-                best_action = best_sig["action"]
-                best_s_a, best_s_b = best_pair
-                best_cat_a = get_symbol_category(best_s_a)
-                best_cat_b = get_symbol_category(best_s_b)
-                
-                if (best_cat_a == "crypto" or is_spread_valid(best_s_a)) and (best_cat_b == "crypto" or is_spread_valid(best_s_b)):
+                if best_sig is not None:
+                    best_pair = best_sig["pair"]
+                    best_action = best_sig["action"]
+                    best_s_a, best_s_b = best_pair
+                    best_cat_a = get_symbol_category(best_s_a)
+                    best_cat_b = get_symbol_category(best_s_b)
                     
                     # Machine Learning Filter evaluation
                     if ML_MODEL is not None and Z_ENTRY_THRESHOLD > 0.5 and os.getenv("USE_ML_FILTER", "False").lower() in ("true", "1", "yes"):
