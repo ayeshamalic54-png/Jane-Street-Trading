@@ -376,7 +376,10 @@ CANDIDATE_PAIRS = {
         ("AAPL", "MSFT"),
         ("MSFT", "GOOGL"),
         ("NVDA", "AMD"),
+        ("AMZN", "GOOGL"),
+        ("META", "GOOGL"),
         ("US500", "NAS100"),
+        ("US30", "US500"),
     ]
 }
 
@@ -396,14 +399,17 @@ EXPECTED_BETA_SIGN = {
     "AAPL/MSFT": 1,
     "MSFT/GOOGL": 1,
     "NVDA/AMD": 1,
-    "US500/NAS100": 1
+    "AMZN/GOOGL": 1,
+    "META/GOOGL": 1,
+    "US500/NAS100": 1,
+    "US30/US500": 1
 }
 
 DEFAULT_LOT_SIZES = {
     "metals": 0.30,
     "forex": 1.20,
     "indices": 0.60,
-    "stocks": 6.00,
+    "stocks": 0.30,
     "crypto": 0.06
 }
 
