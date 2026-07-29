@@ -148,7 +148,7 @@ def check_and_subscribe_symbol(symbol):
     if book_sub:
         logger.info(f"Subscribed to Order Book updates for {resolved}")
     else:
-        logger.warning(f"Could not subscribe to Order Book for {resolved} (Level-2 depth might be disabled by broker)")
+        logger.debug(f"Level-2 Order Book not provided by broker for {resolved}; using standard Bid/Ask tick stream.")
         
     return True
 
