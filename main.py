@@ -1997,7 +1997,10 @@ def main():
                             tp2_val = best_sig["price_a"] - max(tp_dist, sl_dist * 1.5)
                             tp3_val = best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5)
                             
-                        if DEFAULT_LOTS > 0.005:
+                        env_lot = os.getenv(f"{best_cat_a.upper()}_LOTS")
+                        if env_lot:
+                            lots_a = float(env_lot)
+                        elif DEFAULT_LOTS > 0.005:
                             disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                             mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                             lots_a = DEFAULT_LOTS * mult
@@ -2062,7 +2065,10 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            if DEFAULT_LOTS > 0.005:
+                            env_lot = os.getenv(f"{best_cat_a.upper()}_LOTS")
+                            if env_lot:
+                                lots_a = float(env_lot)
+                            elif DEFAULT_LOTS > 0.005:
                                 disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                                 mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                                 lots_a = DEFAULT_LOTS * mult
@@ -2133,7 +2139,10 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            if DEFAULT_LOTS > 0.005:
+                            env_lot = os.getenv(f"{best_cat_a.upper()}_LOTS")
+                            if env_lot:
+                                lots_a = float(env_lot)
+                            elif DEFAULT_LOTS > 0.005:
                                 disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                                 mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                                 lots_a = DEFAULT_LOTS * mult
