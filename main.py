@@ -536,14 +536,14 @@ def get_kf_for_pair(symbol_a, symbol_b):
             cat_a = get_symbol_category(symbol_a)
             cat_b = get_symbol_category(symbol_b)
             if cat_a == "crypto":
-                df_a = get_binance_rates_df(symbol_a, timeframe_minutes=5, count=100)
+                df_a = get_binance_rates_df(symbol_a, timeframe_minutes=5, count=500)
             else:
-                df_a = get_rates_df(symbol_a, mt5.TIMEFRAME_M5, count=100)
+                df_a = get_rates_df(symbol_a, mt5.TIMEFRAME_M5, count=500)
                 
             if cat_b == "crypto":
-                df_b = get_binance_rates_df(symbol_b, timeframe_minutes=5, count=100)
+                df_b = get_binance_rates_df(symbol_b, timeframe_minutes=5, count=500)
             else:
-                df_b = get_rates_df(symbol_b, mt5.TIMEFRAME_M5, count=100)
+                df_b = get_rates_df(symbol_b, mt5.TIMEFRAME_M5, count=500)
                 
             if df_a is not None and df_b is not None and not df_a.empty and not df_b.empty:
                 min_len = min(len(df_a), len(df_b))
