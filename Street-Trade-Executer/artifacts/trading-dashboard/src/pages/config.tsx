@@ -66,16 +66,15 @@ const PAIR_CATEGORIES: Record<Category, { label: string; pairs: string[] }> = {
   custom: { label: "Custom", pairs: [] },
 };
 
-const FUNDED_NEXT_RULES = [
-  { rule: "Max Daily Loss", value: "5% limit (Stellar)", botValue: "4.2% Bot Halt Buffer (Safe)", safe: true },
-  { rule: "Max Overall Loss", value: "10% limit (Challenge)", botValue: "Managed via active drawdown checks", safe: true },
-  { rule: "Quick Strike Rule", value: "Hold trades >= 30s", botValue: "Bot enforces 31s min hold on all exits", safe: true },
-  { rule: "News Trading (Funded)", value: "5m before/after split", botValue: "Only 40% profit counts (Losses apply)", safe: true },
+const BLUE_GUARDIAN_RULES = [
+  { rule: "Max Daily Loss", value: "4% limit (Blue Guardian)", botValue: "3.2% Bot Halt Buffer (Safe)", safe: true },
+  { rule: "Max Overall Loss", value: "8% limit (Static Drawdown)", botValue: "Managed via active drawdown checks", safe: true },
+  { rule: "Quick Strike Rule", value: "Hold trades >= 120s (2 mins)", botValue: "Bot enforces 125s min hold on all exits", safe: true },
+  { rule: "News Trading", value: "5m before/after split", botValue: "Allowed on Challenge; Restricted on Funded", safe: true },
   { rule: "IP Consistency", value: "No shared VPN/VPS", botValue: "Dedicated IP required; Avoid US servers", safe: true },
-  { rule: "EA Rule (Competition)", value: "No bots allowed", botValue: "Banned on Competition accounts (Manual only)", safe: false },
-  { rule: "EA Rule (Stellar/Funded)", value: "EAs allowed", botValue: "Safe to run bot on Challenge & Funded", safe: true },
+  { rule: "EA Rule", value: "EAs allowed", botValue: "Safe to run bot on Challenge & Funded", safe: true },
   { rule: "Grid / Martingale", value: "Restricted", botValue: "Bot runs single hedged mean-reversion", safe: true },
-  { rule: "Min Trading Days", value: "5 separate days (Comp)", botValue: "Runs continuously to meet days", safe: true },
+  { rule: "Min Trading Days", value: "No minimum days", botValue: "Trade freely without day limits", safe: true },
 ];
 
 export default function Config() {
@@ -724,20 +723,20 @@ export default function Config() {
             </div>
           </div>
 
-          {/* FUNDEDNEXT RULES */}
+          {/* BLUE GUARDIAN RULES */}
           <Card className="bg-card border-border">
             <CardHeader>
               <div className="flex items-center gap-2">
-                <CardTitle className="text-sm uppercase tracking-wider text-muted-foreground">FundedNext Rules Compliance</CardTitle>
+                <CardTitle className="text-sm uppercase tracking-wider text-muted-foreground">Blue Guardian Rules Compliance</CardTitle>
                 <Badge className="bg-green-500/15 text-green-500 border-green-500/30 text-xs rounded-sm">SAFE</Badge>
               </div>
               <CardDescription className="text-xs">
-                Bot configured to stay within FundedNext limits. 4.2% daily halt = intentional buffer below the 5% hard limit.
+                Bot configured to stay within Blue Guardian limits. 3.2% daily halt = intentional buffer below the 4% hard limit.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {FUNDED_NEXT_RULES.map((r) => (
+                {BLUE_GUARDIAN_RULES.map((r) => (
                   <div key={r.rule} className="flex flex-col gap-1 p-3 rounded-sm border border-border bg-muted/20">
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-muted-foreground">{r.rule}</span>

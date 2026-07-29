@@ -687,11 +687,11 @@ def sync_mt5_open_positions_with_db():
                 # Ticket is still active in MT5 — no action needed
                 continue
 
-            # Safeguard: If the trade was opened less than 35 seconds ago, do not mark it closed yet (prevents FundedNext consistency breach)
+            # Safeguard: If the trade was opened less than 125 seconds ago, do not mark it closed yet (prevents Blue Guardian 2-minute consistency breach)
             if entry_time is not None:
                 elapsed = (datetime.datetime.now() - entry_time).total_seconds()
-                if elapsed < 35.0:
-                    logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) not in active positions but is only {elapsed:.1f}s old. Skipping close to enforce 35s hold.")
+                if elapsed < 125.0:
+                    logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) not in active positions but is only {elapsed:.1f}s old. Skipping close to enforce 125s hold.")
                     continue
 
             # Ticket is NOT in active MT5 positions. Determine if it is a true close
@@ -1070,19 +1070,19 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     exit_triggered = True
                     exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} >= {effective_z_sl:.2f})"
 
-        # Safeguard: FundedNext Consistency Rule (trades closed under 30s)
+        # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m / 120s)
         min_hold_ok = True
         for t in trades:
             entry_t = t["entry_time"]
             if entry_t is not None:
                 elapsed = (datetime.datetime.now() - entry_t).total_seconds()
-                if elapsed < 35.0:
+                if elapsed < 125.0:
                     min_hold_ok = False
                     break
 
         if exit_triggered and not min_hold_ok:
             exit_triggered = False
-            logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 35s minimum hold time.")
+            logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 125s minimum hold time.")
 
         if exit_triggered:
             logger.info(f"Dynamic exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all positions.")
