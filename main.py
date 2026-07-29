@@ -676,16 +676,23 @@ def sync_mt5_open_positions_with_db():
 
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT ticket, symbol, lots, entry_price, order_type FROM trades WHERE status = 'OPEN'")
+        cur.execute("SELECT ticket, symbol, lots, entry_price, order_type, entry_time FROM trades WHERE status = 'OPEN'")
         db_open_trades = cur.fetchall()
 
-        for ticket, symbol, lots, entry_price, order_type in db_open_trades:
+        for ticket, symbol, lots, entry_price, order_type, entry_time in db_open_trades:
             if ticket < 1000:
                 continue
 
             if ticket in active_tickets:
                 # Ticket is still active in MT5 — no action needed
                 continue
+
+            # Safeguard: If the trade was opened less than 10 seconds ago, do not mark it closed yet (prevents race conditions)
+            if entry_time is not None:
+                elapsed = (datetime.datetime.now() - entry_time).total_seconds()
+                if elapsed < 10.0:
+                    logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) not in active positions but is only {elapsed:.1f}s old. Skipping close.")
+                    continue
 
             # Ticket is NOT in active MT5 positions. Determine if it is a true close
             # or a netting scale-down where the symbol position still exists.
@@ -1645,11 +1652,31 @@ def main():
                 
                 positions = mt5.positions_get()
                 if positions:
+                    updated_tickets = set()
                     for pos in positions:
                         cur.execute(
                             "UPDATE trades SET close_price = %s, profit = %s WHERE ticket = %s AND status = 'OPEN'",
                             (float(pos.price_current), float(pos.profit), int(pos.ticket))
                         )
+                        if cur.rowcount > 0:
+                            updated_tickets.add(int(pos.ticket))
+                            
+                    # Proportional PnL distribution for netting accounts where position ticket differs from order ticket
+                    for pos in positions:
+                        if int(pos.ticket) not in updated_tickets:
+                            pos_sym_base = pos.symbol.upper().split('.')[0]
+                            cur.execute(
+                                "SELECT ticket FROM trades WHERE status = 'OPEN' AND UPPER(SPLIT_PART(symbol, '.', 1)) = %s",
+                                (pos_sym_base,)
+                            )
+                            db_tickets = [row[0] for row in cur.fetchall()]
+                            if db_tickets:
+                                distributed_profit = float(pos.profit) / len(db_tickets)
+                                for tkt in db_tickets:
+                                    cur.execute(
+                                        "UPDATE trades SET close_price = %s, profit = %s WHERE ticket = %s",
+                                        (float(pos.price_current), distributed_profit, int(tkt))
+                                    )
 
                 cur.execute("SELECT ticket, symbol, order_type, lots, entry_price FROM trades WHERE status = 'OPEN'")
                 open_trades = cur.fetchall()
