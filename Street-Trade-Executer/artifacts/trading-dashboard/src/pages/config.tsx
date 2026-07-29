@@ -550,7 +550,7 @@ export default function Config() {
                           <div>
                             <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Enforce Daily Drawdown Limit</FormLabel>
                             <FormDescription className="text-xs mt-0.5">
-                              Halt trading if daily drawdown reaches 4.2%. (Auto-bypassed on Demo accounts).
+                              Halt trading if daily drawdown reaches 3.2%. (Auto-bypassed on Demo accounts).
                             </FormDescription>
                           </div>
                           <FormControl>
