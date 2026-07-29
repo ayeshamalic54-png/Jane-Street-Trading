@@ -1525,9 +1525,12 @@ def main():
             else:
                 is_limit_breached, daily_loss_p = False, 0.0
 
+            # Detect if it's a demo or contest account
+            is_demo = getattr(acc_info, "trade_mode", 0) in (0, 1)  # 0 is DEMO, 1 is CONTEST
+
             if is_limit_breached:
-                if not RISK_LIMITS_ENABLED:
-                    logger.info(f"Daily drawdown limit breached ({daily_loss_p:.2f}%), but bypassing because Risk Limits are disabled.")
+                if is_demo or not RISK_LIMITS_ENABLED:
+                    logger.info(f"Daily drawdown limit breached ({daily_loss_p:.2f}%), but bypassing on Demo/Contest account or when Risk Limits are disabled.")
                     is_halted = False
                 else:
                     is_halted = True
