@@ -481,11 +481,11 @@ export default function Dashboard() {
                   {drawdownPercent < 0 ? "+" : ""}{Math.abs(drawdownPercent).toFixed(2)}%
                 </div>
                 <div className="text-[10px] text-zinc-500 mb-1 font-mono">
-                  Halt: <span className="text-amber-500">4.2%</span> · Limit: <span className="text-red-500">5%</span>
+                  Halt: <span className="text-amber-500">3.2%</span> · Limit: <span className="text-red-500">4%</span>
                 </div>
               </div>
               <Progress 
-                value={drawdownPercent < 0 ? 0 : Math.min((drawdownPercent / 5) * 100, 100)} 
+                value={drawdownPercent < 0 ? 0 : Math.min((drawdownPercent / 4) * 100, 100)} 
                 className="h-1.5 bg-zinc-800 [&>div]:bg-rose-500" 
               />
             </CardContent>
