@@ -259,7 +259,20 @@ def main_loop():
             p_b = (tick_b.bid + tick_b.ask) / 2.0
             
             # Run Kalman update step
-            beta, alpha, spread, z = kf.update(p_b, p_a)
+            is_trade_active = (tracker.active_trade is not None)
+            if is_trade_active:
+                z = kf.get_current_z(p_b, p_a)
+                if kf.ref_x is not None:
+                    beta_norm = kf.state_mean[0]
+                    alpha_norm = kf.state_mean[1]
+                    beta = beta_norm * (kf.ref_y / kf.ref_x)
+                    alpha = alpha_norm * kf.ref_y
+                    spread = p_a - (beta * p_b + alpha)
+                else:
+                    beta, alpha, spread = 1.0, 0.0, p_a - p_b
+            else:
+                beta, alpha, spread, z = kf.update(p_b, p_a)
+                
             z_velocity = kf.get_velocity(k=3)
             dynamic_z_entry = kf.get_dynamic_z_entry(config["z_entry_threshold"])
             
@@ -272,7 +285,7 @@ def main_loop():
             # Check entry signal if no active trade
             if not tracker.active_trade:
                 cat_a = get_symbol_category(sym_a_resolved)
-                z_vel_lim = 0.02 if cat_a == "forex" else 0.08 if cat_a == "metals" else 0.05
+                z_vel_lim = 0.005 if cat_a == "forex" else 0.02 if cat_a == "metals" else 0.01
                 
                 # Check thresholds
                 effective_dyn_z = dynamic_z_entry if config["volatility_filter_enabled"] else config["z_entry_threshold"]

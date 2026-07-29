@@ -1671,6 +1671,18 @@ def main():
             except Exception as e:
                 logger.error(f"Error syncing open trades telemetry to DB: {e}")
 
+            # Query all open trade symbols once per scan cycle to freeze Kalman Filter updates
+            open_trade_symbols = set()
+            try:
+                conn_open = get_connection()
+                cur_open = conn_open.cursor()
+                cur_open.execute("SELECT DISTINCT symbol FROM trades WHERE status = 'OPEN'")
+                open_trade_symbols = {row[0].upper() for row in cur_open.fetchall()}
+                cur_open.close()
+                conn_open.close()
+            except Exception as e:
+                logger.error(f"Error reading open trade symbols for Kalman freeze: {e}")
+
             # ── 2. SCANNING LOOP FOR ALL PAIRS ──
             active_pair_z_score = 0.0
             active_pair_beta = 0.0
@@ -1718,10 +1730,13 @@ def main():
                 p_b = (tick_b_scan.bid + tick_b_scan.ask) / 2.0
 
                 # Kalman update (Only update parameters once per M5 bar; compute Z dynamically in between)
+                # FREEZE Kalman Filter parameters update if there is an active trade for this pair
                 kf_pair = get_kf_for_pair(s_a_resolved, s_b_resolved)
                 now_dt = datetime.datetime.now()
                 bar_key = (now_dt.year, now_dt.month, now_dt.day, now_dt.hour, now_dt.minute // 5)
-                if LAST_KF_UPDATE_BAR.get(pk) != bar_key:
+                is_trade_active = (s_a_resolved.upper() in open_trade_symbols) or (s_b_resolved.upper() in open_trade_symbols)
+                
+                if not is_trade_active and LAST_KF_UPDATE_BAR.get(pk) != bar_key:
                     beta, alpha, spread, z = kf_pair.update(p_b, p_a)
                     LAST_KF_UPDATE_BAR[pk] = bar_key
                 else:
@@ -1776,11 +1791,11 @@ def main():
                 dynamic_z_entry = kf_pair.get_dynamic_z_entry(Z_ENTRY_THRESHOLD)
 
                 if cat_a == "forex":
-                    z_vel_lim = 0.02
+                    z_vel_lim = 0.005  # Tightened from 0.02 for 85%+ entry accuracy
                 elif cat_a == "metals":
-                    z_vel_lim = 0.08
+                    z_vel_lim = 0.02   # Tightened from 0.08
                 else:
-                    z_vel_lim = 0.05
+                    z_vel_lim = 0.01   # Tightened from 0.05
 
                 action = "NONE"
                 # Evaluate active protections based strictly on Dashboard Toggles (at all Z-thresholds)
