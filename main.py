@@ -400,10 +400,10 @@ EXPECTED_BETA_SIGN = {
 }
 
 DEFAULT_LOT_SIZES = {
-    "metals": 0.06,
-    "forex": 0.60,
-    "indices": 0.06,
-    "stocks": 0.60,
+    "metals": 0.15,
+    "forex": 1.20,
+    "indices": 0.60,
+    "stocks": 6.00,
     "crypto": 0.06
 }
 
