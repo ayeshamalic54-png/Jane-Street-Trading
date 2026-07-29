@@ -605,18 +605,19 @@ def get_atr(symbol: str, timeframe, count=30) -> float:
 
 
 def get_kf_parameters(symbol: str):
-    # Normalized prices use standard optimal scale-independent parameters
+    # Stabilized parameters with lower process-to-observation noise ratio (Q/R = 1e-5)
+    # to prevent the Kalman Filter from over-adapting to short-term trends.
     cat = get_symbol_category(symbol)
     if cat == "metals":
-        return 1e-8, 1e-5
+        return 1e-9, 1e-4
     elif cat == "indices":
-        return 1e-7, 1e-4
+        return 1e-8, 1e-3
     elif cat == "crypto":
-        return 1e-8, 1e-5
+        return 1e-9, 1e-4
     elif cat == "forex":
-        return 1e-9, 1e-6
+        return 1e-10, 1e-5
     else: # stocks/default
-        return 1e-7, 1e-4
+        return 1e-8, 1e-3
 
 
 def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -> float:
@@ -1214,6 +1215,10 @@ def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float,
     if the combined margin requirement exceeds 75% of available free margin.
     Returns (scaled_qty_a, scaled_qty_b).
     """
+    disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
+    if disable_guard:
+        return qty_a, qty_b
+
     acc = mt5.account_info()
     if not acc:
         return qty_a, qty_b
