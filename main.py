@@ -864,9 +864,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Find signal_ids that have at least one OPEN trade for these symbols
+        # Find signal_ids that have at least one OPEN trade for these symbols, mapping NULL to 999999
         cur.execute(
-            "SELECT DISTINCT signal_id FROM trades WHERE status = 'OPEN' AND symbol IN (%s, %s) AND signal_id IS NOT NULL",
+            "SELECT DISTINCT COALESCE(signal_id, 999999) FROM trades WHERE status = 'OPEN' AND symbol IN (%s, %s)",
             (symbol_a, symbol_b)
         )
         active_signal_ids = [row[0] for row in cur.fetchall()]
@@ -877,9 +877,21 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             return
 
         # Fetch ALL trades (both OPEN and CLOSED) for these active signal_ids so we can detect closed Leg A parts
+        has_null = 999999 in active_signal_ids
+        non_null_ids = [x for x in active_signal_ids if x != 999999]
+        
+        conds = []
+        params = []
+        if non_null_ids:
+            conds.append("signal_id IN %s")
+            params.append(tuple(non_null_ids))
+        if has_null:
+            conds.append("signal_id IS NULL")
+            
+        where_clause = " OR ".join(conds)
         cur.execute(
-            "SELECT ticket, symbol, order_type, lots, comment, signal_id, entry_time, status FROM trades WHERE signal_id IN %s",
-            (tuple(active_signal_ids),)
+            f"SELECT ticket, symbol, order_type, lots, comment, COALESCE(signal_id, 999999), entry_time, status FROM trades WHERE {where_clause}",
+            tuple(params)
         )
         all_trades_for_signals = cur.fetchall()
         cur.close()
