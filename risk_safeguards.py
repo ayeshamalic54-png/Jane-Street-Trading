@@ -282,9 +282,9 @@ def is_spread_valid(symbol):
     elif "XAG" in s:
         max_spread = 10.0
     elif any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"]):
-        max_spread = 10.0
+        max_spread = 30.0
     elif any(x in s for x in ["US500", "US30", "NAS100", "GER30", "UK100", "SPX", "DJI", "NDX", "USTEC"]):
-        max_spread = 15.0
+        max_spread = 35.0
         
     if spread_pips > max_spread:
         logger.warning(f"Spread for {symbol} is too wide: {spread_pips:.1f} pips (Max: {max_spread:.1f} pips)")
