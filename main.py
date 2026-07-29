@@ -1998,7 +1998,9 @@ def main():
                             tp3_val = best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5)
                             
                         if DEFAULT_LOTS > 0.005:
-                            lots_a = DEFAULT_LOTS * LEVERAGE_FACTORS.get(best_cat_a, 1.0)
+                            disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
+                            mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
+                            lots_a = DEFAULT_LOTS * mult
                         else:
                             lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             
@@ -2061,7 +2063,9 @@ def main():
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
                             if DEFAULT_LOTS > 0.005:
-                                lots_a = DEFAULT_LOTS * LEVERAGE_FACTORS.get(best_cat_a, 1.0)
+                                disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
+                                mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
+                                lots_a = DEFAULT_LOTS * mult
                             else:
                                 lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             # Apply 3-part safeguard scaling correction
@@ -2130,7 +2134,9 @@ def main():
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
                             if DEFAULT_LOTS > 0.005:
-                                lots_a = DEFAULT_LOTS * LEVERAGE_FACTORS.get(best_cat_a, 1.0)
+                                disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
+                                mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
+                                lots_a = DEFAULT_LOTS * mult
                             else:
                                 lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
                             # Apply 3-part safeguard scaling correction
