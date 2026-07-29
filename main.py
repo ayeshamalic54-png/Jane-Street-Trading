@@ -687,11 +687,11 @@ def sync_mt5_open_positions_with_db():
                 # Ticket is still active in MT5 — no action needed
                 continue
 
-            # Safeguard: If the trade was opened less than 10 seconds ago, do not mark it closed yet (prevents race conditions)
+            # Safeguard: If the trade was opened less than 35 seconds ago, do not mark it closed yet (prevents FundedNext consistency breach)
             if entry_time is not None:
                 elapsed = (datetime.datetime.now() - entry_time).total_seconds()
-                if elapsed < 10.0:
-                    logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) not in active positions but is only {elapsed:.1f}s old. Skipping close.")
+                if elapsed < 35.0:
+                    logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) not in active positions but is only {elapsed:.1f}s old. Skipping close to enforce 35s hold.")
                     continue
 
             # Ticket is NOT in active MT5 positions. Determine if it is a true close
