@@ -2175,9 +2175,20 @@ def main():
                                         opp_side_b = "BUY" if side_b == "SELL" else "SELL"
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
-                                    res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
-                                    if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
-                                        log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
+                                    res_hedge = None
+                                    for retry_idx in range(3):
+                                        tick_retry = mt5.symbol_info_tick(S_B_resolved)
+                                        if tick_retry:
+                                            price_b = tick_retry.ask if order_type_b == mt5.ORDER_TYPE_BUY else tick_retry.bid
+                                            sl_b = price_b + sl_sign_b * sl_dist_b
+                                        res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
+                                        if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
+                                            log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
+                                            break
+                                        time.sleep(0.5)
+                                    if not (res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE):
+                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed after 3 retries! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
+                                        close_all_positions(S_A_resolved)
                     else:
                         if best_cat_a == "crypto":
                             usdt_bal, _ = get_binance_usdt_balance()
@@ -2246,9 +2257,21 @@ def main():
                                         opp_side_b = "BUY" if side_b == "SELL" else "SELL"
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
-                                    res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
-                                    if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
-                                        log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
+                                    res_hedge = None
+                                    for retry_idx in range(3):
+                                        mt5.symbol_select(S_B_resolved, True)
+                                        tick_retry = mt5.symbol_info_tick(S_B_resolved)
+                                        if tick_retry:
+                                            price_b = tick_retry.ask if order_type_b == mt5.ORDER_TYPE_BUY else tick_retry.bid
+                                            sl_b = price_b + sl_sign_b * sl_dist_b
+                                        res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
+                                        if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
+                                            log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
+                                            break
+                                        time.sleep(0.5)
+                                    if not (res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE):
+                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed after 3 retries! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
+                                        close_all_positions(S_A_resolved)
                     invalidate_trades_cache()
 
             # Trail Stop Loss if active (move to breakeven once TP1 is closed/hit in database)

@@ -8,6 +8,15 @@ MAGIC_NUMBER = 992026           # Unique magic number for Jane Street system tra
 
 def send_order(symbol, order_type, price, volume, sl, tp, comment):
     """Submits order to MT5. Automatically handles FOK vs IOC vs RETURN filling modes."""
+    # Ensure symbol is active and selected in MT5 Market Watch
+    mt5.symbol_select(symbol, True)
+    
+    # If price is 0.0 or outdated, re-fetch live tick
+    if price is None or price <= 0:
+        tick = mt5.symbol_info_tick(symbol)
+        if tick:
+            price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+
     filling_modes = [
         mt5.ORDER_FILLING_FOK,
         mt5.ORDER_FILLING_IOC,
