@@ -9,8 +9,17 @@ import numpy as np
 # Ensure root directory is on the path to import main bot files
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Reconfigure stdout/stderr to UTF-8 to support terminal emojis on Windows console
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 from database import get_connection
 from math_models import KalmanFilterRegression
+from data_ingestion import initialize_mt5
 from main import (
     get_symbol_category, get_pip_size, get_kf_parameters, 
     get_sl_distance, get_tp_distance, detect_smc_zones, 
@@ -22,7 +31,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("scratch/mock_simulator.log"),
+        logging.FileHandler("scratch/mock_simulator.log", encoding="utf-8"),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -184,9 +193,7 @@ def get_live_db_config():
 
 def main_loop():
     logger.info("Initializing MetaTrader 5...")
-    if not mt5.initialize():
-        logger.error("MT5 initialization failed! Exiting.")
-        return
+    initialize_mt5()
 
     # Initialize tracker
     tracker = MockTradeTracker()
