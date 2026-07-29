@@ -69,7 +69,7 @@ const PAIR_CATEGORIES: Record<Category, { label: string; pairs: string[] }> = {
 const BLUE_GUARDIAN_RULES = [
   { rule: "Max Daily Loss", value: "4% limit (Blue Guardian)", botValue: "3.2% Bot Halt Buffer (Safe)", safe: true },
   { rule: "Max Overall Loss", value: "8% limit (Static Drawdown)", botValue: "Managed via active drawdown checks", safe: true },
-  { rule: "Quick Strike Rule", value: "Hold trades >= 120s (2 mins)", botValue: "Bot enforces 125s min hold on all exits", safe: true },
+  {rule: "Quick Strike Rule", value: "Hold trades >= 140s (2m 20s)", botValue: "Bot enforces 140s min hold on all exits", safe: true },
   { rule: "News Trading", value: "5m before/after split", botValue: "Allowed on Challenge; Restricted on Funded", safe: true },
   { rule: "IP Consistency", value: "No shared VPN/VPS", botValue: "Dedicated IP required; Avoid US servers", safe: true },
   { rule: "EA Rule", value: "EAs allowed", botValue: "Safe to run bot on Challenge & Funded", safe: true },
