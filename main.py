@@ -1626,7 +1626,7 @@ def main():
                 pass
 
             # ── Equity Trailing Stop Safeguard (Profit Lock) ──
-            if has_positions and floating_profit >= 60.00:
+            if has_positions and floating_profit >= 70.00:
                 if floating_profit > peak_floating_profit:
                     peak_floating_profit = floating_profit
                     logger.info(f"[EQUITY TRAIL] New peak floating profit: ${peak_floating_profit:.2f}")
