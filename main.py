@@ -1281,6 +1281,36 @@ def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float,
         return final_a, final_b
         
     return qty_a, qty_b
+def get_expected_profit(active_js_positions, tp_pips_val) -> float:
+    """
+    Calculates the total expected profit for the open positions basket
+    based on the total lots of Leg A and the configured TP pips.
+    """
+    if not active_js_positions:
+         return 100.0  # Default fallback trigger
+        
+    # Separate Leg A and Leg B positions
+    # Leg B has comment JS_HEDGE. Leg A does not (it has JS_TP1, JS_TP2, JS_TP3).
+    leg_a_positions = [p for p in active_js_positions if "HEDGE" not in str(p.comment).upper()]
+    if not leg_a_positions:
+        # If only hedge remains or comments mismatch, fallback to total positions
+        leg_a_positions = active_js_positions
+        
+    total_lots_a = sum(p.volume for p in leg_a_positions)
+    symbol_a = leg_a_positions[0].symbol
+    
+    # Estimate pip value in USD per lot
+    symbol_upper = symbol_a.upper()
+    if any(x in symbol_upper for x in ["XAU", "XPT", "XPD", "PLAT", "PALL"]):
+        pip_value_per_lot = 100.0  # Gold/Metals: $100 per 1.0 point change
+    elif any(x in symbol_upper for x in ["US500", "NAS100", "GER30", "UK100", "US30"]):
+        pip_value_per_lot = 100.0  # Indices: $100 per 1.0 point change
+    else:
+        pip_value_per_lot = 10.0   # Forex: $10 per 0.0001 change (approx)
+        
+    # Expected profit = Lots * Pip Value * TP Pips
+    expected_profit = total_lots_a * pip_value_per_lot * tp_pips_val
+    return max(expected_profit, 20.0)  # Ensure a minimum expected profit of $20 to avoid division errors
 
 
 # ==============================================================================
@@ -1626,23 +1656,27 @@ def main():
                 pass
 
             # ── Equity Trailing Stop Safeguard (Profit Lock) ──
-            if has_positions and floating_profit >= 70.00:
-                if floating_profit > peak_floating_profit:
-                    peak_floating_profit = floating_profit
-                    logger.info(f"[EQUITY TRAIL] New peak floating profit: ${peak_floating_profit:.2f}")
+            if has_positions:
+                exp_profit = get_expected_profit(active_js_positions, TP_PIPS)
+                activation_threshold = exp_profit * 0.50
                 
-                trail_stop_level = peak_floating_profit * 0.89 # 11% trailing distance (locks in 89% of peak profit)
-                if floating_profit <= trail_stop_level:
-                    logger.info(f"[EQUITY TRAIL] Floating profit ${floating_profit:.2f} fell below trailing stop level ${trail_stop_level:.2f} (Peak: ${peak_floating_profit:.2f}). Closing all positions to lock profits.")
-                    all_success = True
-                    for pos in active_js_positions:
-                        pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
-                        success = close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
-                        if not success:
-                            all_success = False
-                    if all_success:
-                        peak_floating_profit = 0.0
-                        has_positions = False
+                if floating_profit >= activation_threshold:
+                    if floating_profit > peak_floating_profit:
+                        peak_floating_profit = floating_profit
+                        logger.info(f"[EQUITY TRAIL] New peak floating profit: ${peak_floating_profit:.2f} (Activation threshold: ${activation_threshold:.2f})")
+                    
+                    trail_stop_level = peak_floating_profit * 0.89 # 11% trailing distance (locks in 89% of peak profit)
+                    if floating_profit <= trail_stop_level:
+                        logger.info(f"[EQUITY TRAIL] Floating profit ${floating_profit:.2f} fell below trailing stop level ${trail_stop_level:.2f} (Peak: ${peak_floating_profit:.2f}). Closing all positions to lock profits.")
+                        all_success = True
+                        for pos in active_js_positions:
+                            pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+                            success = close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+                            if not success:
+                                all_success = False
+                        if all_success:
+                            peak_floating_profit = 0.0
+                            has_positions = False
 
             # Sync open trades live prices and profit/loss in DB
             try:
