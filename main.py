@@ -121,20 +121,26 @@ def fetch_db_config():
         cur.execute(query)
         row = cur.fetchone()
         if row:
-            active_pair = row[0] or "EURUSD/GBPUSD"
-            parts = active_pair.split('/')
-            is_crypto = False
-            if len(parts) == 2:
-                p0, p1 = parts[0].upper(), parts[1].upper()
-                if p0.endswith("USDT") or p1.endswith("USDT") or any(x in p0 or x in p1 for x in ["BTC", "ETH", "SOL", "BNB", "AVAX", "XRP", "ADA", "DOGE", "MATIC", "LTC", "LINK", "DOT", "UNI", "SHIB"]):
-                    is_crypto = True
-            
-            # If the database pair is crypto, override it to EURUSD/GBPUSD immediately
-            if is_crypto:
-                logger.info("Overriding database invalid active_pair config to EURUSD/GBPUSD")
-                active_pair = "EURUSD/GBPUSD"
-                cur.execute("UPDATE bot_state SET active_pair = %s, crypto_enabled = false WHERE id = 1", (active_pair,))
+            raw_active = row[0] or "EURUSD/GBPUSD"
+            c_on = bool(row[5]) if row[5] is not None else False
+            m_on = bool(row[6]) if row[6] is not None else True
+            f_on = bool(row[7]) if row[7] is not None else True
+            i_on = bool(row[8]) if row[8] is not None else True
+
+            # If current active_pair belongs to a disabled category, pick first pair from an enabled category
+            cat_a = get_symbol_category(raw_active.split('/')[0]) if '/' in raw_active else "forex"
+            active_pair = raw_active
+            if (cat_a == "forex" and not f_on) or (cat_a == "metals" and not m_on) or (cat_a == "indices" and not i_on) or (cat_a == "crypto" and not c_on):
+                if i_on:
+                    active_pair = "NVDA/AMD"
+                elif m_on:
+                    active_pair = "XPTUSD/XPDUSD"
+                elif f_on:
+                    active_pair = "AUDUSD/NZDUSD"
+                cur.execute("UPDATE bot_state SET active_pair = %s WHERE id = 1", (active_pair,))
                 conn.commit()
+                save_config(active_pair)
+                logger.info(f"Aligned active_pair with enabled category: {active_pair}")
                 
             cur.close()
             conn.close()
