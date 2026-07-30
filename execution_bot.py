@@ -50,9 +50,23 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             logger.info(f"Order filled successfully using mode {mode}")
             return result
             
+        # Check if volume is invalid and auto-correct to broker volume_min
+        if result.retcode == 10014:
+            info = mt5.symbol_info(symbol)
+            if info:
+                corrected_vol = info.volume_min
+                logger.warning(f"[VOLUME HEAL] Retrying order for {symbol} with broker min volume: {corrected_vol}")
+                request["volume"] = corrected_vol
+                res_retry = mt5.order_send(request)
+                if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+                    logger.info(f"Order filled successfully after volume auto-correction.")
+                    return res_retry
+            logger.error(f"Order rejected due to invalid volume: {result.comment}")
+            return None
+            
         # Check if the error is due to disabled auto-trading on client or server
         comment_str = result.comment or ""
-        if "AutoTrading disabled" in comment_str or result.retcode in [10014, 10022, 10026, 10034]:
+        if "AutoTrading disabled" in comment_str or result.retcode in [10022, 10026, 10034]:
             logger.error(f"Order rejected: AutoTrading is disabled! Details: {result.comment}")
             return None
             
@@ -75,11 +89,9 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
     order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
     part_lots = round(total_lots / 3.0, 2)
     
-    # Ensure lot size satisfies broker minimums
-    info = mt5.symbol_info(symbol)
-    min_vol = info.volume_min if info else 0.01
-    if part_lots < min_vol:
-        part_lots = min_vol
+    # Ensure lot size satisfies broker minimums and volume step (e.g. 1.0 share step for Stock CFDs)
+    from risk_safeguards import round_volume
+    part_lots = round_volume(symbol, part_lots)
 
     logger.info(f"Executing 3-part quantitative trade | Total Lots: {total_lots} | Part Lots: {part_lots}")
     logger.info(f"Entry: {entry_price:.5f} | SL: {sl_price:.5f}")
