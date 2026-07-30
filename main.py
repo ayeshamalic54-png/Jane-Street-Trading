@@ -1188,7 +1188,9 @@ def get_symbol_category(symbol: str) -> str:
     # Crypto disabled completely in this Forex/Metals/Indices instance
     if any(x in s for x in ["XAU", "XAG", "XPT", "XPD", "PLAT", "PALL"]):
         return "metals"
-    if any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN", "US500", "US30", "NAS100", "GER30", "UK100"]):
+    if any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"]):
+        return "stocks"
+    if any(x in s for x in ["US500", "US30", "NAS100", "GER30", "UK100", "USTEC"]):
         return "indices"
     return "forex"
 
