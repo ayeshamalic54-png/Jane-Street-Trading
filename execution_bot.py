@@ -64,6 +64,17 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             logger.error(f"Order rejected due to invalid volume: {result.comment}")
             return None
             
+        # Check if stops are invalid (e.g. SL too close for stock CFD) and retry with sl=0.0
+        if result.retcode == 10016:
+            logger.warning(f"[STOPS HEAL] Retrying order for {symbol} with sl=0.0 due to invalid broker stops level: {result.comment}")
+            request["sl"] = 0.0
+            res_retry = mt5.order_send(request)
+            if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"Order filled successfully after stops auto-correction.")
+                return res_retry
+            logger.error(f"Order rejected due to invalid stops: {result.comment}")
+            return None
+
         # Check if the error is due to disabled auto-trading on client or server
         comment_str = result.comment or ""
         if "AutoTrading disabled" in comment_str or result.retcode in [10022, 10026, 10034]:
@@ -143,6 +154,12 @@ def close_all_positions(symbol, comment_filter="JS_"):
     if not positions:
         return
         
+    filling_modes = [
+        mt5.ORDER_FILLING_FOK,
+        mt5.ORDER_FILLING_IOC,
+        mt5.ORDER_FILLING_RETURN
+    ]
+
     for pos in positions:
         if pos.magic == MAGIC_NUMBER and comment_filter in pos.comment:
             order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
@@ -164,14 +181,18 @@ def close_all_positions(symbol, comment_filter="JS_"):
                 "magic": MAGIC_NUMBER,
                 "comment": "JS Drawdown Emergency Exit",
                 "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
             }
-            res = mt5.order_send(request)
-            if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info(f"Emergency closed position ticket: {pos.ticket}")
-                # Immediately check closed deal details to log to database
-                check_closed_trades(pos.symbol)
-            else:
+            
+            closed_ok = False
+            for mode in filling_modes:
+                request["type_filling"] = mode
+                res = mt5.order_send(request)
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    logger.info(f"Emergency closed position ticket: {pos.ticket} using mode {mode}")
+                    check_closed_trades(pos.symbol)
+                    closed_ok = True
+                    break
+            if not closed_ok:
                 err_msg = res.comment if res else "No response"
                 logger.error(f"Failed to close position ticket {pos.ticket}: {err_msg}")
 
