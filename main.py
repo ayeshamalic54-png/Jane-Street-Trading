@@ -415,7 +415,7 @@ DEFAULT_LOT_SIZES = {
     "metals": 0.30,
     "forex": 1.20,
     "indices": 0.60,
-    "stocks": 30.00,
+    "stocks": 15.00,
     "crypto": 0.06
 }
 
