@@ -115,7 +115,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
                 comment=f"JaneStreet {part_name}",
                 signal_id=signal_id
             )
-            logger.info(f"Successfully executed {part_name} order (Server TP and SL set; 35s hold enforced). Ticket: {ticket}")
+            logger.info(f"Successfully executed {part_name} order (Server TP and SL set; 140s / 2m20s hold enforced). Ticket: {ticket}")
             success = True
         else:
             err_msg = res.comment if res else "No response"
