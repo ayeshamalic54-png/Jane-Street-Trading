@@ -1229,14 +1229,22 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
     else:
         if cat_a == "crypto":
             contract_size_a = 1.0
+            pip_val_a = 1.0
         else:
             info_a = mt5.symbol_info(symbol_a)
             contract_size_a = info_a.trade_contract_size if info_a else 1.0
+            pip_val_a = info_a.trade_tick_value if (info_a and info_a.trade_tick_value > 0) else 10.0
             
         info_b = mt5.symbol_info(symbol_b)
         contract_size_b = info_b.trade_contract_size if info_b else 1.0
+        pip_val_b = info_b.trade_tick_value if (info_b and info_b.trade_tick_value > 0) else 10.0
         
-        raw_qty = qty_a * abs(beta) * (contract_size_a / contract_size_b)
+        # Dollar Pip Value Weighting Ratio
+        pip_ratio = (pip_val_a / pip_val_b) if (pip_val_b > 0 and pip_val_a > 0) else 1.0
+        if pip_ratio > 3.0 or pip_ratio < 0.33:
+            pip_ratio = 1.0  # Safeguard against extreme exchange rates
+            
+        raw_qty = qty_a * abs(beta) * (contract_size_a / contract_size_b) * pip_ratio
         return round_volume(symbol_b, raw_qty)
 
 
