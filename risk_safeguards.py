@@ -259,9 +259,14 @@ def get_pip_size(symbol: str) -> float:
     return 0.0001
 
 def is_spread_valid(symbol):
-    """Returns True if the current market spread is below the threshold."""
+    """Returns True if the current market spread is below the threshold and market is open."""
+    info = mt5.symbol_info(symbol)
+    if info and info.trade_mode != mt5.SYMBOL_TRADE_MODE_FULL:
+        logger.warning(f"Market for {symbol} is currently closed (Broker Trade Mode: {info.trade_mode}). US stock market opens at 9:30 AM EST / 6:30 PM PKT.")
+        return False
+
     tick = mt5.symbol_info_tick(symbol)
-    if tick is None:
+    if tick is None or tick.bid <= 0 or tick.ask <= 0:
         return False
         
     spread = tick.ask - tick.bid
