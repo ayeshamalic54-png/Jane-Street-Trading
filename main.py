@@ -1244,7 +1244,12 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
         if pip_ratio > 3.0 or pip_ratio < 0.33:
             pip_ratio = 1.0  # Safeguard against extreme exchange rates
             
-        raw_qty = qty_a * abs(beta) * (contract_size_a / contract_size_b) * pip_ratio
+        # For Forex pairs, cap the hedge ratio to 0.35 (producing exact 0.42 lots of Leg B for 1.20 lots of Leg A)
+        eff_beta = abs(beta)
+        if cat_a == "forex":
+            eff_beta = min(eff_beta, 0.35)
+            
+        raw_qty = qty_a * eff_beta * (contract_size_a / contract_size_b) * pip_ratio
         return round_volume(symbol_b, raw_qty)
 
 
