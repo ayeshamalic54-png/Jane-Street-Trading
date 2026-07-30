@@ -77,11 +77,17 @@ def initialize_mt5():
     logger.info(f"Login: {acc_info.login} | Server: {acc_info.server} | Balance: ${acc_info.balance:.2f} | Equity: ${acc_info.equity:.2f}")
     return acc_info
 
+RESOLVED_ALIAS_CACHE = {}
+
 def resolve_broker_symbol(symbol: str) -> str:
     symbol_upper = symbol.upper()
+    if symbol_upper in RESOLVED_ALIAS_CACHE:
+        return RESOLVED_ALIAS_CACHE[symbol_upper]
+
     # Check if symbol is already valid in MT5
     info = mt5.symbol_info(symbol_upper)
     if info is not None:
+        RESOLVED_ALIAS_CACHE[symbol_upper] = symbol_upper
         return symbol_upper
 
     # Check common index aliases
@@ -96,6 +102,7 @@ def resolve_broker_symbol(symbol: str) -> str:
         for alias in aliases[symbol_upper]:
             if mt5.symbol_info(alias) is not None:
                 logger.info(f"Resolved symbol alias: {symbol_upper} -> {alias}")
+                RESOLVED_ALIAS_CACHE[symbol_upper] = alias
                 return alias
 
     # Try common suffixes for stocks (e.g. AAPL -> AAPL.us, AAPL.cfd, AAPL#US)
@@ -104,6 +111,7 @@ def resolve_broker_symbol(symbol: str) -> str:
         test_sym = f"{symbol_upper}{suf}"
         if mt5.symbol_info(test_sym) is not None:
             logger.info(f"Resolved stock alias: {symbol_upper} -> {test_sym}")
+            RESOLVED_ALIAS_CACHE[symbol_upper] = test_sym
             return test_sym
             
     # Try searching the entire MT5 symbols list for a partial match
@@ -114,10 +122,12 @@ def resolve_broker_symbol(symbol: str) -> str:
                 s_name = s.name.upper()
                 if symbol_upper in s_name or s_name in symbol_upper:
                     logger.info(f"Resolved partial match: {symbol_upper} -> {s.name}")
+                    RESOLVED_ALIAS_CACHE[symbol_upper] = s.name
                     return s.name
     except Exception:
         pass
 
+    RESOLVED_ALIAS_CACHE[symbol_upper] = symbol_upper
     return symbol_upper
 
 SUBSCRIBED_SYMBOLS = set()
