@@ -134,7 +134,7 @@ def fetch_db_config():
                 if i_on:
                     active_pair = "NVDA/AMD"
                 elif m_on:
-                    active_pair = "XPTUSD/XPDUSD"
+                    active_pair = "XAUUSD/XAGUSD"
                 elif f_on:
                     active_pair = "AUDUSD/NZDUSD"
                 cur.execute("UPDATE bot_state SET active_pair = %s WHERE id = 1", (active_pair,))
@@ -1489,6 +1489,12 @@ def main():
                 # Check active positions count
                 cur.execute("SELECT COUNT(*) FROM trades WHERE status = 'OPEN'")
                 open_trades_count = cur.fetchone()[0] or 0
+                
+                # Purge any legacy Platinum/Palladium rows from scanned_assets
+                cur_purge = conn.cursor()
+                cur_purge.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%XPTUSD%' OR symbol_pair LIKE '%XPDUSD%'")
+                conn.commit()
+                cur_purge.close()
                 
                 cur.close()
                 conn.close()
