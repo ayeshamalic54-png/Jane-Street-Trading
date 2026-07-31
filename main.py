@@ -817,6 +817,18 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
     except Exception as e:
         logger.error(f"Error sending Discord notification: {e}")
 
+def send_discord_general_alert(message_text: str):
+    import os
+    import requests
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        return
+    try:
+        payload = {"content": message_text}
+        requests.post(webhook_url, json=payload, timeout=5)
+    except Exception as e:
+        logger.error(f"Failed to send Discord alert: {e}")
+
 def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
     """
     Returns True if a trade for this symbol pair was closed in the last 30 minutes.
@@ -1577,6 +1589,28 @@ def main():
             # News Guard check
             import news_guard
             is_news_halted, news_msg = news_guard.get_news_halt_status([S_A_resolved, S_B_resolved])
+
+            # Automated High-Impact News Auto-Close Guard (5 minutes lead time)
+            should_close_news, news_close_reason = news_guard.should_auto_close_before_news([S_A_resolved, S_B_resolved], lead_minutes=5.0)
+            if should_close_news:
+                try:
+                    conn_news = get_connection()
+                    cur_news = conn_news.cursor()
+                    cur_news.execute("SELECT COUNT(*) FROM trades WHERE status = 'OPEN'")
+                    open_trades_count = cur_news.fetchone()[0]
+                    cur_news.close()
+                    conn_news.close()
+                except Exception:
+                    open_trades_count = 0
+
+                if open_trades_count > 0:
+                    logger.warning(f"📰 HIGH-IMPACT NEWS IMMINENT: {news_close_reason}. Auto-closing all open positions for capital protection & prop firm safety!")
+                    close_all_positions("ALL")
+                    send_discord_general_alert(
+                        f"📰 **HIGH-IMPACT NEWS SAFETY AUTO-CLOSE** 📰\n\n"
+                        f"⚠️ **Event Alert:** {news_close_reason}\n"
+                        f"🛡 **Action Executed:** Auto-closed all active positions 5 minutes prior to news release to prevent high slippage & prop firm rule breaches!"
+                    )
 
             # Determine equity based on asset class
             if cat_a == "crypto":
