@@ -146,7 +146,7 @@ def fetch_db_config():
             conn.close()
             return (
                 active_pair,
-                float(row[1] or 20.0),
+                float(row[1] or 35.0),
                 float(row[2] or 40.0),
                 bool(row[3] if row[3] is not None else True),
                 bool(row[4] if row[4] is not None else True),
