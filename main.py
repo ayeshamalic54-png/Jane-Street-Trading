@@ -641,13 +641,25 @@ def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -
     else:
         base_sl = pips * get_pip_size(symbol)
         
-    # Safeguard: Fetch M5 ATR and ensure SL is at least 1.5 * ATR
+    # Safeguard: Enforce minimum SL floors by asset class to prevent premature noise stop-outs
+    pip_sz = get_pip_size(symbol)
+    min_floor = 0.0
+    if cat == "forex":
+        min_floor = 35.0 * pip_sz  # Minimum 35 pips for Forex
+    elif cat == "metals":
+        min_floor = 5.0  # Minimum $5.00 for Gold
+    elif cat == "indices" or cat == "stocks":
+        min_floor = price * 0.015  # Minimum 1.5% for stocks/indices
+
+    if base_sl < min_floor:
+        base_sl = min_floor
+
     try:
         atr = get_atr(symbol, mt5.TIMEFRAME_M5, count=30)
         if atr is not None and atr > 0:
-            min_sl = atr * 1.5
+            min_sl = max(atr * 2.0, min_floor)
             if base_sl < min_sl:
-                logger.info(f"SL of {base_sl:.5f} is too tight for {symbol} (noise boundary: {min_sl:.5f}). Automatically adjusted to 1.5 * ATR: {min_sl:.5f}")
+                logger.info(f"SL of {base_sl:.5f} is too tight for {symbol} (noise boundary: {min_sl:.5f}). Automatically adjusted to safe boundary: {min_sl:.5f}")
                 return min_sl
     except Exception as e:
         logger.warning(f"Failed to calculate ATR safeguard for {symbol}: {e}")
