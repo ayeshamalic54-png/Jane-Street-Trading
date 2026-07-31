@@ -2366,8 +2366,9 @@ def main():
                         logger.error(f"Error evaluating breakeven trail SL: {ex_sl}")
 
             # Update dashboard status
-            if is_news_halted:
-                status_str = f"HALTED ({news_msg})"
+            if is_news_halted or should_close_news:
+                msg = news_msg if is_news_halted else news_close_reason
+                status_str = f"HALTED (News: {msg})"
             elif low_correlation_warning:
                 status_str = "RUNNING (Warning: Low Correlation)"
             else:
