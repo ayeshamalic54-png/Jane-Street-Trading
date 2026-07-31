@@ -1,1 +1,4 @@
-{"active_pair": "EURUSD/GBPUSD"}
+{
+    "SL_PIPS": 35.0,
+    "TP_PIPS": 50.0
+}
