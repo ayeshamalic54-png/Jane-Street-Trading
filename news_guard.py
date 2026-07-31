@@ -10,10 +10,10 @@ logger = logging.getLogger("SMC_Forex_Bot")
 CACHE_FILE = "news_cache.json"
 CACHE_EXPIRY_SECONDS = 300 # 5 minutes cache
 
-def get_news_halt_status(symbols):
+def get_news_halt_status(symbols, buffer_minutes=15.0):
     """
-    Checks for high impact economic news for the currencies in symbols (USD, EUR, GBP, BTC, etc.).
-    Halts trading if high-impact news is within 30 minutes (before or after).
+    Checks for high impact economic news for the currencies in symbols (USD, EUR, GBP, etc.).
+    Halts trading if high-impact news is within buffer_minutes (default 15 minutes before or after).
     Works 100% automatically via ForexFactory live JSON feed with 5-min caching.
     """
     currencies = set()
@@ -35,7 +35,6 @@ def get_news_halt_status(symbols):
         except Exception:
             pass
 
-    # Use cache if fresh (< 5 mins)
     if cached_data and (time.time() - cached_data.get("timestamp", 0) < CACHE_EXPIRY_SECONDS):
         events = cached_data.get("data", [])
     else:
@@ -45,15 +44,12 @@ def get_news_halt_status(symbols):
             with urllib.request.urlopen(req, timeout=10) as response:
                 events = json.loads(response.read().decode('utf-8'))
                 with open(CACHE_FILE, "w") as f:
-                    json.dump({
-                        "timestamp": time.time(),
-                        "data": events
-                    }, f)
-        except Exception as e:
+                    json.dump({"timestamp": time.time(), "data": events}, f)
+        except Exception:
             if cached_data:
                 events = cached_data.get("data", [])
             else:
-                return False, "No high-impact news within 30 minutes"
+                return False, f"No high-impact news within {int(buffer_minutes)} minutes"
 
     utc_now = datetime.datetime.now(datetime.timezone.utc)
     
@@ -68,23 +64,23 @@ def get_news_halt_status(symbols):
                 event_time = datetime.datetime.fromisoformat(date_str).astimezone(datetime.timezone.utc)
                 diff_minutes = (event_time - utc_now).total_seconds() / 60.0
                 
-                # If event is within next 30 minutes
-                if 0 <= diff_minutes <= 30.0:
+                # If event is within next buffer_minutes (e.g. 15 mins)
+                if 0 <= diff_minutes <= buffer_minutes:
                     return True, f"High impact {country} news ({event_title}) in {int(diff_minutes)}m"
                 
-                # If event was in the last 30 minutes
-                if -30.0 <= diff_minutes < 0:
+                # If event was in the last buffer_minutes (e.g. 15 mins)
+                if -buffer_minutes <= diff_minutes < 0:
                     return True, f"High impact {country} news ({event_title}) released {int(abs(diff_minutes))}m ago"
             except Exception:
                 pass
 
-    return False, "No high-impact news within 30 minutes"
+    return False, f"No high-impact news within {int(buffer_minutes)} minutes"
 
 
-def should_auto_close_before_news(symbols, lead_minutes=5.0):
+def should_auto_close_before_news(symbols, lead_minutes=15.0):
     """
-    Returns (True, reason) if high impact news is scheduled within `lead_minutes` (default 5 mins) before release.
-    Used to auto-close open positions before high-impact news spikes.
+    Returns (True, reason) if high impact news is scheduled within `lead_minutes` (default 15 mins) before release.
+    Used to block new position entries before high-impact news spikes.
     """
     currencies = set()
     for sym in symbols:
@@ -134,7 +130,6 @@ def should_auto_close_before_news(symbols, lead_minutes=5.0):
                 event_time = datetime.datetime.fromisoformat(date_str).astimezone(datetime.timezone.utc)
                 diff_minutes = (event_time - utc_now).total_seconds() / 60.0
                 
-                # Check if news is between 0 and lead_minutes (e.g. 5 mins) before release
                 if 0.0 <= diff_minutes <= lead_minutes:
                     return True, f"High impact {country} news ({event_title}) in {int(diff_minutes)}m"
             except Exception:

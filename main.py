@@ -1612,8 +1612,8 @@ def main():
             import news_guard
             is_news_halted, news_msg = news_guard.get_news_halt_status([S_A_resolved, S_B_resolved])
 
-            # Automated High-Impact News Entry Guard (Block new entries 30 mins before news, but do NOT force-close running trades)
-            should_close_news, news_close_reason = news_guard.should_auto_close_before_news([S_A_resolved, S_B_resolved], lead_minutes=30.0)
+            # Automated High-Impact News Entry Guard (Block new entries 15 mins before news, but do NOT force-close running trades)
+            should_close_news, news_close_reason = news_guard.should_auto_close_before_news([S_A_resolved, S_B_resolved], lead_minutes=15.0)
             if should_close_news:
                 logger.info(f"📰 HIGH-IMPACT NEWS IMMINENT: {news_close_reason}. Blocking new trade entries to protect capital.")
 
