@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Activity, Wifi, WifiOff, Send, Zap, ZapOff } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -266,8 +266,6 @@ function MarketHoursCards() {
     </div>
   );
 }
-
-import { useRef } from "react";
 
 export default function Dashboard() {
   const { toast } = useToast();
