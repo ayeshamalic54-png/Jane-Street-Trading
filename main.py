@@ -1448,6 +1448,7 @@ def main():
     correlation_check_counter = 0
 
     logger.info("Quantitative core pipeline active.")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
     win_rate_loop_counter = 0
     loop_log_counter = 0
     SMC_ZONES_CACHE = {}
@@ -1548,12 +1549,10 @@ def main():
                             GLOBAL_CONFIG["SYMBOL_A"] = parts[0]
                             GLOBAL_CONFIG["SYMBOL_B"] = parts[1]
                             save_config(new_pair)
-                    if SL_PIPS != new_sl:
-                        logger.info(f"[CONFIG UPDATE] SL Pips updated: {SL_PIPS} -> {new_sl}")
-                        SL_PIPS = new_sl
-                    if TP_PIPS != new_tp:
-                        logger.info(f"[CONFIG UPDATE] TP Pips updated: {TP_PIPS} -> {new_tp}")
-                        TP_PIPS = new_tp
+                    SL_PIPS = new_sl
+                    TP_PIPS = new_tp
+                    if db_config_counter == 0:
+                        logger.info(f"[ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry Threshold: {new_z_entry}")
                     if REQUIRE_SMC_CONFLUENCE != new_smc:
                         logger.info(f"[CONFIG UPDATE] SMC Confluence updated: {REQUIRE_SMC_CONFLUENCE} -> {new_smc}")
                         REQUIRE_SMC_CONFLUENCE = new_smc
