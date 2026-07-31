@@ -1612,27 +1612,10 @@ def main():
             import news_guard
             is_news_halted, news_msg = news_guard.get_news_halt_status([S_A_resolved, S_B_resolved])
 
-            # Automated High-Impact News Auto-Close Guard (5 minutes lead time)
+            # Automated High-Impact News Entry Guard (Block new entries during news, but do NOT force-close running trades)
             should_close_news, news_close_reason = news_guard.should_auto_close_before_news([S_A_resolved, S_B_resolved], lead_minutes=5.0)
             if should_close_news:
-                try:
-                    conn_news = get_connection()
-                    cur_news = conn_news.cursor()
-                    cur_news.execute("SELECT COUNT(*) FROM trades WHERE status = 'OPEN'")
-                    open_trades_count = cur_news.fetchone()[0]
-                    cur_news.close()
-                    conn_news.close()
-                except Exception:
-                    open_trades_count = 0
-
-                if open_trades_count > 0:
-                    logger.warning(f"📰 HIGH-IMPACT NEWS IMMINENT: {news_close_reason}. Auto-closing all open positions for capital protection & prop firm safety!")
-                    close_all_positions("ALL")
-                    send_discord_general_alert(
-                        f"📰 **HIGH-IMPACT NEWS SAFETY AUTO-CLOSE** 📰\n\n"
-                        f"⚠️ **Event Alert:** {news_close_reason}\n"
-                        f"🛡 **Action Executed:** Auto-closed all active positions 5 minutes prior to news release to prevent high slippage & prop firm rule breaches!"
-                    )
+                logger.info(f"📰 HIGH-IMPACT NEWS IMMINENT: {news_close_reason}. Blocking new trade entries to protect capital.")
 
             # Determine equity based on asset class
             if cat_a == "crypto":
