@@ -160,20 +160,45 @@ function MarketHoursCards() {
             {isForexOpen ? "LIVE OPEN 🟢" : "MARKET CLOSED 🔴"}
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-2 bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-2.5 mb-2 font-mono text-[11px]">
+        <div className="grid grid-cols-2 gap-2 bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-2 mb-2 font-mono text-[11px]">
           <div>
-            <div className="text-[10px] text-zinc-500 uppercase font-semibold">Opening</div>
+            <div className="text-[9px] text-zinc-500 uppercase font-semibold">Weekly Open</div>
             <div className="text-zinc-200 font-bold mt-0.5">2:00 AM PKT Mon</div>
-            <div className="text-[9px] text-zinc-500">5:00 PM EST Sun</div>
           </div>
           <div>
-            <div className="text-[10px] text-zinc-500 uppercase font-semibold">Closing</div>
+            <div className="text-[9px] text-zinc-500 uppercase font-semibold">Weekly Close</div>
             <div className="text-zinc-200 font-bold mt-0.5">2:00 AM PKT Sat</div>
-            <div className="text-[9px] text-zinc-500">5:00 PM EST Fri</div>
           </div>
         </div>
+
+        {/* 4 Global Sessions Grid */}
+        <div className="bg-zinc-950/60 border border-sky-500/20 rounded-lg p-2 mb-2">
+          <div className="text-[9px] uppercase font-bold text-sky-400 mb-1 flex justify-between">
+            <span>4 Global Sessions (PKT)</span>
+            <span>24/5 Live</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5 font-mono text-[10px]">
+            <div className="bg-zinc-900/80 p-1 px-1.5 rounded flex justify-between items-center border border-zinc-800/50">
+              <span className="text-zinc-300">🇦🇺 Sydney</span>
+              <span className="text-zinc-500 text-[9px]">2am - 11am</span>
+            </div>
+            <div className="bg-zinc-900/80 p-1 px-1.5 rounded flex justify-between items-center border border-zinc-800/50">
+              <span className="text-zinc-300">🇯🇵 Tokyo</span>
+              <span className="text-zinc-500 text-[9px]">5am - 2pm</span>
+            </div>
+            <div className="bg-zinc-900/80 p-1 px-1.5 rounded flex justify-between items-center border border-zinc-800/50">
+              <span className="text-zinc-300">🇬🇧 London</span>
+              <span className="text-zinc-500 text-[9px]">1pm - 10pm</span>
+            </div>
+            <div className="bg-zinc-900/80 p-1 px-1.5 rounded flex justify-between items-center border border-zinc-800/50">
+              <span className="text-zinc-300">🇺🇸 New York</span>
+              <span className="text-zinc-500 text-[9px]">6pm - 3am</span>
+            </div>
+          </div>
+        </div>
+
         <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-sans">
-          <span>🌍 24/5 Continuous • Sydney/Tokyo/London/NY</span>
+          <span>🌍 24/5 Continuous • Sydney / Tokyo / London / NY</span>
         </div>
       </div>
 
