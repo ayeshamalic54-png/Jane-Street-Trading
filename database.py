@@ -31,15 +31,29 @@ def get_connection():
     for attempt in range(5):
         try:
             conn = psycopg2.connect(DB_URL, connect_timeout=10)
-            # Set statement timeout of 15 seconds to prevent hanging queries
+            # Set statement timeout of 30 seconds to prevent hanging queries while accommodating concurrent writes
             with conn.cursor() as cur:
-                cur.execute("SET statement_timeout = 15000;")
+                cur.execute("SET statement_timeout = 30000;")
             return conn
         except Exception as e:
             last_err = e
             print(f"Database connection attempt {attempt+1} failed: {e}. Retrying in 2 seconds...")
             time.sleep(2)
     raise last_err
+
+def execute_with_deadlock_retry(fn, max_attempts=3, backoff_sec=0.5):
+    """Executes a function that writes to DB with automatic retries on PostgreSQL deadlock or lock timeout."""
+    import time
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except Exception as e:
+            err_msg = str(e).lower()
+            if any(k in err_msg for k in ["deadlock", "canceling statement", "lock timeout", "statement timeout"]):
+                if attempt < max_attempts - 1:
+                    time.sleep(backoff_sec * (attempt + 1))
+                    continue
+            raise e
 
 def initialize_database():
     """Creates all tables if they do not exist."""
@@ -249,136 +263,142 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
     Upserts live bot telemetry into bot_state table.
     Tracks overall drawdown, max equity peak, and resets metrics if a new MT5 account is attached.
     """
-    query = """
-        INSERT INTO bot_state (
-            id, active_pair, system_status, equity, drawdown_percent,
-            floating_profit, z_score, hedge_ratio, obi_a, obi_b,
-            trades_today, sl_pips, last_heartbeat, updated_at,
-            initial_balance, overall_drawdown, max_equity_peak, mt5_login
-        )
-        VALUES (
-            1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, %s, %s, %s, %s
-        )
-        ON CONFLICT (id) DO UPDATE SET
-            system_status      = EXCLUDED.system_status,
-            equity             = EXCLUDED.equity,
-            drawdown_percent   = EXCLUDED.drawdown_percent,
-            floating_profit    = EXCLUDED.floating_profit,
-            z_score            = EXCLUDED.z_score,
-            hedge_ratio        = EXCLUDED.hedge_ratio,
-            obi_a              = EXCLUDED.obi_a,
-            obi_b              = EXCLUDED.obi_b,
-            trades_today       = EXCLUDED.trades_today,
-            initial_balance    = EXCLUDED.initial_balance,
-            overall_drawdown   = EXCLUDED.overall_drawdown,
-            max_equity_peak    = EXCLUDED.max_equity_peak,
-            mt5_login          = EXCLUDED.mt5_login,
-            last_heartbeat     = CURRENT_TIMESTAMP,
-            updated_at         = CURRENT_TIMESTAMP
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-
-        # 1. Fetch current login info from MT5
-        import MetaTrader5 as mt5
-        mt5_login_val = 0
-        terminal_active = False
+    def _do_update():
+        query = """
+            INSERT INTO bot_state (
+                id, active_pair, system_status, equity, drawdown_percent,
+                floating_profit, z_score, hedge_ratio, obi_a, obi_b,
+                trades_today, sl_pips, last_heartbeat, updated_at,
+                initial_balance, overall_drawdown, max_equity_peak, mt5_login
+            )
+            VALUES (
+                1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, %s, %s, %s, %s
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                system_status      = EXCLUDED.system_status,
+                equity             = EXCLUDED.equity,
+                drawdown_percent   = EXCLUDED.drawdown_percent,
+                floating_profit    = EXCLUDED.floating_profit,
+                z_score            = EXCLUDED.z_score,
+                hedge_ratio        = EXCLUDED.hedge_ratio,
+                obi_a              = EXCLUDED.obi_a,
+                obi_b              = EXCLUDED.obi_b,
+                trades_today       = EXCLUDED.trades_today,
+                initial_balance    = EXCLUDED.initial_balance,
+                overall_drawdown   = EXCLUDED.overall_drawdown,
+                max_equity_peak    = EXCLUDED.max_equity_peak,
+                mt5_login          = EXCLUDED.mt5_login,
+                last_heartbeat     = CURRENT_TIMESTAMP,
+                updated_at         = CURRENT_TIMESTAMP
+        """
+        conn = None
         try:
-            acc_info = mt5.account_info()
-            if acc_info:
-                mt5_login_val = int(acc_info.login)
-                terminal_active = True
-        except Exception:
-            pass
+            conn = get_connection()
+            cur = conn.cursor()
 
-        # 2. Query current saved overall metrics from DB
-        cur.execute("SELECT initial_balance, max_equity_peak, mt5_login FROM bot_state WHERE id = 1")
-        row = cur.fetchone()
+            # 1. Fetch current login info from MT5
+            import MetaTrader5 as mt5
+            mt5_login_val = 0
+            terminal_active = False
+            try:
+                acc_info = mt5.account_info()
+                if acc_info:
+                    mt5_login_val = int(acc_info.login)
+                    terminal_active = True
+            except Exception:
+                pass
 
-        initial_balance_val = float(equity)
-        max_equity_peak_val = float(equity)
-        saved_login = 0
+            # 2. Query current saved overall metrics from DB
+            cur.execute("SELECT initial_balance, max_equity_peak, mt5_login FROM bot_state WHERE id = 1")
+            row = cur.fetchone()
 
-        if row:
-            initial_balance_val = float(row[0] or equity)
-            max_equity_peak_val = float(row[1] or equity)
-            saved_login = int(row[2] or 0)
-
-        # 3. Detect if a new account has been attached or if database metrics are out-of-sync
-        login_changed = (mt5_login_val > 0 and mt5_login_val != saved_login)
-        
-        needs_restore = False
-        saved_initial = None
-        saved_peak = None
-        saved_dd = None
-        
-        if mt5_login_val > 0:
-            cur.execute("SELECT initial_balance, max_equity_peak, overall_drawdown FROM account_states WHERE mt5_login = %s", (mt5_login_val,))
-            acc_row = cur.fetchone()
-            if acc_row:
-                saved_initial = float(acc_row[0])
-                saved_peak = float(acc_row[1])
-                saved_dd = float(acc_row[2])
-                if login_changed or abs(initial_balance_val - saved_initial) > 0.01:
-                    needs_restore = True
-            else:
-                needs_restore = True
-
-        if terminal_active and needs_restore:
-            if saved_initial is not None:
-                initial_balance_val = saved_initial
-                max_equity_peak_val = saved_peak
-                overall_drawdown_val = saved_dd
-                print(f"Syncing account metrics: Restoring saved metrics for account {mt5_login_val}: Initial Balance: ${initial_balance_val:.2f}, Peak: ${max_equity_peak_val:.2f}")
-            else:
-                print(f"Syncing account metrics: Initializing metrics for new account {mt5_login_val} with equity: ${equity:.2f}")
-                initial_balance_val = float(equity)
-                max_equity_peak_val = float(equity)
-                overall_drawdown_val = 0.00
-            saved_login = mt5_login_val
-
-        # 4. Update peak equity if exceeded
-        if float(equity) > max_equity_peak_val:
+            initial_balance_val = float(equity)
             max_equity_peak_val = float(equity)
+            saved_login = 0
 
-        # 5. Calculate overall drawdown from initial balance (Absolute Drawdown)
-        overall_drawdown_val = 0.00
-        if initial_balance_val > 0.0:
-            overall_drawdown_val = ((initial_balance_val - float(equity)) / initial_balance_val) * 100.0
-            overall_drawdown_val = max(0.00, overall_drawdown_val)
+            if row:
+                initial_balance_val = float(row[0] or equity)
+                max_equity_peak_val = float(row[1] or equity)
+                saved_login = int(row[2] or 0)
 
-        cur.execute(query, (
-            str(active_pair), str(system_status),
-            float(equity), float(drawdown_percent),
-            float(floating_profit), float(z_score),
-            float(hedge_ratio), float(obi_a), float(obi_b),
-            int(trades_today), float(sl_pips),
-            float(initial_balance_val), float(overall_drawdown_val),
-            float(max_equity_peak_val), int(saved_login)
-        ))
-        
-        # Save back to account_states for persistence across switches
-        if saved_login > 0:
-            cur.execute("""
-                INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown, updated_at)
-                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-                ON CONFLICT (mt5_login) DO UPDATE SET
-                    initial_balance = EXCLUDED.initial_balance,
-                    max_equity_peak = EXCLUDED.max_equity_peak,
-                    overall_drawdown = EXCLUDED.overall_drawdown,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (int(saved_login), float(initial_balance_val), float(max_equity_peak_val), float(overall_drawdown_val)))
+            # 3. Detect if a new account has been attached or if database metrics are out-of-sync
+            login_changed = (mt5_login_val > 0 and mt5_login_val != saved_login)
             
-        conn.commit()
-        cur.close()
+            needs_restore = False
+            saved_initial = None
+            saved_peak = None
+            saved_dd = None
+            
+            if mt5_login_val > 0:
+                cur.execute("SELECT initial_balance, max_equity_peak, overall_drawdown FROM account_states WHERE mt5_login = %s", (mt5_login_val,))
+                acc_row = cur.fetchone()
+                if acc_row:
+                    saved_initial = float(acc_row[0])
+                    saved_peak = float(acc_row[1])
+                    saved_dd = float(acc_row[2])
+                    if login_changed or abs(initial_balance_val - saved_initial) > 0.01:
+                        needs_restore = True
+                else:
+                    needs_restore = True
+
+            if terminal_active and needs_restore:
+                if saved_initial is not None:
+                    initial_balance_val = saved_initial
+                    max_equity_peak_val = saved_peak
+                    overall_drawdown_val = saved_dd
+                else:
+                    initial_balance_val = float(equity)
+                    max_equity_peak_val = float(equity)
+                    overall_drawdown_val = 0.00
+                saved_login = mt5_login_val
+
+            # 4. Update peak equity if exceeded
+            if float(equity) > max_equity_peak_val:
+                max_equity_peak_val = float(equity)
+
+            # 5. Calculate overall drawdown from initial balance
+            overall_drawdown_val = 0.00
+            if initial_balance_val > 0.0:
+                overall_drawdown_val = ((initial_balance_val - float(equity)) / initial_balance_val) * 100.0
+                overall_drawdown_val = max(0.00, overall_drawdown_val)
+
+            cur.execute(query, (
+                str(active_pair), str(system_status),
+                float(equity), float(drawdown_percent),
+                float(floating_profit), float(z_score),
+                float(hedge_ratio), float(obi_a), float(obi_b),
+                int(trades_today), float(sl_pips),
+                float(initial_balance_val), float(overall_drawdown_val),
+                float(max_equity_peak_val), int(saved_login)
+            ))
+            
+            # Save back to account_states for persistence across switches
+            if saved_login > 0:
+                cur.execute("""
+                    INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown, updated_at)
+                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (mt5_login) DO UPDATE SET
+                        initial_balance = EXCLUDED.initial_balance,
+                        max_equity_peak = EXCLUDED.max_equity_peak,
+                        overall_drawdown = EXCLUDED.overall_drawdown,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (int(saved_login), float(initial_balance_val), float(max_equity_peak_val), float(overall_drawdown_val)))
+                
+            conn.commit()
+            cur.close()
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            raise e
+        finally:
+            if conn:
+                conn.close()
+
+    try:
+        execute_with_deadlock_retry(_do_update)
     except Exception as e:
         print(f"Error updating bot_state: {e}")
-    finally:
-        if conn:
-            conn.close()
 
 def get_auto_execute():
     """
@@ -581,23 +601,31 @@ def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_
             trades_today = EXCLUDED.trades_today,
             updated_at = CURRENT_TIMESTAMP
     """
-    conn = None
+    def _do_update():
+        conn = None
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            login_val = int(login_id) if login_id else 0
+            cur.execute(query, (
+                date_obj, login_val,
+                float(start_equity), float(current_equity),
+                float(max_dd), int(trades_count)
+            ))
+            conn.commit()
+            cur.close()
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            raise e
+        finally:
+            if conn:
+                conn.close()
+
     try:
-        conn = get_connection()
-        cur = conn.cursor()
-        login_val = int(login_id) if login_id else 0
-        cur.execute(query, (
-            date_obj, login_val,
-            float(start_equity), float(current_equity),
-            float(max_dd), int(trades_count)
-        ))
-        conn.commit()
-        cur.close()
+        execute_with_deadlock_retry(_do_update)
     except Exception as e:
         print(f"Error updating daily metrics: {e}")
-    finally:
-        if conn:
-            conn.close()
 
 def update_scanned_asset(symbol_pair, price_a, price_b, win_rate, z_score, action):
     query = """
