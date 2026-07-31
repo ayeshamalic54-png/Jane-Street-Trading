@@ -86,6 +86,160 @@ function TradingViewWidget({ symbol }: { symbol: string }) {
       <div id={`tv-chart-${symbol.replace("/", "-")}`} ref={container} className="h-[450px] w-full" />
     </div>
   );
+function MarketHoursCards() {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const day = now.getUTCDay();
+  const utcHours = now.getUTCHours();
+  const utcMins = now.getUTCMinutes();
+  const totalMins = utcHours * 60 + utcMins;
+
+  // 1. Stocks: Mon-Fri, 13:30 - 20:00 UTC (9:30 AM - 4:00 PM EST / 6:30 PM - 1:00 AM PKT)
+  const isStocksOpen = day >= 1 && day <= 5 && totalMins >= 810 && totalMins < 1200;
+
+  // 2. Forex: Sun 22:00 UTC to Fri 22:00 UTC
+  const isForexOpen = !(day === 6 || (day === 0 && totalMins < 1320) || (day === 5 && totalMins >= 1320));
+
+  // 3. Metals: Sun 23:00 to Fri 22:00 UTC (Daily break 21:00-22:00 UTC / 2am-3am PKT)
+  const isMetalBreak = totalMins >= 1260 && totalMins < 1320;
+  const isMetalsOpen = isForexOpen && !isMetalBreak;
+
+  // 4. Indices: Sun 23:00 to Fri 22:00 UTC (Break 20:15-20:30 & 21:00-22:00 UTC)
+  const isIndexBreak = (totalMins >= 1215 && totalMins < 1230) || (totalMins >= 1260 && totalMins < 1320);
+  const isIndicesOpen = isForexOpen && !isIndexBreak;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+      {/* STOCKS CARD */}
+      <div className="relative overflow-hidden rounded-xl border border-purple-500/30 bg-gradient-to-br from-indigo-950/40 via-purple-950/30 to-zinc-950 p-4 transition-all duration-300 hover:border-purple-500/60 hover:shadow-[0_0_20px_rgba(168,85,247,0.15)]">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl p-2 rounded-lg bg-purple-500/10 border border-purple-500/20">🇺🇸</span>
+            <div>
+              <div className="font-semibold text-sm text-zinc-100 font-sans">US Stock Exchanges</div>
+              <div className="text-[11px] text-purple-300/70 font-mono">NYSE & NASDAQ (AAPL, NVDA, AMZN)</div>
+            </div>
+          </div>
+          <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isStocksOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
+            {isStocksOpen ? "LIVE OPEN 🟢" : "MARKET CLOSED 🔴"}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-2.5 mb-2 font-mono text-[11px]">
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase font-semibold">Opening</div>
+            <div className="text-zinc-200 font-bold mt-0.5">6:30 PM PKT</div>
+            <div className="text-[9px] text-zinc-500">9:30 AM EST</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase font-semibold">Closing</div>
+            <div className="text-zinc-200 font-bold mt-0.5">1:00 AM PKT</div>
+            <div className="text-[9px] text-zinc-500">4:00 PM EST</div>
+          </div>
+        </div>
+        <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-sans">
+          <span>🗓️ Mon - Fri • 6.5 Hours Regular Session</span>
+        </div>
+      </div>
+
+      {/* FOREX CARD */}
+      <div className="relative overflow-hidden rounded-xl border border-sky-500/30 bg-gradient-to-br from-cyan-950/40 via-sky-950/30 to-zinc-950 p-4 transition-all duration-300 hover:border-sky-500/60 hover:shadow-[0_0_20px_rgba(56,189,248,0.15)]">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl p-2 rounded-lg bg-sky-500/10 border border-sky-500/20">💱</span>
+            <div>
+              <div className="font-semibold text-sm text-zinc-100 font-sans">Global Forex Market</div>
+              <div className="text-[11px] text-sky-300/70 font-mono">Currencies (EUR, USD, GBP, JPY)</div>
+            </div>
+          </div>
+          <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isForexOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
+            {isForexOpen ? "LIVE OPEN 🟢" : "MARKET CLOSED 🔴"}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-2.5 mb-2 font-mono text-[11px]">
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase font-semibold">Opening</div>
+            <div className="text-zinc-200 font-bold mt-0.5">2:00 AM PKT Mon</div>
+            <div className="text-[9px] text-zinc-500">5:00 PM EST Sun</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase font-semibold">Closing</div>
+            <div className="text-zinc-200 font-bold mt-0.5">2:00 AM PKT Sat</div>
+            <div className="text-[9px] text-zinc-500">5:00 PM EST Fri</div>
+          </div>
+        </div>
+        <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-sans">
+          <span>🌍 24/5 Continuous • Sydney/Tokyo/London/NY</span>
+        </div>
+      </div>
+
+      {/* METALS CARD */}
+      <div className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-950/40 via-yellow-950/30 to-zinc-950 p-4 transition-all duration-300 hover:border-amber-500/60 hover:shadow-[0_0_20px_rgba(245,158,11,0.15)]">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">🥇</span>
+            <div>
+              <div className="font-semibold text-sm text-zinc-100 font-sans">Precious Metals</div>
+              <div className="text-[11px] text-amber-300/70 font-mono">Commodities (XAU/Gold, XAG, XPT)</div>
+            </div>
+          </div>
+          <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isMetalsOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : isMetalBreak ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
+            {isMetalsOpen ? "LIVE OPEN 🟢" : isMetalBreak ? "DAILY BREAK ⏸" : "MARKET CLOSED 🔴"}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-2.5 mb-2 font-mono text-[11px]">
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase font-semibold">Opening</div>
+            <div className="text-zinc-200 font-bold mt-0.5">3:00 AM PKT</div>
+            <div className="text-[9px] text-zinc-500">6:00 PM EST Sun</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase font-semibold">Closing / Break</div>
+            <div className="text-zinc-200 font-bold mt-0.5">2:00 AM PKT</div>
+            <div className="text-[9px] text-zinc-500">Daily Break 2am-3am</div>
+          </div>
+        </div>
+        <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-sans">
+          <span>⏱️ 23 Hours / Day • Daily 1-Hour Maintenance</span>
+        </div>
+      </div>
+
+      {/* INDICES CARD */}
+      <div className="relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/40 via-teal-950/30 to-zinc-950 p-4 transition-all duration-300 hover:border-emerald-500/60 hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">📊</span>
+            <div>
+              <div className="font-semibold text-sm text-zinc-100 font-sans">Stock Indices</div>
+              <div className="text-[11px] text-emerald-300/70 font-mono">Futures (US500, US30, USTEC)</div>
+            </div>
+          </div>
+          <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isIndicesOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : isIndexBreak ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
+            {isIndicesOpen ? "LIVE OPEN 🟢" : isIndexBreak ? "DAILY BREAK ⏸" : "MARKET CLOSED 🔴"}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 bg-zinc-900/60 border border-zinc-800/60 rounded-lg p-2.5 mb-2 font-mono text-[11px]">
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase font-semibold">Opening</div>
+            <div className="text-zinc-200 font-bold mt-0.5">3:00 AM PKT</div>
+            <div className="text-[9px] text-zinc-500">6:00 PM EST Sun</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-zinc-500 uppercase font-semibold">Closing</div>
+            <div className="text-zinc-200 font-bold mt-0.5">2:15 AM PKT</div>
+            <div className="text-[9px] text-zinc-500">Break 2:15am-3am</div>
+          </div>
+        </div>
+        <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 font-sans">
+          <span>⚡ 23 Hours / Day • Brief Daily Maint. Break</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 import { useRef } from "react";
@@ -406,6 +560,9 @@ export default function Dashboard() {
       </div>
 
       <div className="p-6 space-y-6">
+        {/* Global Market Operating Hours Cards */}
+        <MarketHoursCards />
+
         {/* Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card className="bg-zinc-900 border-zinc-800 border-t-2 border-t-sky-500 hover:border-sky-400/40 transition-all shadow-[0_4px_24px_rgba(14,165,233,0.06)] rounded-md">
