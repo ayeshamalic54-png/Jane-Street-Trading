@@ -1976,19 +1976,22 @@ def main():
                     cooldown_dir = None
 
                 if action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved):
-                    candidate_signals.append({
-                        "pair": (s_a, s_b),
-                        "action": action,
-                        "win_rate": win_rate,
-                        "z_score": z,
-                        "z_velocity": z_velocity,
-                        "beta": beta,
-                        "net_obi": net_obi,
-                        "tick_a": tick_a_scan,
-                        "tick_b": tick_b_scan,
-                        "price_a": p_a,
-                        "price_b": p_b
-                    })
+                    cand_cat_a = get_symbol_category(s_a_resolved)
+                    cand_cat_b = get_symbol_category(s_b_resolved)
+                    if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)) and (cand_cat_b == "crypto" or is_spread_valid(s_b_resolved)):
+                        candidate_signals.append({
+                            "pair": (s_a, s_b),
+                            "action": action,
+                            "win_rate": win_rate,
+                            "z_score": z,
+                            "z_velocity": z_velocity,
+                            "beta": beta,
+                            "net_obi": net_obi,
+                            "tick_a": tick_a_scan,
+                            "tick_b": tick_b_scan,
+                            "price_a": p_a,
+                            "price_b": p_b
+                        })
 
             # ── 3. MANAGE ACTIVE POSITION EXITS ──
             kf_active = get_kf_for_pair(S_A_resolved, S_B_resolved)
