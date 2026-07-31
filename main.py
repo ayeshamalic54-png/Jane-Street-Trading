@@ -412,7 +412,7 @@ EXPECTED_BETA_SIGN = {
 }
 
 DEFAULT_LOT_SIZES = {
-    "metals": 0.30,
+    "metals": 1.50,
     "forex": 1.20,
     "indices": 0.60,
     "stocks": 15.00,
@@ -1264,7 +1264,12 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
             eff_beta = min(eff_beta, 0.35)
             
         raw_qty = qty_a * eff_beta * (contract_size_a / contract_size_b) * pip_ratio
-        return round_volume(symbol_b, raw_qty)
+        qty_b_final = round_volume(symbol_b, raw_qty)
+        info_b_check = mt5.symbol_info(symbol_b)
+        min_vol_b = info_b_check.volume_min if info_b_check else 0.01
+        if qty_b_final < min_vol_b:
+            qty_b_final = min_vol_b
+        return qty_b_final
 
 
 def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float, is_long: bool) -> tuple:
@@ -1323,6 +1328,10 @@ def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float,
         
         from risk_safeguards import round_volume
         final_b = round_volume(symbol_b, scaled_b)
+        info_b_check2 = mt5.symbol_info(symbol_b)
+        min_vol_b2 = info_b_check2.volume_min if info_b_check2 else 0.01
+        if final_b < min_vol_b2:
+            final_b = min_vol_b2
         
         # Recalculate margin for logs
         new_margin_a = mt5.order_calc_margin(action_a, symbol_a, final_a, price_a) or 0.0
