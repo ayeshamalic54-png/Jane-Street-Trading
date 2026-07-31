@@ -86,6 +86,8 @@ function TradingViewWidget({ symbol }: { symbol: string }) {
       <div id={`tv-chart-${symbol.replace("/", "-")}`} ref={container} className="h-[450px] w-full" />
     </div>
   );
+}
+
 function MarketHoursCards() {
   const [now, setNow] = useState(new Date());
 
