@@ -1749,8 +1749,8 @@ def main():
                         peak_floating_profit = floating_profit
                         logger.info(f"[EQUITY TRAIL] New peak floating profit: ${peak_floating_profit:.2f} (Activation threshold: ${activation_threshold:.2f})")
                     
-                    # Trailing distance: lock in 80% of peak profit (or minimum $20 profit lock)
-                    trail_stop_level = max(20.0, peak_floating_profit * 0.80)
+                    # Trailing distance: 9% pullback allowed (locks in 91% of peak profit, minimum $20 lock)
+                    trail_stop_level = max(20.0, peak_floating_profit * 0.91)
                     if floating_profit <= trail_stop_level:
                         logger.info(f"[EQUITY TRAIL] Floating profit ${floating_profit:.2f} fell below trailing stop level ${trail_stop_level:.2f} (Peak: ${peak_floating_profit:.2f}). Closing all positions to lock profits.")
                         all_success = True
