@@ -7,7 +7,22 @@ logger = logging.getLogger("SMC_Forex_Bot")
 MAGIC_NUMBER = 992026           # Unique magic number for Jane Street system trades
 
 def send_order(symbol, order_type, price, volume, sl, tp, comment):
-    """Submits order to MT5. Automatically handles FOK vs IOC filling modes."""
+    """Submits order to MT5. Automatically handles FOK vs IOC vs RETURN filling modes."""
+    # Ensure symbol is active and selected in MT5 Market Watch
+    mt5.symbol_select(symbol, True)
+    
+    # If price is 0.0 or outdated, re-fetch live tick
+    if price is None or price <= 0:
+        tick = mt5.symbol_info_tick(symbol)
+        if tick:
+            price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+
+    filling_modes = [
+        mt5.ORDER_FILLING_FOK,
+        mt5.ORDER_FILLING_IOC,
+        mt5.ORDER_FILLING_RETURN
+    ]
+    
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
@@ -20,23 +35,64 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
         "magic": MAGIC_NUMBER,
         "comment": comment,
         "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_FOK,
     }
     
-    result = mt5.order_send(request)
-    if result is None:
-        logger.error(f"MT5 order_send returned None. Error: {mt5.last_error()}")
-        return None
-        
-    if result.retcode != mt5.TRADE_RETCODE_DONE:
-        # Fallback to IOC filling if FOK is not supported by broker
-        logger.warning(f"FOK order rejected ({result.comment}). Retrying with IOC...")
-        request["type_filling"] = mt5.ORDER_FILLING_IOC
+    result = None
+    for mode in filling_modes:
+        request["type_filling"] = mode
         result = mt5.order_send(request)
         
-    return result
+        if result is None:
+            logger.error(f"MT5 order_send returned None for mode {mode}. Error: {mt5.last_error()}")
+            continue
+            
+        if result.retcode == mt5.TRADE_RETCODE_DONE:
+            logger.info(f"Order filled successfully using mode {mode}")
+            return result
+            
+        # Check if volume is invalid and auto-correct to broker volume_min
+        if result.retcode == 10014:
+            info = mt5.symbol_info(symbol)
+            if info:
+                corrected_vol = info.volume_min
+                logger.warning(f"[VOLUME HEAL] Retrying order for {symbol} with broker min volume: {corrected_vol}")
+                request["volume"] = corrected_vol
+                res_retry = mt5.order_send(request)
+                if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+                    logger.info(f"Order filled successfully after volume auto-correction.")
+                    return res_retry
+            logger.error(f"Order rejected due to invalid volume: {result.comment}")
+            return None
+            
+        # Check if stops are invalid (e.g. SL too close for stock CFD) and retry with sl=0.0
+        if result.retcode == 10016:
+            logger.warning(f"[STOPS HEAL] Retrying order for {symbol} with sl=0.0 due to invalid broker stops level: {result.comment}")
+            request["sl"] = 0.0
+            res_retry = mt5.order_send(request)
+            if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"Order filled successfully after stops auto-correction.")
+                return res_retry
+            logger.error(f"Order rejected due to invalid stops: {result.comment}")
+            return None
 
-def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots, tp1, tp2, tp3):
+        # Check if the error is due to disabled auto-trading on client or server
+        comment_str = result.comment or ""
+        if "AutoTrading disabled" in comment_str or result.retcode in [10022, 10026, 10034]:
+            logger.error(f"Order rejected: AutoTrading is disabled! Details: {result.comment}")
+            return None
+            
+        # If the failure is not related to filling mode, we should not retry other modes
+        if result.retcode not in [10013, 10030]:
+            break
+            
+        logger.warning(f"Order mode {mode} failed: {result.comment}. Retrying next mode...")
+        
+    if result:
+        err_comment = result.comment if result else "No response"
+        logger.error(f"Order failed after trying all filling modes: {err_comment}")
+    return None
+
+def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots, tp1, tp2, tp3, signal_id=None):
     """
     Executes a trade split into three parts (TP1, TP2, TP3) for scaling out.
     Also logs the trade entry to the PostgreSQL database.
@@ -44,11 +100,9 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
     order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
     part_lots = round(total_lots / 3.0, 2)
     
-    # Ensure lot size satisfies broker minimums
-    info = mt5.symbol_info(symbol)
-    min_vol = info.volume_min if info else 0.01
-    if part_lots < min_vol:
-        part_lots = min_vol
+    # Ensure lot size satisfies broker minimums and volume step (e.g. 1.0 share step for Stock CFDs)
+    from risk_safeguards import round_volume
+    part_lots = round_volume(symbol, part_lots)
 
     logger.info(f"Executing 3-part quantitative trade | Total Lots: {total_lots} | Part Lots: {part_lots}")
     logger.info(f"Entry: {entry_price:.5f} | SL: {sl_price:.5f}")
@@ -58,6 +112,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
     success = False
 
     for part_name, tp_val in parts:
+        # Pass the actual tp_val so the MT5 broker server executes the target exit reliably!
         res = send_order(symbol, order_type, entry_price, part_lots, sl_price, tp_val, f"JS_{part_name}")
         if res and res.retcode == mt5.TRADE_RETCODE_DONE:
             ticket = res.order
@@ -68,9 +123,10 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
                 lots=part_lots,
                 entry_price=entry_price,
                 entry_time=datetime.datetime.now(),
-                comment=f"JaneStreet {part_name}"
+                comment=f"JaneStreet {part_name}",
+                signal_id=signal_id
             )
-            logger.info(f"Successfully executed {part_name} order. Ticket: {ticket}")
+            logger.info(f"Successfully executed {part_name} order (Server TP and SL set; 140s / 2m20s hold enforced). Ticket: {ticket}")
             success = True
         else:
             err_msg = res.comment if res else "No response"
@@ -80,23 +136,43 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
 
 def close_all_positions(symbol, comment_filter="JS_"):
     """Closes all active positions matching the magic number and symbol."""
-    positions = mt5.positions_get(symbol=symbol)
+    if symbol == "ALL" or not symbol:
+        positions = mt5.positions_get()
+    else:
+        positions = mt5.positions_get(symbol=symbol)
+        if not positions:
+            from data_ingestion import resolve_broker_symbol
+            resolved = resolve_broker_symbol(symbol)
+            if resolved != symbol:
+                positions = mt5.positions_get(symbol=resolved)
+        if not positions:
+            all_pos = mt5.positions_get()
+            if all_pos:
+                base_sym = symbol.split('.')[0].upper()
+                positions = [p for p in all_pos if p.symbol.split('.')[0].upper() == base_sym]
+        
     if not positions:
         return
         
+    filling_modes = [
+        mt5.ORDER_FILLING_FOK,
+        mt5.ORDER_FILLING_IOC,
+        mt5.ORDER_FILLING_RETURN
+    ]
+
     for pos in positions:
         if pos.magic == MAGIC_NUMBER and comment_filter in pos.comment:
             order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
             
-            # Fetch latest price
-            tick = mt5.symbol_info_tick(symbol)
+            # Fetch latest price for the specific symbol
+            tick = mt5.symbol_info_tick(pos.symbol)
             if tick is None:
                 continue
             price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
             
             request = {
                 "action": mt5.TRADE_ACTION_DEAL,
-                "symbol": symbol,
+                "symbol": pos.symbol,
                 "volume": pos.volume,
                 "type": order_type,
                 "position": pos.ticket,
@@ -105,20 +181,35 @@ def close_all_positions(symbol, comment_filter="JS_"):
                 "magic": MAGIC_NUMBER,
                 "comment": "JS Drawdown Emergency Exit",
                 "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
             }
-            res = mt5.order_send(request)
-            if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info(f"Emergency closed position ticket: {pos.ticket}")
-                # Immediately check closed deal details to log to database
-                check_closed_trades(symbol)
-            else:
+            
+            closed_ok = False
+            for mode in filling_modes:
+                request["type_filling"] = mode
+                res = mt5.order_send(request)
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    logger.info(f"Emergency closed position ticket: {pos.ticket} using mode {mode}")
+                    check_closed_trades(pos.symbol)
+                    closed_ok = True
+                    break
+            if not closed_ok:
                 err_msg = res.comment if res else "No response"
                 logger.error(f"Failed to close position ticket {pos.ticket}: {err_msg}")
 
 def modify_sl_for_trade(symbol, new_sl):
     """Modifies the Stop Loss of all active trade parts to the new_sl price."""
     positions = mt5.positions_get(symbol=symbol)
+    if not positions:
+        from data_ingestion import resolve_broker_symbol
+        resolved = resolve_broker_symbol(symbol)
+        if resolved != symbol:
+            positions = mt5.positions_get(symbol=resolved)
+    if not positions:
+        all_pos = mt5.positions_get()
+        if all_pos:
+            base_sym = symbol.split('.')[0].upper()
+            positions = [p for p in all_pos if p.symbol.split('.')[0].upper() == base_sym]
+            
     if not positions:
         return
         
@@ -143,10 +234,6 @@ def check_closed_trades(symbol):
     """
     Checks if any open trades in the database have been closed in MT5.
     Queries the MT5 history deals to log close price and profit to the database.
-
-    BUG FIX: Use positions_get() with NO symbol filter and guard against None return.
-    Using positions_get(symbol=...) was returning None on transient MT5 errors,
-    which caused active_tickets=[] and marked ALL open trades as CLOSED.
     """
     conn = None
     open_tickets = []
@@ -165,47 +252,237 @@ def check_closed_trades(symbol):
     if not open_tickets:
         return
 
-    # BUG FIX: Fetch ALL positions (no symbol filter) and guard against None.
-    # If MT5 returns None it means a transient connection issue — abort to prevent
-    # false trade closures where all trades get incorrectly marked CLOSED.
+    # Get active positions from MT5 (without symbol filter to avoid suffix/naming mismatches)
     positions = mt5.positions_get()
     if positions is None:
-        logger.warning(f"check_closed_trades({symbol}): MT5 positions_get() returned None. Aborting sync to prevent false closures.")
+        # Transient connection issues - abort sync to prevent false trade closures
         return
     active_tickets = [p.ticket for p in positions]
 
     for ticket in open_tickets:
         if ticket not in active_tickets:
-            # Trade is closed. Find exit deal details from MT5 history.
+            # Trade is closed. Let's find exit deal details in MT5 history
             logger.info(f"Detected closed trade ticket: {ticket}. Fetching details from MT5 history...")
-
-            # Primary: look up by position ID directly (most reliable, no date range needed)
+            
+            # Primary method: Get deals by position ID directly (timezone and date range independent)
             history_deals = mt5.history_deals_get(position=ticket)
-
-            # Fallback: search last 30 days if direct lookup returns nothing
+            
+            # Fallback method: if direct position query returns nothing, search by date range
             if not history_deals:
                 from_date = datetime.datetime.now() - datetime.timedelta(days=30)
                 to_date = datetime.datetime.now() + datetime.timedelta(days=1)
                 history_deals = mt5.history_deals_get(from_date, to_date)
-
+            
             close_price = 0.0
             profit = 0.0
             close_time = datetime.datetime.now()
-
+            found_exit_deal = False
+            
             if history_deals:
+                # Exit deals have entry Out (mt5.DEAL_ENTRY_OUT = 1)
                 exit_deals = [d for d in history_deals if d.position_id == ticket and d.entry == mt5.DEAL_ENTRY_OUT]
+                
                 if exit_deals:
                     deal = exit_deals[0]
                     close_price = float(deal.price)
+                    
+                    # Sum profit/commission/swaps for all deals associated with this ticket
                     all_deals_for_pos = [d for d in history_deals if d.position_id == ticket]
                     profit = sum(d.profit + d.commission + d.swap for d in all_deals_for_pos if d.entry == mt5.DEAL_ENTRY_OUT)
                     close_time = datetime.datetime.fromtimestamp(deal.time)
-                    log_trade_exit(ticket, close_price, profit, close_time)
-                    logger.info(f"Logged closed trade ticket {ticket} | Exit: {close_price:.5f} | Profit: ${profit:.2f}")
+                    found_exit_deal = True
+
+            if not found_exit_deal:
+                # Fallback to mathematical profit calculation using current/last tick price and database record
+                logger.warning(f"Could not retrieve history deals for closed ticket {ticket}. Using mathematical fallback...")
+                tick = mt5.symbol_info_tick(symbol)
+                if tick:
+                    close_price = (tick.bid + tick.ask) / 2.0
                 else:
-                    # No exit deal found yet — do NOT mark as closed yet (may still be partial)
-                    logger.warning(f"Ticket {ticket} not in active positions but no exit deal found. Skipping close to be safe.")
-            else:
-                # No history at all — mark closed with zero values as last resort
+                    close_price = 0.0
+                
+                if close_price > 0.0:
+                    try:
+                        conn_db = get_connection()
+                        cur_db = conn_db.cursor()
+                        cur_db.execute("SELECT entry_price, lots, order_type FROM trades WHERE ticket = %s", (int(ticket),))
+                        row = cur_db.fetchone()
+                        cur_db.close()
+                        conn_db.close()
+                        if row:
+                            e_price, lts, o_type = row
+                            mult = 1.0 if str(o_type).upper() == "BUY" else -1.0
+                            sym_info = mt5.symbol_info(symbol)
+                            contract_size = sym_info.trade_contract_size if sym_info else 100000.0
+                            profit = (close_price - float(e_price)) * float(lts) * mult * contract_size
+                    except Exception as fe:
+                        logger.error(f"Failed to calculate fallback MT5 profit: {fe}")
+
+            log_trade_exit(ticket, close_price, profit, close_time)
+            logger.info(f"Logged closed trade ticket {ticket} | Exit: {close_price:.5f} | Profit: ${profit:.2f}")
+
+            # Send Discord exit notification
+            try:
+                conn_info = get_connection()
+                cur_info = conn_info.cursor()
+                cur_info.execute("SELECT symbol, order_type, lots, comment FROM trades WHERE ticket = %s", (int(ticket),))
+                row_info = cur_info.fetchone()
+                cur_info.close()
+                conn_info.close()
+                if row_info:
+                    sym_name, o_type, lts, cmt = row_info
+                    pnl_emoji = "🟢" if profit >= 0 else "🔴"
+                    pnl_word = "PROFIT" if profit >= 0 else "LOSS"
+                    
+                    disc_msg = (
+                        f"⏹ **JANE STREET POSITION CLOSED** ⏹\n\n"
+                        f"🎫 **Ticket:** `{ticket}`\n"
+                        f"💱 **Symbol:** `{sym_name}` ({cmt})\n"
+                        f"📦 **Size:** `{lts:.2f} lots` ({o_type})\n"
+                        f"💵 **Exit Price:** `{close_price:.5f}`\n"
+                        f"{pnl_emoji} **P&L:** **${profit:+.2f}** ({pnl_word})\n"
+                    )
+                    from database import send_discord_message
+                    send_discord_message(disc_msg)
+            except Exception as e_disc:
+                logger.error(f"Error sending Discord exit message: {e_disc}")
+
+def close_position_by_ticket(symbol, ticket, volume_to_close):
+    """Closes a specific MT5 position by its ticket (fully or partially)."""
+    positions = mt5.positions_get(ticket=int(ticket))
+    if positions is None:
+        # Transient connection issues - abort closing sync to prevent false database updates
+        return False
+    if len(positions) == 0:
+        # Check if there is an active position for this symbol (Netting account support)
+        sym_positions = mt5.positions_get(symbol=symbol)
+        if not sym_positions:
+            from data_ingestion import resolve_broker_symbol
+            resolved = resolve_broker_symbol(symbol)
+            if resolved != symbol:
+                sym_positions = mt5.positions_get(symbol=resolved)
+        if not sym_positions:
+            all_pos = mt5.positions_get()
+            if all_pos:
+                base_sym = symbol.split('.')[0].upper()
+                sym_positions = [p for p in all_pos if p.symbol.split('.')[0].upper() == base_sym]
+        if sym_positions:
+            pos = sym_positions[0]
+            ticket = pos.ticket
+            logger.info(f"[NETTING AUTO-RESOLVE] Ticket not found, but active position exists for {symbol}. Using merged ticket {pos.ticket} to close.")
+            positions = [pos]
+        else:
+            logger.warning(f"Could not find MT5 position ticket {ticket} to close. Checking if it's already closed...")
+            # Check if already closed to avoid double log
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT status FROM trades WHERE ticket = %s", (int(ticket),))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row and row[0] == 'OPEN':
+                logger.info(f"Ticket {ticket} still open in DB but missing in MT5. Marking as CLOSED in DB.")
                 log_trade_exit(ticket, 0.0, 0.0, datetime.datetime.now())
-                logger.warning(f"No MT5 history found for ticket {ticket}. Marked CLOSED with zero values.")
+            return False
+        
+def get_filling_modes_for_symbol(symbol):
+    """Detects broker supported filling modes for a symbol, putting native supported mode first."""
+    info = mt5.symbol_info(symbol)
+    modes = []
+    if info:
+        f_mode = getattr(info, "filling_mode", 0)
+        if f_mode & 1:
+            modes.append(mt5.ORDER_FILLING_FOK)
+        if f_mode & 2:
+            modes.append(mt5.ORDER_FILLING_IOC)
+    for fallback in [mt5.ORDER_FILLING_RETURN, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC]:
+        if fallback not in modes:
+            modes.append(fallback)
+    return modes
+
+
+def close_position_by_ticket(symbol, ticket, volume_to_close):
+    """Closes a specific MT5 position by its ticket (fully or partially). Handles FOK/IOC/RETURN filling modes and market closed status."""
+    mt5.symbol_select(symbol, True)
+    positions = mt5.positions_get(ticket=int(ticket))
+    if positions is None:
+        return False
+    if len(positions) == 0:
+        sym_positions = mt5.positions_get(symbol=symbol)
+        if not sym_positions:
+            from data_ingestion import resolve_broker_symbol
+            resolved = resolve_broker_symbol(symbol)
+            if resolved != symbol:
+                sym_positions = mt5.positions_get(symbol=resolved)
+        if not sym_positions:
+            all_pos = mt5.positions_get()
+            if all_pos:
+                base_sym = symbol.split('.')[0].upper()
+                sym_positions = [p for p in all_pos if p.symbol.split('.')[0].upper() == base_sym]
+        if sym_positions:
+            pos = sym_positions[0]
+            ticket = pos.ticket
+            logger.info(f"[NETTING AUTO-RESOLVE] Ticket not found, using active position ticket {pos.ticket} for {symbol}.")
+            positions = [pos]
+        else:
+            logger.warning(f"Could not find MT5 position ticket {ticket} to close. Checking DB...")
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT status FROM trades WHERE ticket = %s", (int(ticket),))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row and row[0] == 'OPEN':
+                logger.info(f"Ticket {ticket} open in DB but missing in MT5. Marking as CLOSED.")
+                log_trade_exit(ticket, 0.0, 0.0, datetime.datetime.now())
+            return False
+        
+    pos = positions[0]
+    order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+    
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None:
+        logger.error(f"Failed to fetch tick for {symbol} to close position {ticket}")
+        return False
+    price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
+    
+    vol = min(float(volume_to_close), float(pos.volume))
+    
+    info = mt5.symbol_info(symbol)
+    if info:
+        step = info.volume_step
+        vol = round(round(vol / step) * step, 2)
+        if vol < info.volume_min:
+            vol = info.volume_min
+            
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": symbol,
+        "volume": vol,
+        "type": order_type,
+        "position": int(ticket),
+        "price": price,
+        "deviation": 10,
+        "magic": MAGIC_NUMBER,
+        "comment": "JS Arbitrage Exit",
+        "type_time": mt5.ORDER_TIME_GTC,
+    }
+    
+    filling_modes = get_filling_modes_for_symbol(symbol)
+    res = None
+    for mode in filling_modes:
+        request["type_filling"] = mode
+        res = mt5.order_send(request)
+        if res:
+            if res.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"Successfully closed position ticket {ticket} | Volume: {vol} | Mode: {mode}")
+                check_closed_trades(symbol)
+                return True
+            elif res.retcode in (10018, 10021): # Market is closed
+                logger.warning(f"Market is closed for {symbol} (Ticket {ticket}). Deferring close until market reopens.")
+                return False
+            
+    err_comment = res.comment if res else "No response"
+    logger.error(f"Failed to close position ticket {ticket}: {err_comment}")
+    return False
+

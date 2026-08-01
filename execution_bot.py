@@ -385,20 +385,69 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
                 log_trade_exit(ticket, 0.0, 0.0, datetime.datetime.now())
             return False
         
+def get_filling_modes_for_symbol(symbol):
+    """Detects broker supported filling modes for a symbol, putting native supported mode first."""
+    info = mt5.symbol_info(symbol)
+    modes = []
+    if info:
+        f_mode = getattr(info, "filling_mode", 0)
+        if f_mode & 1:
+            modes.append(mt5.ORDER_FILLING_FOK)
+        if f_mode & 2:
+            modes.append(mt5.ORDER_FILLING_IOC)
+    for fallback in [mt5.ORDER_FILLING_RETURN, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC]:
+        if fallback not in modes:
+            modes.append(fallback)
+    return modes
+
+
+def close_position_by_ticket(symbol, ticket, volume_to_close):
+    """Closes a specific MT5 position by its ticket (fully or partially). Handles FOK/IOC/RETURN filling modes and market closed status."""
+    mt5.symbol_select(symbol, True)
+    positions = mt5.positions_get(ticket=int(ticket))
+    if positions is None:
+        return False
+    if len(positions) == 0:
+        sym_positions = mt5.positions_get(symbol=symbol)
+        if not sym_positions:
+            from data_ingestion import resolve_broker_symbol
+            resolved = resolve_broker_symbol(symbol)
+            if resolved != symbol:
+                sym_positions = mt5.positions_get(symbol=resolved)
+        if not sym_positions:
+            all_pos = mt5.positions_get()
+            if all_pos:
+                base_sym = symbol.split('.')[0].upper()
+                sym_positions = [p for p in all_pos if p.symbol.split('.')[0].upper() == base_sym]
+        if sym_positions:
+            pos = sym_positions[0]
+            ticket = pos.ticket
+            logger.info(f"[NETTING AUTO-RESOLVE] Ticket not found, using active position ticket {pos.ticket} for {symbol}.")
+            positions = [pos]
+        else:
+            logger.warning(f"Could not find MT5 position ticket {ticket} to close. Checking DB...")
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT status FROM trades WHERE ticket = %s", (int(ticket),))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row and row[0] == 'OPEN':
+                logger.info(f"Ticket {ticket} open in DB but missing in MT5. Marking as CLOSED.")
+                log_trade_exit(ticket, 0.0, 0.0, datetime.datetime.now())
+            return False
+        
     pos = positions[0]
     order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
     
-    # Fetch latest price
     tick = mt5.symbol_info_tick(symbol)
     if tick is None:
         logger.error(f"Failed to fetch tick for {symbol} to close position {ticket}")
         return False
     price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
     
-    # Ensure volume to close doesn't exceed current position volume
     vol = min(float(volume_to_close), float(pos.volume))
     
-    # Check broker minimum step size
     info = mt5.symbol_info(symbol)
     if info:
         step = info.volume_step
@@ -417,20 +466,21 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
         "magic": MAGIC_NUMBER,
         "comment": "JS Arbitrage Exit",
         "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_IOC,
     }
     
-    # Try all filling modes
-    filling_modes = [mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]
+    filling_modes = get_filling_modes_for_symbol(symbol)
     res = None
     for mode in filling_modes:
         request["type_filling"] = mode
         res = mt5.order_send(request)
-        if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-            logger.info(f"Successfully closed position ticket {ticket} | Volume: {vol}")
-            # Log close in DB
-            check_closed_trades(symbol)
-            return True
+        if res:
+            if res.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"Successfully closed position ticket {ticket} | Volume: {vol} | Mode: {mode}")
+                check_closed_trades(symbol)
+                return True
+            elif res.retcode in (10018, 10021): # Market is closed
+                logger.warning(f"Market is closed for {symbol} (Ticket {ticket}). Deferring close until market reopens.")
+                return False
             
     err_comment = res.comment if res else "No response"
     logger.error(f"Failed to close position ticket {ticket}: {err_comment}")
