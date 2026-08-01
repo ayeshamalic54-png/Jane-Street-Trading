@@ -1740,15 +1740,17 @@ def main():
 
             # ── Equity Trailing Stop Safeguard (Profit Lock) ──
             if has_positions:
+                # Lower activation threshold to $30.00 so trailing stop activates early on +$30 profit
                 exp_profit = get_expected_profit(active_js_positions, TP_PIPS)
-                activation_threshold = exp_profit * 0.50
+                activation_threshold = min(30.0, exp_profit * 0.15) if exp_profit > 0 else 30.0
                 
                 if floating_profit >= activation_threshold:
                     if floating_profit > peak_floating_profit:
                         peak_floating_profit = floating_profit
                         logger.info(f"[EQUITY TRAIL] New peak floating profit: ${peak_floating_profit:.2f} (Activation threshold: ${activation_threshold:.2f})")
                     
-                    trail_stop_level = peak_floating_profit * 0.91 # 9% trailing distance (locks in 91% of peak profit)
+                    # Trailing distance: lock in 80% of peak profit (or minimum $20 profit lock)
+                    trail_stop_level = max(20.0, peak_floating_profit * 0.80)
                     if floating_profit <= trail_stop_level:
                         logger.info(f"[EQUITY TRAIL] Floating profit ${floating_profit:.2f} fell below trailing stop level ${trail_stop_level:.2f} (Peak: ${peak_floating_profit:.2f}). Closing all positions to lock profits.")
                         all_success = True
