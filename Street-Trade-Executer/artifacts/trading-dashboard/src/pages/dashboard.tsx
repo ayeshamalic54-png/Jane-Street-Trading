@@ -585,6 +585,72 @@ export default function Dashboard() {
       </div>
 
       <div className="p-6 space-y-6">
+        {/* High-Impact News Protection Card */}
+        <Card className={cn(
+          "bg-zinc-900 border transition-all rounded-md p-4",
+          systemStatus.includes("HALTED (News")
+            ? "border-red-500/60 bg-red-950/20 text-red-400"
+            : "border-emerald-500/40 bg-zinc-900/80 text-zinc-100"
+        )}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-xl">📰</span>
+              <div>
+                <div className="font-bold text-sm text-zinc-100">High-Impact News Protection (15-Min Buffer)</div>
+                <div className="text-xs text-zinc-400">Real-time safeguard against NFP, CPI, FOMC volatility</div>
+              </div>
+            </div>
+            <span className={cn(
+              "px-2.5 py-1 rounded text-xs font-bold border",
+              systemStatus.includes("HALTED (News")
+                ? "bg-red-500/20 text-red-400 border-red-500/40 animate-pulse"
+                : "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
+            )}>
+              {systemStatus.includes("HALTED (News") ? "🔴 TRADING HALTED (15-MIN NEWS BUFFER)" : "🟢 NORMAL TRADING ACTIVE"}
+            </span>
+          </div>
+          <div className="mt-3 p-2.5 rounded bg-zinc-950/60 border border-zinc-800 text-xs text-zinc-300">
+            {systemStatus.includes("HALTED (News") ? (
+              <span>⚠️ <strong>HIGH-IMPACT NEWS DETECTED:</strong> {systemStatus.replace("HALTED (News: ", "").replace(")", "")} — New entries blocked for capital safety.</span>
+            ) : (
+              <span>✨ <strong>Normal Trading Status:</strong> No high-impact news within 15-minute window. Signals active to 50 TP targets.</span>
+            )}
+          </div>
+        </Card>
+
+        {/* Equity Trailing Stop Guard Card */}
+        <Card className={cn(
+          "bg-zinc-900 border transition-all rounded-md p-4",
+          systemStatus.includes("Trail Active") || floatingProfit >= 30.0
+            ? "border-emerald-500/60 bg-emerald-950/20 text-emerald-400"
+            : "border-zinc-800 bg-zinc-900/80 text-zinc-100"
+        )}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-xl">🛡️</span>
+              <div>
+                <div className="font-bold text-sm text-zinc-100">Equity Trailing Stop Guard (91% Profit Lock)</div>
+                <div className="text-xs text-zinc-400">Auto-activates at +$30.00 profit to lock in 91% of peak earnings</div>
+              </div>
+            </div>
+            <span className={cn(
+              "px-2.5 py-1 rounded text-xs font-bold border",
+              systemStatus.includes("Trail Active") || floatingProfit >= 30.0
+                ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse"
+                : "bg-zinc-800 text-zinc-400 border-zinc-700"
+            )}>
+              {systemStatus.includes("Trail Active") || floatingProfit >= 30.0 ? "🟢 TRAILING STOP ACTIVE (91% LOCK)" : "⚪ TRAILING STOP INACTIVE"}
+            </span>
+          </div>
+          <div className="mt-3 p-2.5 rounded bg-zinc-950/60 border border-zinc-800 text-xs text-zinc-300">
+            {systemStatus.includes("Trail Active") || floatingProfit >= 30.0 ? (
+              <span>🛡️ <strong>PROFIT LOCK GUARD ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 30.0).toFixed(2)}</strong> | Locked Floor (91%): <strong>+${(Math.max(floatingProfit, 30.0) * 0.91).toFixed(2)}</strong> — Auto-closes all trades on 9% pullback!</span>
+            ) : (
+              <span>⚪ <strong>Standby Mode:</strong> Trailing stop triggers automatically at +$30.00 profit. Locks 91% of peak profit on 9% pullback. (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
+            )}
+          </div>
+        </Card>
+
         {/* Global Market Operating Hours Cards */}
         <MarketHoursCards />
 
