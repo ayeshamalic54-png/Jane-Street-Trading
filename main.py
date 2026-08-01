@@ -2378,6 +2378,9 @@ def main():
                 status_str = f"HALTED (News: {msg})"
             elif low_correlation_warning:
                 status_str = "RUNNING (Warning: Low Correlation)"
+            elif has_positions and peak_floating_profit >= 30.0:
+                trail_floor_val = max(20.0, peak_floating_profit * 0.91)
+                status_str = f"RUNNING (Trail Active: Peak ${peak_floating_profit:.2f} | Floor ${trail_floor_val:.2f})"
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"
             
