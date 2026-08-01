@@ -1128,34 +1128,39 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 check_closed_trades(sym_a)
                 check_closed_trades(sym_b)
                 
-                # Query the database to get the total profit/loss of this signal set
+                # Query the database to ensure ALL trades in this set are truly CLOSED before sending notification
                 conn_pnl = get_connection()
                 cur_pnl = conn_pnl.cursor()
-                cur_pnl.execute("SELECT symbol, lots, entry_price, close_price, profit, comment FROM trades WHERE signal_id = %s", (int(sig_id),))
-                rows_pnl = cur_pnl.fetchall()
+                cur_pnl.execute("SELECT COUNT(*) FROM trades WHERE signal_id = %s AND status = 'OPEN'", (int(sig_id),))
+                still_open_count = cur_pnl.fetchone()[0]
+                
+                if still_open_count == 0:
+                    cur_pnl.execute("SELECT symbol, lots, entry_price, close_price, profit, comment FROM trades WHERE signal_id = %s", (int(sig_id),))
+                    rows_pnl = cur_pnl.fetchall()
+                    
+                    total_pnl = 0.0
+                    trade_lines = []
+                    for sym_name, lots_val, ent_p, cls_p, prf, cmt in rows_pnl:
+                        pnl_val = float(prf or 0.0)
+                        total_pnl += pnl_val
+                        trade_lines.append(f"  • **{sym_name}** ({cmt}): {lots_val} lots | Entry: {ent_p} | Close: {cls_p} | P&L: **${pnl_val:+.2f}**")
+                    
+                    pnl_emoji = "✅" if total_pnl >= 0 else "❌"
+                    status_word = "PROFIT" if total_pnl >= 0 else "LOSS"
+                    now_str = datetime.datetime.now().strftime("%I:%M:%S %p")
+                    
+                    discord_msg = (
+                        f"⏹ **JANE STREET SIGNAL SET CLOSED ({sym_a} / {sym_b})** ⏹\n\n"
+                        f"⏱ **Exit Time:** {now_str}\n"
+                        f"💡 **Reason:** {exit_reason}\n\n"
+                        f"📊 **Individual Parts:**\n" + "\n".join(trade_lines) + "\n\n"
+                        f"{pnl_emoji} **TOTAL SET P&L:** **${total_pnl:+.2f}** ({status_word})\n"
+                    )
+                    from database import send_discord_message
+                    send_discord_message(discord_msg)
+                
                 cur_pnl.close()
                 conn_pnl.close()
-                
-                total_pnl = 0.0
-                trade_lines = []
-                for sym_name, lots_val, ent_p, cls_p, prf, cmt in rows_pnl:
-                    pnl_val = float(prf or 0.0)
-                    total_pnl += pnl_val
-                    trade_lines.append(f"  • **{sym_name}** ({cmt}): {lots_val} lots | Entry: {ent_p} | Close: {cls_p} | P&L: **${pnl_val:+.2f}**")
-                
-                pnl_emoji = "✅" if total_pnl >= 0 else "❌"
-                status_word = "PROFIT" if total_pnl >= 0 else "LOSS"
-                now_str = datetime.datetime.now().strftime("%I:%M:%S %p")
-                
-                discord_msg = (
-                    f"⏹ **JANE STREET SIGNAL SET CLOSED ({sym_a} / {sym_b})** ⏹\n\n"
-                    f"⏱ **Exit Time:** {now_str}\n"
-                    f"💡 **Reason:** {exit_reason}\n\n"
-                    f"📊 **Individual Parts:**\n" + "\n".join(trade_lines) + "\n\n"
-                    f"{pnl_emoji} **TOTAL SET P&L:** **${total_pnl:+.2f}** ({status_word})\n"
-                )
-                from database import send_discord_message
-                send_discord_message(discord_msg)
             except Exception as ex_pnl:
                 logger.error(f"Error compiling Discord P&L notification: {ex_pnl}")
                 
