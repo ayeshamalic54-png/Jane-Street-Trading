@@ -2413,7 +2413,9 @@ def main():
                 status_str = "RUNNING (Warning: Low Correlation)"
             elif has_positions and peak_floating_profit >= 100.0:
                 trail_floor_val = max(91.0, peak_floating_profit * 0.91)
-                status_str = f"RUNNING (Trail Active: Peak ${peak_floating_profit:.2f} | Floor ${trail_floor_val:.2f})"
+                status_str = f"RUNNING (Trail Active Tier 2: Peak ${peak_floating_profit:.2f} | Floor ${trail_floor_val:.2f})"
+            elif has_positions and peak_floating_profit >= 50.0:
+                status_str = f"RUNNING (Trail Active Tier 1: Peak ${peak_floating_profit:.2f} | Floor $35.00)"
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"
             
