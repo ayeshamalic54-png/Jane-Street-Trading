@@ -612,6 +612,21 @@ def get_atr(symbol: str, timeframe, count=30) -> float:
     return None
 
 
+def is_friday_market_close_approaching(lead_minutes=45):
+    """
+    Returns True if current UTC time is within lead_minutes (default 45 mins) of Friday Forex market close (22:00 UTC Friday / 5:00 PM EST Friday).
+    Used to auto-close all open positions and block new entries before the weekend gap.
+    """
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    if now_utc.weekday() == 4: # Friday
+        if now_utc.hour >= 21 and now_utc.minute >= (60 - lead_minutes):
+            return True
+        elif now_utc.hour >= 22:
+            return True
+    elif now_utc.weekday() == 5 and now_utc.hour < 2: # Early Saturday morning
+        return True
+    return False
+
 def get_kf_parameters(symbol: str):
     # Stabilized parameters with lower process-to-observation noise ratio (Q/R = 1e-5)
     # to prevent the Kalman Filter from over-adapting to short-term trends.
@@ -1621,6 +1636,13 @@ def main():
             should_close_news, news_close_reason = news_guard.should_auto_close_before_news([S_A_resolved, S_B_resolved], lead_minutes=15.0)
             if should_close_news:
                 logger.info(f"📰 HIGH-IMPACT NEWS IMMINENT: {news_close_reason}. Blocking new trade entries to protect capital.")
+
+            # Friday Weekend Close Guard (Auto-close open positions 45 mins before Friday market close to prevent Sunday gap risk)
+            is_friday_close = is_friday_market_close_approaching(lead_minutes=45)
+            if is_friday_close and cat_a != "crypto":
+                logger.warning("🌅 FRIDAY MARKET CLOSE IMMINENT: Blocking new entries and auto-closing active positions to prevent Sunday opening gap risk!")
+                if has_positions:
+                    close_all_positions("ALL")
 
             # Determine equity based on asset class
             if cat_a == "crypto":
