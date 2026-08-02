@@ -621,7 +621,7 @@ export default function Dashboard() {
         {/* Equity Trailing Stop Guard Card */}
         <Card className={cn(
           "bg-zinc-900 border transition-all rounded-md p-4",
-          systemStatus.includes("Trail Active") || floatingProfit >= 75.0
+          systemStatus.includes("Trail Active") || floatingProfit >= 150.0
             ? "border-emerald-500/60 bg-emerald-950/20 text-emerald-400"
             : "border-zinc-800 bg-zinc-900/80 text-zinc-100"
         )}>
@@ -629,24 +629,24 @@ export default function Dashboard() {
             <div className="flex items-center gap-3">
               <span className="text-xl">🛡️</span>
               <div>
-                <div className="font-bold text-sm text-zinc-100">Equity Trailing Stop Guard (Prop Firm 0.5% Day Count)</div>
-                <div className="text-xs text-zinc-400">Auto-activates at +$75.00 profit to guarantee exit locks ≥ $50.00 (0.50% min day count)</div>
+                <div className="font-bold text-sm text-zinc-100">Equity Trailing Stop Guard (High Profit Target)</div>
+                <div className="text-xs text-zinc-400">Auto-activates at +$150.00 profit (1.5% gain) to give trades full room to run to TP targets</div>
               </div>
             </div>
             <span className={cn(
               "px-2.5 py-1 rounded text-xs font-bold border",
-              systemStatus.includes("Trail Active") || floatingProfit >= 75.0
+              systemStatus.includes("Trail Active") || floatingProfit >= 150.0
                 ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse"
                 : "bg-zinc-800 text-zinc-400 border-zinc-700"
             )}>
-              {systemStatus.includes("Trail Active") || floatingProfit >= 75.0 ? "🟢 TRAILING STOP ACTIVE (91% LOCK)" : "⚪ TRAILING STOP INACTIVE"}
+              {systemStatus.includes("Trail Active") || floatingProfit >= 150.0 ? "🟢 TRAILING STOP ACTIVE (91% LOCK)" : "⚪ TRAILING STOP INACTIVE"}
             </span>
           </div>
           <div className="mt-3 p-2.5 rounded bg-zinc-950/60 border border-zinc-800 text-xs text-zinc-300">
-            {systemStatus.includes("Trail Active") || floatingProfit >= 75.0 ? (
-              <span>🛡️ <strong>PROFIT LOCK GUARD ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 75.0).toFixed(2)}</strong> | Locked Floor (91%): <strong>+${Math.max(50.0, Math.max(floatingProfit, 75.0) * 0.91).toFixed(2)}</strong> — Guaranteed ≥ $50.00 to count as a valid 0.5% trading day!</span>
+            {systemStatus.includes("Trail Active") || floatingProfit >= 150.0 ? (
+              <span>🛡️ <strong>PROFIT LOCK GUARD ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 150.0).toFixed(2)}</strong> | Locked Floor (91%): <strong>+${Math.max(120.0, Math.max(floatingProfit, 150.0) * 0.91).toFixed(2)}</strong> — Position is locking 91% of peak earnings!</span>
             ) : (
-              <span>⚪ <strong>Standby Mode:</strong> Trailing stop triggers automatically at +$75.00 profit. Locks 91% of peak profit (min +$50.00) so every trade counts as a valid 0.5% trading day! (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
+              <span>⚪ <strong>Standby Mode:</strong> Trades run freely to 50 TP targets. Trailing stop triggers automatically at +$150.00 profit! (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
             )}
           </div>
         </Card>
