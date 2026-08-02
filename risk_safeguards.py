@@ -182,11 +182,15 @@ def get_trades_count_today():
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(
-            "SELECT COUNT(*) FROM trades WHERE CAST(entry_time AS DATE) = %s AND (comment LIKE '%%TP1%%' OR comment LIKE '%%Manual%%' OR comment LIKE '%%MANUAL%%')",
-            (today,)
-        )
-        count = cur.fetchone()[0]
+        # Count distinct spread signals executed today
+        cur.execute("""
+            SELECT COUNT(DISTINCT signal_id) 
+            FROM trades 
+            WHERE entry_time >= (CURRENT_DATE - INTERVAL '12 hours')
+               OR CAST(entry_time AS DATE) = CURRENT_DATE
+        """)
+        row = cur.fetchone()
+        count = row[0] if row else 0
         cur.close()
         
         _cached_trades_count = count
