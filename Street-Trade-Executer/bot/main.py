@@ -1760,29 +1760,41 @@ def main():
             except Exception:
                 pass
 
-            # ── Equity Trailing Stop Safeguard (Optimal $100 / 1.0% Account Gain Sweet Spot) ──
+            # ── Multi-Tier Equity Trailing Stop Safeguard (Dual Tier Profit Protection) ──
             if has_positions:
-                # Activation threshold set to $100.00 (1.0% of account) - captures 10-pip medium moves and locks $91.00+ cash profit!
-                activation_threshold = max(100.0, current_equity * 0.01) if current_equity > 0 else 100.0
-                
-                if floating_profit >= activation_threshold:
-                    if floating_profit > peak_floating_profit:
-                        peak_floating_profit = floating_profit
-                        logger.info(f"[EQUITY TRAIL] New peak floating profit: ${peak_floating_profit:.2f} (Activation threshold: ${activation_threshold:.2f})")
-                    
-                    # Trailing distance: 9% pullback allowed (locks in 91% of peak profit, minimum $91.00 lock)
+                if floating_profit > peak_floating_profit:
+                    peak_floating_profit = floating_profit
+
+                should_close_trail = False
+                trail_close_reason = ""
+
+                # Tier 1 (Safety Floor at +$50.00 / 0.5% Prop Firm Rule):
+                # If peak profit reached $50-$99 (e.g. $66, $78, $85, $99) and reverses below +$35.00, lock +$35.00 profit!
+                if peak_floating_profit >= 50.0 and peak_floating_profit < 100.0:
+                    tier1_floor = 35.0
+                    if floating_profit <= tier1_floor:
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock profit."
+
+                # Tier 2 (Full Trailing Stop at +$100.00+ / 1.0% Account Gain):
+                # When peak profit reaches $100.00+, lock 91% of peak earnings ($91.00 to $900+)
+                elif peak_floating_profit >= 100.0:
                     trail_stop_level = max(91.0, peak_floating_profit * 0.91)
                     if floating_profit <= trail_stop_level:
-                        logger.info(f"[EQUITY TRAIL] Floating profit ${floating_profit:.2f} fell below trailing stop level ${trail_stop_level:.2f} (Peak: ${peak_floating_profit:.2f}). Closing all positions to lock profits.")
-                        all_success = True
-                        for pos in active_js_positions:
-                            pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
-                            success = close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
-                            if not success:
-                                all_success = False
-                        if all_success:
-                            peak_floating_profit = 0.0
-                            has_positions = False
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 2] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${trail_stop_level:.2f}). Auto-closing to lock 91% profit."
+
+                if should_close_trail:
+                    logger.info(trail_close_reason)
+                    all_success = True
+                    for pos in active_js_positions:
+                        pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+                        success = close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+                        if not success:
+                            all_success = False
+                    if all_success:
+                        peak_floating_profit = 0.0
+                        has_positions = False
 
             # Sync open trades live prices and profit/loss in DB
             try:

@@ -621,32 +621,38 @@ export default function Dashboard() {
         {/* Equity Trailing Stop Guard Card */}
         <Card className={cn(
           "bg-zinc-900 border transition-all rounded-md p-4",
-          systemStatus.includes("Trail Active") || floatingProfit >= 100.0
+          floatingProfit >= 100.0
             ? "border-emerald-500/60 bg-emerald-950/20 text-emerald-400"
+            : floatingProfit >= 50.0
+            ? "border-blue-500/60 bg-blue-950/20 text-blue-400"
             : "border-zinc-800 bg-zinc-900/80 text-zinc-100"
         )}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="text-xl">🛡️</span>
               <div>
-                <div className="font-bold text-sm text-zinc-100">Equity Trailing Stop Guard (Optimal $100 / 1.0% Gain)</div>
-                <div className="text-xs text-zinc-400">Auto-activates at +$100.00 profit (10-pip move) to lock +$91.00+ cash gain for 1.0% prop firm day count</div>
+                <div className="font-bold text-sm text-zinc-100">Multi-Tier Equity Profit Lock Guard (Dual Tier)</div>
+                <div className="text-xs text-zinc-400">Tier 1 (+ $50 peak locks + $35) | Tier 2 (+ $100+ peak locks 91%)</div>
               </div>
             </div>
             <span className={cn(
               "px-2.5 py-1 rounded text-xs font-bold border",
-              systemStatus.includes("Trail Active") || floatingProfit >= 100.0
+              floatingProfit >= 100.0
                 ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse"
+                : floatingProfit >= 50.0
+                ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
                 : "bg-zinc-800 text-zinc-400 border-zinc-700"
             )}>
-              {systemStatus.includes("Trail Active") || floatingProfit >= 100.0 ? "🟢 TRAILING STOP ACTIVE (91% LOCK)" : "⚪ TRAILING STOP INACTIVE"}
+              {floatingProfit >= 100.0 ? "🟢 TIER 2 TRAILING ACTIVE (91% LOCK)" : floatingProfit >= 50.0 ? "🔵 TIER 1 SAFETY FLOOR (+$35 LOCK)" : "⚪ TRAILING STOP INACTIVE"}
             </span>
           </div>
           <div className="mt-3 p-2.5 rounded bg-zinc-950/60 border border-zinc-800 text-xs text-zinc-300">
-            {systemStatus.includes("Trail Active") || floatingProfit >= 100.0 ? (
-              <span>🛡️ <strong>PROFIT LOCK GUARD ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 100.0).toFixed(2)}</strong> | Locked Floor (91%): <strong>+${Math.max(91.0, Math.max(floatingProfit, 100.0) * 0.91).toFixed(2)}</strong> — Exit profit guaranteed ≥ $91.00 for a clean 1.0% trading day!</span>
+            {floatingProfit >= 100.0 ? (
+              <span>🛡️ <strong>TIER 2 PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 100.0).toFixed(2)}</strong> | Locked Floor (91%): <strong>+${(Math.max(floatingProfit, 100.0) * 0.91).toFixed(2)}</strong> — Position is locking 91% of peak earnings!</span>
+            ) : floatingProfit >= 50.0 ? (
+              <span>🛡️ <strong>TIER 1 SAFETY FLOOR ACTIVE:</strong> Peak Profit: <strong>+${floatingProfit.toFixed(2)}</strong> | Safety Floor: <strong>+$35.00</strong> — If market reverses from $50–$99, bot will auto-close at +$35.00+ to ensure zero loss!</span>
             ) : (
-              <span>⚪ <strong>Standby Mode:</strong> Trailing stop triggers automatically at +$100.00 profit (10-pip move) to lock 91% (+$91.00+) cash gain! (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
+              <span>⚪ <strong>Multi-Tier Mode:</strong> Reversing from $50–$99 locks +$35.00+ profit! Reaching +$100+ locks 91% of peak earnings! (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
             )}
           </div>
         </Card>
