@@ -1760,18 +1760,18 @@ def main():
             except Exception:
                 pass
 
-            # ── Equity Trailing Stop Safeguard (High Target Profit Lock) ──
+            # ── Equity Trailing Stop Safeguard (Optimal $100 / 1.0% Account Gain Sweet Spot) ──
             if has_positions:
-                # Activation threshold set HIGHER to $150.00 (1.50% of account) so trades run freely to TP targets without closing early
-                activation_threshold = max(150.0, current_equity * 0.015) if current_equity > 0 else 150.0
+                # Activation threshold set to $100.00 (1.0% of account) - captures 10-pip medium moves and locks $91.00+ cash profit!
+                activation_threshold = max(100.0, current_equity * 0.01) if current_equity > 0 else 100.0
                 
                 if floating_profit >= activation_threshold:
                     if floating_profit > peak_floating_profit:
                         peak_floating_profit = floating_profit
                         logger.info(f"[EQUITY TRAIL] New peak floating profit: ${peak_floating_profit:.2f} (Activation threshold: ${activation_threshold:.2f})")
                     
-                    # Trailing distance: 9% pullback allowed (locks in 91% of peak profit, minimum $120.00 lock)
-                    trail_stop_level = max(120.0, peak_floating_profit * 0.91)
+                    # Trailing distance: 9% pullback allowed (locks in 91% of peak profit, minimum $91.00 lock)
+                    trail_stop_level = max(91.0, peak_floating_profit * 0.91)
                     if floating_profit <= trail_stop_level:
                         logger.info(f"[EQUITY TRAIL] Floating profit ${floating_profit:.2f} fell below trailing stop level ${trail_stop_level:.2f} (Peak: ${peak_floating_profit:.2f}). Closing all positions to lock profits.")
                         all_success = True
@@ -2399,8 +2399,8 @@ def main():
                 status_str = f"HALTED (News: {msg})"
             elif low_correlation_warning:
                 status_str = "RUNNING (Warning: Low Correlation)"
-            elif has_positions and peak_floating_profit >= 150.0:
-                trail_floor_val = max(120.0, peak_floating_profit * 0.91)
+            elif has_positions and peak_floating_profit >= 100.0:
+                trail_floor_val = max(91.0, peak_floating_profit * 0.91)
                 status_str = f"RUNNING (Trail Active: Peak ${peak_floating_profit:.2f} | Floor ${trail_floor_val:.2f})"
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"
