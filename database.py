@@ -105,7 +105,7 @@ def initialize_database():
         CREATE TABLE IF NOT EXISTS bot_state (
             id SERIAL PRIMARY KEY,
             active_pair VARCHAR(50) NOT NULL DEFAULT 'EURUSD/GBPUSD',
-            system_status VARCHAR(50) NOT NULL DEFAULT 'BOT OFFLINE',
+            system_status VARCHAR(150) NOT NULL DEFAULT 'BOT OFFLINE',
             equity NUMERIC(15, 2) DEFAULT 0,
             drawdown_percent NUMERIC(5, 2) DEFAULT 0,
             floating_profit NUMERIC(15, 2) DEFAULT 0,
