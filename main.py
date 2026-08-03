@@ -566,7 +566,7 @@ def get_kf_for_pair(symbol_a, symbol_b):
     return KF_CACHE[pair_key]
 
 # BUG FIX 2: Fixed SL in pips instead of 3x bid-ask spread
-SL_PIPS = 35.0
+SL_PIPS = 22.0
 SL_PIPS_JPY = 0.35
 TP_PIPS = 50.0
 
