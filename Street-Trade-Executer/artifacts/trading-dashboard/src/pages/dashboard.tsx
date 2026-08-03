@@ -619,43 +619,50 @@ export default function Dashboard() {
         </Card>
 
         {/* Equity Trailing Stop Guard Card */}
-        <Card className={cn(
-          "bg-zinc-900 border transition-all rounded-md p-4",
-          floatingProfit >= 100.0
-            ? "border-emerald-500/60 bg-emerald-950/20 text-emerald-400"
-            : floatingProfit >= 50.0
-            ? "border-blue-500/60 bg-blue-950/20 text-blue-400"
-            : "border-zinc-800 bg-zinc-900/80 text-zinc-100"
-        )}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-xl">🛡️</span>
-              <div>
-                <div className="font-bold text-sm text-zinc-100">Multi-Tier Equity Profit Lock Guard (Dual Tier)</div>
-                <div className="text-xs text-zinc-400">Tier 1 (+ $50 peak locks + $35) | Tier 2 (+ $100+ peak locks 91%)</div>
-              </div>
-            </div>
-            <span className={cn(
-              "px-2.5 py-1 rounded text-xs font-bold border",
-              floatingProfit >= 100.0
-                ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse"
-                : floatingProfit >= 50.0
-                ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
-                : "bg-zinc-800 text-zinc-400 border-zinc-700"
+        {(() => {
+          const isTrailActiveText = systemStatus && systemStatus.includes("Trail Active");
+          const isTier2 = floatingProfit >= 100.0 || (isTrailActiveText && systemStatus.includes("Tier 2"));
+          const isTier1 = floatingProfit >= 50.0 || isTrailActiveText;
+          return (
+            <Card className={cn(
+              "bg-zinc-900 border transition-all rounded-md p-4",
+              isTier2
+                ? "border-emerald-500/60 bg-emerald-950/20 text-emerald-400"
+                : isTier1
+                ? "border-blue-500/60 bg-blue-950/20 text-blue-400"
+                : "border-zinc-800 bg-zinc-900/80 text-zinc-100"
             )}>
-              {floatingProfit >= 100.0 ? "🟢 TIER 2 TRAILING ACTIVE (91% LOCK)" : floatingProfit >= 50.0 ? "🔵 TIER 1 SAFETY FLOOR (+$35 LOCK)" : "⚪ TRAILING STOP INACTIVE"}
-            </span>
-          </div>
-          <div className="mt-3 p-2.5 rounded bg-zinc-950/60 border border-zinc-800 text-xs text-zinc-300">
-            {floatingProfit >= 100.0 ? (
-              <span>🛡️ <strong>TIER 2 PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 100.0).toFixed(2)}</strong> | Locked Floor (91%): <strong>+${(Math.max(floatingProfit, 100.0) * 0.91).toFixed(2)}</strong> — Position is locking 91% of peak earnings!</span>
-            ) : floatingProfit >= 50.0 ? (
-              <span>🛡️ <strong>TIER 1 SAFETY FLOOR ACTIVE:</strong> Peak Profit: <strong>+${floatingProfit.toFixed(2)}</strong> | Safety Floor: <strong>+$35.00</strong> — If market reverses from $50–$99, bot will auto-close at +$35.00+ to ensure zero loss!</span>
-            ) : (
-              <span>⚪ <strong>Multi-Tier Mode:</strong> Reversing from $50–$99 locks +$35.00+ profit! Reaching +$100+ locks 91% of peak earnings! (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
-            )}
-          </div>
-        </Card>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🛡️</span>
+                  <div>
+                    <div className="font-bold text-sm text-zinc-100">Multi-Tier Equity Profit Lock Guard (Dual Tier)</div>
+                    <div className="text-xs text-zinc-400">Tier 1 (+ $50 peak locks + $35) | Tier 2 (+ $100+ peak locks 91%)</div>
+                  </div>
+                </div>
+                <span className={cn(
+                  "px-2.5 py-1 rounded text-xs font-bold border",
+                  isTier2
+                    ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse"
+                    : isTier1
+                    ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}>
+                  {isTier2 ? "🟢 TIER 2 TRAILING ACTIVE (91% LOCK)" : isTier1 ? "🔵 TIER 1 SAFETY FLOOR (+$35 LOCK)" : "⚪ TRAILING STOP INACTIVE"}
+                </span>
+              </div>
+              <div className="mt-3 p-2.5 rounded bg-zinc-950/60 border border-zinc-800 text-xs text-zinc-300">
+                {isTier2 ? (
+                  <span>🛡️ <strong>TIER 2 PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 100.0).toFixed(2)}</strong> | Locked Floor (91%): <strong>+${(Math.max(floatingProfit, 100.0) * 0.91).toFixed(2)}</strong> — Position is locking 91% of peak earnings!</span>
+                ) : isTier1 ? (
+                  <span>🛡️ <strong>TIER 1 SAFETY FLOOR ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 50.0).toFixed(2)}</strong> | Safety Floor: <strong>+$35.00</strong> — If market reverses from $50–$99, bot will auto-close at +$35.00+ to ensure zero loss!</span>
+                ) : (
+                  <span>⚪ <strong>Multi-Tier Mode:</strong> Reversing from $50–$99 locks +$35.00+ profit! Reaching +$100+ locks 91% of peak earnings! (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
+                )}
+              </div>
+            </Card>
+          );
+        })()}
 
         {/* Global Market Operating Hours Cards */}
         <MarketHoursCards />

@@ -154,9 +154,9 @@ def check_drawdown_limit(current_equity):
     
     trades_today = get_trades_count_today()
     
-    # Throttle metrics database writes to once every 30 seconds
+    # Real-time metrics database writes (1.0 second high-frequency sync)
     now = time.time()
-    if now - _last_metrics_update_time >= 30.0:
+    if now - _last_metrics_update_time >= 1.0:
         try:
             update_daily_metrics(today, start_equity, current_equity, daily_loss_percent, trades_today, login_id=current_login)
             _last_metrics_update_time = now
