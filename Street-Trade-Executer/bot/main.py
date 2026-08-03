@@ -568,7 +568,7 @@ def get_kf_for_pair(symbol_a, symbol_b):
 # BUG FIX 2: Fixed SL in pips instead of 3x bid-ask spread
 SL_PIPS = 22.0
 SL_PIPS_JPY = 0.35
-TP_PIPS = 50.0
+TP_PIPS = 33.0
 
 def get_pip_size(symbol: str) -> float:
     s = symbol.upper()
