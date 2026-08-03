@@ -18,7 +18,7 @@ import threading
 import requests
 import joblib
 
-from math_models import KalmanFilterRegression, calculate_obi, test_cointegration
+from math_models import KalmanFilterRegression, calculate_obi, test_cointegration, is_turning_point_confirmed
 from data_ingestion import initialize_mt5, check_and_subscribe_symbol, get_live_ticks, get_market_book, shutdown_mt5, get_rates_df, resolve_broker_symbol
 from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT
 from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket
@@ -1984,6 +1984,14 @@ def main():
                 pass_z_buy = (z < -effective_dyn_z) and (z > -z_sl_val)
                 pass_z_sell = (z > effective_dyn_z) and (z < z_sl_val)
                 
+                # Turning Point Inflection Filter: Confirm Z-score trajectory has inverted (turned back toward 0.0)
+                kf_instance = KALMAN_FILTERS.get(pk)
+                pass_turn_buy = True
+                pass_turn_sell = True
+                if kf_instance and len(kf_instance.z_history) >= 3:
+                    pass_turn_buy = is_turning_point_confirmed(kf_instance.z_history, effective_dyn_z, "BUY_SPREAD")
+                    pass_turn_sell = is_turning_point_confirmed(kf_instance.z_history, effective_dyn_z, "SELL_SPREAD")
+                
                 pass_vel_buy = (z_velocity > -z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
                 pass_vel_sell = (z_velocity < z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
                 
@@ -1993,9 +2001,9 @@ def main():
                 pass_smc_buy = in_bullish_zone if REQUIRE_SMC_CONFLUENCE else True
                 pass_smc_sell = in_bearish_zone if REQUIRE_SMC_CONFLUENCE else True
                 
-                if pass_z_buy and pass_vel_buy and pass_obi_buy and pass_smc_buy:
+                if pass_z_buy and pass_vel_buy and pass_obi_buy and pass_smc_buy and pass_turn_buy:
                     action = "BUY_SPREAD"
-                elif pass_z_sell and pass_vel_sell and pass_obi_sell and pass_smc_sell:
+                elif pass_z_sell and pass_vel_sell and pass_obi_sell and pass_smc_sell and pass_turn_sell:
                     action = "SELL_SPREAD"
 
                 # Validate beta sign and magnitude to prevent same-side hedge order anomalies

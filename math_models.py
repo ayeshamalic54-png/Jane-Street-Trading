@@ -188,3 +188,33 @@ def calculate_obi(bids, asks, depth=5):
         
     obi = (weighted_bid - weighted_ask) / denom
     return float(obi)
+
+def is_turning_point_confirmed(z_history, z_threshold=1.50, action="BUY_SPREAD"):
+    """
+    Checks if Z-score has reached extreme threshold AND confirms that the spread trajectory
+    has inverted (turned back toward mean Z = 0.0).
+    
+    For BUY_SPREAD (Z <= -z_threshold):
+      Requires: min(z_history[-5:]) <= -z_threshold AND z_history[-1] > z_history[-2] (turning upward)
+      
+    For SELL_SPREAD (Z >= +z_threshold):
+      Requires: max(z_history[-5:]) >= z_threshold AND z_history[-1] < z_history[-2] (turning downward)
+    """
+    if len(z_history) < 3:
+        return False
+        
+    recent_z = z_history[-5:]
+    curr_z = z_history[-1]
+    prev_z = z_history[-2]
+    
+    if action == "BUY_SPREAD":
+        reached_extreme = min(recent_z) <= -z_threshold
+        turning_up = curr_z > prev_z
+        return reached_extreme and turning_up
+        
+    elif action == "SELL_SPREAD":
+        reached_extreme = max(recent_z) >= z_threshold
+        turning_down = curr_z < prev_z
+        return reached_extreme and turning_down
+        
+    return False
