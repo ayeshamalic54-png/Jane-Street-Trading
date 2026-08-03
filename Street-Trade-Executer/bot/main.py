@@ -1985,12 +1985,11 @@ def main():
                 pass_z_sell = (z > effective_dyn_z) and (z < z_sl_val)
                 
                 # Turning Point Inflection Filter: Confirm Z-score trajectory has inverted (turned back toward 0.0)
-                kf_instance = KALMAN_FILTERS.get(pk)
                 pass_turn_buy = True
                 pass_turn_sell = True
-                if kf_instance and len(kf_instance.z_history) >= 3:
-                    pass_turn_buy = is_turning_point_confirmed(kf_instance.z_history, effective_dyn_z, "BUY_SPREAD")
-                    pass_turn_sell = is_turning_point_confirmed(kf_instance.z_history, effective_dyn_z, "SELL_SPREAD")
+                if kf_pair and len(kf_pair.z_history) >= 3:
+                    pass_turn_buy = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "BUY_SPREAD")
+                    pass_turn_sell = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "SELL_SPREAD")
                 
                 pass_vel_buy = (z_velocity > -z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
                 pass_vel_sell = (z_velocity < z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
