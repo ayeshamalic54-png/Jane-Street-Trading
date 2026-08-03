@@ -1768,13 +1768,13 @@ def main():
                 should_close_trail = False
                 trail_close_reason = ""
 
-                # Tier 1 (Safety Floor at +$50.00 / 0.5% Prop Firm Rule):
-                # If peak profit reached $50-$99 (e.g. $66, $78, $85, $99) and reverses below +$35.00, lock +$35.00 profit!
-                if peak_floating_profit >= 50.0 and peak_floating_profit < 100.0:
-                    tier1_floor = 35.0
+                # Tier 1 (Safety Floor at +$60.00 Peak -> Locks +$52.00 Cash Profit):
+                # If peak profit reached $60-$99 and reverses below +$52.00, lock +$52.00 profit!
+                if peak_floating_profit >= 60.0 and peak_floating_profit < 100.0:
+                    tier1_floor = 52.0
                     if floating_profit <= tier1_floor:
                         should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock profit."
+                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock +$52.00 profit."
 
                 # Tier 2 (Full Trailing Stop at +$100.00+ / 1.0% Account Gain):
                 # When peak profit reaches $100.00+, lock 91% of peak earnings ($91.00 to $900+)
@@ -2414,8 +2414,8 @@ def main():
             elif has_positions and (peak_floating_profit >= 100.0 or floating_profit >= 100.0):
                 trail_floor_val = max(91.0, peak_floating_profit * 0.91)
                 status_str = f"RUNNING (Trail Active Tier 2: Peak ${peak_floating_profit:.2f} | Floor ${trail_floor_val:.2f})"
-            elif has_positions and (peak_floating_profit >= 50.0 or floating_profit >= 50.0):
-                status_str = f"RUNNING (Trail Active Tier 1: Peak ${peak_floating_profit:.2f} | Floor $35.00)"
+            elif has_positions and (peak_floating_profit >= 60.0 or floating_profit >= 60.0):
+                status_str = f"RUNNING (Trail Active Tier 1: Peak ${peak_floating_profit:.2f} | Floor $52.00)"
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"
             
