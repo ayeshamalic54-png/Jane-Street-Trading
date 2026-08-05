@@ -1456,7 +1456,7 @@ def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float,
         min_vol_a = info_a.volume_min if info_a else 0.01
         step_a = info_a.volume_step if info_a else 0.01
         
-        part_lots_scaled = round(scaled_a / 3.0 / step_a) * step_a
+        part_lots_scaled = round(qty_a / 3.0 / step_a) * step_a
         if part_lots_scaled < min_vol_a:
             part_lots_scaled = min_vol_a
         final_a = round(part_lots_scaled * 3.0, 2)
