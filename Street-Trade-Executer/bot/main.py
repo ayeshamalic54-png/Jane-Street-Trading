@@ -1192,7 +1192,10 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         for t in trades:
             entry_t = t["entry_time"]
             if entry_t is not None:
-                elapsed = (datetime.datetime.now() - entry_t).total_seconds()
+                if hasattr(entry_t, "tzinfo") and entry_t.tzinfo is not None:
+                    elapsed = abs((datetime.datetime.now(datetime.timezone.utc) - entry_t).total_seconds())
+                else:
+                    elapsed = abs((datetime.datetime.utcnow() - entry_t).total_seconds())
                 if elapsed < 140.0:
                     min_hold_ok = False
                     break
