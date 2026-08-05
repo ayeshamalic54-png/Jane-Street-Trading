@@ -80,6 +80,19 @@ def load_config():
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 active_pair = data.get("active_pair", "EURUSD/GBPUSD")
+                if "NDX100" in active_pair:
+                    logger.info("Migrating legacy active_pair NDX100 -> NAS100")
+                    active_pair = "US30/NAS100"
+                    save_config("US30/NAS100")
+                    try:
+                        conn_mig = get_connection()
+                        cur_mig = conn_mig.cursor()
+                        cur_mig.execute("UPDATE bot_state SET active_pair = 'US30/NAS100' WHERE active_pair LIKE '%NDX100%'")
+                        conn_mig.commit()
+                        cur_mig.close()
+                        conn_mig.close()
+                    except Exception:
+                        pass
                 parts = active_pair.split('/')
                 if len(parts) == 2 and parts[0].strip() != parts[1].strip():
                     GLOBAL_CONFIG["SYMBOL_A"] = parts[0].strip()
@@ -448,7 +461,7 @@ EXPECTED_BETA_SIGN = {
     "META/GOOGL": 1,
     "US500/NAS100": 1,
     "US30/US500": 1,
-    "US30/NDX100": 1
+    "US30/NAS100": 1
 }
 
 DEFAULT_LOT_SIZES = {

@@ -257,6 +257,10 @@ def initialize_database():
             conn.commit()
             print("Added stocks_enabled column to bot_state table.")
 
+        # Auto-migrate any legacy NDX100 active_pair in bot_state to US30/NAS100
+        cur.execute("UPDATE bot_state SET active_pair = 'US30/NAS100' WHERE active_pair LIKE '%NDX100%'")
+        conn.commit()
+
         cur.close()
         print("Database initialized successfully!")
     except Exception as e:

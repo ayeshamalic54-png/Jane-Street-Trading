@@ -697,9 +697,9 @@ export default function Config() {
                         <FormItem>
                           <div className="flex items-center justify-between">
                             <div>
-                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Indices (US30 / NDX100 / US500)</FormLabel>
+                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Indices (US30 / NAS100 / US500)</FormLabel>
                               <FormDescription className="text-xs mt-0.5">
-                                Enable trading stock index CFDs (e.g. US30, NDX100, US500).
+                                Enable trading stock index CFDs (e.g. US30, NAS100, US500).
                               </FormDescription>
                             </div>
                             <FormControl>
