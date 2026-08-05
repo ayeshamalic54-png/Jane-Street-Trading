@@ -482,33 +482,15 @@ LEVERAGE_FACTORS = {
 
 def get_blue_guardian_lots(symbol: str, category: str) -> float:
     """
-    Calculates dynamic lot size according to Blue Guardian Risk Rules & Account Balance.
-    - 1% Account Equity Risk per trade set.
-    - Scales base lots for small accounts (<$10k balance like $2,954) so 3-part trades fill safely.
+    Returns exact Blue Guardian standard lot sizes for each asset class:
+    - Metals (Gold/Silver): 1.50 Total Lots (3 x 0.50 lots)
+    - Forex Pairs:          1.20 Total Lots (3 x 0.40 lots)
+    - Indices (US30/US500): 0.60 Total Lots (3 x 0.20 lots)
+    - Stock CFDs:          15.00 Total Lots (3 x 5.00 lots)
+    - Crypto:               0.06 Total Lots (3 x 0.02 lots)
+    Margin Healing Guard in execution_bot automatically protects small account margins.
     """
-    base_lots = DEFAULT_LOT_SIZES.get(category, 0.15)
-    try:
-        import MetaTrader5 as mt5
-        acc = mt5.account_info()
-        if acc and acc.balance > 0:
-            balance = acc.balance
-            scale = max(0.03, balance / 100000.0)
-            scaled = base_lots * scale
-            if balance < 10000.0:
-                if category == "metals":
-                    return 0.15  # 3 x 0.05 lots
-                elif category == "forex":
-                    return 0.30  # 3 x 0.10 lots
-                elif category == "indices":
-                    return 0.15  # 3 x 0.05 lots
-                elif category == "stocks":
-                    return 0.30  # 3 x 0.10 lots
-                elif category == "crypto":
-                    return 0.03  # 3 x 0.01 lots
-            return round(scaled, 2)
-    except Exception as e:
-        logger.error(f"Error calculating Blue Guardian lot size: {e}")
-    return base_lots
+    return DEFAULT_LOT_SIZES.get(category, 1.20)
 
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
     """
