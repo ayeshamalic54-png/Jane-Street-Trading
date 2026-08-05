@@ -194,6 +194,29 @@ def fetch_db_config():
     return None
 
 
+def update_live_toggles_from_db():
+    """
+    Refreshes global asset class toggles and settings directly from DB on every 2s loop cycle.
+    Allows instant toggle updates from Dashboard without restarting the bot.
+    """
+    global FOREX_ENABLED, METALS_ENABLED, INDICES_ENABLED, STOCKS_ENABLED, CRYPTO_ENABLED, AUTO_EXECUTE, RISK_LIMITS_ENABLED, Z_ENTRY_THRESHOLD, SL_PIPS, TP_PIPS
+    try:
+        cfg = sync_config_from_db()
+        if cfg:
+            SL_PIPS = cfg[1]
+            TP_PIPS = cfg[2]
+            AUTO_EXECUTE = cfg[4]
+            CRYPTO_ENABLED = False
+            METALS_ENABLED = cfg[6]
+            FOREX_ENABLED = cfg[7]
+            INDICES_ENABLED = cfg[8]
+            RISK_LIMITS_ENABLED = cfg[9]
+            Z_ENTRY_THRESHOLD = cfg[10]
+            STOCKS_ENABLED = cfg[16]
+    except Exception as e:
+        logger.warning(f"Error in update_live_toggles_from_db: {e}")
+
+
 def poll_manual_commands(tick_a, tick_b, sl_pips: float):
     """
     Checks for pending manual trade commands directly from the database table trade_commands
@@ -1780,6 +1803,9 @@ def main():
                 )
                 time.sleep(10)
                 continue
+
+            # ── 0. INSTANT LIVE DB TOGGLES SYNC (2s LOOP) ──
+            update_live_toggles_from_db()
 
             # ── 1. COMPILE CANDIDATE PAIRS ──
             pairs_to_scan = []
