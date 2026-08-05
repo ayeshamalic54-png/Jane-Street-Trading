@@ -133,6 +133,7 @@ async function buildDashboardPayload() {
     metalsEnabled: botState?.metalsEnabled ?? true,
     forexEnabled: botState?.forexEnabled ?? true,
     indicesEnabled: botState?.indicesEnabled ?? true,
+    stocksEnabled: botState?.stocksEnabled ?? true,
   };
 }
 

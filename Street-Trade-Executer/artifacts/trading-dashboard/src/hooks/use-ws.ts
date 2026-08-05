@@ -51,6 +51,7 @@ export interface WsDashboardData {
   metalsEnabled?: boolean;
   forexEnabled?: boolean;
   indicesEnabled?: boolean;
+  stocksEnabled?: boolean;
   initialBalance?: number;
   overallDrawdown?: number;
   maxEquityPeak?: number;
