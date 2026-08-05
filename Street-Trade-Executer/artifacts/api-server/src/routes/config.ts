@@ -29,7 +29,7 @@ router.get("/config", async (req, res) => {
       metalsEnabled: state?.metalsEnabled ?? true,
       forexEnabled: state?.forexEnabled ?? true,
       indicesEnabled: state?.indicesEnabled ?? true,
-      stocksEnabled: state?.stocksEnabled ?? true,
+      stocksEnabled: (state as any)?.stocks_enabled ?? (state as any)?.stocksEnabled ?? true,
       riskLimitsEnabled: state?.riskLimitsEnabled ?? true,
       knifeProtectionEnabled: state?.knifeProtectionEnabled ?? true,
       obiEnabled: state?.obiEnabled ?? true,
