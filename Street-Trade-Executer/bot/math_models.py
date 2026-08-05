@@ -17,6 +17,12 @@ class KalmanFilterRegression:
         self.Q = np.identity(2) * transition_covariance
         # Measurement noise covariance (R) - variance of spread around regression line
         self.R = observation_covariance
+        
+        self.spread_history = []
+        self.z_history = []
+        self.raw_spread_history = []
+        self.ref_x = None
+        self.ref_y = None
 
     def update(self, x, y):
         """
@@ -25,16 +31,23 @@ class KalmanFilterRegression:
         y: Dependent asset price (e.g. Asset A)
         Returns: (beta, alpha, spread, z_score)
         """
+        if self.ref_x is None:
+            self.ref_x = x
+            self.ref_y = y
+        
+        norm_x = x / self.ref_x
+        norm_y = y / self.ref_y
+        
         # Observation matrix H = [x, 1]
-        H = np.array([[x, 1.0]])
+        H = np.array([[norm_x, 1.0]])
         
         # 1. PREDICT state
-        # state_mean_pred = state_mean (identity transition matrix)
         state_covariance_pred = self.state_covariance + self.Q
         
         # 2. UPDATE state using measurement y
         y_pred = np.dot(H, self.state_mean)[0]
-        y_err = y - y_pred  # Spread (residual error)
+        raw_spread = norm_y - y_pred
+        y_err = raw_spread
         
         # Innovation (residual) covariance
         S = np.dot(H, np.dot(state_covariance_pred, H.T))[0, 0] + self.R
@@ -46,7 +59,6 @@ class KalmanFilterRegression:
         self.state_mean = self.state_mean + K.flatten() * y_err
         self.state_covariance = state_covariance_pred - np.dot(K, np.dot(H, state_covariance_pred))
         
-        beta = self.state_mean[0]
         alpha = self.state_mean[1]
         
         # Standard deviation of the spread (residual)

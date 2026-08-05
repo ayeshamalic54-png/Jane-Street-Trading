@@ -73,9 +73,16 @@ class KalmanFilterRegression:
         alpha_actual = alpha_norm * self.ref_y
         raw_spread = y - (beta_actual * x + alpha_actual)
         
-        # Standard deviation of the spread (residual)
-        std_dev = np.sqrt(S)
+        # Standard deviation of the spread using rolling 50-bar history for robust scale invariant z-score
+        if len(self.spread_history) >= 10:
+            rolling_std = float(np.std(self.spread_history[-50:]))
+            std_dev = max(rolling_std, 1e-5)
+        else:
+            std_dev = np.sqrt(S)
+            
         z_score = y_err / std_dev if std_dev > 0 else 0.0
+        # Clip Z-score to [-4.5, +4.5] to prevent runaway outliers
+        z_score = float(np.clip(z_score, -4.5, 4.5))
         
         # Track histories
         self.z_history.append(z_score)
@@ -97,10 +104,16 @@ class KalmanFilterRegression:
         H = np.array([[norm_x, 1.0]])
         y_pred = np.dot(H, self.state_mean)[0]
         y_err = norm_y - y_pred
-        state_covariance_pred = self.state_covariance + self.Q
-        S = np.dot(H, np.dot(state_covariance_pred, H.T))[0, 0] + self.R
-        std_dev = np.sqrt(S)
-        return float(y_err / std_dev) if std_dev > 0 else 0.0
+        if len(self.spread_history) >= 10:
+            rolling_std = float(np.std(self.spread_history[-50:]))
+            std_dev = max(rolling_std, 1e-5)
+        else:
+            state_covariance_pred = self.state_covariance + self.Q
+            S = np.dot(H, np.dot(state_covariance_pred, H.T))[0, 0] + self.R
+            std_dev = np.sqrt(S)
+            
+        z_val = float(y_err / std_dev) if std_dev > 0 else 0.0
+        return float(np.clip(z_val, -4.5, 4.5))
 
     def get_velocity(self, k=3) -> float:
         """Calculates the change in z-score over the last k periods."""
