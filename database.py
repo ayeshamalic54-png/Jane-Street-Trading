@@ -690,34 +690,26 @@ def reset_database_metrics_for_new_account(login_id, equity):
         if login_val == 0:
             return
 
-        # Query if we have saved account metrics for login_val in account_states
-        cur.execute("SELECT initial_balance, max_equity_peak, overall_drawdown FROM account_states WHERE mt5_login = %s", (login_val,))
-        acc_row = cur.fetchone()
+        initial_balance_val = float(equity)
+        max_equity_peak_val = float(equity)
+        overall_drawdown_val = 0.00
         
-        if acc_row:
-            initial_balance_val = float(acc_row[0])
-            max_equity_peak_val = float(acc_row[1])
-            overall_drawdown_val = float(acc_row[2])
-            print(f"Restoring saved account metrics for account {login_val}: Initial Balance: ${initial_balance_val:.2f}, Peak: ${max_equity_peak_val:.2f}, Overall DD: {overall_drawdown_val:.2f}%")
-        else:
-            print(f"Initializing metrics for new account {login_val} with equity: ${equity:.2f}")
-            initial_balance_val = float(equity)
-            max_equity_peak_val = float(equity)
-            overall_drawdown_val = 0.00
-            
-            # Save initialized state
-            cur.execute("""
-                INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (mt5_login) DO NOTHING
-            """, (login_val, initial_balance_val, max_equity_peak_val, overall_drawdown_val))
+        # Save or update state in account_states for login_val
+        cur.execute("""
+            INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (mt5_login) DO UPDATE
+            SET initial_balance = EXCLUDED.initial_balance,
+                max_equity_peak = EXCLUDED.max_equity_peak,
+                overall_drawdown = EXCLUDED.overall_drawdown
+        """, (login_val, initial_balance_val, max_equity_peak_val, overall_drawdown_val))
         
         # 1. Update bot_state
         cur.execute("""
             UPDATE bot_state 
-            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, drawdown_percent = 0.00, trades_today = 0, overall_drawdown = %s 
+            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, drawdown_percent = 0.00, trades_today = 0, overall_drawdown = 0.00 
             WHERE id = 1
-        """, (initial_balance_val, max_equity_peak_val, login_val, float(equity), overall_drawdown_val))
+        """, (initial_balance_val, max_equity_peak_val, login_val, float(equity)))
         
         # 2. Update or Insert daily_metrics for today and this specific login
         cur.execute("""
@@ -726,6 +718,8 @@ def reset_database_metrics_for_new_account(login_id, equity):
             ON CONFLICT (trading_date, mt5_login) DO UPDATE
             SET start_equity = EXCLUDED.start_equity,
                 current_equity = EXCLUDED.current_equity,
+                max_drawdown_percent = 0.0,
+                trades_today = 0,
                 updated_at = CURRENT_TIMESTAMP
         """, (today, login_val, initial_balance_val, float(equity)))
             

@@ -1615,20 +1615,17 @@ def main():
             try:
                 conn = get_connection()
                 cur = conn.cursor()
-                cur.execute("SELECT initial_balance FROM bot_state WHERE id = 1")
+                cur.execute("SELECT mt5_login, initial_balance FROM bot_state WHERE id = 1")
                 state_row = cur.fetchone()
-                db_initial = float(state_row[0]) if (state_row and state_row[0] is not None) else 0.0
-                
-                # Check trades count today
-                import datetime
-                today_date = datetime.date.today()
-                cur.execute("SELECT trades_today FROM daily_metrics WHERE trading_date = %s", (today_date,))
-                metrics_row = cur.fetchone()
-                trades_today_val = metrics_row[0] if metrics_row else 0
+                db_login = int(state_row[0]) if (state_row and state_row[0] is not None) else 0
+                db_initial = float(state_row[1]) if (state_row and state_row[1] is not None) else 0.0
                 
                 # Check active positions count
                 cur.execute("SELECT COUNT(*) FROM trades WHERE status = 'OPEN'")
                 open_trades_count = cur.fetchone()[0] or 0
+                
+                if db_login != current_login or (open_trades_count == 0 and abs(db_initial - acc_info.equity) > 5.0):
+                    startup_mismatch = True
                 
                 # Purge any legacy Platinum/Palladium rows from scanned_assets
                 cur_purge = conn.cursor()
@@ -1642,7 +1639,7 @@ def main():
             except Exception as e:
                 logger.error(f"Error checking startup metrics sync: {e}")
                 
-            login_changed = (active_login_id is not None and active_login_id != current_login)
+            login_changed = (active_login_id is not None and active_login_id != current_login) or startup_mismatch
             
             if login_changed:
                 logger.info(f"Syncing metrics (login_changed={login_changed}). Resetting metrics to {acc_info.equity:.2f} due to account switch.")
