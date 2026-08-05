@@ -110,7 +110,8 @@ def fetch_db_config():
         SELECT active_pair, sl_pips, tp_pips, smc_enabled, auto_execute,
                crypto_enabled, metals_enabled, forex_enabled, indices_enabled,
                risk_limits_enabled, z_entry_threshold, default_lots, max_trades,
-               knife_protection_enabled, obi_enabled, volatility_filter_enabled
+               knife_protection_enabled, obi_enabled, volatility_filter_enabled,
+               stocks_enabled
         FROM bot_state
         WHERE id = 1
     """
@@ -126,13 +127,16 @@ def fetch_db_config():
             m_on = bool(row[6]) if row[6] is not None else True
             f_on = bool(row[7]) if row[7] is not None else True
             i_on = bool(row[8]) if row[8] is not None else True
+            s_on = bool(row[16]) if len(row) > 16 and row[16] is not None else True
 
             # If current active_pair belongs to a disabled category, pick first pair from an enabled category
             cat_a = get_symbol_category(raw_active.split('/')[0]) if '/' in raw_active else "forex"
             active_pair = raw_active
-            if (cat_a == "forex" and not f_on) or (cat_a == "metals" and not m_on) or (cat_a == "indices" and not i_on) or (cat_a == "crypto" and not c_on):
+            if (cat_a == "forex" and not f_on) or (cat_a == "metals" and not m_on) or (cat_a == "indices" and not i_on) or (cat_a == "stocks" and not s_on) or (cat_a == "crypto" and not c_on):
                 if i_on:
-                    active_pair = "NVDA/AMD"
+                    active_pair = "US30/NDX100"
+                elif s_on:
+                    active_pair = "AAPL/MSFT"
                 elif m_on:
                     active_pair = "XAUUSD/XAGUSD"
                 elif f_on:
@@ -161,6 +165,7 @@ def fetch_db_config():
                 bool(row[13] if row[13] is not None else True),
                 bool(row[14] if row[14] is not None else True),
                 bool(row[15] if row[15] is not None else True),
+                s_on
             )
         else:
             cur.close()
@@ -353,10 +358,11 @@ DEFAULT_LOTS = 0.01
 Z_EXIT_MEAN = 0.0
 REQUIRE_SMC_CONFLUENCE = True
 AUTO_EXECUTE = True          # toggled from dashboard via DB
-CRYPTO_ENABLED = True
+CRYPTO_ENABLED = False
 METALS_ENABLED = True
 FOREX_ENABLED = True
 INDICES_ENABLED = True
+STOCKS_ENABLED = True
 RISK_LIMITS_ENABLED = True
 SMC_TIMEFRAME = mt5.TIMEFRAME_M5
 LOOP_INTERVAL = 2
@@ -376,17 +382,53 @@ CANDIDATE_PAIRS = {
         ("SOLUSDT", "BTCUSDT"),
         ("ETHUSDT", "SOLUSDT"),
     ],
-    "indices": [
+    "stocks": [
         ("AAPL", "MSFT"),
         ("MSFT", "GOOGL"),
         ("NVDA", "AMD"),
         ("AMZN", "GOOGL"),
         ("META", "GOOGL"),
-        ("US500", "NAS100"),
-        ("US30", "US500"),
+    ],
+    "indices": [
         ("US30", "NDX100"),
+        ("US30", "US500"),
+        ("US500", "NAS100"),
     ]
 }
+
+def is_market_open(symbol: str) -> bool:
+    """
+    Checks if market for the symbol is open and receiving active live ticks.
+    Prevents scanning or generating signals for closed stocks/indices outside market hours.
+    """
+    try:
+        cat = get_symbol_category(symbol)
+        if cat == "crypto":
+            return True
+            
+        if not mt5.initialize():
+            return True
+            
+        info = mt5.symbol_info(symbol)
+        if info is None:
+            return False
+            
+        if info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
+            return False
+            
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is None:
+            return False
+            
+        import time
+        # If last tick is older than 5 minutes (300 seconds), market for this asset is closed!
+        if (time.time() - tick.time) > 300:
+            return False
+            
+        return True
+    except Exception as e:
+        logger.warning(f"Error checking is_market_open for {symbol}: {e}")
+        return True
 
 EXPECTED_BETA_SIGN = {
     "EURUSD/GBPUSD": 1,
@@ -512,7 +554,7 @@ def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit
         logger.warning(f"Error simulating win rate for {symbol_a}/{symbol_b}: {e}")
         return 50.0
 
-def cleanup_disabled_scanned_assets(crypto_on, metals_on, forex_on, indices_on):
+def cleanup_disabled_scanned_assets(crypto_on, metals_on, forex_on, indices_on, stocks_on=True):
     try:
         conn = get_connection()
         cur = conn.cursor()
@@ -523,6 +565,9 @@ def cleanup_disabled_scanned_assets(crypto_on, metals_on, forex_on, indices_on):
                 cur.execute("DELETE FROM scanned_assets WHERE symbol_pair = %s", (f"{s_a}/{s_b}",))
         if not forex_on:
             for s_a, s_b in CANDIDATE_PAIRS["forex"]:
+                cur.execute("DELETE FROM scanned_assets WHERE symbol_pair = %s", (f"{s_a}/{s_b}",))
+        if not stocks_on:
+            for s_a, s_b in CANDIDATE_PAIRS["stocks"]:
                 cur.execute("DELETE FROM scanned_assets WHERE symbol_pair = %s", (f"{s_a}/{s_b}",))
         if not indices_on:
             for s_a, s_b in CANDIDATE_PAIRS["indices"]:
@@ -1704,6 +1749,8 @@ def main():
                 pairs_to_scan.extend(CANDIDATE_PAIRS["metals"])
             if CRYPTO_ENABLED:
                 pairs_to_scan.extend(CANDIDATE_PAIRS["crypto"])
+            if STOCKS_ENABLED:
+                pairs_to_scan.extend(CANDIDATE_PAIRS["stocks"])
             if INDICES_ENABLED:
                 pairs_to_scan.extend(CANDIDATE_PAIRS["indices"])
 
@@ -1879,6 +1926,11 @@ def main():
                 # Resolve broker aliases for MT5 symbols
                 s_a_resolved = resolve_broker_symbol(s_a) if cat_a != "crypto" else s_a
                 s_b_resolved = resolve_broker_symbol(s_b) if cat_b != "crypto" else s_b
+
+                # ── MARKET CLOSED GUARD ──
+                # Prevents scanning or generating signals for closed stocks/indices outside market hours
+                if not is_market_open(s_a_resolved) or not is_market_open(s_b_resolved):
+                    continue
 
                 # Fetch ticks
                 tick_a_scan, tick_b_scan = None, None

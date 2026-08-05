@@ -121,6 +121,7 @@ def initialize_database():
             metals_enabled BOOLEAN DEFAULT TRUE,
             forex_enabled BOOLEAN DEFAULT TRUE,
             indices_enabled BOOLEAN DEFAULT TRUE,
+            stocks_enabled BOOLEAN DEFAULT TRUE,
             risk_limits_enabled BOOLEAN DEFAULT TRUE,
             last_heartbeat TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -245,6 +246,16 @@ def initialize_database():
             cur.execute("ALTER TABLE bot_state ADD COLUMN user_password VARCHAR(100) DEFAULT 'user123'")
             conn.commit()
             print("Added user_password column to bot_state table.")
+
+        # Add stocks_enabled column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='stocks_enabled'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN stocks_enabled BOOLEAN DEFAULT TRUE")
+            conn.commit()
+            print("Added stocks_enabled column to bot_state table.")
 
         cur.close()
         print("Database initialized successfully!")
