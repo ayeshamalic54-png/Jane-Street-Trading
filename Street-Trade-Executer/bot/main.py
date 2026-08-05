@@ -2123,8 +2123,10 @@ def main():
                 win_rate = WIN_RATE_CACHE.get(pk, 50.0)
                 update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
 
-                # Track telemetry for current active pair
-                if pk.upper().strip() == current_pair_context.upper().strip():
+                # Track telemetry for current active pair (case-insensitive & alias resilient)
+                norm_pk = pk.upper().replace(" ", "").strip()
+                norm_ctx = current_pair_context.upper().replace(" ", "").strip()
+                if norm_pk == norm_ctx or (norm_pk.split('/')[0] in norm_ctx and norm_pk.split('/')[1] in norm_ctx):
                     active_pair_z_score = z
                     active_pair_beta = beta
                     active_pair_obi_a = obi_a
@@ -2505,6 +2507,25 @@ def main():
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"
             
+            # Live telemetry fallback: If active pair Z-Score is still 0.0, fetch from scanned_assets table
+            if active_pair_z_score == 0.0:
+                try:
+                    conn_tel = get_connection()
+                    cur_tel = conn_tel.cursor()
+                    cur_tel.execute("SELECT z_score, action FROM scanned_assets WHERE symbol_pair = %s LIMIT 1", (current_pair_context,))
+                    row_tel = cur_tel.fetchone()
+                    if row_tel and row_tel[0] is not None:
+                        active_pair_z_score = float(row_tel[0])
+                    else:
+                        cur_tel.execute("SELECT z_score FROM scanned_assets ORDER BY updated_at DESC LIMIT 1")
+                        row_fallback = cur_tel.fetchone()
+                        if row_fallback and row_fallback[0] is not None:
+                            active_pair_z_score = float(row_fallback[0])
+                    cur_tel.close()
+                    conn_tel.close()
+                except Exception:
+                    pass
+
             update_bot_state(
                 active_pair=current_pair_context,
                 system_status=status_str,
