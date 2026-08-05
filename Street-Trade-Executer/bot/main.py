@@ -201,7 +201,7 @@ def update_live_toggles_from_db():
     """
     global FOREX_ENABLED, METALS_ENABLED, INDICES_ENABLED, STOCKS_ENABLED, CRYPTO_ENABLED, AUTO_EXECUTE, RISK_LIMITS_ENABLED, Z_ENTRY_THRESHOLD, SL_PIPS, TP_PIPS
     try:
-        cfg = sync_config_from_db()
+        cfg = fetch_db_config()
         if cfg:
             SL_PIPS = cfg[1]
             TP_PIPS = cfg[2]
