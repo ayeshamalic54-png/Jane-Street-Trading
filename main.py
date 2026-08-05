@@ -2391,11 +2391,14 @@ def main():
                             # Apply Margin Guard to dynamically scale down lots to fit within available margin
                             actual_lots_a, qty_b = apply_margin_guard(S_A_resolved, S_B_resolved, actual_lots_a, qty_b, True)
                             
-                            if execute_three_part_trade(
+                            exec_a_ok, filled_a_total = execute_three_part_trade(
                                 S_A_resolved, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, actual_lots_a,
                                 best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
-                            ):
+                            )
+                            if exec_a_ok:
+                                if filled_a_total > 0:
+                                    qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, filled_a_total, best_sig["beta"], best_cat_a, best_cat_b)
                                 fresh_tick_b = mt5.symbol_info_tick(S_B_resolved) if best_cat_b != "crypto" else None
                                 if fresh_tick_b is None and best_cat_b != "crypto":
                                     fresh_tick_b = best_sig["tick_b"]
@@ -2473,11 +2476,14 @@ def main():
                             # Apply Margin Guard to dynamically scale down lots to fit within available margin
                             actual_lots_a, qty_b = apply_margin_guard(S_A_resolved, S_B_resolved, actual_lots_a, qty_b, False)
                             
-                            if execute_three_part_trade(
+                            exec_a_ok, filled_a_total = execute_three_part_trade(
                                 S_A_resolved, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, actual_lots_a,
                                 best_sig["price_a"] - sl_dist, best_sig["price_a"] - max(tp_dist, sl_dist * 1.5), best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
-                            ):
+                            )
+                            if exec_a_ok:
+                                if filled_a_total > 0:
+                                    qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, filled_a_total, best_sig["beta"], best_cat_a, best_cat_b)
                                 fresh_tick_b = mt5.symbol_info_tick(S_B_resolved) if best_cat_b != "crypto" else None
                                 if fresh_tick_b is None and best_cat_b != "crypto":
                                     fresh_tick_b = best_sig["tick_b"]

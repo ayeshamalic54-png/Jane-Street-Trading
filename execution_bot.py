@@ -120,6 +120,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
     """
     Executes a trade split into three parts (TP1, TP2, TP3) for scaling out.
     Also logs the trade entry to the PostgreSQL database.
+    Returns (success_boolean, total_filled_lots).
     """
     order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
     part_lots = round(total_lots / 3.0, 2)
@@ -134,6 +135,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
 
     parts = [("TP1", tp1), ("TP2", tp2), ("TP3", tp3)]
     success = False
+    total_filled_lots = 0.0
 
     for part_name, tp_val in parts:
         # Pass the actual tp_val so the MT5 broker server executes the target exit reliably!
@@ -144,6 +146,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
             if filled_lots <= 0:
                 filled_lots = part_lots
             filled_lots = round_volume(symbol, filled_lots)
+            total_filled_lots += filled_lots
 
             if filled_lots < part_lots:
                 logger.warning(f"[MARGIN AUTO-RESCALE] {part_name} volume was auto-scaled from {part_lots} to {filled_lots}. Adjusting subsequent TP parts to {filled_lots} lots.")
@@ -165,7 +168,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
             err_msg = res.comment if res else "No response"
             logger.error(f"Failed to execute {part_name} order: {err_msg}")
             
-    return success
+    return success, total_filled_lots
 
 def close_all_positions(symbol, comment_filter="JS_"):
     """Closes all active positions matching the magic number and symbol."""
