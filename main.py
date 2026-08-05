@@ -1402,19 +1402,39 @@ def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float,
     margin_a = mt5.order_calc_margin(action_a, symbol_a, qty_a, price_a)
     margin_b = mt5.order_calc_margin(action_b, symbol_b, qty_b, price_b)
     
-    if margin_a is None or margin_b is None:
-        logger.warning(f"[MARGIN GUARD] Failed to calculate margin using order_calc_margin. Proceeding with original sizes.")
-        return qty_a, qty_b
+    if margin_a is None or margin_b is None or margin_a <= 0 or margin_b <= 0:
+        # Fallback margin estimation for CFDs/Stocks where order_calc_margin is None
+        cat_a = get_symbol_category(symbol_a)
+        cat_b = get_symbol_category(symbol_b)
+        rate_a = 0.10 if cat_a == "stocks" else (0.25 if cat_a in ["metals", "indices"] else 0.01)
+        rate_b = 0.10 if cat_b == "stocks" else (0.25 if cat_b in ["metals", "indices"] else 0.01)
+        
+        info_a = mt5.symbol_info(symbol_a)
+        info_b = mt5.symbol_info(symbol_b)
+        c_size_a = info_a.trade_contract_size if info_a else 1.0
+        c_size_b = info_b.trade_contract_size if info_b else 1.0
+        
+        margin_a = qty_a * price_a * c_size_a * rate_a
+        margin_b = qty_b * price_b * c_size_b * rate_b
         
     total_margin_req = float(margin_a + margin_b)
     logger.info(f"[MARGIN GUARD] Free Margin: ${free_margin:.2f} | Margin Required: ${total_margin_req:.2f} (Leg A: ${margin_a:.2f}, Leg B: ${margin_b:.2f})")
     
+    # Pre-scale for small accounts (<$100k balance)
+    balance = float(acc.balance)
+    if balance < 100000.0:
+        balance_scale = max(0.02, balance / 100000.0)
+        logger.info(f"[BALANCE GUARD] Account balance ${balance:.2f} < $100,000. Scaling base lots by balance factor: {balance_scale:.4f}")
+        qty_a = qty_a * balance_scale
+        qty_b = qty_b * balance_scale
+        total_margin_req = total_margin_req * balance_scale
+
     if total_margin_req > margin_limit:
         scale_factor = margin_limit / total_margin_req
-        logger.warning(f"[MARGIN GUARD] Margin required (${total_margin_req:.2f}) exceeds 75% limit (${margin_limit:.2f}). Scaling down trades by factor: {scale_factor:.4f}")
+        logger.warning(f"[MARGIN GUARD] Margin required (${total_margin_req:.2f}) exceeds limit (${margin_limit:.2f}). Scaling down trades by factor: {scale_factor:.4f}")
         
-        scaled_a = qty_a * scale_factor
-        scaled_b = qty_b * scale_factor
+        qty_a = qty_a * scale_factor
+        qty_b = qty_b * scale_factor
         
         # Ensure scaled_a is divisible by 3 (for 3-part split)
         info_a = mt5.symbol_info(symbol_a)
