@@ -75,8 +75,30 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             logger.error(f"Order rejected due to invalid stops: {result.comment}")
             return None
 
-        # Check if the error is due to disabled auto-trading on client or server
+        # Check if error is due to insufficient margin (10019 "No money")
         comment_str = result.comment or ""
+        if result.retcode == 10019 or "No money" in comment_str or "not enough money" in comment_str.lower():
+            info = mt5.symbol_info(symbol)
+            acc = mt5.account_info()
+            min_vol = info.volume_min if info else 0.01
+            step_vol = info.volume_step if info else 0.01
+            free_m = acc.margin_free if acc else 0.0
+            req_m = mt5.order_calc_margin(request["action"], symbol, request["volume"], price) or 1.0
+            if req_m > 0 and free_m > 0:
+                scaled_vol = request["volume"] * (free_m * 0.85 / req_m)
+                scaled_vol = max(min_vol, round(scaled_vol / step_vol) * step_vol)
+                scaled_vol = round(scaled_vol, 2)
+                if scaled_vol < request["volume"]:
+                    logger.warning(f"[MARGIN HEAL] Insufficient margin ({result.comment}). Auto-scaling volume {request['volume']} -> {scaled_vol}")
+                    request["volume"] = scaled_vol
+                    res_retry = mt5.order_send(request)
+                    if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+                        logger.info(f"Order filled successfully after margin auto-scaling.")
+                        return res_retry
+            logger.error(f"Order rejected due to insufficient margin: {result.comment}")
+            return None
+
+        # Check if the error is due to disabled auto-trading on client or server
         if "AutoTrading disabled" in comment_str or result.retcode in [10022, 10026, 10034]:
             logger.error(f"Order rejected: AutoTrading is disabled! Details: {result.comment}")
             return None

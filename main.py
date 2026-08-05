@@ -480,6 +480,36 @@ LEVERAGE_FACTORS = {
     "crypto": 0.01    # 100x lower leverage than Forex
 }
 
+def get_blue_guardian_lots(symbol: str, category: str) -> float:
+    """
+    Calculates dynamic lot size according to Blue Guardian Risk Rules & Account Balance.
+    - 1% Account Equity Risk per trade set.
+    - Scales base lots for small accounts (<$10k balance like $2,954) so 3-part trades fill safely.
+    """
+    base_lots = DEFAULT_LOT_SIZES.get(category, 0.15)
+    try:
+        import MetaTrader5 as mt5
+        acc = mt5.account_info()
+        if acc and acc.balance > 0:
+            balance = acc.balance
+            scale = max(0.03, balance / 100000.0)
+            scaled = base_lots * scale
+            if balance < 10000.0:
+                if category == "metals":
+                    return 0.15  # 3 x 0.05 lots
+                elif category == "forex":
+                    return 0.30  # 3 x 0.10 lots
+                elif category == "indices":
+                    return 0.15  # 3 x 0.05 lots
+                elif category == "stocks":
+                    return 0.30  # 3 x 0.10 lots
+                elif category == "crypto":
+                    return 0.03  # 3 x 0.01 lots
+            return round(scaled, 2)
+    except Exception as e:
+        logger.error(f"Error calculating Blue Guardian lot size: {e}")
+    return base_lots
+
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
     """
     Runs a historical Kalman filter spread simulation on the last 150 bars
@@ -2254,7 +2284,7 @@ def main():
                             mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                             lots_a = DEFAULT_LOTS * mult
                         else:
-                            lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
+                            lots_a = get_blue_guardian_lots(S_A, best_cat_a)
                             
                         part_lots_a = round(lots_a / 3.0, 2)
                         info_a_check = mt5.symbol_info(S_A)
@@ -2319,7 +2349,7 @@ def main():
                                 mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                                 lots_a = DEFAULT_LOTS * mult
                             else:
-                                lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
+                                lots_a = get_blue_guardian_lots(S_A, best_cat_a)
                             # Apply 3-part safeguard scaling correction
                             info_a_check = mt5.symbol_info(S_A_resolved)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
@@ -2401,7 +2431,7 @@ def main():
                                 mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                                 lots_a = DEFAULT_LOTS * mult
                             else:
-                                lots_a = DEFAULT_LOT_SIZES.get(best_cat_a, 0.15)
+                                lots_a = get_blue_guardian_lots(S_A, best_cat_a)
                             # Apply 3-part safeguard scaling correction
                             info_a_check = mt5.symbol_info(S_A_resolved)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
