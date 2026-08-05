@@ -123,6 +123,7 @@ router.post("/config", async (req, res) => {
       metalsEnabled: updated?.metalsEnabled ?? metalsExec,
       forexEnabled: updated?.forexEnabled ?? forexExec,
       indicesEnabled: updated?.indicesEnabled ?? indicesExec,
+      stocksEnabled: (updated as any)?.stocks_enabled ?? (updated as any)?.stocksEnabled ?? stocksExec,
       riskLimitsEnabled: updated?.riskLimitsEnabled ?? riskLimits,
       knifeProtectionEnabled: updated?.knifeProtectionEnabled ?? knifeExec,
       obiEnabled: updated?.obiEnabled ?? obiExec,
