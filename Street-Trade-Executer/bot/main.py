@@ -675,19 +675,19 @@ def is_friday_market_close_approaching(lead_minutes=45):
     return False
 
 def get_kf_parameters(symbol: str):
-    # Stabilized parameters with lower process-to-observation noise ratio (Q/R = 1e-5)
-    # to prevent the Kalman Filter from over-adapting to short-term trends.
+    # Calibrated process and observation noise for responsive, highly dynamic Z-score calculations
+    # Q = 1e-9 (stable hedge ratio tracking), R = 1e-6 (calibrated normalized residual variance)
     cat = get_symbol_category(symbol)
     if cat == "metals":
-        return 1e-9, 1e-4
+        return 1e-9, 1e-6
     elif cat == "indices":
-        return 1e-8, 1e-3
+        return 1e-9, 1e-6
     elif cat == "crypto":
-        return 1e-9, 1e-4
+        return 1e-9, 1e-6
     elif cat == "forex":
-        return 1e-10, 1e-5
+        return 1e-9, 1e-6
     else: # stocks/default
-        return 1e-8, 1e-3
+        return 1e-9, 1e-6
 
 
 def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -> float:
@@ -1965,16 +1965,12 @@ def main():
                 p_a = (tick_a_scan.bid + tick_a_scan.ask) / 2.0
                 p_b = (tick_b_scan.bid + tick_b_scan.ask) / 2.0
 
-                # Kalman update (Only update parameters once per M5 bar; compute Z dynamically in between)
-                # FREEZE Kalman Filter parameters update if there is an active trade for this pair
+                # Dynamic Kalman update on every live tick scan (FREEZE parameters update if trade is active)
                 kf_pair = get_kf_for_pair(s_a_resolved, s_b_resolved)
-                now_dt = datetime.datetime.now()
-                bar_key = (now_dt.year, now_dt.month, now_dt.day, now_dt.hour, now_dt.minute // 5)
                 is_trade_active = (s_a_resolved.upper() in open_trade_symbols) or (s_b_resolved.upper() in open_trade_symbols)
                 
-                if not is_trade_active and LAST_KF_UPDATE_BAR.get(pk) != bar_key:
+                if not is_trade_active:
                     beta, alpha, spread, z = kf_pair.update(p_b, p_a)
-                    LAST_KF_UPDATE_BAR[pk] = bar_key
                 else:
                     z = kf_pair.get_current_z(p_b, p_a)
                     if kf_pair.ref_x is not None:

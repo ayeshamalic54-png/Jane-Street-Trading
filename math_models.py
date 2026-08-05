@@ -7,7 +7,7 @@ class KalmanFilterRegression:
     Dynamically estimates the hedge ratio (beta) and spread intercept (alpha) 
     at every tick, outputting the normalized z-score of the spread.
     """
-    def __init__(self, transition_covariance=1e-5, observation_covariance=1e-3, initial_beta=1.0):
+    def __init__(self, transition_covariance=1e-9, observation_covariance=1e-6, initial_beta=1.0):
         # Reference prices for normalization
         self.ref_x = None
         self.ref_y = None
