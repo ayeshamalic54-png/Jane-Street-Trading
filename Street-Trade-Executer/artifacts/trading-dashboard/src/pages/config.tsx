@@ -28,6 +28,7 @@ const configSchema = z.object({
   metalsEnabled: z.boolean(),
   forexEnabled: z.boolean(),
   indicesEnabled: z.boolean(),
+  stocksEnabled: z.boolean(),
   riskLimitsEnabled: z.boolean(),
   knifeProtectionEnabled: z.boolean(),
   obiEnabled: z.boolean(),
@@ -37,7 +38,7 @@ const configSchema = z.object({
 });
 type ConfigFormValues = z.infer<typeof configSchema>;
 
-type Category = "forex" | "metals" | "stocks" | "custom";
+type Category = "forex" | "metals" | "indices" | "stocks" | "custom";
 
 const PAIR_CATEGORIES: Record<Category, { label: string; pairs: string[] }> = {
   forex: {
@@ -55,9 +56,14 @@ const PAIR_CATEGORIES: Record<Category, { label: string; pairs: string[] }> = {
       "XAUUSD/EURUSD", "XAUUSD/GBPUSD", "XAUUSD/USDJPY",
     ],
   },
-
+  indices: {
+    label: "Indices",
+    pairs: [
+      "US30/NDX100", "US30/US500", "US500/NAS100",
+    ],
+  },
   stocks: {
-    label: "Stocks / CFD",
+    label: "Stocks",
     pairs: [
       "AAPL/MSFT", "MSFT/GOOGL", "AAPL/GOOGL", "TSLA/AAPL",
       "NVDA/AMD", "META/GOOGL", "AMZN/AAPL", "TSLA/NVDA",
@@ -193,6 +199,7 @@ export default function Config() {
       metalsEnabled: true,
       forexEnabled: true,
       indicesEnabled: true,
+      stocksEnabled: true,
       riskLimitsEnabled: true,
       knifeProtectionEnabled: true,
       obiEnabled: true,
@@ -212,6 +219,7 @@ export default function Config() {
           metalsEnabled: config.metalsEnabled,
           forexEnabled: config.forexEnabled,
           indicesEnabled: config.indicesEnabled,
+          stocksEnabled: (config as any).stocksEnabled ?? true,
           riskLimitsEnabled: config.riskLimitsEnabled,
           knifeProtectionEnabled: (config as any).knifeProtectionEnabled ?? true,
           obiEnabled: (config as any).obiEnabled ?? true,
@@ -689,9 +697,31 @@ export default function Config() {
                         <FormItem>
                           <div className="flex items-center justify-between">
                             <div>
-                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Indices / Stock CFDs</FormLabel>
+                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Indices (US30 / NDX100 / US500)</FormLabel>
                               <FormDescription className="text-xs mt-0.5">
-                                Enable trading stock index CFDs (e.g. US500, NAS100).
+                                Enable trading stock index CFDs (e.g. US30, NDX100, US500).
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch checked={field.value} onCheckedChange={field.onChange} />
+                            </FormControl>
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Stock CFDs Trading Toggle */}
+                    <FormField
+                      control={form.control}
+                      name="stocksEnabled"
+                      render={({ field }) => (
+                        <FormItem>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Stock CFDs / Equities (AAPL / NVDA / MSFT)</FormLabel>
+                              <FormDescription className="text-xs mt-0.5">
+                                Enable trading individual stock equities (e.g. AAPL, NVDA, MSFT).
                               </FormDescription>
                             </div>
                             <FormControl>
