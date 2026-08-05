@@ -100,6 +100,7 @@ router.get("/dashboard", async (req, res) => {
       metalsEnabled: botState?.metalsEnabled ?? true,
       forexEnabled: botState?.forexEnabled ?? true,
       indicesEnabled: botState?.indicesEnabled ?? true,
+      stocksEnabled: botState?.stocksEnabled ?? true,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get dashboard data");
