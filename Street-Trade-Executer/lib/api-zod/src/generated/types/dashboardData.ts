@@ -34,6 +34,7 @@ export interface DashboardData {
   metalsEnabled?: boolean;
   forexEnabled?: boolean;
   indicesEnabled?: boolean;
+  stocksEnabled?: boolean;
   initialBalance?: number;
   overallDrawdown?: number;
   maxEquityPeak?: number;
