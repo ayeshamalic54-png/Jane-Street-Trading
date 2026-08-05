@@ -1608,7 +1608,7 @@ def main():
             if db_config_counter % 5 == 0:
                 db_cfg = fetch_db_config()
                 if db_cfg:
-                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol = db_cfg
+                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks = db_cfg
                     parts = new_pair.split("/")
                     if len(parts) == 2 and parts[0] != parts[1]:
                         if GLOBAL_CONFIG["SYMBOL_A"] != parts[0] or GLOBAL_CONFIG["SYMBOL_B"] != parts[1]:
@@ -1637,6 +1637,9 @@ def main():
                     if INDICES_ENABLED != new_indices:
                         logger.info(f"[CONFIG UPDATE] Indices Enabled updated: {INDICES_ENABLED} -> {new_indices}")
                         INDICES_ENABLED = new_indices
+                    if STOCKS_ENABLED != new_stocks:
+                        logger.info(f"[CONFIG UPDATE] Stocks Enabled updated: {STOCKS_ENABLED} -> {new_stocks}")
+                        STOCKS_ENABLED = new_stocks
                     if RISK_LIMITS_ENABLED != new_risk_limits:
                         logger.info(f"[CONFIG UPDATE] Risk Limits updated: {RISK_LIMITS_ENABLED} -> {new_risk_limits}")
                         RISK_LIMITS_ENABLED = new_risk_limits
@@ -1661,7 +1664,7 @@ def main():
                         risk_safeguards.MAX_DAILY_TRADES = new_max_trades
                     
                     # Clean up disabled categories in the database immediately
-                    cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED)
+                    cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED, STOCKS_ENABLED)
             db_config_counter += 1
 
             S_A = GLOBAL_CONFIG["SYMBOL_A"]
