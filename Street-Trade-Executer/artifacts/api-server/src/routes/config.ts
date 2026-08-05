@@ -27,6 +27,7 @@ router.get("/config", async (req, res) => {
       autoExecute: state?.autoExecute ?? true,
       cryptoEnabled: state?.cryptoEnabled ?? true,
       metalsEnabled: state?.metalsEnabled ?? true,
+      forexEnabled: state?.forexEnabled ?? true,
       indicesEnabled: state?.indicesEnabled ?? true,
       stocksEnabled: state?.stocksEnabled ?? true,
       riskLimitsEnabled: state?.riskLimitsEnabled ?? true,
