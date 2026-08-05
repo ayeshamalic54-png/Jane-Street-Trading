@@ -59,7 +59,7 @@ const PAIR_CATEGORIES: Record<Category, { label: string; pairs: string[] }> = {
   indices: {
     label: "Indices",
     pairs: [
-      "US30/NDX100", "US30/US500", "US500/NAS100",
+      "US30/US500", "US30/NAS100", "US500/NAS100",
     ],
   },
   stocks: {
@@ -299,7 +299,7 @@ export default function Config() {
                 <CardTitle className="text-sm uppercase tracking-wider text-muted-foreground">Active Trading Pair</CardTitle>
                 <CardDescription>
                   Current: <span className="font-mono text-primary font-bold">{activePairVal || config.activePair}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">· Forex / Metals / Stocks / Custom</span>
+                  <span className="ml-2 text-xs text-muted-foreground">· Forex / Metals / Indices / Stocks / Custom</span>
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">

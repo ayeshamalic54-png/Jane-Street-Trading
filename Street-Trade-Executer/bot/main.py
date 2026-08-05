@@ -134,7 +134,7 @@ def fetch_db_config():
             active_pair = raw_active
             if (cat_a == "forex" and not f_on) or (cat_a == "metals" and not m_on) or (cat_a == "indices" and not i_on) or (cat_a == "stocks" and not s_on) or (cat_a == "crypto" and not c_on):
                 if i_on:
-                    active_pair = "US30/NDX100"
+                    active_pair = "US30/NAS100"
                 elif s_on:
                     active_pair = "AAPL/MSFT"
                 elif m_on:
@@ -390,8 +390,8 @@ CANDIDATE_PAIRS = {
         ("META", "GOOGL"),
     ],
     "indices": [
-        ("US30", "NDX100"),
         ("US30", "US500"),
+        ("US30", "NAS100"),
         ("US500", "NAS100"),
     ]
 }
