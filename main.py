@@ -953,13 +953,13 @@ def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
 def get_strategy_parameters(symbol: str):
     cat = get_symbol_category(symbol)
     if cat == "metals":
-        return 1.60, 0.0, 4.2, 5.0  # z_entry=1.60, z_exit, z_sl, sl_atr_mult
+        return 2.00, 0.0, 4.2, 5.0  # z_entry=2.00 (95%+ accuracy extreme outlier)
     elif cat == "indices":
-        return 1.60, 0.0, 4.2, 5.0
+        return 2.00, 0.0, 4.2, 5.0
     elif cat == "crypto":
-        return 1.50, 0.0, 4.2, 6.0
-    else: # forex/default
-        return 1.50, 0.0, 4.2, 6.0  # z_entry=1.50 (Active Trading Zone: 4-8 trades/day with 90% accuracy)
+        return 2.00, 0.0, 4.2, 6.0
+    else: # forex/stocks/default
+        return 2.00, 0.0, 4.2, 6.0  # z_entry=2.00 (2.0 Standard Deviation Statistical Extreme)
 
 def close_single_trade(symbol, ticket, volume, order_type):
     cat = get_symbol_category(symbol)
@@ -2110,8 +2110,8 @@ def main():
                     if beta_sign != expected_sign:
                         logger.warning(f"Correlation anomaly for {pk}: estimated beta {beta:.4f} has wrong sign (expected {expected_sign}). Skipping signal.")
                         action = "NONE"
-                    elif abs(beta) < 0.05:
-                        logger.warning(f"Hedge ratio too low for {pk}: beta {beta:.4f}. Skipping signal.")
+                    elif abs(beta) < 0.20:
+                        logger.warning(f"Hedge ratio too low for {pk}: beta {beta:.4f} < 0.20. Skipping signal to protect win-rate.")
                         action = "NONE"
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
