@@ -734,7 +734,7 @@ def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -
     if cat == "forex":
         min_floor = 35.0 * pip_sz  # Minimum 35 pips for Forex
     elif cat == "metals":
-        min_floor = 5.0  # Minimum $5.00 for Gold
+        min_floor = 25.0  # Minimum $25.00 price move for Gold/Silver
     elif cat == "indices" or cat == "stocks":
         min_floor = price * 0.015  # Minimum 1.5% for stocks/indices
 

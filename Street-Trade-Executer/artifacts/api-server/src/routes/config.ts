@@ -48,21 +48,25 @@ router.post("/config", async (req, res) => {
     const parsed = UpdateConfigBody.safeParse(req.body);
     const bodyObj = req.body || {};
 
-    const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, indicesEnabled, riskLimitsEnabled, defaultLots, maxDailyTrades, initialBalance, knifeProtectionEnabled, obiEnabled, volatilityFilterEnabled } = (parsed.success ? parsed.data : bodyObj) as any;
-    const stocksEnabled = bodyObj.stocksEnabled !== undefined ? Boolean(bodyObj.stocksEnabled) : true;
+    const rows = await db.select().from(botStateTable).limit(1);
+    const state = rows[0];
 
-    const parts = activePair.split("/");
+    const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, riskLimitsEnabled, defaultLots, maxDailyTrades, initialBalance, knifeProtectionEnabled, obiEnabled, volatilityFilterEnabled } = (parsed.success ? parsed.data : bodyObj) as any;
+    const indicesEnabled = bodyObj.indicesEnabled !== undefined ? Boolean(bodyObj.indicesEnabled) : (state?.indicesEnabled ?? true);
+    const stocksEnabled = bodyObj.stocksEnabled !== undefined ? Boolean(bodyObj.stocksEnabled) : ((state as any)?.stocks_enabled ?? true);
+
+    const pairToSave = activePair || state?.activePair || "EURUSD/GBPUSD";
+    const parts = pairToSave.split("/");
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
       return res.status(400).json({ error: "activePair must be SYMBOL_A/SYMBOL_B" });
-      return;
     }
 
     const autoExec = autoExecute ?? true;
     const cryptoExec = cryptoEnabled ?? true;
     const metalsExec = metalsEnabled ?? true;
     const forexExec = forexEnabled ?? true;
-    const indicesExec = indicesEnabled ?? true;
-    const stocksExec = stocksEnabled ?? true;
+    const indicesExec = indicesEnabled;
+    const stocksExec = stocksEnabled;
     const riskLimits = riskLimitsEnabled ?? true;
     const knifeExec = knifeProtectionEnabled ?? true;
     const obiExec = obiEnabled ?? true;
