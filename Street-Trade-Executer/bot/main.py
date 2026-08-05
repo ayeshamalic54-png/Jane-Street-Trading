@@ -482,43 +482,13 @@ LEVERAGE_FACTORS = {
 
 def get_blue_guardian_lots(symbol: str, category: str) -> float:
     """
-    Returns uniform lot sizes according to account balance so all 3 parts are 100% EQUAL:
-    - Accounts >= $100k (Funded):
-      - Metals:  1.50 total lots (3 x 0.50 lots)
-      - Forex:   1.20 total lots (3 x 0.40 lots)
-      - Indices: 0.60 total lots (3 x 0.20 lots)
-      - Stocks: 15.00 total lots (3 x 5.00 lots)
-    - Small Accounts (< $10k balance like $2,954):
-      - Metals:  0.15 total lots (3 x 0.05 lots)
-      - Forex:   0.30 total lots (3 x 0.10 lots)
-      - Indices: 0.15 total lots (3 x 0.05 lots)
-      - Stocks:  0.30 total lots (3 x 0.10 lots)
+    Returns exact Blue Guardian standard lot sizes for each asset class:
+    - Forex Pairs:          1.20 Total Lots (3 x 0.40 lots | Hedge: 0.34 lots)
+    - Metals (Gold/Silver): 1.50 Total Lots (3 x 0.50 lots | Hedge: 0.38 lots)
+    - Indices (US30/NAS100): 0.60 Total Lots (3 x 0.20 lots | Hedge: 0.15 lots)
+    - Stock CFDs:          15.00 Total Lots (3 x 5.00 lots | Hedge: 3.75 lots)
     """
-    base_lots = DEFAULT_LOT_SIZES.get(category, 0.15)
-    try:
-        import MetaTrader5 as mt5
-        acc = mt5.account_info()
-        if acc and acc.balance > 0:
-            balance = float(acc.balance)
-            if balance < 10000.0:  # Small account (<$10k)
-                if category == "metals":
-                    return 0.15  # 3 x 0.05 lots (100% equal!)
-                elif category == "forex":
-                    return 0.30  # 3 x 0.10 lots (100% equal!)
-                elif category == "indices":
-                    return 0.15  # 3 x 0.05 lots (100% equal!)
-                elif category == "stocks":
-                    return 0.30  # 3 x 0.10 lots (100% equal!)
-                elif category == "crypto":
-                    return 0.03  # 3 x 0.01 lots
-            else:
-                scale = max(0.05, balance / 100000.0)
-                scaled = base_lots * scale
-                part_lot = round(scaled / 3.0, 2)
-                return part_lot * 3.0
-    except Exception as e:
-        logger.error(f"Error calculating Blue Guardian lot size: {e}")
-    return base_lots
+    return DEFAULT_LOT_SIZES.get(category, 1.20)
 
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
     """
@@ -1447,15 +1417,6 @@ def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float,
         
     total_margin_req = float(margin_a + margin_b)
     logger.info(f"[MARGIN GUARD] Free Margin: ${free_margin:.2f} | Margin Required: ${total_margin_req:.2f} (Leg A: ${margin_a:.2f}, Leg B: ${margin_b:.2f})")
-    
-    # Pre-scale for small accounts (<$100k balance)
-    balance = float(acc.balance)
-    if balance < 100000.0:
-        balance_scale = max(0.02, balance / 100000.0)
-        logger.info(f"[BALANCE GUARD] Account balance ${balance:.2f} < $100,000. Scaling base lots by balance factor: {balance_scale:.4f}")
-        qty_a = qty_a * balance_scale
-        qty_b = qty_b * balance_scale
-        total_margin_req = total_margin_req * balance_scale
 
     if total_margin_req > margin_limit:
         scale_factor = margin_limit / total_margin_req
