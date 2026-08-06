@@ -1578,6 +1578,7 @@ def main():
     loop_log_counter = 0
     SMC_ZONES_CACHE = {}
     smc_counter_cache = {}
+    aamd_normal_cache = {}
 
     active_login_id = None
     try:
