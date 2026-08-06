@@ -2211,18 +2211,21 @@ def main():
             is_trade_limit_ok = (not RISK_LIMITS_ENABLED) or is_demo or (trades_today < MAX_DAILY_TRADES)
             
             if AUTO_EXECUTE and not has_positions and is_trade_limit_ok and not is_news_halted and candidate_signals:
-                # Sort candidate signals by win rate descending, with active pair at the top if present
-                sorted_candidates = list(candidate_signals)
-                sorted_candidates.sort(key=lambda x: (x["pair"] == (S_A, S_B) or x["pair"] == (GLOBAL_CONFIG["SYMBOL_A"], GLOBAL_CONFIG["SYMBOL_B"]), x["win_rate"]), reverse=True)
-                
-                best_sig = None
-                for cand in sorted_candidates:
-                    cand_s_a, cand_s_b = cand["pair"]
-                    cand_cat_a = get_symbol_category(cand_s_a)
-                    cand_cat_b = get_symbol_category(cand_s_b)
-                    if (cand_cat_a == "crypto" or is_spread_valid(cand_s_a)) and (cand_cat_b == "crypto" or is_spread_valid(cand_s_b)):
-                        best_sig = cand
-                        break
+                # Filter candidates to require a minimum 50.0% win rate and sort by win rate descending
+                qualifying_candidates = [c for c in candidate_signals if c["win_rate"] >= 50.0]
+                if not qualifying_candidates:
+                    logger.info(f"Skipping trade execution: All candidate signals have win rate < 50.0% (Best candidate was {candidate_signals[0]['pair']} with {candidate_signals[0]['win_rate']}%)")
+                    best_sig = None
+                else:
+                    qualifying_candidates.sort(key=lambda x: x["win_rate"], reverse=True)
+                    best_sig = None
+                    for cand in qualifying_candidates:
+                        cand_s_a, cand_s_b = cand["pair"]
+                        cand_cat_a = get_symbol_category(cand_s_a)
+                        cand_cat_b = get_symbol_category(cand_s_b)
+                        if (cand_cat_a == "crypto" or is_spread_valid(cand_s_a)) and (cand_cat_b == "crypto" or is_spread_valid(cand_s_b)):
+                            best_sig = cand
+                            break
                 
                 if best_sig is not None:
                     best_pair = best_sig["pair"]
