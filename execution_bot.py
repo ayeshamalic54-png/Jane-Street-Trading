@@ -383,44 +383,6 @@ def check_closed_trades(symbol):
             except Exception as e_disc:
                 logger.error(f"Error sending Discord exit message: {e_disc}")
 
-def close_position_by_ticket(symbol, ticket, volume_to_close):
-    """Closes a specific MT5 position by its ticket (fully or partially)."""
-    positions = mt5.positions_get(ticket=int(ticket))
-    if positions is None:
-        # Transient connection issues - abort closing sync to prevent false database updates
-        return False
-    if len(positions) == 0:
-        # Check if there is an active position for this symbol (Netting account support)
-        sym_positions = mt5.positions_get(symbol=symbol)
-        if not sym_positions:
-            from data_ingestion import resolve_broker_symbol
-            resolved = resolve_broker_symbol(symbol)
-            if resolved != symbol:
-                sym_positions = mt5.positions_get(symbol=resolved)
-        if not sym_positions:
-            all_pos = mt5.positions_get()
-            if all_pos:
-                base_sym = symbol.split('.')[0].upper()
-                sym_positions = [p for p in all_pos if p.symbol.split('.')[0].upper() == base_sym]
-        if sym_positions:
-            pos = sym_positions[0]
-            ticket = pos.ticket
-            logger.info(f"[NETTING AUTO-RESOLVE] Ticket not found, but active position exists for {symbol}. Using merged ticket {pos.ticket} to close.")
-            positions = [pos]
-        else:
-            logger.warning(f"Could not find MT5 position ticket {ticket} to close. Checking if it's already closed...")
-            # Check if already closed to avoid double log
-            conn = get_connection()
-            cur = conn.cursor()
-            cur.execute("SELECT status FROM trades WHERE ticket = %s", (int(ticket),))
-            row = cur.fetchone()
-            cur.close()
-            conn.close()
-            if row and row[0] == 'OPEN':
-                logger.info(f"Ticket {ticket} still open in DB but missing in MT5. Marking as CLOSED in DB.")
-                log_trade_exit(ticket, 0.0, 0.0, datetime.datetime.now())
-            return False
-        
 def get_filling_modes_for_symbol(symbol):
     """Detects broker supported filling modes for a symbol, putting native supported mode first."""
     info = mt5.symbol_info(symbol)
@@ -491,6 +453,7 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
     if tick is None:
         logger.error(f"Failed to fetch tick for {symbol} to close position {ticket}")
         return False
+    close_order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
     price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
     
     vol = min(float(volume_to_close), float(pos.volume))
@@ -506,7 +469,7 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
         "volume": vol,
-        "type": order_type,
+        "type": close_order_type,
         "position": int(ticket),
         "price": price,
         "deviation": 10,
