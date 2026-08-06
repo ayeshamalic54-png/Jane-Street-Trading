@@ -6,8 +6,9 @@ from database import update_daily_metrics, get_connection
 
 logger = logging.getLogger("SMC_Forex_Bot")
 
-# Maximum daily drawdown allowed before halting trading (e.g. 3.2% to safely stay below Blue Guardian 4.0% limit)
-MAX_DAILY_LOSS_PERCENT = 3.2
+# Maximum daily drawdown allowed before halting trading (2.5% to safely cap max loss at $250 on $10k account)
+MAX_DAILY_LOSS_PERCENT = 2.5
+MAX_FLOATING_LOSS_USD = 250.0
 # Maximum number of trades allowed per day
 MAX_DAILY_TRADES = 3
 # Risk percentage per trade (e.g. 1.0% of account equity)

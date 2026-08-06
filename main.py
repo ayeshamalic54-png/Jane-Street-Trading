@@ -1877,6 +1877,22 @@ def main():
             except Exception:
                 pass
 
+            # ── EMERGENCY HARD DRAWDOWN & FLOATING LOSS SAFEGUARD ($250 / 2.5% MAX CAP) ──
+            if has_positions and active_js_positions:
+                try:
+                    from risk_safeguards import get_or_create_daily_start_equity
+                    start_eq_guard = get_or_create_daily_start_equity(acc_info.equity)
+                    daily_loss_usd = start_eq_guard - acc_info.equity
+                    daily_loss_pct = (daily_loss_usd / start_eq_guard) * 100.0 if start_eq_guard > 0 else 0.0
+                    
+                    if floating_profit <= -250.0 or daily_loss_pct >= 2.5:
+                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) / Daily loss ({daily_loss_pct:.2f}%) breached safety cap (-$250.00 / 2.5%). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
+                        for pos in active_js_positions:
+                            pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+                            close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+                except Exception as ex_dd:
+                    logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
+
             # ── Multi-Tier Equity Trailing Stop Safeguard (Dual Tier Profit Protection) ──
             if has_positions:
                 if floating_profit > peak_floating_profit:
