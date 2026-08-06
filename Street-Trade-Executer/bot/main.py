@@ -1620,7 +1620,7 @@ def main():
                 cur.execute("SELECT COUNT(*) FROM trades WHERE status = 'OPEN'")
                 open_trades_count = cur.fetchone()[0] or 0
                 
-                if db_login != current_login or (open_trades_count == 0 and abs(db_initial - acc_info.equity) > 5.0):
+                if db_login > 0 and db_login != current_login:
                     startup_mismatch = True
                 
                 # Purge any legacy Platinum/Palladium rows from scanned_assets
