@@ -1864,10 +1864,16 @@ def main():
             try:
                 has_positions = get_open_trades_count() > 0
                 positions = mt5.positions_get()
-                active_js_positions = [p for p in positions if p.magic == MAGIC_NUMBER] if positions else []
-                floating_profit += sum(p.profit for p in active_js_positions)
-                if len(active_js_positions) > 0:
-                    has_positions = True
+                if positions:
+                    active_js_positions = [p for p in positions if (p.magic == MAGIC_NUMBER or "JS_" in str(p.comment).upper() or "JANE" in str(p.comment).upper())]
+                    if not active_js_positions and len(positions) > 0:
+                        # Fallback to all MT5 positions if broker cleared magic/comment on netting/hedging
+                        active_js_positions = list(positions)
+                    floating_profit += sum(p.profit for p in active_js_positions)
+                    if len(active_js_positions) > 0:
+                        has_positions = True
+                    else:
+                        peak_floating_profit = 0.0
                 else:
                     peak_floating_profit = 0.0
             except Exception:
