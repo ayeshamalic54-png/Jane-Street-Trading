@@ -409,6 +409,8 @@ CANDIDATE_PAIRS = {
         ("AUDUSD", "NZDUSD"),
         ("EURUSD", "USDCHF"),
         ("GBPUSD", "USDCHF"),
+        ("EURUSD", "USDJPY"),
+        ("GBPUSD", "USDJPY"),
     ],
     "metals": [
         ("XAUUSD", "XAGUSD"),
