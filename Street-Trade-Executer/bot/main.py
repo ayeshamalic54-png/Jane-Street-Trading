@@ -1003,11 +1003,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Find signal_ids that have at least one OPEN trade for these symbols, mapping NULL to 999999
-        cur.execute(
-            "SELECT DISTINCT COALESCE(signal_id, 999999) FROM trades WHERE status = 'OPEN' AND symbol IN (%s, %s)",
-            (symbol_a, symbol_b)
-        )
+        # Find ALL signal_ids that have at least one OPEN trade in DB (regardless of currently focused pair context)
+        cur.execute("SELECT DISTINCT COALESCE(signal_id, 999999) FROM trades WHERE status = 'OPEN'")
         active_signal_ids = [row[0] for row in cur.fetchall()]
         
         if not active_signal_ids:
