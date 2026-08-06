@@ -2056,16 +2056,6 @@ def main():
                         if r_df is not None and not r_df.empty:
                             SMC_ZONES_CACHE[s_a_resolved] = detect_smc_zones(r_df)
                             log_fvg_zones(s_a_resolved, SMC_ZONES_CACHE[s_a_resolved])
-                            
-                            # Auto-Adaptive Market Volatility Detector (AAMD)
-                            from math_models import calculate_atr_volatility_ratio
-                            vol_ratio, is_vol_spike = calculate_atr_volatility_ratio(r_df)
-                            if is_vol_spike and not (VOLATILITY_FILTER_ENABLED and KNIFE_PROTECTION_ENABLED):
-                                logger.info(f"[AUTO VOLATILITY DETECTOR] Market volatility spike detected on {s_a_resolved} (ATR Ratio: {vol_ratio:.2f}x >= 1.30x). Auto-ENABLING Volatility & Knife Protection in DB.")
-                                VOLATILITY_FILTER_ENABLED = True
-                                KNIFE_PROTECTION_ENABLED = True
-                                from database import update_bot_volatility_toggles
-                                update_bot_volatility_toggles(True, True)
                         smc_counter_cache[s_a_resolved] = 0
                     except Exception as e:
                         logger.error(f"SMC scan error for {s_a_resolved}: {e}")
