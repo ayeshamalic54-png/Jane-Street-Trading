@@ -2211,10 +2211,10 @@ def main():
             is_trade_limit_ok = (not RISK_LIMITS_ENABLED) or is_demo or (trades_today < MAX_DAILY_TRADES)
             
             if AUTO_EXECUTE and not has_positions and is_trade_limit_ok and not is_news_halted and candidate_signals:
-                # Filter candidates to require a minimum 50.0% win rate and sort by win rate descending
-                qualifying_candidates = [c for c in candidate_signals if c["win_rate"] >= 50.0]
+                # Filter candidates to require a minimum 65.0% win rate and sort by win rate descending
+                qualifying_candidates = [c for c in candidate_signals if c["win_rate"] >= 65.0]
                 if not qualifying_candidates:
-                    logger.info(f"Skipping trade execution: All candidate signals have win rate < 50.0% (Best candidate was {candidate_signals[0]['pair']} with {candidate_signals[0]['win_rate']}%)")
+                    logger.info(f"Skipping trade execution: All candidate signals have win rate < 65.0% (Best candidate was {candidate_signals[0]['pair']} with {candidate_signals[0]['win_rate']}%)")
                     best_sig = None
                 else:
                     qualifying_candidates.sort(key=lambda x: x["win_rate"], reverse=True)
