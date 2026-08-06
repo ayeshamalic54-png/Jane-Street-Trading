@@ -85,8 +85,8 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             free_m = acc.margin_free if acc else 0.0
             req_m = mt5.order_calc_margin(request["action"], symbol, request["volume"], price) or 1.0
             if req_m > 0 and free_m > 0:
-                # If part of a 3-part trade (JS_TP1/2/3), use 28% of free margin so TP2 & TP3 have room to open
-                margin_fraction = 0.28 if "JS_TP" in str(comment) else 0.85
+                # If part of a 3-part trade (JS_TP1/2/3), use 26% of free margin per part (78% total), else 80% max margin per Blue Guardian rules
+                margin_fraction = 0.26 if "JS_TP" in str(comment) else 0.80
                 scaled_vol = request["volume"] * (free_m * margin_fraction / req_m)
                 scaled_vol = max(min_vol, round(scaled_vol / step_vol) * step_vol)
                 scaled_vol = round(scaled_vol, 2)
