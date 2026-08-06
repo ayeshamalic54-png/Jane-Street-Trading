@@ -680,7 +680,6 @@ def reset_database_metrics_for_new_account(login_id, equity):
     Force-updates the database metrics (both bot_state and daily_metrics for today)
     to match the new connected account's starting balance, restoring saved values if available.
     """
-    import datetime
     today = datetime.date.today()
     conn = None
     try:

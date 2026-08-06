@@ -888,7 +888,6 @@ def get_tp_distance(symbol: str, price: float, tp_pips_override: float = None) -
 def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_a, sl_a, tp1, tp2, tp3, lots_a, entry_b, sl_b, lots_b, side_b):
     import os
     import requests
-    import datetime
     
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
@@ -1652,7 +1651,6 @@ def main():
                 # Update safeguards cache here to prevent circular imports
                 try:
                     import risk_safeguards
-                    import datetime
                     risk_safeguards._cached_start_equity = float(acc_info.equity)
                     risk_safeguards._cached_start_equity_date = datetime.date.today()
                     risk_safeguards._cached_last_login = int(current_login)
