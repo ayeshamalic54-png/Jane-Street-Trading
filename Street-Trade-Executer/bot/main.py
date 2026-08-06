@@ -1409,7 +1409,7 @@ def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float,
         return qty_a, qty_b
         
     free_margin = float(acc.margin_free)
-    margin_limit = free_margin * 0.75  # Limit to 75% of free margin
+    margin_limit = free_margin * 0.45  # Limit to 45% of free margin to guarantee equal lot sizes across all 3 parts
     
     # Resolving order types for margin calculation
     action_a = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
