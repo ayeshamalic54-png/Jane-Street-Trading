@@ -2084,11 +2084,11 @@ def main():
                 dynamic_z_entry = kf_pair.get_dynamic_z_entry(Z_ENTRY_THRESHOLD)
 
                 if cat_a == "forex":
-                    z_vel_lim = 0.08   # Relaxed to ensure 4-5 high quality trades daily
-                elif cat_a in ["metals", "crypto"]:
-                    z_vel_lim = 0.20   # Relaxed for gold/crypto volatility
+                    z_vel_lim = 0.005  # Tightened from 0.02 for 85%+ entry accuracy
+                elif cat_a == "metals":
+                    z_vel_lim = 0.02   # Tightened from 0.08
                 else:
-                    z_vel_lim = 0.25   # Relaxed for fast stock CFDs (META/GOOGL, AAPL/MSFT)
+                    z_vel_lim = 0.01   # Tightened from 0.05
 
                 action = "NONE"
                 # Evaluate active protections based strictly on Dashboard Toggles (at all Z-thresholds)
@@ -2123,17 +2123,11 @@ def main():
                 if action != "NONE":
                     expected_sign = EXPECTED_BETA_SIGN.get(pk, 1)
                     beta_sign = 1 if beta >= 0 else -1
-                    # Calculate normalized correlation beta (percentage scale independent of share prices)
-                    beta_norm = abs(beta * (p_b / p_a)) if (p_a > 0 and p_b > 0) else abs(beta)
-
-                    # Dynamic min beta threshold based on asset category
-                    min_beta_limit = 0.10 if cat_a == "forex" else (0.05 if cat_a in ["stocks", "metals", "crypto"] else 0.08)
-
                     if beta_sign != expected_sign:
                         logger.warning(f"Correlation anomaly for {pk}: estimated beta {beta:.4f} has wrong sign (expected {expected_sign}). Skipping signal.")
                         action = "NONE"
-                    elif beta_norm < min_beta_limit:
-                        logger.warning(f"Hedge ratio too low for {pk}: normalized beta {beta_norm:.4f} (raw: {beta:.4f}) < {min_beta_limit}. Skipping signal to protect win-rate.")
+                    elif abs(beta) < 0.20:
+                        logger.warning(f"Hedge ratio too low for {pk}: beta {beta:.4f} < 0.20. Skipping signal to protect win-rate.")
                         action = "NONE"
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
