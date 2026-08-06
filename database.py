@@ -727,12 +727,34 @@ def reset_database_metrics_for_new_account(login_id, equity):
         print(f"Successfully reset/restored database metrics for account {login_val} (Equity: ${equity:.2f})")
     except Exception as e:
         print(f"Error resetting database metrics for new account: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+
+def update_bot_volatility_toggles(vol_enabled: bool, knife_enabled: bool):
+    """
+    Updates volatility_filter_enabled and knife_protection_enabled in bot_state table
+    when Auto-Adaptive Market Volatility Detector (AAMD) triggers on a market spike.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE bot_state 
+            SET volatility_filter_enabled = %s, knife_protection_enabled = %s, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = 1
+        """, (bool(vol_enabled), bool(knife_enabled)))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        print(f"Error updating bot volatility toggles in database: {e}")
         if conn:
             conn.rollback()
     finally:
         if conn:
             conn.close()
-            
 
 
 if __name__ == "__main__":

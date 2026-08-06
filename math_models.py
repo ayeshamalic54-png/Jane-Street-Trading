@@ -231,3 +231,32 @@ def is_turning_point_confirmed(z_history, z_threshold=1.50, action="BUY_SPREAD")
         return reached_extreme and turning_down
         
     return False
+
+
+def calculate_atr_volatility_ratio(df):
+    """
+    Calculates the 14-bar ATR vs 50-bar baseline ATR ratio to detect market volatility spikes.
+    Returns: (ratio: float, is_spike: bool) where is_spike is True if ratio >= 1.30.
+    """
+    if df is None or len(df) < 50:
+        return 1.0, False
+    try:
+        highs = df['high'].values
+        lows = df['low'].values
+        closes = df['close'].values
+        
+        tr1 = highs[1:] - lows[1:]
+        tr2 = np.abs(highs[1:] - closes[:-1])
+        tr3 = np.abs(lows[1:] - closes[:-1])
+        tr = np.maximum(tr1, np.maximum(tr2, tr3))
+        
+        atr14 = np.mean(tr[-14:])
+        atr50 = np.mean(tr[-50:])
+        
+        if atr50 <= 0:
+            return 1.0, False
+            
+        ratio = float(atr14 / atr50)
+        return ratio, (ratio >= 1.30)
+    except Exception:
+        return 1.0, False
