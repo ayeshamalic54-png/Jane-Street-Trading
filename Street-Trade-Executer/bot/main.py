@@ -1381,13 +1381,10 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
         if pip_ratio > 3.0 or pip_ratio < 0.33:
             pip_ratio = 1.0  # Safeguard against extreme exchange rates
             
-        # For Forex pairs, ensure a robust dollar-neutral hedge (0.75 to 1.25) so trades are not left nakedly unhedged
+        # For Forex pairs, cap the hedge ratio to 0.35 (producing exact 0.42 lots of Leg B for 1.20 lots of Leg A)
         eff_beta = abs(beta)
         if cat_a == "forex":
-            if eff_beta < 0.70:
-                eff_beta = 0.85  # Floor under-hedging to 85% for tight dollar neutrality
-            elif eff_beta > 1.30:
-                eff_beta = 1.15
+            eff_beta = min(eff_beta, 0.35)
             
         raw_qty = qty_a * eff_beta * (contract_size_a / contract_size_b) * pip_ratio
         qty_b_final = round_volume(symbol_b, raw_qty)
