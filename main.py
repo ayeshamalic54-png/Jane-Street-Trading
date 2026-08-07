@@ -2465,8 +2465,8 @@ def main():
                                         tick_retry = mt5.symbol_info_tick(S_B_resolved)
                                         if tick_retry:
                                             price_b = tick_retry.ask if order_type_b == mt5.ORDER_TYPE_BUY else tick_retry.bid
-                                            sl_b = price_b + sl_sign_b * sl_dist_b
-                                        res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
+                                        # Set sl_b = 0.0 so Leg B is managed strictly alongside Leg A and never prematurely stopped out in loss
+                                        res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, 0.0, 0.0, "JS_HEDGE")
                                         if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                             log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                                             break
