@@ -1585,7 +1585,7 @@ def main():
     logger.info("Background heartbeat thread started.")
     
     # Clean up any stale disabled categories on startup
-    cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED)
+    cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED, STOCKS_ENABLED)
 
     acc_info = initialize_mt5()
     q_cov, r_cov = get_kf_parameters(GLOBAL_CONFIG["SYMBOL_A"])
@@ -2040,8 +2040,11 @@ def main():
                 s_b_resolved = resolve_broker_symbol(s_b) if cat_b != "crypto" else s_b
 
                 # ── MARKET CLOSED GUARD ──
-                # Prevents scanning or generating signals for closed stocks/indices outside market hours
+                # Prevents scanning or generating signals for closed stocks/indices outside market hours,
+                # but keeps them visible on scanned_assets dashboard list with MARKET_CLOSED status.
                 if not is_market_open(s_a_resolved) or not is_market_open(s_b_resolved):
+                    win_rate = WIN_RATE_CACHE.get(pk, 50.0)
+                    update_scanned_asset(pk, 0.0, 0.0, win_rate, 0.0, "MARKET_CLOSED")
                     continue
 
                 # Fetch ticks
