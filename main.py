@@ -1200,6 +1200,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 elif z_score_for_pair <= -effective_z_sl:
                     exit_triggered = True
                     exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} <= {-effective_z_sl:.2f})"
+                elif len(open_leg_a_trades) < 3 and z_score_for_pair < -0.20:
+                    exit_triggered = True
+                    exit_reason = f"PARTIAL_REVERSAL_PROTECTION (z={z_score_for_pair:.2f} < -0.20)"
             else:
                 if z_score_for_pair <= -z_ex_val:
                     exit_triggered = True
@@ -1207,6 +1210,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 elif z_score_for_pair >= effective_z_sl:
                     exit_triggered = True
                     exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} >= {effective_z_sl:.2f})"
+                elif len(open_leg_a_trades) < 3 and z_score_for_pair > 0.20:
+                    exit_triggered = True
+                    exit_reason = f"PARTIAL_REVERSAL_PROTECTION (z={z_score_for_pair:.2f} > 0.20)"
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
         min_hold_ok = True
