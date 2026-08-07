@@ -1226,11 +1226,23 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 140s minimum hold time.")
 
         if exit_triggered:
-            logger.info(f"Dynamic exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all positions.")
-            for t_a in open_leg_a_trades:
-                close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
-            for t_b in open_leg_b_trades:
-                close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+            # Staggered Scaling Exit: Lock Part 1 at Z=0.0, let Parts 2 & 3 run until Z >= 0.50 for maximum profit
+            if "Z_TP_REVERSION" in exit_reason and len(open_leg_a_trades) > 1 and abs(z_score_for_pair) < 0.50:
+                logger.info(f"Staggered Exit triggered for signal_id {sig_id}: Closing Part 1 to lock early profit, keeping Parts 2 & 3 open for extended gain.")
+                t_a1 = open_leg_a_trades[0]
+                close_single_trade(t_a1["symbol"], t_a1["ticket"], t_a1["lots"], t_a1["order_type"])
+                if open_leg_b_trades:
+                    t_b = open_leg_b_trades[0]
+                    from risk_safeguards import round_volume
+                    close_b_lots = round_volume(t_b["symbol"], t_b["lots"] / len(open_leg_a_trades))
+                    if close_b_lots > 0:
+                        close_single_trade(t_b["symbol"], t_b["ticket"], close_b_lots, t_b["order_type"])
+            else:
+                logger.info(f"Full exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all remaining positions.")
+                for t_a in open_leg_a_trades:
+                    close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
+                for t_b in open_leg_b_trades:
+                    close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
                 
             # Sync closed details immediately to database
             try:
