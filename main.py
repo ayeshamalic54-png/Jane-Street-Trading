@@ -1905,16 +1905,11 @@ def main():
             except Exception:
                 pass
 
-            # ── EMERGENCY HARD DRAWDOWN & FLOATING LOSS SAFEGUARD ($175.00 / 1.75% MAX CAP) ──
+            # ── EMERGENCY HARD FLOATING LOSS SAFEGUARD (-$175.00 USD MAX CAP) ──
             if has_positions and active_js_positions:
                 try:
-                    from risk_safeguards import get_or_create_daily_start_equity
-                    start_eq_guard = get_or_create_daily_start_equity(acc_info.equity)
-                    daily_loss_usd = start_eq_guard - acc_info.equity
-                    daily_loss_pct = (daily_loss_usd / start_eq_guard) * 100.0 if start_eq_guard > 0 else 0.0
-                    
-                    if floating_profit <= -175.0 or daily_loss_pct >= 1.75:
-                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) / Daily loss ({daily_loss_pct:.2f}%) breached safety cap (-$175.00 / 1.75%). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
+                    if floating_profit <= -175.0:
+                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) breached safety cap (-$175.00 USD). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
                         for pos in active_js_positions:
                             pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
                             close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
