@@ -2640,9 +2640,11 @@ def main():
                 except Exception as ex_sum:
                     logger.error(f"Error compiling scan summary log: {ex_sum}")
 
+                smc_str = f"SMC: [{'ENABLED' if REQUIRE_SMC_CONFLUENCE else 'OFF'}]"
+                obi_str = f"OBI: [{'ENABLED' if OBI_ENABLED else 'OFF'}] ({active_pair_obi_a:.1f}/{active_pair_obi_b:.1f})"
                 logger.info(
                     f"[LIVE SCAN DETAIL] Active Focus: {S_A}/{S_B} | Z-Score: {active_pair_z_score:.3f} "
-                    f"| Z-Velocity: {active_pair_velocity:.3f} | OBI A/B: {active_pair_obi_a:.1f}/{active_pair_obi_b:.1f} "
+                    f"| Z-Vel: {active_pair_velocity:.3f} | {smc_str} | {obi_str} "
                     f"| Status: {status_str}"
                 )
             loop_log_counter += 1

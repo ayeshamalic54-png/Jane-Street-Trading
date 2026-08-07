@@ -475,6 +475,11 @@ def log_fvg_zones(symbol, zones_dict):
             )
         conn.commit()
         cur.close()
+        b_ob = len(zones_dict.get('bullish_ob', []))
+        s_ob = len(zones_dict.get('bearish_ob', []))
+        b_fvg = len(zones_dict.get('bullish_fvg', []))
+        s_fvg = len(zones_dict.get('bearish_fvg', []))
+        print(f"[SMC CONSOLE LOG] {symbol} M5 Zones Updated | Bullish OB: {b_ob} | Bearish OB: {s_ob} | Bullish FVG: {b_fvg} | Bearish FVG: {s_fvg}")
     except Exception as e:
         print(f"Error logging FVG zones: {e}")
         if conn:
