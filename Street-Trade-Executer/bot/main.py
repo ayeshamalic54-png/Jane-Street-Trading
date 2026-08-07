@@ -1381,7 +1381,10 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
             pip_ratio = 1.0  # Safeguard against extreme exchange rates
             
         # For Forex pairs, cap the hedge ratio to 0.35 (producing exact 0.42 lots of Leg B for 1.20 lots of Leg A)
-        # For Forex pairs, cap the hedge ratio to 0.35 (producing exact 0.42 lots of Leg B for 1.20 lots of Leg A)
+        eff_beta = abs(beta)
+        if cat_a == "forex":
+            eff_beta = min(eff_beta, 0.35)
+
         # For stocks and metals, equalize dollar notion so Leg A and Leg B are 100% 1:1 balanced in cash value
         if cat_a in ["stocks", "metals"] or cat_b in ["stocks", "metals"]:
             tick_a_h = mt5.symbol_info_tick(symbol_a)
