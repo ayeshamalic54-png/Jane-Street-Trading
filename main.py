@@ -1208,6 +1208,20 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     exit_triggered = True
                     exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} >= {effective_z_sl:.2f})"
 
+        # Check 30-Minute Time-Decay Exit when SMC Confluence is OFF
+        if not REQUIRE_SMC_CONFLUENCE and not exit_triggered:
+            for t in trades:
+                entry_t = t["entry_time"]
+                if entry_t is not None:
+                    if hasattr(entry_t, "tzinfo") and entry_t.tzinfo is not None:
+                        elapsed = abs((datetime.datetime.now(datetime.timezone.utc) - entry_t).total_seconds())
+                    else:
+                        elapsed = abs((datetime.datetime.utcnow() - entry_t).total_seconds())
+                    if elapsed >= 1800.0:  # 30 minutes
+                        exit_triggered = True
+                        exit_reason = f"30MIN_SMC_OFF_TIME_DECAY (elapsed {elapsed/60:.1f}m >= 30m limit)"
+                        break
+
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
         min_hold_ok = True
         for t in trades:
@@ -1231,6 +1245,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
             for t_b in open_leg_b_trades:
                 close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+                
+            from execution_bot import cancel_pending_ladder_orders
+            cancel_pending_ladder_orders(sym_a)
                 
             # Sync closed details immediately to database
             try:
@@ -2211,6 +2228,13 @@ def main():
                 if action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved):
                     cand_cat_a = get_symbol_category(s_a_resolved)
                     cand_cat_b = get_symbol_category(s_b_resolved)
+                    if cand_cat_a == "metals" or cand_cat_b == "metals":
+                        from math_models import calculate_metals_dynamic_beta
+                        m_beta = calculate_metals_dynamic_beta(r_df_a if 'r_df_a' in locals() else None, r_df_b if 'r_df_b' in locals() else None)
+                        if m_beta < 0.85:
+                            logger.warning(f"[METALS BETA GUARD] Dynamic Metals Beta ({m_beta:.4f}) < 0.85 limit for {s_a}/{s_b}. HALTING execution on XAUUSD to prevent single-leg drag.")
+                            continue
+
                     if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)) and (cand_cat_b == "crypto" or is_spread_valid(s_b_resolved)):
                         candidate_signals.append({
                             "pair": (s_a, s_b),

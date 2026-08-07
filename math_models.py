@@ -260,3 +260,43 @@ def calculate_atr_volatility_ratio(df):
         return ratio, (ratio >= 1.30)
     except Exception:
         return 1.0, False
+
+
+def calculate_metals_dynamic_beta(df_a, df_b):
+    """
+    Calculates dynamic ATR-adjusted Beta for Metals (XAUUSD/XAGUSD):
+    Beta = (Covariance(Price_A, Price_B) / Variance(Price_B)) * (ATR14_A / ATR14_B)
+    """
+    if df_a is None or df_b is None or len(df_a) < 20 or len(df_b) < 20:
+        return 1.0
+    try:
+        closes_a = df_a['close'].values[-30:]
+        closes_b = df_b['close'].values[-30:]
+        min_len = min(len(closes_a), len(closes_b))
+        ca = closes_a[-min_len:]
+        cb = closes_b[-min_len:]
+        
+        cov_matrix = np.cov(ca, cb)
+        var_b = cov_matrix[1, 1]
+        cov_ab = cov_matrix[0, 1]
+        
+        if var_b <= 0:
+            return 1.0
+            
+        raw_beta = cov_ab / var_b
+        
+        # Calculate ATR14 for A and B
+        tr_a = np.maximum(df_a['high'].values[1:] - df_a['low'].values[1:], 
+                          np.abs(df_a['high'].values[1:] - df_a['close'].values[:-1]))
+        tr_b = np.maximum(df_b['high'].values[1:] - df_b['low'].values[1:], 
+                          np.abs(df_b['high'].values[1:] - df_b['close'].values[:-1]))
+        
+        atr_a = float(np.mean(tr_a[-14:]))
+        atr_b = float(np.mean(tr_b[-14:]))
+        
+        atr_ratio = (atr_a / atr_b) if atr_b > 0 else 1.0
+        
+        adjusted_beta = float(abs(raw_beta) * atr_ratio)
+        return adjusted_beta
+    except Exception:
+        return 1.0
