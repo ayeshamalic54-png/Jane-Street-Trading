@@ -7,47 +7,53 @@ class KalmanFilterRegression:
     Dynamically estimates the hedge ratio (beta) and spread intercept (alpha) 
     at every tick, outputting the normalized z-score of the spread.
     """
-    def __init__(self, transition_covariance=1e-5, observation_covariance=1e-3):
-        # State mean vector: [beta, alpha]^T
-        self.state_mean = np.zeros(2)
-        # State covariance matrix (initial high uncertainty)
-        self.state_covariance = np.identity(2) * 1.0
-        
-        # Process noise covariance (Q) - how fast beta/alpha are expected to drift
-        self.Q = np.identity(2) * transition_covariance
-        # Measurement noise covariance (R) - variance of spread around regression line
-        self.R = observation_covariance
-        
-        self.spread_history = []
-        self.z_history = []
-        self.raw_spread_history = []
+    def __init__(self, transition_covariance=1e-9, observation_covariance=1e-6, initial_beta=1.0):
+        # Reference prices for normalization
         self.ref_x = None
         self.ref_y = None
+        self.initial_beta = float(initial_beta)
+        
+        # State mean vector: [beta_norm, alpha_norm]^T
+        self.state_mean = np.array([1.0, 0.0]) # Will be re-scaled on first update
+        # State covariance matrix
+        self.state_covariance = np.identity(2) * 1.0
+        
+        # Process noise covariance (Q)
+        self.Q = np.identity(2) * transition_covariance
+        # Measurement noise covariance (R)
+        self.R = observation_covariance
+        
+        # History lists for velocity and volatility calculations
+        self.z_history = []
+        self.spread_history = []      # Normalized spread history
+        self.raw_spread_history = []  # Raw spread history
 
     def update(self, x, y):
         """
         Runs one step of the Kalman Filter prediction and update loop.
         x: Independent asset price (e.g. Asset B)
         y: Dependent asset price (e.g. Asset A)
-        Returns: (beta, alpha, spread, z_score)
+        Returns: (beta_actual, alpha_actual, raw_spread, z_score)
         """
         if self.ref_x is None:
-            self.ref_x = x
-            self.ref_y = y
-        
+            self.ref_x = float(x) if x > 0 else 1.0
+            self.ref_y = float(y) if y > 0 else 1.0
+            # Initialize beta_norm to align with initial_beta on raw price scales
+            beta_norm_init = self.initial_beta * (self.ref_x / self.ref_y)
+            self.state_mean = np.array([beta_norm_init, 0.0])
+            
         norm_x = x / self.ref_x
         norm_y = y / self.ref_y
         
-        # Observation matrix H = [x, 1]
+        # Observation matrix H = [norm_x, 1]
         H = np.array([[norm_x, 1.0]])
         
         # 1. PREDICT state
         state_covariance_pred = self.state_covariance + self.Q
         
-        # 2. UPDATE state using measurement y
+        # 2. UPDATE state using normalized measurement
         y_pred = np.dot(H, self.state_mean)[0]
-        raw_spread = norm_y - y_pred
-        y_err = raw_spread
+        y_err = norm_y - y_pred  # Normalized spread (residual error)
         
         # Innovation (residual) covariance
         S = np.dot(H, np.dot(state_covariance_pred, H.T))[0, 0] + self.R
@@ -59,82 +65,100 @@ class KalmanFilterRegression:
         self.state_mean = self.state_mean + K.flatten() * y_err
         self.state_covariance = state_covariance_pred - np.dot(K, np.dot(H, state_covariance_pred))
         
-        beta = self.state_mean[0]
-        alpha = self.state_mean[1]
+        beta_norm = self.state_mean[0]
+        alpha_norm = self.state_mean[1]
         
-        # Standard deviation of the spread (residual)
-        std_dev = np.sqrt(S)
+        # Scale parameters back to actual price scale
+        beta_actual = beta_norm * (self.ref_y / self.ref_x)
+        alpha_actual = alpha_norm * self.ref_y
+        raw_spread = y - (beta_actual * x + alpha_actual)
+        
+        # Standard deviation of the spread using rolling 50-bar history for robust scale invariant z-score
+        if len(self.spread_history) >= 10:
+            rolling_std = float(np.std(self.spread_history[-50:]))
+            std_dev = max(rolling_std, 1e-5)
+        else:
+            std_dev = np.sqrt(S)
+            
         z_score = y_err / std_dev if std_dev > 0 else 0.0
+        # Clip Z-score to [-4.5, +4.5] to prevent runaway outliers
+        z_score = float(np.clip(z_score, -4.5, 4.5))
         
-        return beta, alpha, y_err, z_score
-
-def calculate_atr_volatility_ratio(df):
-    """
-    Calculates the 14-bar ATR vs 50-bar baseline ATR ratio to detect market volatility spikes.
-    Returns: (ratio: float, is_spike: bool) where is_spike is True if ratio >= 1.30.
-    """
-    if df is None or len(df) < 50:
-        return 1.0, False
-    try:
-        highs = df['high'].values
-        lows = df['low'].values
-        closes = df['close'].values
-        
-        tr1 = highs[1:] - lows[1:]
-        tr2 = np.abs(highs[1:] - closes[:-1])
-        tr3 = np.abs(lows[1:] - closes[:-1])
-        tr = np.maximum(tr1, np.maximum(tr2, tr3))
-        
-        atr14 = np.mean(tr[-14:])
-        atr50 = np.mean(tr[-50:])
-        
-        if atr50 <= 0:
-            return 1.0, False
+        # Track histories
+        self.z_history.append(z_score)
+        self.spread_history.append(y_err)
+        self.raw_spread_history.append(raw_spread)
+        if len(self.z_history) > 1000:
+            self.z_history.pop(0)
+            self.spread_history.pop(0)
+            self.raw_spread_history.pop(0)
             
-        ratio = float(atr14 / atr50)
-        return ratio, (ratio >= 1.30)
-    except Exception:
-        return 1.0, False
+        return beta_actual, alpha_actual, raw_spread, z_score
 
-
-def calculate_metals_dynamic_beta(df_a, df_b):
-    """
-    Calculates dynamic ATR-adjusted Beta for Metals (XAUUSD/XAGUSD):
-    Beta = (Covariance(Price_A, Price_B) / Variance(Price_B)) * (ATR14_A / ATR14_B)
-    """
-    if df_a is None or df_b is None or len(df_a) < 20 or len(df_b) < 20:
-        return 1.0
-    try:
-        closes_a = df_a['close'].values[-30:]
-        closes_b = df_b['close'].values[-30:]
-        min_len = min(len(closes_a), len(closes_b))
-        ca = closes_a[-min_len:]
-        cb = closes_b[-min_len:]
-        
-        cov_matrix = np.cov(ca, cb)
-        var_b = cov_matrix[1, 1]
-        cov_ab = cov_matrix[0, 1]
-        
-        if var_b <= 0:
-            return 1.0
+    def get_current_z(self, x, y) -> float:
+        """Calculates the current z-score of the spread without updating filter state."""
+        if self.ref_x is None:
+            return 0.0
+        norm_x = x / self.ref_x
+        norm_y = y / self.ref_y
+        H = np.array([[norm_x, 1.0]])
+        y_pred = np.dot(H, self.state_mean)[0]
+        y_err = norm_y - y_pred
+        if len(self.spread_history) >= 10:
+            rolling_std = float(np.std(self.spread_history[-50:]))
+            std_dev = max(rolling_std, 1e-5)
+        else:
+            state_covariance_pred = self.state_covariance + self.Q
+            S = np.dot(H, np.dot(state_covariance_pred, H.T))[0, 0] + self.R
+            std_dev = np.sqrt(S)
             
-        raw_beta = cov_ab / var_b
+        z_val = float(y_err / std_dev) if std_dev > 0 else 0.0
+        return float(np.clip(z_val, -4.5, 4.5))
+
+    def get_velocity(self, k=3) -> float:
+        """Calculates the change in z-score over the last k periods."""
+        if len(self.z_history) <= k:
+            return 0.0
+        return float(self.z_history[-1] - self.z_history[-1 - k])
+
+    def get_dynamic_z_entry(self, base_z_entry: float, gamma=0.3, short_w=20, long_w=200) -> float:
+        """Dynamically increases the entry threshold if short-term volatility exceeds long-term trend."""
+        if len(self.spread_history) < long_w:
+            return base_z_entry
+        spreads_short = self.spread_history[-short_w:]
+        spreads_long = self.spread_history[-long_w:]
+        std_short = np.std(spreads_short)
+        std_long = np.std(spreads_long)
         
-        # Calculate ATR14 for A and B
-        tr_a = np.maximum(df_a['high'].values[1:] - df_a['low'].values[1:], 
-                          np.abs(df_a['high'].values[1:] - df_a['close'].values[:-1]))
-        tr_b = np.maximum(df_b['high'].values[1:] - df_b['low'].values[1:], 
-                          np.abs(df_b['high'].values[1:] - df_b['close'].values[:-1]))
+        ratio = std_short / std_long if std_long > 0 else 1.0
+        # If short-term volatility spikes, we scale up the required z-score threshold
+        return float(base_z_entry * (1.0 + gamma * max(0.0, ratio - 1.0)))
+
+def calculate_half_life(spread_history) -> float:
+    """
+    Fits the spread history to an AR(1) process and returns the half-life of mean reversion.
+    y_t = alpha + beta * y_{t-1} + e_t
+    reversion_speed theta = -ln(beta)
+    half_life H = ln(2) / theta
+    """
+    if len(spread_history) < 50:
+        return 45.0  # Default fallback half-life (45 bars = ~3.75 hours on M5)
+    
+    y = np.array(spread_history[1:])
+    x = np.array(spread_history[:-1])
+    
+    try:
+        # Run linear regression: y = beta * x + alpha
+        X = np.vstack([x, np.ones(len(x))]).T
+        beta, alpha = np.linalg.lstsq(X, y, rcond=None)[0]
         
-        atr_a = float(np.mean(tr_a[-14:]))
-        atr_b = float(np.mean(tr_b[-14:]))
-        
-        atr_ratio = (atr_a / atr_b) if atr_b > 0 else 1.0
-        
-        adjusted_beta = float(abs(raw_beta) * atr_ratio)
-        return adjusted_beta
+        if 0 < beta < 1:
+            theta = -np.log(beta)
+            half_life = np.log(2) / theta
+            return float(np.clip(half_life, 5, 200))
     except Exception:
-        return 1.0
+        pass
+    return 45.0
 
 def test_cointegration(y, x):
     """
@@ -177,3 +201,62 @@ def calculate_obi(bids, asks, depth=5):
         
     obi = (weighted_bid - weighted_ask) / denom
     return float(obi)
+
+def is_turning_point_confirmed(z_history, z_threshold=1.50, action="BUY_SPREAD"):
+    """
+    Checks if Z-score has reached extreme threshold AND confirms that the spread trajectory
+    has inverted (turned back toward mean Z = 0.0).
+    
+    For BUY_SPREAD (Z <= -z_threshold):
+      Requires: min(z_history[-5:]) <= -z_threshold AND z_history[-1] > z_history[-2] (turning upward)
+      
+    For SELL_SPREAD (Z >= +z_threshold):
+      Requires: max(z_history[-5:]) >= z_threshold AND z_history[-1] < z_history[-2] (turning downward)
+    """
+    if len(z_history) < 3:
+        return False
+        
+    recent_z = z_history[-5:]
+    curr_z = z_history[-1]
+    prev_z = z_history[-2]
+    
+    if action == "BUY_SPREAD":
+        reached_extreme = min(recent_z) <= -z_threshold
+        turning_up = curr_z > prev_z
+        return reached_extreme and turning_up
+        
+    elif action == "SELL_SPREAD":
+        reached_extreme = max(recent_z) >= z_threshold
+        turning_down = curr_z < prev_z
+        return reached_extreme and turning_down
+        
+    return False
+
+
+def calculate_atr_volatility_ratio(df):
+    """
+    Calculates the 14-bar ATR vs 50-bar baseline ATR ratio to detect market volatility spikes.
+    Returns: (ratio: float, is_spike: bool) where is_spike is True if ratio >= 1.30.
+    """
+    if df is None or len(df) < 50:
+        return 1.0, False
+    try:
+        highs = df['high'].values
+        lows = df['low'].values
+        closes = df['close'].values
+        
+        tr1 = highs[1:] - lows[1:]
+        tr2 = np.abs(highs[1:] - closes[:-1])
+        tr3 = np.abs(lows[1:] - closes[:-1])
+        tr = np.maximum(tr1, np.maximum(tr2, tr3))
+        
+        atr14 = np.mean(tr[-14:])
+        atr50 = np.mean(tr[-50:])
+        
+        if atr50 <= 0:
+            return 1.0, False
+            
+        ratio = float(atr14 / atr50)
+        return ratio, (ratio >= 1.30)
+    except Exception:
+        return 1.0, False

@@ -731,6 +731,7 @@ def reset_database_metrics_for_new_account(login_id, equity):
         if conn:
             conn.close()
 
+
 def update_bot_volatility_toggles(vol_enabled: bool, knife_enabled: bool):
     """
     Updates volatility_filter_enabled and knife_protection_enabled in bot_state table

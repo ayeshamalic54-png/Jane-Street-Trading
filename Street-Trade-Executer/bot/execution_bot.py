@@ -116,137 +116,58 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
         logger.error(f"Order failed after trying all filling modes: {err_comment}")
     return None
 
-def send_pending_limit_order(symbol, order_type, price, volume, sl, tp, comment):
-    """Submits pending limit order (BUY_LIMIT / SELL_LIMIT) to MT5 for anti-clustering grid."""
-    mt5.symbol_select(symbol, True)
-    filling_modes = [
-        mt5.ORDER_FILLING_FOK,
-        mt5.ORDER_FILLING_IOC,
-        mt5.ORDER_FILLING_RETURN
-    ]
-    request = {
-        "action": mt5.TRADE_ACTION_PENDING,
-        "symbol": symbol,
-        "volume": volume,
-        "type": order_type,
-        "price": price,
-        "sl": sl,
-        "tp": tp,
-        "deviation": 10,
-        "magic": MAGIC_NUMBER,
-        "comment": comment,
-        "type_time": mt5.ORDER_TIME_GTC,
-    }
-    result = None
-    for mode in filling_modes:
-        request["type_filling"] = mode
-        result = mt5.order_send(request)
-        if result and result.retcode == mt5.TRADE_RETCODE_DONE:
-            logger.info(f"Pending limit order placed successfully for {symbol} at {price:.5f} ({comment})")
-            return result
-    if result:
-        logger.error(f"Failed to place pending limit order for {symbol}: {result.comment}")
-    return None
-
-def cancel_pending_ladder_orders(symbol=None):
-    """Cancels any active pending limit orders for Jane Street 3-part ladder when TP1 is hit."""
-    try:
-        orders = mt5.orders_get()
-        if not orders:
-            return
-        for order in orders:
-            comment = str(order.comment).upper()
-            if (order.magic == MAGIC_NUMBER or "JS_" in comment or "JANE" in comment) and ("LIMIT" in comment or "TP2" in comment or "TP3" in comment):
-                req = {
-                    "action": mt5.TRADE_ACTION_REMOVE,
-                    "order": order.ticket,
-                    "magic": MAGIC_NUMBER
-                }
-                res = mt5.order_send(req)
-                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    logger.info(f"[LADDER CLEANUP] Successfully cancelled pending ladder order ticket {order.ticket} for {order.symbol}")
-    except Exception as e:
-        logger.error(f"Error cancelling pending ladder orders: {e}")
-
 def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots, tp1, tp2, tp3, signal_id=None):
     """
-    Executes anti-clustering staggered 3-part laddering:
-    - Part 1: Market Order immediately on signal (SL: 22 pips, TP: 33 pips).
-    - Part 2: Pending Limit Order 4 Pips away against entry direction (SL: 22 pips, TP: 33 pips).
-    - Part 3: Pending Limit Order 8 Pips away against entry direction (SL: 22 pips, TP: 33 pips).
+    Executes a trade split into three parts (TP1, TP2, TP3) for scaling out.
+    Also logs the trade entry to the PostgreSQL database.
+    Returns (success_boolean, total_filled_lots).
     """
     order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
+    part_lots = round(total_lots / 3.0, 2)
+    
+    # Ensure lot size satisfies broker minimums and volume step (e.g. 1.0 share step for Stock CFDs)
     from risk_safeguards import round_volume
-    part_lots = round_volume(symbol, round(total_lots / 3.0, 2))
+    part_lots = round_volume(symbol, part_lots)
 
-    logger.info(f"Executing Anti-Clustering 3-Part Laddering | Total Lots: {total_lots} | Part Lots: {part_lots}")
-    logger.info(f"Part 1 Entry: {entry_price:.5f} | SL: {sl_price:.5f} | TP1: {tp1:.5f}")
+    logger.info(f"Executing 3-part quantitative trade | Total Lots: {total_lots} | Part Lots: {part_lots}")
+    logger.info(f"Entry: {entry_price:.5f} | SL: {sl_price:.5f}")
+    logger.info(f"TP1: {tp1:.5f} | TP2: {tp2:.5f} | TP3: {tp3:.5f}")
 
-    total_filled_lots = 0.0
+    parts = [("TP1", tp1), ("TP2", tp2), ("TP3", tp3)]
     success = False
+    total_filled_lots = 0.0
 
-    # 1. Part 1: Immediate Market Order
-    res1 = send_order(symbol, order_type, entry_price, part_lots, sl_price, tp1, "JaneStreet TP1")
-    if res1 and res1.retcode == mt5.TRADE_RETCODE_DONE:
-        ticket1 = res1.order
-        filled1 = getattr(res1, 'volume', part_lots) or part_lots
-        filled1 = round_volume(symbol, filled1)
-        total_filled_lots += filled1
-        log_trade_entry(
-            ticket=ticket1, symbol=symbol, order_type="BUY" if is_long else "SELL",
-            lots=filled1, entry_price=entry_price, entry_time=datetime.datetime.now(),
-            comment="JaneStreet TP1", signal_id=signal_id
-        )
-        logger.info(f"Part 1 Market Order Executed: {ticket1} ({filled1} lots)")
-        success = True
-    else:
-        err_msg = res1.comment if res1 else "No response"
-        logger.error(f"Failed to execute Part 1 Market Order: {err_msg}")
-        return False, 0.0
+    for part_name, tp_val in parts:
+        # Pass the actual tp_val so the MT5 broker server executes the target exit reliably!
+        res = send_order(symbol, order_type, entry_price, part_lots, sl_price, tp_val, f"JS_{part_name}")
+        if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+            ticket = res.order
+            filled_lots = getattr(res, 'volume', part_lots)
+            if filled_lots <= 0:
+                filled_lots = part_lots
+            filled_lots = round_volume(symbol, filled_lots)
+            total_filled_lots += filled_lots
 
-    # 2. Determine Pip Size for Pending Limits (4 Pips & 8 Pips)
-    info = mt5.symbol_info(symbol)
-    pip_size = (info.point * 10.0) if (info and info.point > 0) else (0.01 if "JPY" in symbol.upper() else 0.0001)
+            if filled_lots < part_lots:
+                logger.warning(f"[MARGIN AUTO-RESCALE] {part_name} volume was auto-scaled from {part_lots} to {filled_lots}. Adjusting subsequent TP parts to {filled_lots} lots.")
+                part_lots = filled_lots
 
-    if is_long:
-        p2_price = entry_price - (4.0 * pip_size)
-        p2_sl = p2_price - (22.0 * pip_size)
-        p2_tp = p2_price + (33.0 * pip_size)
-        p2_type = mt5.ORDER_TYPE_BUY_LIMIT
-
-        p3_price = entry_price - (8.0 * pip_size)
-        p3_sl = p3_price - (22.0 * pip_size)
-        p3_tp = p3_price + (33.0 * pip_size)
-        p3_type = mt5.ORDER_TYPE_BUY_LIMIT
-    else:
-        p2_price = entry_price + (4.0 * pip_size)
-        p2_sl = p2_price + (22.0 * pip_size)
-        p2_tp = p2_price - (33.0 * pip_size)
-        p2_type = mt5.ORDER_TYPE_SELL_LIMIT
-
-        p3_price = entry_price + (8.0 * pip_size)
-        p3_sl = p3_price + (22.0 * pip_size)
-        p3_tp = p3_price - (33.0 * pip_size)
-        p3_type = mt5.ORDER_TYPE_SELL_LIMIT
-
-    # 3. Part 2: Pending Limit Order (4 Pips away)
-    res2 = send_pending_limit_order(symbol, p2_type, p2_price, part_lots, p2_sl, p2_tp, "JaneStreet TP2_LIMIT")
-    if res2 and res2.retcode == mt5.TRADE_RETCODE_DONE:
-        log_trade_entry(
-            ticket=res2.order, symbol=symbol, order_type="BUY" if is_long else "SELL",
-            lots=part_lots, entry_price=p2_price, entry_time=datetime.datetime.now(),
-            comment="JaneStreet TP2_LIMIT", signal_id=signal_id
-        )
-
-    # 4. Part 3: Pending Limit Order (8 Pips away)
-    res3 = send_pending_limit_order(symbol, p3_type, p3_price, part_lots, p3_sl, p3_tp, "JaneStreet TP3_LIMIT")
-    if res3 and res3.retcode == mt5.TRADE_RETCODE_DONE:
-        log_trade_entry(
-            ticket=res3.order, symbol=symbol, order_type="BUY" if is_long else "SELL",
-            lots=part_lots, entry_price=p3_price, entry_time=datetime.datetime.now(),
-            comment="JaneStreet TP3_LIMIT", signal_id=signal_id
-        )
-
+            log_trade_entry(
+                ticket=ticket,
+                symbol=symbol,
+                order_type="BUY" if is_long else "SELL",
+                lots=filled_lots,
+                entry_price=entry_price,
+                entry_time=datetime.datetime.now(),
+                comment=f"JaneStreet {part_name}",
+                signal_id=signal_id
+            )
+            logger.info(f"Successfully executed {part_name} order ({filled_lots} lots | Server TP and SL set; 140s / 2m20s hold enforced). Ticket: {ticket}")
+            success = True
+        else:
+            err_msg = res.comment if res else "No response"
+            logger.error(f"Failed to execute {part_name} order: {err_msg}")
+            
     return success, total_filled_lots
 
 def close_all_positions(symbol, comment_filter="JS_"):
@@ -574,3 +495,4 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
     err_comment = res.comment if res else "No response"
     logger.error(f"Failed to close position ticket {ticket}: {err_comment}")
     return False
+

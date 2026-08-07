@@ -1208,20 +1208,6 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     exit_triggered = True
                     exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} >= {effective_z_sl:.2f})"
 
-        # Check 30-Minute Time-Decay Exit when SMC Confluence is OFF
-        if not REQUIRE_SMC_CONFLUENCE and not exit_triggered:
-            for t in trades:
-                entry_t = t["entry_time"]
-                if entry_t is not None:
-                    if hasattr(entry_t, "tzinfo") and entry_t.tzinfo is not None:
-                        elapsed = abs((datetime.datetime.now(datetime.timezone.utc) - entry_t).total_seconds())
-                    else:
-                        elapsed = abs((datetime.datetime.utcnow() - entry_t).total_seconds())
-                    if elapsed >= 1800.0:  # 30 minutes
-                        exit_triggered = True
-                        exit_reason = f"30MIN_SMC_OFF_TIME_DECAY (elapsed {elapsed/60:.1f}m >= 30m limit)"
-                        break
-
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
         min_hold_ok = True
         for t in trades:
@@ -1245,9 +1231,6 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
             for t_b in open_leg_b_trades:
                 close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
-                
-            from execution_bot import cancel_pending_ladder_orders
-            cancel_pending_ladder_orders(sym_a)
                 
             # Sync closed details immediately to database
             try:
@@ -1905,11 +1888,16 @@ def main():
             except Exception:
                 pass
 
-            # ── EMERGENCY HARD FLOATING LOSS SAFEGUARD (-$175.00 USD MAX CAP) ──
+            # ── EMERGENCY HARD DRAWDOWN & FLOATING LOSS SAFEGUARD ($175.00 / 1.75% MAX CAP) ──
             if has_positions and active_js_positions:
                 try:
+                    from risk_safeguards import get_or_create_daily_start_equity
+                    start_eq_guard = get_or_create_daily_start_equity(acc_info.equity)
+                    daily_loss_usd = start_eq_guard - acc_info.equity
+                    daily_loss_pct = (daily_loss_usd / start_eq_guard) * 100.0 if start_eq_guard > 0 else 0.0
+                    
                     if floating_profit <= -175.0:
-                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) breached safety cap (-$175.00 USD). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
+                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) breached safety cap (-$175.00). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
                         for pos in active_js_positions:
                             pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
                             close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
@@ -2223,13 +2211,6 @@ def main():
                 if action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved):
                     cand_cat_a = get_symbol_category(s_a_resolved)
                     cand_cat_b = get_symbol_category(s_b_resolved)
-                    if cand_cat_a == "metals" or cand_cat_b == "metals":
-                        from math_models import calculate_metals_dynamic_beta
-                        m_beta = calculate_metals_dynamic_beta(r_df_a if 'r_df_a' in locals() else None, r_df_b if 'r_df_b' in locals() else None)
-                        if m_beta < 0.85:
-                            logger.warning(f"[METALS BETA GUARD] Dynamic Metals Beta ({m_beta:.4f}) < 0.85 limit for {s_a}/{s_b}. HALTING execution on XAUUSD to prevent single-leg drag.")
-                            continue
-
                     if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)) and (cand_cat_b == "crypto" or is_spread_valid(s_b_resolved)):
                         candidate_signals.append({
                             "pair": (s_a, s_b),
@@ -2412,7 +2393,7 @@ def main():
                                         opp_side_b = "BUY" if side_b == "SELL" else "SELL"
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
-                                    res_hedge = send_order(S_B, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
+                                    res_hedge = send_order(S_B, order_type_b, price_b, qty_b, 0.0, 0.0, "JS_HEDGE")
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
@@ -2465,7 +2446,7 @@ def main():
                                         tick_retry = mt5.symbol_info_tick(S_B_resolved)
                                         if tick_retry:
                                             price_b = tick_retry.ask if order_type_b == mt5.ORDER_TYPE_BUY else tick_retry.bid
-                                        # Set sl_b = 0.0 so Leg B is managed strictly alongside Leg A and never prematurely stopped out in loss
+                                            sl_b = price_b + sl_sign_b * sl_dist_b
                                         res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, 0.0, 0.0, "JS_HEDGE")
                                         if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                             log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
