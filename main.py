@@ -445,13 +445,16 @@ def is_market_open(symbol: str) -> bool:
             return True
             
         if not mt5.initialize():
-            return True
+            return False
             
         info = mt5.symbol_info(symbol)
         if info is None:
             return False
             
-        if info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
+        if hasattr(mt5, "SYMBOL_TRADE_MODE_FULL"):
+            if info.trade_mode != mt5.SYMBOL_TRADE_MODE_FULL:
+                return False
+        elif info.trade_mode in (mt5.SYMBOL_TRADE_MODE_DISABLED, mt5.SYMBOL_TRADE_MODE_CLOSEONLY):
             return False
             
         tick = mt5.symbol_info_tick(symbol)
@@ -459,14 +462,14 @@ def is_market_open(symbol: str) -> bool:
             return False
             
         import time
-        # If last tick is older than 5 minutes (300 seconds), market for this asset is closed!
-        if (time.time() - tick.time) > 300:
+        # If last tick is older than 3 minutes (180 seconds), market for this asset is closed!
+        if (time.time() - tick.time) > 180:
             return False
             
         return True
     except Exception as e:
         logger.warning(f"Error checking is_market_open for {symbol}: {e}")
-        return True
+        return False
 
 EXPECTED_BETA_SIGN = {
     "EURUSD/GBPUSD": 1,
@@ -2318,8 +2321,11 @@ def main():
                     cat_a_new = get_symbol_category(S_A)
                     cat_b_new = get_symbol_category(S_B)
                     S_A_resolved = resolve_broker_symbol(S_A) if cat_a_new != "crypto" else S_A
-                    S_B_resolved = resolve_broker_symbol(S_B) if cat_b_new != "crypto" else S_B
-                    
+                    # Pre-execution market open check
+                    if not is_market_open(S_A_resolved) or not is_market_open(S_B_resolved):
+                        logger.warning(f"Market closed for {S_A_resolved}/{S_B_resolved}. Aborting trade execution.")
+                        continue
+
                     # Log signal
                     signal_id = log_signal(
                         S_A, S_B, 
