@@ -2097,21 +2097,22 @@ def main():
                     else:
                         beta, alpha, spread = 1.0, 0.0, p_a - p_b
 
-                # SMC update
-                if s_a_resolved not in SMC_ZONES_CACHE or smc_counter_cache.get(s_a_resolved, 0) >= 15:
-                    try:
-                        if cat_a == "crypto":
-                            r_df = get_binance_rates_df(s_a_resolved, timeframe_minutes=5, count=100)
-                        else:
-                            r_df = get_rates_df(s_a_resolved, SMC_TIMEFRAME, count=100)
-                        if r_df is not None and not r_df.empty:
-                            SMC_ZONES_CACHE[s_a_resolved] = detect_smc_zones(r_df)
-                            log_fvg_zones(s_a_resolved, SMC_ZONES_CACHE[s_a_resolved])
-                        smc_counter_cache[s_a_resolved] = 0
-                    except Exception as e:
-                        logger.error(f"SMC scan error for {s_a_resolved}: {e}")
-                else:
-                    smc_counter_cache[s_a_resolved] = smc_counter_cache.get(s_a_resolved, 0) + 1
+                # SMC update (Only run if SMC Confluence is enabled on Dashboard)
+                if REQUIRE_SMC_CONFLUENCE:
+                    if s_a_resolved not in SMC_ZONES_CACHE or smc_counter_cache.get(s_a_resolved, 0) >= 15:
+                        try:
+                            if cat_a == "crypto":
+                                r_df = get_binance_rates_df(s_a_resolved, timeframe_minutes=5, count=100)
+                            else:
+                                r_df = get_rates_df(s_a_resolved, SMC_TIMEFRAME, count=100)
+                            if r_df is not None and not r_df.empty:
+                                SMC_ZONES_CACHE[s_a_resolved] = detect_smc_zones(r_df)
+                                log_fvg_zones(s_a_resolved, SMC_ZONES_CACHE[s_a_resolved])
+                            smc_counter_cache[s_a_resolved] = 0
+                        except Exception as e:
+                            logger.error(f"SMC scan error for {s_a_resolved}: {e}")
+                    else:
+                        smc_counter_cache[s_a_resolved] = smc_counter_cache.get(s_a_resolved, 0) + 1
 
                 # Signal check
                 obi_a = calculate_obi(bids_a_scan, asks_a_scan, depth=5)
