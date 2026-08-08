@@ -122,6 +122,14 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
     Also logs the trade entry to the PostgreSQL database.
     Returns (success_boolean, total_filled_lots).
     """
+    # Pre-execution 80% Maximum Margin Usage Safeguard (Prop Firm Compliance)
+    acc = mt5.account_info()
+    if acc and acc.equity > 0:
+        current_margin_used_pct = (acc.margin / acc.equity) * 100.0
+        if current_margin_used_pct >= 80.0:
+            logger.error(f"[MARGIN BREACH GUARD] Current margin usage ({current_margin_used_pct:.1f}%) exceeds 80.0% prop firm max limit! Aborting trade execution to protect account.")
+            return False, 0.0
+
     order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
     part_lots = round(total_lots / 3.0, 2)
     
