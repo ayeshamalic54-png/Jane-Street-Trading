@@ -197,6 +197,8 @@ def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
                 # Block from pre_minutes before (15m) to post_minutes after (30m)
                 if -post_minutes <= diff_minutes <= pre_minutes:
                     reason = f"{country} HIGH IMPACT NEWS ({event_title})"
+                    mins = max(1, int(round(diff_minutes)))
+                    logger.info(f"📰 HIGH-IMPACT NEWS IMMINENT: High impact {country} news ({event_title}) in {mins}m. Blocking new trade entries to protect capital.")
                     return True, reason, country, event_title
             except Exception:
                 pass

@@ -14,6 +14,7 @@ from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_vali
 from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order
 from smc_indicators import detect_smc_zones, is_price_in_zones
 from database import log_signal, get_connection
+from news_guard import check_pair_news_block
 
 # Setup Logging
 logger = logging.getLogger("SMC_Forex_Bot")
@@ -154,7 +155,6 @@ class DashboardAPIHandler(BaseHTTPRequestHandler):
 
 def run_api_server():
     server = ThreadingHTTPServer(('localhost', 8081), DashboardAPIHandler) # API runs on 8081
-    print("-> Background API Server listening on http://localhost:8081")
     server.serve_forever()
 
 # ==============================================================================
@@ -334,7 +334,8 @@ def main():
             active_js_positions = [p for p in positions if p.magic == MAGIC_NUMBER] if positions else []
             
             if len(active_js_positions) == 0 and trades_today < MAX_DAILY_TRADES:
-                if is_spread_valid(S_A) and is_spread_valid(S_B):
+                is_news_blocked, news_reason, _, _ = check_pair_news_block([S_A, S_B])
+                if not is_news_blocked and is_spread_valid(S_A) and is_spread_valid(S_B):
                     in_bullish_zone = True
                     in_bearish_zone = True
                     
