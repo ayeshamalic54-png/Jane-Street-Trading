@@ -2013,13 +2013,28 @@ def main():
 
                         should_adv_close, adv_reason = check_adverse_regime_exit(current_pair_context, dir_str, current_z_val, current_v_val, t_age)
                         if should_adv_close:
-                            logger.warning(f"[PAIR-SPECIFIC ADVERSE EXIT] {adv_reason}. AUTO-CLOSING ONLY {current_pair_context} POSITIONS BEFORE SL REACHED!")
+                            logger.warning(f"[PAIR-SPECIFIC ADVERSE EXIT] {adv_reason}. AUTO-CLOSING ALL 4 TICKETS (3 TP LEGS + 1 HEDGE LEG) FOR PAIR {current_pair_context} ONLY!")
+                            
+                            # Query DB for open tickets belonging strictly to this pair (3 TP tickets + 1 Hedge ticket)
+                            conn_pair_tkts = get_connection()
+                            cur_pair_tkts = conn_pair_tkts.cursor()
+                            cur_pair_tkts.execute("SELECT ticket, symbol, order_type FROM trades WHERE status = 'OPEN' AND (UPPER(SPLIT_PART(symbol, '.', 1)) = %s OR UPPER(SPLIT_PART(symbol, '.', 1)) = %s)", (S_A_resolved.upper().split('.')[0], S_B_resolved.upper().split('.')[0]))
+                            pair_db_rows = cur_pair_tkts.fetchall()
+                            cur_pair_tkts.close()
+                            conn_pair_tkts.close()
+                            
+                            target_tickets = {row[0] for row in pair_db_rows}
                             pair_syms = {S_A_resolved.upper().split('.')[0], S_B_resolved.upper().split('.')[0]}
+                            
                             for pos in active_js_positions:
                                 pos_base = pos.symbol.upper().split('.')[0]
-                                if pos_base in pair_syms:
+                                pos_tkt = int(pos.ticket)
+                                # Close ONLY the 4 tickets belonging to this specific pair (3 TP + 1 Hedge)
+                                if pos_tkt in target_tickets or pos_base in pair_syms:
                                     pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+                                    logger.info(f"Closing adverse exit ticket {pos.ticket} ({pos.symbol} {pos.volume} lots)...")
                                     close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+
 
                 except Exception as ex_adv:
                     logger.error(f"Error evaluating adverse regime exit: {ex_adv}")
