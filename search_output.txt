@@ -1,0 +1,8 @@
+G:\google antigravity\jane_street_trading_system\data_ingestion.py:47:        logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")
+G:\google antigravity\jane_street_trading_system\risk_safeguards.py:113:        logger.critical(f"HARD DAILY LIMIT BREACHED: Daily Loss is ${daily_loss:.2f} USD (Hard Limit: ${MAX_DAILY_LOSS_USD} USD / {MAX_DAILY_LOSS_PERCENT}%)")
+G:\google antigravity\jane_street_trading_system\Street-Trade-Executer\trading\bot\data_ingestion.py:53:            logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")
+G:\google antigravity\jane_street_trading_system\trading\bot\data_ingestion.py:53:            logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")
+G:\google antigravity\jane_street_trading_system\trading\bot\scratch\fix_mt5_initialization_fallback.py:22:        logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")
+G:\google antigravity\jane_street_trading_system\trading\bot\scratch\fix_mt5_initialization_fallback.py:44:        logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")
+G:\google antigravity\jane_street_trading_system\trading\bot\scratch\patch_mt5_initialize_path.py:33:            logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")
+G:\google antigravity\jane_street_trading_system\trading\bot\Street-Trade-Executer\bot\data_ingestion.py:47:        logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")

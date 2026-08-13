@@ -555,9 +555,6 @@ def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, c
             f"📦 **Size:** `{lots:.2f} lots` ({order_type})\n"
             f"💵 **Entry Price:** `{entry_price:.5f}`\n"
         )
-        import logging
-        lg = logging.getLogger("SMC_Forex_Bot")
-        lg.info(f"🚀 [TRADE OPENED CONSOLE LOG] Ticket: {ticket} | Symbol: {symbol} ({comment}) | Type: {order_type} | Lots: {lots:.2f} | Entry: {entry_price:.5f}")
         send_discord_message(disc_msg)
     except Exception as e:
         print(f"Error logging trade entry: {e}")
@@ -594,9 +591,6 @@ def log_trade_exit(ticket, close_price, profit, close_time):
         SET close_price = %s, profit = %s, close_time = %s, status = 'CLOSED'
         WHERE ticket = %s
     """
-    import logging
-    lg = logging.getLogger("SMC_Forex_Bot")
-    lg.info(f"🛑 [TRADE CLOSED CONSOLE LOG] Ticket: {ticket} | Exit Price: {close_price:.5f} | PnL: ${profit:.2f}")
     conn = None
     try:
         conn = get_connection()
@@ -614,31 +608,27 @@ def log_trade_exit(ticket, close_price, profit, close_time):
 
 def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_count, login_id=0):
     """Updates the daily challenge metrics in database for a specific login_id."""
+    query = """
+        INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (trading_date, mt5_login) DO UPDATE
+        SET start_equity = EXCLUDED.start_equity,
+            current_equity = EXCLUDED.current_equity,
+            max_drawdown_percent = GREATEST(daily_metrics.max_drawdown_percent, EXCLUDED.max_drawdown_percent),
+            trades_today = EXCLUDED.trades_today,
+            updated_at = CURRENT_TIMESTAMP
+    """
     def _do_update():
         conn = None
         try:
             conn = get_connection()
             cur = conn.cursor()
             login_val = int(login_id) if login_id else 0
-            cur.execute("SELECT trading_date FROM daily_metrics WHERE trading_date = %s AND mt5_login = %s", (date_obj, login_val))
-            row = cur.fetchone()
-            if row:
-                update_q = """
-                    UPDATE daily_metrics
-                    SET start_equity = %s,
-                        current_equity = %s,
-                        max_drawdown_percent = GREATEST(max_drawdown_percent, %s),
-                        trades_today = %s,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE trading_date = %s AND mt5_login = %s
-                """
-                cur.execute(update_q, (float(start_equity), float(current_equity), float(max_dd), int(trades_count), date_obj, login_val))
-            else:
-                insert_q = """
-                    INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                """
-                cur.execute(insert_q, (date_obj, login_val, float(start_equity), float(current_equity), float(max_dd), int(trades_count)))
+            cur.execute(query, (
+                date_obj, login_val,
+                float(start_equity), float(current_equity),
+                float(max_dd), int(trades_count)
+            ))
             conn.commit()
             cur.close()
         except Exception as e:

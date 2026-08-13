@@ -185,37 +185,3 @@ def is_price_in_zones(price, zones):
         if low <= price <= high:
             return True
     return False
-
-def detect_pinbar_rejection(df):
-    """
-    Checks if the last completed candle exhibits an adverse pin-bar wick rejection trap.
-    Returns:
-       has_bullish_rejection (bool): Large lower wick (supports BUY, traps SELL)
-       has_bearish_rejection (bool): Large upper wick (supports SELL, traps BUY)
-    """
-    if df is None or len(df) < 2:
-        return False, False
-
-    last_row = df.iloc[-1]
-    open_p = float(last_row['open'])
-    high_p = float(last_row['high'])
-    low_p = float(last_row['low'])
-    close_p = float(last_row['close'])
-
-    total_range = high_p - low_p
-    if total_range <= 0:
-        return False, False
-
-    body_top = max(open_p, close_p)
-    body_bottom = min(open_p, close_p)
-
-    upper_wick = high_p - body_top
-    lower_wick = body_bottom - low_p
-
-    # If lower wick is >= 40% of total candle range -> Strong Bullish Rejection
-    has_bullish_rejection = (lower_wick / total_range) >= 0.40
-
-    # If upper wick is >= 40% of total candle range -> Strong Bearish Rejection
-    has_bearish_rejection = (upper_wick / total_range) >= 0.40
-
-    return has_bullish_rejection, has_bearish_rejection

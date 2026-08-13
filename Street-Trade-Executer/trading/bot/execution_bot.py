@@ -11,20 +11,11 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
     # Ensure symbol is active and selected in MT5 Market Watch
     mt5.symbol_select(symbol, True)
     
-    info = mt5.symbol_info(symbol)
-    if info and hasattr(mt5, "SYMBOL_TRADE_MODE_FULL"):
-        if info.trade_mode != mt5.SYMBOL_TRADE_MODE_FULL:
-            logger.warning(f"[MARKET CLOSED GUARD] Aborting order for {symbol}: Trade mode disabled.")
-            return None
-
-    tick = mt5.symbol_info_tick(symbol)
-    if not tick or tick.bid <= 0.0 or tick.ask <= 0.0:
-        logger.warning(f"[MARKET CLOSED GUARD] Aborting order for {symbol}: Live prices unavailable.")
-        return None
-
     # If price is 0.0 or outdated, re-fetch live tick
     if price is None or price <= 0:
-        price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+        tick = mt5.symbol_info_tick(symbol)
+        if tick:
+            price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
 
     filling_modes = [
         mt5.ORDER_FILLING_FOK,
@@ -408,7 +399,7 @@ def get_filling_modes_for_symbol(symbol):
     return modes
 
 
-def close_position_by_ticket(symbol, ticket, volume_to_close, force_bypass_hold=False):
+def close_position_by_ticket(symbol, ticket, volume_to_close):
     """Closes a specific MT5 position by its ticket (fully or partially). Handles FOK/IOC/RETURN filling modes and market closed status."""
     mt5.symbol_select(symbol, True)
     positions = mt5.positions_get(ticket=int(ticket))
@@ -449,7 +440,7 @@ def close_position_by_ticket(symbol, ticket, volume_to_close, force_bypass_hold=
     # ── STRICT BLUE GUARDIAN 140s (2m 20s) HOLD RULE GUARD ──
     # Prevents closing any position before 140 seconds have elapsed to avoid prop firm account breach
     pos_time = getattr(pos, "time", 0)
-    if pos_time > 0 and not force_bypass_hold:
+    if pos_time > 0:
         import time as pytime
         tick_pos = mt5.symbol_info_tick(symbol)
         now_time = tick_pos.time if (tick_pos and tick_pos.time > 0) else int(pytime.time())

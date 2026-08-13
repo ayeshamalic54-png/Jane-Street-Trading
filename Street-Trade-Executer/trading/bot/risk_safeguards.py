@@ -6,11 +6,9 @@ from database import update_daily_metrics, get_connection
 
 logger = logging.getLogger("SMC_Forex_Bot")
 
-# Maximum daily drawdown allowed before halting trading (0.78% Halt / 3.3% Max Limit)
-HALT_DAILY_DRAWDOWN_PCT = 0.78
-MAX_DAILY_DRAWDOWN_PCT = 3.30
-MAX_DAILY_LOSS_PERCENT = 0.78
-MAX_FLOATING_LOSS_USD = 50.0
+# Maximum daily drawdown allowed before halting trading (1.75% / $175.00 max loss cap on $10k account)
+MAX_DAILY_LOSS_PERCENT = 1.75
+MAX_FLOATING_LOSS_USD = 175.0
 # Maximum number of trades allowed per day
 MAX_DAILY_TRADES = 3
 # Risk percentage per trade (e.g. 1.0% of account equity)
@@ -303,24 +301,3 @@ def is_spread_valid(symbol):
         return False
         
     return True
-
-def is_in_rollover_period() -> bool:
-    """Returns True if current time is during broker daily rollover (21:00 to 22:30 UTC / 2:00 AM to 3:30 AM PKT)."""
-    try:
-        now_utc = datetime.datetime.now(datetime.timezone.utc).time()
-        return datetime.time(21, 0) <= now_utc <= datetime.time(22, 30)
-    except Exception:
-        return False
-
-def calculate_dynamic_risk_lots(symbol: str, sl_pips: float, risk_usd: float = 50.0) -> float:
-    """Calculates lot size dynamically so max loss never exceeds exact risk_usd ($50.00 USD)."""
-    info = mt5.symbol_info(symbol)
-    if not info or sl_pips <= 0:
-        return 0.01
-    pip_size = get_pip_size(symbol)
-    contract_size = info.trade_contract_size if (info.trade_contract_size and info.trade_contract_size > 0) else 100000.0
-    pip_value_per_lot = pip_size * contract_size
-    if pip_value_per_lot <= 0:
-        return 0.01
-    lots = risk_usd / (sl_pips * (pip_value_per_lot / (contract_size * (info.point if info.point > 0 else 0.00001))))
-    return round_volume(symbol, lots)
