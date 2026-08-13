@@ -435,13 +435,13 @@ def check_adverse_regime_exit(pair_str, direction, z_score, z_velocity, trade_ag
 
 _HEDGE_DIVERGENCE_COUNTERS = {}
 
-def evaluate_hedge_effectiveness(active_js_positions):
+def evaluate_hedge_effectiveness(active_js_positions, beta_val=None):
     """
-    Hedge-Effectiveness Monitoring Layer.
-    Treats 3 main orders as 1 strategy position and 1 hedge order as 1 hedge leg.
-    Continuously evaluates PnL offsetting performance using normalized returns.
-    If the hedge is moving in a way that increases combined loss instead of offsetting main leg,
-    flags status as HEDGE INEFFECTIVE / HEDGE DIVERGENCE.
+    Hedge-Effectiveness Monitoring Layer (Detect + Log + Alert ONLY).
+    Continuously tracks Part-3 Main Leg entry/current price vs Hedge Leg entry/current price.
+    Evaluates beta-adjusted normalized price returns: (curr_p3 - entry_p3)/entry_p3 vs (curr_h - entry_h)/entry_h.
+    Determines if hedge price movement is offsetting Part-3 risk or creating additional adverse divergence.
+    Does NOT auto-close or alter baseline entry, Z-score, TP, SL, or lot sizing.
     """
     global _HEDGE_DIVERGENCE_COUNTERS
 
@@ -454,10 +454,25 @@ def evaluate_hedge_effectiveness(active_js_positions):
     if not main_positions or not hedge_positions:
         return
 
+    # Identify Part 3 position (comment containing TP3 or fallback to last main position)
+    part3_positions = [p for p in main_positions if "TP3" in str(p.comment).upper()]
+    part3_pos = part3_positions[0] if part3_positions else main_positions[-1]
+    hedge_pos = hedge_positions[0]
+
     main_sym = main_positions[0].symbol.upper().split('.')[0]
-    hedge_sym = hedge_positions[0].symbol.upper().split('.')[0]
+    hedge_sym = hedge_pos.symbol.upper().split('.')[0]
     pair_key = f"{main_sym}/{hedge_sym}"
 
+    # Price tracking: Part 3 Entry/Current Price vs Hedge Entry/Current Price
+    entry_p3 = float(part3_pos.price_open) if hasattr(part3_pos, 'price_open') and part3_pos.price_open else 1.0
+    curr_p3 = float(part3_pos.price_current) if hasattr(part3_pos, 'price_current') and part3_pos.price_current else entry_p3
+    ret_p3 = ((curr_p3 - entry_p3) / entry_p3) if entry_p3 > 0 else 0.0
+
+    entry_h = float(hedge_pos.price_open) if hasattr(hedge_pos, 'price_open') and hedge_pos.price_open else 1.0
+    curr_h = float(hedge_pos.price_current) if hasattr(hedge_pos, 'price_current') and hedge_pos.price_current else entry_h
+    ret_h = ((curr_h - entry_h) / entry_h) if entry_h > 0 else 0.0
+
+    # PnL accounting: 3 Main Orders Sum vs 1 Hedge Order
     main_pnl = sum(float(p.profit) for p in main_positions)
     hedge_pnl = sum(float(p.profit) for p in hedge_positions)
     net_pnl = main_pnl + hedge_pnl
@@ -465,17 +480,32 @@ def evaluate_hedge_effectiveness(active_js_positions):
     is_ineffective = False
     status_str = "HEDGE EFFECTIVE (Normal Risk Offset)"
 
-    # Condition 1: Both legs losing simultaneously (Double-sided loss)
-    if main_pnl < -2.0 and hedge_pnl < -2.0:
+    # Price-based & PnL-based divergence evaluation
+    # Condition 1: Both Part-3 and Hedge prices move in adverse directions simultaneously
+    is_part3_adverse = (part3_pos.type == 0 and curr_p3 < entry_p3) or (part3_pos.type == 1 and curr_p3 > entry_p3)
+    is_hedge_adverse = (hedge_pos.type == 0 and curr_h < entry_h) or (hedge_pos.type == 1 and curr_h > entry_h)
+
+    if is_part3_adverse and is_hedge_adverse:
+        is_ineffective = True
+        status_str = f"HEDGE DIVERGENCE | Part-3 P ({entry_p3:.5f}->{curr_p3:.5f}) & Hedge P ({entry_h:.5f}->{curr_h:.5f}) both adverse!"
+
+    # Condition 2: Double-sided PnL loss
+    elif main_pnl < -2.0 and hedge_pnl < -2.0:
         is_ineffective = True
         status_str = "HEDGE DIVERGENCE (Double-Sided Loss)"
 
-    # Condition 2: Hedge loss severely exceeds main leg profit, dragging Net PnL negative
+    # Condition 3: Hedge loss severely over-drags main leg profit
     elif net_pnl < -5.0 and hedge_pnl < 0 and abs(hedge_pnl) > (1.3 * max(0.1, main_pnl)):
         is_ineffective = True
         status_str = "HEDGE INEFFECTIVE (Hedge Over-Dragging Main Profit)"
 
-    log_msg = f"HEDGE MONITOR | Main: {main_sym} | Hedge: {hedge_sym} | Main PnL: {main_pnl:+.2f} | Hedge PnL: {hedge_pnl:+.2f} | Net PnL: {net_pnl:+.2f} | Status: {status_str}"
+    log_msg = (
+        f"HEDGE MONITOR | Main: {main_sym} | Hedge: {hedge_sym} | "
+        f"Part3 P: {entry_p3:.5f}->{curr_p3:.5f} ({ret_p3*100:+.2f}%) | "
+        f"Hedge P: {entry_h:.5f}->{curr_h:.5f} ({ret_h*100:+.2f}%) | "
+        f"Main PnL: {main_pnl:+.2f} | Hedge PnL: {hedge_pnl:+.2f} | Net PnL: {net_pnl:+.2f} | "
+        f"Status: {status_str}"
+    )
 
     if is_ineffective:
         _HEDGE_DIVERGENCE_COUNTERS[pair_key] = _HEDGE_DIVERGENCE_COUNTERS.get(pair_key, 0) + 1
@@ -483,6 +513,7 @@ def evaluate_hedge_effectiveness(active_js_positions):
     else:
         _HEDGE_DIVERGENCE_COUNTERS[pair_key] = 0
         logger.info(log_msg)
+
 
 
 
