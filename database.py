@@ -292,6 +292,20 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
                 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                 CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, %s, %s, %s, %s
             )
+            ON CONFLICT (id) DO UPDATE SET
+                system_status      = EXCLUDED.system_status,
+                equity             = EXCLUDED.equity,
+                drawdown_percent   = EXCLUDED.drawdown_percent,
+                floating_profit    = EXCLUDED.floating_profit,
+                z_score            = EXCLUDED.z_score,
+                hedge_ratio        = EXCLUDED.hedge_ratio,
+                obi_a              = EXCLUDED.obi_a,
+                obi_b              = EXCLUDED.obi_b,
+                trades_today       = EXCLUDED.trades_today,
+                initial_balance    = EXCLUDED.initial_balance,
+                overall_drawdown   = EXCLUDED.overall_drawdown,
+                max_equity_peak    = EXCLUDED.max_equity_peak,
+                mt5_login          = EXCLUDED.mt5_login,
                 last_heartbeat     = CURRENT_TIMESTAMP,
                 updated_at         = CURRENT_TIMESTAMP
         """
@@ -381,6 +395,11 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
                 cur.execute("""
                     INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown, updated_at)
                     VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    ON CONFLICT (mt5_login) DO UPDATE SET
+                        initial_balance = EXCLUDED.initial_balance,
+                        max_equity_peak = EXCLUDED.max_equity_peak,
+                        overall_drawdown = EXCLUDED.overall_drawdown,
+                        updated_at = CURRENT_TIMESTAMP
                 """, (int(saved_login), float(initial_balance_val), float(max_equity_peak_val), float(overall_drawdown_val)))
                 
             conn.commit()
@@ -514,6 +533,7 @@ def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, c
     query = """
         INSERT INTO trades (ticket, symbol, order_type, lots, entry_price, entry_time, status, comment, signal_id)
         VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', %s, %s)
+        ON CONFLICT (ticket) DO NOTHING
     """
     conn = None
     try:
@@ -591,8 +611,9 @@ def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_
     query = """
         INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
         VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        ON CONFLICT (trading_date, mt5_login) DO UPDATE 
-        SET current_equity = EXCLUDED.current_equity,
+        ON CONFLICT (trading_date, mt5_login) DO UPDATE
+        SET start_equity = EXCLUDED.start_equity,
+            current_equity = EXCLUDED.current_equity,
             max_drawdown_percent = GREATEST(daily_metrics.max_drawdown_percent, EXCLUDED.max_drawdown_percent),
             trades_today = EXCLUDED.trades_today,
             updated_at = CURRENT_TIMESTAMP
@@ -627,6 +648,13 @@ def update_scanned_asset(symbol_pair, price_a, price_b, win_rate, z_score, actio
     query = """
         INSERT INTO scanned_assets (symbol_pair, price_a, price_b, win_rate, z_score, action, updated_at)
         VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (symbol_pair) DO UPDATE
+        SET price_a = EXCLUDED.price_a,
+            price_b = EXCLUDED.price_b,
+            win_rate = EXCLUDED.win_rate,
+            z_score = EXCLUDED.z_score,
+            action = EXCLUDED.action,
+            updated_at = CURRENT_TIMESTAMP
     """
     conn = None
     try:
@@ -669,6 +697,10 @@ def reset_database_metrics_for_new_account(login_id, equity):
         cur.execute("""
             INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown)
             VALUES (%s, %s, %s, %s)
+            ON CONFLICT (mt5_login) DO UPDATE
+            SET initial_balance = EXCLUDED.initial_balance,
+                max_equity_peak = EXCLUDED.max_equity_peak,
+                overall_drawdown = EXCLUDED.overall_drawdown
         """, (login_val, initial_balance_val, max_equity_peak_val, overall_drawdown_val))
         
         # 1. Update bot_state
@@ -682,7 +714,7 @@ def reset_database_metrics_for_new_account(login_id, equity):
         cur.execute("""
             INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
             VALUES (%s, %s, %s, %s, 0.0, 0)
-            ON CONFLICT (trading_date, mt5_login) DO UPDATE 
+            ON CONFLICT (trading_date, mt5_login) DO UPDATE
             SET start_equity = EXCLUDED.start_equity,
                 current_equity = EXCLUDED.current_equity,
                 max_drawdown_percent = 0.0,
