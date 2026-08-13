@@ -35,6 +35,8 @@ const configSchema = z.object({
   volatilityFilterEnabled: z.boolean().optional().default(true),
   defaultLots: z.coerce.number().min(0).max(500),
   maxDailyTrades: z.coerce.number().min(1).max(1000),
+  haltDrawdownLimit: z.coerce.number().min(0.1).max(10.0).optional().default(0.78),
+  maxDrawdownLimit: z.coerce.number().min(0.5).max(20.0).optional().default(3.30),
 });
 type ConfigFormValues = z.infer<typeof configSchema>;
 
@@ -206,6 +208,8 @@ export default function Config() {
       volatilityFilterEnabled: true,
       defaultLots: 0.01,
       maxDailyTrades: 3,
+      haltDrawdownLimit: 0.78,
+      maxDrawdownLimit: 3.30,
     },
     values: config
       ? {
@@ -226,6 +230,8 @@ export default function Config() {
           volatilityFilterEnabled: (config as any).volatilityFilterEnabled ?? true,
           defaultLots: (config as any).defaultLots ?? 0.01,
           maxDailyTrades: config.maxDailyTrades,
+          haltDrawdownLimit: (config as any).haltDrawdownLimit ?? 0.78,
+          maxDrawdownLimit: (config as any).maxDrawdownLimit ?? 3.30,
         }
       : undefined,
   });
@@ -558,7 +564,7 @@ export default function Config() {
                           <div>
                             <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Enforce Daily Drawdown Limit</FormLabel>
                             <FormDescription className="text-xs mt-0.5">
-                              Halt trading if daily drawdown reaches 0.78%. (Auto-bypassed on Demo accounts).
+                              Halt trading if daily drawdown reaches configured threshold. (Auto-bypassed on Demo accounts).
                             </FormDescription>
                           </div>
                           <FormControl>
@@ -569,6 +575,57 @@ export default function Config() {
                       </FormItem>
                     )}
                   />
+
+                  {/* DYNAMIC DRAWDOWN LIMIT INPUT CONTROLS IN PERCENT & USD */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3.5 rounded-lg bg-muted/20 border border-border/60">
+                    <FormField
+                      control={form.control}
+                      name="haltDrawdownLimit"
+                      render={({ field }) => {
+                        const haltVal = Number(field.value || 0.78);
+                        const haltUsd = (9795.54 * (haltVal / 100.0)).toFixed(2);
+                        return (
+                          <FormItem>
+                            <FormLabel className="text-xs uppercase tracking-wider text-amber-500 font-bold">⚠️ Halt Drawdown Limit (%)</FormLabel>
+                            <div className="flex items-center gap-2">
+                              <FormControl>
+                                <Input type="number" step="0.01" min="0.10" max="10.0" {...field} className="font-bold text-sm bg-background/80" />
+                              </FormControl>
+                              <span className="text-sm font-bold text-amber-500">%</span>
+                            </div>
+                            <FormDescription className="text-xs text-emerald-400 font-semibold mt-1">
+                              💰 Equivalent Loss: <strong>${haltUsd} USD</strong> (based on $9,795.54 Equity)
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="maxDrawdownLimit"
+                      render={({ field }) => {
+                        const maxVal = Number(field.value || 3.30);
+                        const maxUsd = (9795.54 * (maxVal / 100.0)).toFixed(2);
+                        return (
+                          <FormItem>
+                            <FormLabel className="text-xs uppercase tracking-wider text-red-500 font-bold">🚨 Max Drawdown Limit (%)</FormLabel>
+                            <div className="flex items-center gap-2">
+                              <FormControl>
+                                <Input type="number" step="0.01" min="0.50" max="20.0" {...field} className="font-bold text-sm bg-background/80" />
+                              </FormControl>
+                              <span className="text-sm font-bold text-red-500">%</span>
+                            </div>
+                            <FormDescription className="text-xs text-red-400 font-semibold mt-1">
+                              💰 Equivalent Loss Cap: <strong>${maxUsd} USD</strong> (based on $9,795.54 Equity)
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
+                    />
+                  </div>
 
                   <div className="border-t border-border pt-4 space-y-4">
                     <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quantitative Safety Filters</h4>
