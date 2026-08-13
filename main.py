@@ -44,10 +44,15 @@ def load_config():
                 data = json.load(f)
                 active_pair = data.get("active_pair", "EURUSD/GBPUSD")
                 parts = active_pair.split('/')
-                if len(parts) == 2:
+                if len(parts) == 2 and parts[0].strip() != parts[1].strip():
                     GLOBAL_CONFIG["SYMBOL_A"] = parts[0].strip()
                     GLOBAL_CONFIG["SYMBOL_B"] = parts[1].strip()
                     logger.info(f"Loaded persistent coin selection: Leg A={GLOBAL_CONFIG['SYMBOL_A']} | Leg B={GLOBAL_CONFIG['SYMBOL_B']}")
+                else:
+                    GLOBAL_CONFIG["SYMBOL_A"] = "EURUSD"
+                    GLOBAL_CONFIG["SYMBOL_B"] = "GBPUSD"
+                    save_config("EURUSD/GBPUSD")
+                    logger.info("Aligned coin selection to Leg A=EURUSD | Leg B=GBPUSD")
         except Exception as e:
             logger.error(f"Error loading persistent config: {e}")
 
