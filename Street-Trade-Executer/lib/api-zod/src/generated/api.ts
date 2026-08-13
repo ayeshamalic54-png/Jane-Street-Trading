@@ -193,7 +193,9 @@ export const GetConfigResponse = zod.object({
   "riskLimitsEnabled": zod.boolean(),
   "knifeProtectionEnabled": zod.boolean().optional(),
   "obiEnabled": zod.boolean().optional(),
-  "volatilityFilterEnabled": zod.boolean().optional()
+  "volatilityFilterEnabled": zod.boolean().optional(),
+  "haltDrawdownLimit": zod.number().optional(),
+  "maxDrawdownLimit": zod.number().optional()
 })
 
 
@@ -217,7 +219,9 @@ export const UpdateConfigBody = zod.object({
   "initialBalance": zod.number().optional(),
   "knifeProtectionEnabled": zod.boolean().optional(),
   "obiEnabled": zod.boolean().optional(),
-  "volatilityFilterEnabled": zod.boolean().optional()
+  "volatilityFilterEnabled": zod.boolean().optional(),
+  "haltDrawdownLimit": zod.number().optional(),
+  "maxDrawdownLimit": zod.number().optional()
 })
 
 export const UpdateConfigResponse = zod.object({

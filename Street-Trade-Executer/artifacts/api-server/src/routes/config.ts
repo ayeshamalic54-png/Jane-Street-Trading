@@ -36,8 +36,8 @@ router.get("/config", async (req, res) => {
       volatilityFilterEnabled: state?.volatilityFilterEnabled ?? true,
       defaultLots: Number(state?.defaultLots ?? 0.01),
       initialBalance: Number(state?.initialBalance ?? 100000.00),
-      haltDrawdownLimit: Number((state as any)?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.78),
-      maxDrawdownLimit: Number((state as any)?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30),
+      haltDrawdownLimit: Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.80),
+      maxDrawdownLimit: Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get config");
@@ -57,8 +57,8 @@ router.post("/config", async (req, res) => {
     const indicesEnabled = bodyObj.indicesEnabled !== undefined ? Boolean(bodyObj.indicesEnabled) : (state?.indicesEnabled ?? true);
     const stocksEnabled = bodyObj.stocksEnabled !== undefined ? Boolean(bodyObj.stocksEnabled) : ((state as any)?.stocks_enabled ?? true);
 
-    const haltLimit = bodyObj.haltDrawdownLimit !== undefined ? Number(bodyObj.haltDrawdownLimit) : (bodyObj.halt_drawdown_limit !== undefined ? Number(bodyObj.halt_drawdown_limit) : Number((state as any)?.halt_drawdown_limit ?? 0.78));
-    const maxLimit = bodyObj.maxDrawdownLimit !== undefined ? Number(bodyObj.maxDrawdownLimit) : (bodyObj.max_drawdown_limit !== undefined ? Number(bodyObj.max_drawdown_limit) : Number((state as any)?.max_drawdown_limit ?? 3.30));
+    const haltLimit = bodyObj.haltDrawdownLimit !== undefined ? Number(bodyObj.haltDrawdownLimit) : (bodyObj.halt_drawdown_limit !== undefined ? Number(bodyObj.halt_drawdown_limit) : Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.80));
+    const maxLimit = bodyObj.maxDrawdownLimit !== undefined ? Number(bodyObj.maxDrawdownLimit) : (bodyObj.max_drawdown_limit !== undefined ? Number(bodyObj.max_drawdown_limit) : Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30));
 
     const pairToSave = activePair || state?.activePair || "EURUSD/GBPUSD";
     const parts = pairToSave.split("/");
@@ -149,7 +149,7 @@ router.post("/config", async (req, res) => {
 router.post("/toggle-risk-limits", async (req, res) => {
   try {
     const body = req.body || {};
-    const haltLimit = body.halt_drawdown_limit !== undefined ? Number(body.halt_drawdown_limit) : (body.haltDrawdownLimit !== undefined ? Number(body.haltDrawdownLimit) : 0.78);
+    const haltLimit = body.halt_drawdown_limit !== undefined ? Number(body.halt_drawdown_limit) : (body.haltDrawdownLimit !== undefined ? Number(body.haltDrawdownLimit) : 0.80);
     const maxLimit = body.max_drawdown_limit !== undefined ? Number(body.max_drawdown_limit) : (body.maxDrawdownLimit !== undefined ? Number(body.maxDrawdownLimit) : 3.30);
     const riskEnabled = body.risk_limits_enabled !== undefined ? Boolean(body.risk_limits_enabled) : true;
 
