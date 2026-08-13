@@ -558,7 +558,7 @@ export default function Config() {
                           <div>
                             <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Enforce Daily Drawdown Limit</FormLabel>
                             <FormDescription className="text-xs mt-0.5">
-                              Halt trading if daily drawdown reaches 3.2%. (Auto-bypassed on Demo accounts).
+                              Halt trading if daily drawdown reaches 0.78%. (Auto-bypassed on Demo accounts).
                             </FormDescription>
                           </div>
                           <FormControl>
@@ -761,7 +761,7 @@ export default function Config() {
                 <Badge className="bg-green-500/15 text-green-500 border-green-500/30 text-xs rounded-sm">SAFE</Badge>
               </div>
               <CardDescription className="text-xs">
-                Bot configured to stay within Blue Guardian limits. 3.2% daily halt = intentional buffer below the 4% hard limit.
+                Bot configured to stay within Blue Guardian limits. 0.78% daily halt = intentional buffer below the 3.3% hard limit.
               </CardDescription>
             </CardHeader>
             <CardContent>
