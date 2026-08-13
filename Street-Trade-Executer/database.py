@@ -160,26 +160,33 @@ def log_trade_exit(ticket, close_price, profit, close_time):
             conn.close()
 
 def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_count, login_id=None):
-    """Updates the daily challenge metrics in database using SELECT -> UPDATE/INSERT fallback (No ON CONFLICT constraint needed)."""
+    """Updates the daily challenge metrics in database without needing 'id' column or ON CONFLICT constraint."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
         
         if login_id is not None:
-            cur.execute("SELECT id, max_drawdown_percent FROM daily_metrics WHERE trading_date = %s AND mt5_login = %s", (date_obj, int(login_id)))
+            cur.execute("SELECT max_drawdown_percent FROM daily_metrics WHERE trading_date = %s AND mt5_login = %s", (date_obj, int(login_id)))
         else:
-            cur.execute("SELECT id, max_drawdown_percent FROM daily_metrics WHERE trading_date = %s", (date_obj,))
+            cur.execute("SELECT max_drawdown_percent FROM daily_metrics WHERE trading_date = %s", (date_obj,))
             
         row = cur.fetchone()
         if row:
-            row_id, prev_max_dd = row[0], float(row[1] or 0.0)
+            prev_max_dd = float(row[0] or 0.0)
             new_max_dd = max(prev_max_dd, float(max_dd))
-            cur.execute("""
-                UPDATE daily_metrics 
-                SET current_equity = %s, max_drawdown_percent = %s, trades_today = %s, updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s
-            """, (float(current_equity), new_max_dd, int(trades_count), row_id))
+            if login_id is not None:
+                cur.execute("""
+                    UPDATE daily_metrics 
+                    SET current_equity = %s, max_drawdown_percent = %s, trades_today = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE trading_date = %s AND mt5_login = %s
+                """, (float(current_equity), new_max_dd, int(trades_count), date_obj, int(login_id)))
+            else:
+                cur.execute("""
+                    UPDATE daily_metrics 
+                    SET current_equity = %s, max_drawdown_percent = %s, trades_today = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE trading_date = %s
+                """, (float(current_equity), new_max_dd, int(trades_count), date_obj))
         else:
             cur.execute("""
                 INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
