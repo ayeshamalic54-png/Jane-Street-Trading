@@ -110,8 +110,6 @@ def get_or_create_daily_start_equity(current_equity):
                 """
                 INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
                 VALUES (%s, %s, %s, %s, 0.0, 0)
-                -- ON CONFLICT replaced for PostgreSQL compatibility
-                SET current_equity = EXCLUDED.current_equity
                 """,
                 (today, current_login, start_equity, current_equity)
             )
