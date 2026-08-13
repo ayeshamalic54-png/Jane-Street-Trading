@@ -62,6 +62,8 @@ export const botStateTable = pgTable("bot_state", {
   riskLimitsEnabled: boolean("risk_limits_enabled").default(true),
   zEntryThreshold: numeric("z_entry_threshold", { precision: 4, scale: 2 }).default("2.00"),
   defaultLots: numeric("default_lots", { precision: 5, scale: 2 }).default("0.01"),
+  haltDrawdownLimit: numeric("halt_drawdown_limit", { precision: 5, scale: 2 }).default("0.78"),
+  maxDrawdownLimit: numeric("max_drawdown_limit", { precision: 5, scale: 2 }).default("3.30"),
   lastHeartbeat: timestamp("last_heartbeat"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

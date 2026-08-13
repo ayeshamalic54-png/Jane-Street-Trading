@@ -36,6 +36,8 @@ router.get("/config", async (req, res) => {
       volatilityFilterEnabled: state?.volatilityFilterEnabled ?? true,
       defaultLots: Number(state?.defaultLots ?? 0.01),
       initialBalance: Number(state?.initialBalance ?? 100000.00),
+      haltDrawdownLimit: Number((state as any)?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.78),
+      maxDrawdownLimit: Number((state as any)?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get config");
@@ -54,6 +56,9 @@ router.post("/config", async (req, res) => {
     const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, riskLimitsEnabled, defaultLots, maxDailyTrades, initialBalance, knifeProtectionEnabled, obiEnabled, volatilityFilterEnabled } = (parsed.success ? parsed.data : bodyObj) as any;
     const indicesEnabled = bodyObj.indicesEnabled !== undefined ? Boolean(bodyObj.indicesEnabled) : (state?.indicesEnabled ?? true);
     const stocksEnabled = bodyObj.stocksEnabled !== undefined ? Boolean(bodyObj.stocksEnabled) : ((state as any)?.stocks_enabled ?? true);
+
+    const haltLimit = bodyObj.haltDrawdownLimit !== undefined ? Number(bodyObj.haltDrawdownLimit) : (bodyObj.halt_drawdown_limit !== undefined ? Number(bodyObj.halt_drawdown_limit) : Number((state as any)?.halt_drawdown_limit ?? 0.78));
+    const maxLimit = bodyObj.maxDrawdownLimit !== undefined ? Number(bodyObj.maxDrawdownLimit) : (bodyObj.max_drawdown_limit !== undefined ? Number(bodyObj.max_drawdown_limit) : Number((state as any)?.max_drawdown_limit ?? 3.30));
 
     const pairToSave = activePair || state?.activePair || "EURUSD/GBPUSD";
     const parts = pairToSave.split("/");
@@ -75,8 +80,8 @@ router.post("/config", async (req, res) => {
     const defLots = defaultLots ?? 0.01;
 
     await db.execute(
-      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled)
-          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxDailyTrades ?? 3}, 'BOT OFFLINE', NOW(), ${(initialBalance ?? 100000).toString()}, ${(initialBalance ?? 100000).toString()}, ${knifeExec}, ${obiExec}, ${volExec}
+      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit)
+          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxDailyTrades ?? 3}, 'BOT OFFLINE', NOW(), ${(initialBalance ?? 100000).toString()}, ${(initialBalance ?? 100000).toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}
           WHERE NOT EXISTS (SELECT 1 FROM bot_state)`
     );
 
@@ -99,6 +104,8 @@ router.post("/config", async (req, res) => {
               volatility_filter_enabled = ${volExec},
               default_lots = ${defLots.toString()},
               max_trades   = ${maxDailyTrades ?? 3},
+              halt_drawdown_limit = ${haltLimit.toString()},
+              max_drawdown_limit = ${maxLimit.toString()},
               updated_at   = NOW()
           WHERE id = (SELECT MIN(id) FROM bot_state)`
     );
@@ -130,10 +137,34 @@ router.post("/config", async (req, res) => {
       volatilityFilterEnabled: updated?.volatilityFilterEnabled ?? volExec,
       defaultLots: Number(updated?.defaultLots ?? defLots),
       initialBalance: Number(updated?.initialBalance ?? initialBalance ?? 100000),
+      haltDrawdownLimit: haltLimit,
+      maxDrawdownLimit: maxLimit,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update config");
     return res.status(500).json({ error: "Failed to update config" });
+  }
+});
+
+router.post("/toggle-risk-limits", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const haltLimit = body.halt_drawdown_limit !== undefined ? Number(body.halt_drawdown_limit) : (body.haltDrawdownLimit !== undefined ? Number(body.haltDrawdownLimit) : 0.78);
+    const maxLimit = body.max_drawdown_limit !== undefined ? Number(body.max_drawdown_limit) : (body.maxDrawdownLimit !== undefined ? Number(body.maxDrawdownLimit) : 3.30);
+    const riskEnabled = body.risk_limits_enabled !== undefined ? Boolean(body.risk_limits_enabled) : true;
+
+    await db.execute(
+      sql`UPDATE bot_state
+          SET halt_drawdown_limit = ${haltLimit.toString()},
+              max_drawdown_limit  = ${maxLimit.toString()},
+              risk_limits_enabled = ${riskEnabled},
+              updated_at          = NOW()
+          WHERE id = (SELECT MIN(id) FROM bot_state)`
+    );
+
+    return res.json({ status: "success", halt_drawdown_limit: haltLimit, max_drawdown_limit: maxLimit });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to update drawdown limits" });
   }
 });
 
