@@ -192,7 +192,9 @@ def fetch_db_config():
                 bool(row[13] if row[13] is not None else True),
                 bool(row[14] if row[14] is not None else True),
                 bool(row[15] if row[15] is not None else True),
-                s_on
+                s_on,
+                float(row[17]) if len(row) > 17 and row[17] is not None else 0.78,
+                float(row[18]) if len(row) > 18 and row[18] is not None else 3.30
             )
         else:
             cur.close()
