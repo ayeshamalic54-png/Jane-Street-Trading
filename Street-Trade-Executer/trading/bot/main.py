@@ -24,19 +24,32 @@ from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_vali
 from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket
 from smc_indicators import detect_smc_zones, is_price_in_zones
 from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset
-from binance_execution import (
-    get_binance_usdt_balance,
-    calculate_binance_quantity,
-    execute_three_part_binance_trade,
-    close_all_binance_positions,
-    check_closed_binance_trades,
-    send_signed_request,
-    get_binance_live_tick,
-    get_binance_market_book,
-    get_binance_rates_df,
-    close_binance_partial,
-    get_symbol_filters
-)
+try:
+    from binance_execution import (
+        get_binance_usdt_balance,
+        calculate_binance_quantity,
+        execute_three_part_binance_trade,
+        close_all_binance_positions,
+        check_closed_binance_trades,
+        send_signed_request,
+        get_binance_live_tick,
+        get_binance_market_book,
+        get_binance_rates_df,
+        close_binance_partial,
+        get_symbol_filters
+    )
+except ImportError:
+    def get_binance_usdt_balance(): return (0.0, 0.0)
+    def calculate_binance_quantity(*a, **k): return 0.0
+    def execute_three_part_binance_trade(*a, **k): return False
+    def close_all_binance_positions(*a, **k): return True
+    def check_closed_binance_trades(*a, **k): return None
+    def send_signed_request(*a, **k): return None
+    def get_binance_live_tick(*a, **k): return None
+    def get_binance_market_book(*a, **k): return ([], [])
+    def get_binance_rates_df(*a, **k): return None
+    def close_binance_partial(*a, **k): return False
+    def get_symbol_filters(*a, **k): return {}
 
 # Setup Logging
 logger = logging.getLogger("SMC_Forex_Bot")
