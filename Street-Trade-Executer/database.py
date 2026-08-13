@@ -159,26 +159,33 @@ def log_trade_exit(ticket, close_price, profit, close_time):
         if conn:
             conn.close()
 
-def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_count):
-    """Updates the daily challenge metrics in database."""
-    query = """
-        INSERT INTO daily_metrics (trading_date, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
-        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        ON CONFLICT (trading_date) DO UPDATE 
-        SET current_equity = EXCLUDED.current_equity,
-            max_drawdown_percent = GREATEST(daily_metrics.max_drawdown_percent, EXCLUDED.max_drawdown_percent),
-            trades_today = EXCLUDED.trades_today,
-            updated_at = CURRENT_TIMESTAMP
-    """
+def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_count, login_id=None):
+    """Updates the daily challenge metrics in database using SELECT -> UPDATE/INSERT fallback (No ON CONFLICT constraint needed)."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(query, (
-            date_obj, 
-            float(start_equity), float(current_equity), 
-            float(max_dd), int(trades_count)
-        ))
+        
+        if login_id is not None:
+            cur.execute("SELECT id, max_drawdown_percent FROM daily_metrics WHERE trading_date = %s AND mt5_login = %s", (date_obj, int(login_id)))
+        else:
+            cur.execute("SELECT id, max_drawdown_percent FROM daily_metrics WHERE trading_date = %s", (date_obj,))
+            
+        row = cur.fetchone()
+        if row:
+            row_id, prev_max_dd = row[0], float(row[1] or 0.0)
+            new_max_dd = max(prev_max_dd, float(max_dd))
+            cur.execute("""
+                UPDATE daily_metrics 
+                SET current_equity = %s, max_drawdown_percent = %s, trades_today = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (float(current_equity), new_max_dd, int(trades_count), row_id))
+        else:
+            cur.execute("""
+                INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            """, (date_obj, int(login_id or 0), float(start_equity), float(current_equity), float(max_dd), int(trades_count)))
+            
         conn.commit()
         cur.close()
     except Exception as e:

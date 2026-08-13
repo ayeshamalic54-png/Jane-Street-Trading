@@ -44,7 +44,7 @@ def initialize_mt5():
             logger.error("MT5_LOGIN in .env must be an integer account number.")
             sys.exit(1)
     else:
-        logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")
+        logger.info("Initializing MT5 using currently running terminal instance (no path or credentials provided)")
         if not mt5.initialize(path=terminal_path, timeout=60000):
             logger.error(f"MT5 initialization failed. Error code: {mt5.last_error()}")
             sys.exit(1)
