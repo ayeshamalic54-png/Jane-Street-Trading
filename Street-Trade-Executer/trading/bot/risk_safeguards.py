@@ -6,9 +6,11 @@ from database import update_daily_metrics, get_connection
 
 logger = logging.getLogger("SMC_Forex_Bot")
 
-# Maximum daily drawdown allowed before halting trading (1.75% / $175.00 max loss cap on $10k account)
-MAX_DAILY_LOSS_PERCENT = 1.75
-MAX_FLOATING_LOSS_USD = 175.0
+# Maximum daily drawdown allowed before halting trading (0.78% Halt Buffer / 3.30% Max Loss Cap)
+HALT_DAILY_DRAWDOWN_PCT = 0.78
+MAX_DAILY_DRAWDOWN_PCT = 3.30
+MAX_DAILY_LOSS_PERCENT = 0.78
+MAX_FLOATING_LOSS_USD = 330.0
 # Maximum number of trades allowed per day
 MAX_DAILY_TRADES = 3
 # Risk percentage per trade (e.g. 1.0% of account equity)
@@ -163,7 +165,7 @@ def check_drawdown_limit(current_equity):
             logger.error(f"Error updating daily metrics: {e}")
     
     if daily_loss_percent >= MAX_DAILY_LOSS_PERCENT:
-        logger.info(f"Daily drawdown limit reached: {daily_loss_percent:.2f}% (Limit: {MAX_DAILY_LOSS_PERCENT}%)")
+        logger.info(f"Daily drawdown limit reached: {daily_loss_percent:.2f}% (Halt Limit: {MAX_DAILY_LOSS_PERCENT}% | Max Limit: {MAX_DAILY_DRAWDOWN_PCT}%)")
         return True, daily_loss_percent
         
     return False, daily_loss_percent

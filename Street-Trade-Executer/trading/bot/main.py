@@ -1598,7 +1598,7 @@ def main():
     correlation_check_counter = 0
 
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Halt Limit: 0.78% | Max Limit: 3.30% ($330.00) | Win-Rate Guard: [>=65.0% REQUIRED] | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
     win_rate_loop_counter = 0
     loop_log_counter = 0
     SMC_ZONES_CACHE = {}
@@ -1917,8 +1917,8 @@ def main():
                     daily_loss_usd = start_eq_guard - acc_info.equity
                     daily_loss_pct = (daily_loss_usd / start_eq_guard) * 100.0 if start_eq_guard > 0 else 0.0
                     
-                    if floating_profit <= -175.0 or daily_loss_pct >= 1.75:
-                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) / Daily loss ({daily_loss_pct:.2f}%) breached safety cap (-$175.00 / 1.75%). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
+                    if floating_profit <= -330.0 or daily_loss_pct >= 3.30:
+                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) / Daily loss ({daily_loss_pct:.2f}%) breached safety cap (-$330.00 / 3.30%). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
                         for pos in active_js_positions:
                             pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
                             close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)

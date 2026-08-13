@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Jane Street Quant Platform</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #080c14;
+            --card-bg: rgba(17, 24, 39, 0.6);
+            --border-color: rgba(31, 41, 55, 0.7);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --primary: #3b82f6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --accent: #8b5cf6;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 10% 20%, rgba(59, 130, 246, 0.05) 0px, transparent 50%),
+                radial-gradient(at 90% 80%, rgba(139, 92, 246, 0.05) 0px, transparent 50%);
+            color: var(--text-main);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 20px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .title-container {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #10b981, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .time {
+            color: var(--text-muted);
+            font-size: 14px;
+            background: rgba(31, 41, 55, 0.4);
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            font-family: monospace;
+        }
+
+        /* Asset Selector Widget */
+        .selector-container {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 25px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .selector-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .selector-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .active-pair-badge {
+            font-size: 12px;
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--primary);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 600;
+        }
+
+        .selector-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .btn {
+            background: rgba(31, 41, 55, 0.3);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 14px;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .btn:hover {
+            background: rgba(55, 65, 81, 0.5);
+            border-color: rgba(156, 163, 175, 0.5);
+            color: var(--text-main);
+            transform: translateY(-2px);
+        }
+
+        .btn.active {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(59, 130, 246, 0.15));
+            border-color: var(--success);
+            color: var(--success);
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);
+        }
+
+        .btn.active .btn-icon {
+            transform: scale(1.2);
+        }
+
+        .btn-icon {
+            font-size: 18px;
+            transition: transform 0.2s;
+        }
+
+        /* Form Controls */
+        .custom-selector-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .custom-selector-form {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            background: rgba(17, 24, 39, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 15px;
+        }
+
+        .form-group {
+            flex: 1;
+            min-width: 140px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+            letter-spacing: 0.5px;
+        }
+
+        .form-control {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            box-sizing: border-box;
+            transition: border-color 0.2s;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .btn-apply {
+            background: var(--primary);
+            border: 1px solid var(--primary);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            height: 38px;
+            transition: all 0.2s;
+        }
+
+        .btn-apply:hover {
+            background: #2563eb;
+            border-color: #2563eb;
+            transform: translateY(-1px);
+        }
+
+        /* Metrics Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 18px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+            transition: transform 0.3s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(59, 130, 246, 0.4);
+        }
+
+        .card-title {
+            color: var(--text-muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .card-value {
+            font-size: 22px;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .status-running { color: var(--success); text-shadow: 0 0 10px rgba(16, 185, 129, 0.2); }
+        .status-halted { color: var(--danger); text-shadow: 0 0 10px rgba(239, 68, 68, 0.2); }
+        .metric-positive { color: var(--success); }
+        .metric-negative { color: var(--danger); }
+        
+        /* Tables and sections */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            overflow: hidden;
+            margin-top: 15px;
+            backdrop-filter: blur(12px);
+        }
+
+        th, td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: rgba(17, 24, 39, 0.9);
+            color: var(--text-muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(31, 41, 55, 0.2);
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .buy-badge { background: rgba(16, 185, 129, 0.15); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.2); }
+        .sell-badge { background: rgba(239, 68, 68, 0.15); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); }
+        .profit-positive { color: var(--success); font-weight: 700; }
+        .profit-negative { color: var(--danger); font-weight: 700; }
+        
+        .section-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 17px;
+            font-weight: 700;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-title::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 16px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+
+        .zones-container {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 25px;
+            background: rgba(17, 24, 39, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 15px;
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+                padding-bottom: 15px;
+            }
+            .title {
+                font-size: 20px;
+            }
+            .subtitle {
+                font-size: 11px;
+            }
+            .time {
+                font-size: 12px;
+                width: 100%;
+                box-sizing: border-box;
+                text-align: center;
+            }
+            .selector-container {
+                padding: 15px;
+            }
+            .selector-buttons {
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+            }
+            .btn {
+                padding: 10px;
+                font-size: 12px;
+            }
+            .custom-selector-form {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+            .form-group {
+                width: 100%;
+            }
+            .btn-apply {
+                width: 100%;
+                margin-top: 5px;
+            }
+            .grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+            }
+            .card {
+                padding: 12px;
+            }
+            .card-title {
+                font-size: 9px;
+            }
+            .card-value {
+                font-size: 16px;
+            }
+            table th, table td {
+                padding: 10px;
+                font-size: 11px;
+            }
+        }
+        /* Vibrant Market Hours Grid & Cards */
+        .market-hours-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 25px;
+        }
+
+        .market-card {
+            border-radius: 16px;
+            padding: 18px;
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .market-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .market-card-stocks {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(168, 85, 247, 0.18));
+            border-color: rgba(168, 85, 247, 0.35);
+        }
+        .market-card-stocks:hover { border-color: rgba(168, 85, 247, 0.7); }
+
+        .market-card-forex {
+            background: linear-gradient(135deg, rgba(14, 165, 233, 0.18), rgba(59, 130, 246, 0.18));
+            border-color: rgba(59, 130, 246, 0.35);
+        }
+        .market-card-forex:hover { border-color: rgba(59, 130, 246, 0.7); }
+
+        .market-card-metals {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(234, 179, 8, 0.18));
+            border-color: rgba(245, 158, 11, 0.35);
+        }
+        .market-card-metals:hover { border-color: rgba(245, 158, 11, 0.7); }
+
+        .market-card-indices {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.18), rgba(20, 184, 166, 0.18));
+            border-color: rgba(16, 185, 129, 0.35);
+        }
+        .market-card-indices:hover { border-color: rgba(16, 185, 129, 0.7); }
+
+        .market-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 14px;
+        }
+
+        .market-icon-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .market-emoji {
+            font-size: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 8px;
+            border-radius: 12px;
+            line-height: 1;
+        }
+
+        .market-name {
+            font-family: 'Outfit', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .market-sub {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .market-badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .badge-open {
+            background: rgba(16, 185, 129, 0.25);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.5);
+            box-shadow: 0 0 12px rgba(52, 211, 153, 0.3);
+            animation: pulse-green 2s infinite;
+        }
+
+        .badge-closed {
+            background: rgba(239, 68, 68, 0.25);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            box-shadow: 0 0 12px rgba(248, 113, 113, 0.2);
+        }
+
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); }
+            70% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+        }
+
+        .market-times {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 12px;
+            background: rgba(0, 0, 0, 0.25);
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .time-box {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .time-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .time-val {
+            font-size: 12px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-top: 3px;
+        }
+
+        .time-sub {
+            font-size: 10px;
+            font-weight: 400;
+            color: #9ca3af;
+        }
+
+        .market-footer {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.6);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        @media (max-width: 1024px) {
+            .market-hours-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        @media (max-width: 640px) {
+            .market-hours-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title-container">
+            <div class="title">Jane Street Quantitative Engine</div>
+            <div class="subtitle">Kalman Filter & SMC Dynamic Portfolio Arbitrage</div>
+        </div>
+        <div class="time" id="last-update-time">Initialising connection...</div>
+    </div>
+
+    <!-- GLOBAL MARKET OPERATING HOURS CARDS -->
+    <div class="section-title">
+        <span>🌐</span> Global Market Operating Hours (Live Status)
+    </div>
+
+    <div class="market-hours-grid">
+        <!-- US STOCKS CARD -->
+        <div class="market-card market-card-stocks">
+            <div class="market-card-header">
+                <div class="market-icon-title">
+                    <span class="market-emoji">🇺🇸</span>
+                    <div>
+                        <div class="market-name">US Stock Exchanges</div>
+                        <div class="market-sub">NYSE & NASDAQ (AAPL, NVDA, AMZN, MSFT)</div>
+                    </div>
+                </div>
+                <span class="market-badge badge-closed" id="badge-us-stocks">CHECKING...</span>
+            </div>
+            <div class="market-times">
+                <div class="time-box">
+                    <div class="time-label">Opening Time</div>
+                    <div class="time-val">6:30 PM PKT <span class="time-sub">(9:30 AM EST)</span></div>
+                </div>
+                <div class="time-box">
+                    <div class="time-label">Closing Time</div>
+                    <div class="time-val">1:00 AM PKT <span class="time-sub">(4:00 PM EST)</span></div>
+                </div>
+            </div>
+            <div class="market-footer">
+                <span>🗓️ Mon - Fri • 6.5 Hours Regular Session</span>
+            </div>
+        </div>
+
+        <!-- FOREX MARKET CARD -->
+        <div class="market-card market-card-forex">
+            <div class="market-card-header">
+                <div class="market-icon-title">
+                    <span class="market-emoji">💱</span>
+                    <div>
+                        <div class="market-name">Global Forex Market</div>
+                        <div class="market-sub">Currencies (EUR, USD, GBP, JPY, CHF)</div>
+                    </div>
+                </div>
+                <span class="market-badge badge-open" id="badge-forex">CHECKING...</span>
+            </div>
+            <div class="market-times">
+                <div class="time-box">
+                    <div class="time-label">Weekly Open</div>
+                    <div class="time-val">2:00 AM PKT Mon <span class="time-sub">(5 PM EST Sun)</span></div>
+                </div>
+                <div class="time-box">
+                    <div class="time-label">Weekly Close</div>
+                    <div class="time-val">2:00 AM PKT Sat <span class="time-sub">(5 PM EST Fri)</span></div>
+                </div>
+            </div>
+            <!-- Global Forex Sessions Grid -->
+            <div style="background: rgba(0, 0, 0, 0.3); padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid rgba(56, 189, 248, 0.2);">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #38bdf8; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                    <span>4 Global Sessions (PKT)</span>
+                    <span>24/5 Live</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 10px; font-family: monospace;">
+                    <div style="background: rgba(255,255,255,0.05); padding: 4px 6px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>🇦🇺 Sydney</span>
+                        <span style="color: #9ca3af;">2am - 11am</span>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.05); padding: 4px 6px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>🇯🇵 Tokyo</span>
+                        <span style="color: #9ca3af;">5am - 2pm</span>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.05); padding: 4px 6px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>🇬🇧 London</span>
+                        <span style="color: #9ca3af;">1pm - 10pm</span>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.05); padding: 4px 6px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>🇺🇸 New York</span>
+                        <span style="color: #9ca3af;">6pm - 3am</span>
+                    </div>
+                </div>
+            </div>
+            <div class="market-footer">
+                <span>🌍 24/5 Continuous • Sydney / Tokyo / London / New York</span>
+            </div>
+        </div>
+
+        <!-- METALS MARKET CARD -->
+        <div class="market-card market-card-metals">
+            <div class="market-card-header">
+                <div class="market-icon-title">
+                    <span class="market-emoji">🥇</span>
+                    <div>
+                        <div class="market-name">Precious Metals</div>
+                        <div class="market-sub">Commodities (XAU/Gold, XAG, XPT, XPD)</div>
+                    </div>
+                </div>
+                <span class="market-badge badge-open" id="badge-metals">CHECKING...</span>
+            </div>
+            <div class="market-times">
+                <div class="time-box">
+                    <div class="time-label">Opening Time</div>
+                    <div class="time-val">3:00 AM PKT <span class="time-sub">(6:00 PM EST Sun)</span></div>
+                </div>
+                <div class="time-box">
+                    <div class="time-label">Closing / Break</div>
+                    <div class="time-val">2:00 AM PKT <span class="time-sub">(Break 2am-3am)</span></div>
+                </div>
+            </div>
+            <div class="market-footer">
+                <span>⏱️ 23 Hours / Day • Daily 1-Hour Maintenance</span>
+            </div>
+        </div>
+
+        <!-- INDICES MARKET CARD -->
+        <div class="market-card market-card-indices">
+            <div class="market-card-header">
+                <div class="market-icon-title">
+                    <span class="market-emoji">📊</span>
+                    <div>
+                        <div class="market-name">Stock Indices</div>
+                        <div class="market-sub">Futures (US500, US30, NAS100/USTEC)</div>
+                    </div>
+                </div>
+                <span class="market-badge badge-open" id="badge-indices">CHECKING...</span>
+            </div>
+            <div class="market-times">
+                <div class="time-box">
+                    <div class="time-label">Opening Time</div>
+                    <div class="time-val">3:00 AM PKT <span class="time-sub">(6:00 PM EST Sun)</span></div>
+                </div>
+                <div class="time-box">
+                    <div class="time-label">Closing Time</div>
+                    <div class="time-val">2:15 AM PKT <span class="time-sub">(Break 2:15am-3am)</span></div>
+                </div>
+            </div>
+            <div class="market-footer">
+                <span>⚡ 23 Hours / Day • Brief Daily Maint. Break</span>
+            </div>
+        </div>
+    </div>
+    <div class="selector-container">
+        <div class="selector-header">
+            <div class="selector-title">Portfolio Category Selector</div>
+            <div class="active-pair-badge">Active Pair: <span id="active-pair-name">-</span></div>
+        </div>
+        <div class="selector-buttons">
+            <button class="btn" id="btn-forex" onclick="changeAssetClass('EURUSD/GBPUSD')">
+                <span class="btn-icon">💱</span>
+                <span class="btn-text">Forex (EUR vs GBP)</span>
+            </button>
+            <button class="btn" id="btn-metals" onclick="changeAssetClass('XAUUSD/XAGUSD')">
+                <span class="btn-icon">🪙</span>
+                <span class="btn-text">Metals (Gold vs Silver)</span>
+            </button>
+            <button class="btn" id="btn-crypto" onclick="changeAssetClass('BTCUSD/ETHUSD')">
+                <span class="btn-icon">₿</span>
+                <span class="btn-text">Crypto (BTC vs ETH)</span>
+            </button>
+            <button class="btn" id="btn-stocks" onclick="changeAssetClass('AAPL/MSFT')">
+                <span class="btn-icon">📈</span>
+                <span class="btn-text">Stocks (AAPL vs MSFT)</span>
+            </button>
+        </div>
+
+        <div class="custom-selector-title">Or Configure Custom Trading Symbols</div>
+        <div class="custom-selector-form">
+            <div class="form-group">
+                <label for="custom-leg-a">Leg A Symbol (e.g. SOLUSD, US30)</label>
+                <input type="text" id="custom-leg-a" class="form-control" placeholder="LEG A SYMBOL">
+            </div>
+            <div class="form-group">
+                <label for="custom-leg-b">Leg B Symbol (e.g. DOTUSD, NAS100)</label>
+                <input type="text" id="custom-leg-b" class="form-control" placeholder="LEG B SYMBOL">
+            </div>
+            <button class="btn-apply" onclick="applyCustomPair()">Apply Custom Pair</button>
+        </div>
+    </div>
+    
+    <!-- LIVE HIGH-IMPACT NEWS GUARD STATUS CARD -->
+    <div id="news-status-card" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(52, 211, 153, 0.4); border-radius: 14px; padding: 18px; backdrop-filter: blur(12px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.4s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 22px;">📰</span>
+                <div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="news-card-title">High-Impact News Protection (15-Min Buffer)</div>
+                    <div style="font-size: 11px; color: var(--text-muted);" id="news-card-subtitle">Real-time safeguard against NFP, CPI, FOMC volatility</div>
+                </div>
+            </div>
+            <span id="news-card-badge" class="market-badge badge-open">🟢 NORMAL TRADING ACTIVE</span>
+        </div>
+        <div id="news-card-body" style="background: rgba(0, 0, 0, 0.25); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); font-size: 13px; color: #e2e8f0; line-height: 1.5;">
+            ✨ <strong>Normal Trading Status:</strong> No high-impact news detected within the 15-minute before/after window. Signals are active and trades execute freely to 50 TP targets.
+        </div>
+    </div>
+
+    <!-- LIVE EQUITY TRAILING STOP STATUS CARD -->
+    <div id="trail-status-card" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 14px; padding: 18px; backdrop-filter: blur(12px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.4s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 22px;">🛡️</span>
+                <div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="trail-card-title">Multi-Tier Equity Profit Lock Guard (Dual Tier)</div>
+                    <div style="font-size: 11px; color: var(--text-muted);" id="trail-card-subtitle">Tier 1 (+ $60 peak locks + $52) | Tier 2 (+ $100+ peak locks 91%)</div>
+                </div>
+            </div>
+            <span id="trail-card-badge" class="market-badge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3);">⚪ TRAILING STOP INACTIVE</span>
+        </div>
+        <div id="trail-card-body" style="background: rgba(0, 0, 0, 0.25); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); font-size: 13px; color: #e2e8f0; line-height: 1.5;">
+            ⚪ <strong>Multi-Tier Mode:</strong> Reversing from $60–$99 locks +$52.00+ cash profit! Reaching +$100+ locks 91% of peak earnings!
+        </div>
+    </div>
+
+    <!-- LIVE DAILY DRAWDOWN LIMIT STATUS CARD -->
+    <div id="drawdown-status-card" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 14px; padding: 18px; backdrop-filter: blur(12px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.4s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 22px;">📉</span>
+                <div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="drawdown-card-title">Enforce Daily Drawdown Limit</div>
+                    <div style="font-size: 11px; color: var(--text-muted);" id="drawdown-card-subtitle">Halt trading if daily drawdown reaches 0.78%. (Auto-bypassed on Demo accounts).</div>
+                </div>
+            </div>
+            <span id="drawdown-card-badge" class="market-badge badge-open">🟢 RISK OK (HALT: 0.78% · LIMIT: 3.3%)</span>
+        </div>
+        <div id="drawdown-card-body" style="background: rgba(0, 0, 0, 0.25); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); font-size: 13px; color: #e2e8f0; line-height: 1.5;">
+            ✨ <strong>Daily Drawdown Status:</strong> Drawdown is below the 0.78% Halt threshold. Halt: 0.78% · Limit: 3.3%.
+        </div>
+    </div>
+
+    <!-- Core Analytics Grid -->
+    <div class="grid">
+        <div class="card">
+            <div class="card-title">System Status</div>
+            <div class="card-value status-running" id="system-status">-</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Spread Z-Score</div>
+            <div class="card-value" id="z-score">0.0000</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Dynamic Hedge Ratio (Beta)</div>
+            <div class="card-value" id="hedge-ratio">0.0000</div>
+        </div>
+        <div class="card">
+            <div class="card-title">OBI Depth (A vs B)</div>
+            <div class="card-value" id="obi-values">
+                <span style="color: var(--success);">0.00</span> / 
+                <span style="color: var(--primary);">0.00</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Account Information Grid -->
+    <div class="grid">
+        <div class="card">
+            <div class="card-title">Account Equity</div>
+            <div class="card-value" id="account-equity">$0.00</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Daily Drawdown</div>
+            <div class="card-value" id="daily-drawdown">0.00%</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Trades Taken Today</div>
+            <div class="card-value" id="trades-today">0 / 0</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Open Floating Profit</div>
+            <div class="card-value" id="floating-profit">$0.00</div>
+        </div>
+    </div>
+    
+    <!-- SMC Zones -->
+    <div class="section-title" id="smc-title">Active SMC Structural Zones</div>
+    <div class="zones-container" id="smc-zones-container">
+        <span style="color: var(--text-muted); font-size: 14px;">Loading SMC structural zones...</span>
+    </div>
+    
+    <!-- Active Positions -->
+    <div class="section-title">Active Positions (Magic: 992026)</div>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Ticket</th>
+                    <th>Symbol</th>
+                    <th>Type</th>
+                    <th>Lots</th>
+                    <th>Entry Price</th>
+                    <th>Current Price</th>
+                    <th>Profit</th>
+                    <th>Comment</th>
+                </tr>
+            </thead>
+            <tbody id="positions-body">
+                <tr><td colspan='8' style='text-align: center; color: #888;'>No active positions</td></tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Database Recent Trades History -->
+    <div class="section-title">Recent Trades History (Database Logs)</div>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Ticket</th>
+                    <th>Symbol</th>
+                    <th>Type</th>
+                    <th>Lots</th>
+                    <th>Entry Price</th>
+                    <th>Close Price</th>
+                    <th>Profit/Loss</th>
+                    <th>Comment</th>
+                </tr>
+            </thead>
+            <tbody id="history-body">
+                <tr><td colspan='8' style='text-align: center; color: #888;'>No trade history in database</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Script to fetch API data and switch asset classes -->
+    <script>
+        const API_URL = 'http://localhost:8081';
+
+        async function fetchStats() {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 800); // 800ms threshold for connection timeout
+
+            try {
+                const response = await fetch(`${API_URL}/api/data`, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) throw new Error('API server returned error');
+                const data = await response.json();
+                
+                // Update System Status & News Guard Visual Card
+                const statusEl = document.getElementById('system-status');
+                statusEl.textContent = data.system_status;
+                if (data.system_status.includes('RUNNING')) {
+                    statusEl.className = 'card-value status-running';
+                } else {
+                    statusEl.className = 'card-value status-halted';
+                }
+
+                const newsCard = document.getElementById('news-status-card');
+                const newsBadge = document.getElementById('news-card-badge');
+                const newsBody = document.getElementById('news-card-body');
+
+                if (data.system_status.includes('HALTED (News')) {
+                    const eventDetail = data.system_status.replace('HALTED (News: ', '').replace(')', '');
+                    newsCard.style.border = '1px solid rgba(239, 68, 68, 0.6)';
+                    newsCard.style.background = 'rgba(239, 68, 68, 0.12)';
+                    newsBadge.className = 'market-badge badge-closed';
+                    newsBadge.textContent = '🔴 TRADING HALTED (15-MIN NEWS BUFFER)';
+                    newsBody.innerHTML = `⚠️ <strong>HIGH-IMPACT NEWS EVENT DETECTED:</strong> ${eventDetail}<br>🛡️ <strong>System Action:</strong> New trade entries are currently BLOCKED to protect capital from high slippage. Running open positions remain active to reach 50 TP targets.`;
+                } else {
+                    newsCard.style.border = '1px solid rgba(52, 211, 153, 0.4)';
+                    newsCard.style.background = 'rgba(15, 23, 42, 0.75)';
+                    newsBadge.className = 'market-badge badge-open';
+                    newsBadge.textContent = '🟢 NORMAL TRADING ACTIVE';
+                    newsBody.innerHTML = `✨ <strong>Normal Trading Status:</strong> No high-impact news detected within the 15-minute before/after window. Signals are active and trades execute freely to 50 TP targets.`;
+                }
+
+                // Update Equity Trailing Stop Visual Card
+                const trailCard = document.getElementById('trail-status-card');
+                const trailBadge = document.getElementById('trail-card-badge');
+                const trailBody = document.getElementById('trail-card-body');
+                const flProfit = Number(data.floating_profit || 0.0);
+
+                const isTrailActiveText = data.system_status && data.system_status.includes('Trail Active');
+                if (flProfit >= 100.0 || (isTrailActiveText && data.system_status.includes('Tier 2'))) {
+                    const peakVal = Math.max(flProfit, 100.0);
+                    const floorVal = (peakVal * 0.91).toFixed(2);
+                    trailCard.style.border = '1px solid rgba(52, 211, 153, 0.6)';
+                    trailCard.style.background = 'rgba(16, 185, 129, 0.12)';
+                    trailBadge.className = 'market-badge badge-open';
+                    trailBadge.style.background = 'rgba(16, 185, 129, 0.2)';
+                    trailBadge.style.color = '#34d399';
+                    trailBadge.textContent = '🟢 TIER 2 TRAILING ACTIVE (91% LOCK)';
+                    trailBody.innerHTML = `🛡️ <strong>TIER 2 PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+$${peakVal.toFixed(2)}</strong> | Locked Floor (91%): <strong>+$${floorVal}</strong><br>⚡ Position is locking 91% of peak earnings!`;
+                } else if (flProfit >= 60.0 || isTrailActiveText) {
+                    trailCard.style.border = '1px solid rgba(59, 130, 246, 0.6)';
+                    trailCard.style.background = 'rgba(59, 130, 246, 0.12)';
+                    trailBadge.className = 'market-badge badge-open';
+                    trailBadge.style.background = 'rgba(59, 130, 246, 0.2)';
+                    trailBadge.style.color = '#60a5fa';
+                    trailBadge.textContent = '🔵 TIER 1 SAFETY FLOOR ACTIVE (+$52 LOCK)';
+                    trailBody.innerHTML = `🛡️ <strong>TIER 1 SAFETY FLOOR ACTIVE:</strong> Peak Profit: <strong>+$${Math.max(flProfit, 60.0).toFixed(2)}</strong> | Safety Floor: <strong>+$52.00</strong><br>⚡ If market reverses from $60–$99, bot will auto-close at +$52.00+ to lock first target profit!`;
+                } else {
+                    trailCard.style.border = '1px solid rgba(148, 163, 184, 0.2)';
+                    trailCard.style.background = 'rgba(15, 23, 42, 0.75)';
+                    trailBadge.style.background = 'rgba(148, 163, 184, 0.15)';
+                    trailBadge.style.color = '#94a3b8';
+                    trailBadge.style.border = '1px solid rgba(148, 163, 184, 0.3)';
+                    trailBadge.textContent = '⚪ TRAILING STOP INACTIVE';
+                    trailBody.innerHTML = `⚪ <strong>Standby Mode:</strong> Reversing from $60–$99 locks +$52.00+ cash profit! Reaching +$100+ locks 91% of peak earnings! (Current Floating: $${flProfit >= 0 ? '+' : ''}${flProfit.toFixed(2)})`;
+                }
+                
+                // Update Z-Score
+                const zScoreEl = document.getElementById('z-score');
+                zScoreEl.textContent = Number(data.z_score).toFixed(4);
+                if (data.z_score >= 0) {
+                    zScoreEl.className = 'card-value metric-positive';
+                } else {
+                    zScoreEl.className = 'card-value metric-negative';
+                }
+                
+                // Update Hedge Ratio
+                document.getElementById('hedge-ratio').textContent = Number(data.hedge_ratio).toFixed(4);
+                
+                // Update OBI
+                document.getElementById('obi-values').innerHTML = `
+                    <span style="color: var(--success);">${data.obi_bid}</span> / 
+                    <span style="color: var(--primary);">${data.obi_ask}</span>
+                `;
+                
+                // Update Equity
+                document.getElementById('account-equity').textContent = `$${Number(data.equity).toFixed(2)}`;
+                
+                // Update Daily Drawdown
+                const drawdownEl = document.getElementById('daily-drawdown');
+                const ddVal = Number(data.drawdown || 0.0);
+                drawdownEl.textContent = `${ddVal.toFixed(2)}%`;
+                if (ddVal <= 0.0) {
+                    drawdownEl.className = 'card-value metric-positive';
+                } else {
+                    drawdownEl.className = 'card-value metric-negative';
+                }
+
+                // Update Daily Drawdown Status Card
+                const ddCard = document.getElementById('drawdown-status-card');
+                const ddBadge = document.getElementById('drawdown-card-badge');
+                const ddBody = document.getElementById('drawdown-card-body');
+                if (ddCard && ddBadge && ddBody) {
+                    if (ddVal >= 0.78) {
+                        ddCard.style.border = '1px solid rgba(239, 68, 68, 0.6)';
+                        ddCard.style.background = 'rgba(239, 68, 68, 0.12)';
+                        ddBadge.className = 'market-badge badge-closed';
+                        ddBadge.textContent = '🔴 HALTED (0.78% THRESHOLD REACHED)';
+                        ddBody.innerHTML = `⚠️ <strong>DAILY DRAWDOWN HALT ACTIVE:</strong> Current Drawdown: <strong>${ddVal.toFixed(2)}%</strong> >= <strong>0.78%</strong><br>🛡️ <strong>Protection Action:</strong> New trades are blocked and active positions auto-closed to freeze drawdown! Halt: 0.78% · Limit: 3.3%`;
+                    } else {
+                        ddCard.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+                        ddCard.style.background = 'rgba(15, 23, 42, 0.75)';
+                        ddBadge.className = 'market-badge badge-open';
+                        ddBadge.textContent = '🟢 RISK OK (HALT: 0.78% · LIMIT: 3.3%)';
+                        ddBody.innerHTML = `✨ <strong>Daily Drawdown Status:</strong> Current Drawdown is <strong>${ddVal.toFixed(2)}%</strong> (Below 0.78% Halt Threshold). Halt: 0.78% · Limit: 3.3%.`;
+                    }
+                }
+                
+                // Update Trades Today
+                document.getElementById('trades-today').textContent = `${data.trades_today} / ${data.max_trades}`;
+                
+                // Update Floating Profit
+                const floatingEl = document.getElementById('floating-profit');
+                floatingEl.textContent = `$${Number(data.floating_profit).toFixed(2)}`;
+                if (data.floating_profit >= 0) {
+                    floatingEl.className = 'card-value profit-positive';
+                } else {
+                    floatingEl.className = 'card-value profit-negative';
+                }
+                
+                // Highlight active asset class button
+                const activePair = data.current_coin; // Format: "SYMBOL_A vs SYMBOL_B"
+                document.getElementById('active-pair-name').textContent = activePair;
+                updateActiveButton(activePair);
+                
+                // Update SMC Structural Zones Title & Badges
+                const symbolA = activePair.split(' vs ')[0];
+                document.getElementById('smc-title').textContent = `Active SMC Structural Zones (${symbolA})`;
+                const zonesContainer = document.getElementById('smc-zones-container');
+                if (data.zones && data.zones.length > 0) {
+                    zonesContainer.innerHTML = data.zones.map(z => {
+                        const badgeClass = z.type === 'OB' ? 'sell-badge' : 'buy-badge';
+                        return `<span class="badge ${badgeClass}" style="font-size: 13px; padding: 6px 12px; display: inline-block;">${z.label}: ${z.range}</span>`;
+                    }).join('');
+                } else {
+                    zonesContainer.innerHTML = `<span style="color: var(--text-muted); font-size: 14px;">No active SMC structural zones detected</span>`;
+                }
+                
+                // Update Active Positions Table
+                const positionsTable = document.getElementById('positions-body');
+                if (data.positions && data.positions.length > 0) {
+                    positionsTable.innerHTML = data.positions.map(p => `
+                        <tr>
+                            <td>${p.ticket}</td>
+                            <td>${p.symbol}</td>
+                            <td><span class="badge ${p.type === 'BUY' ? 'buy-badge' : 'sell-badge'}">${p.type}</span></td>
+                            <td>${p.lots}</td>
+                            <td>${p.entry}</td>
+                            <td>${p.current}</td>
+                            <td class="${p.profit >= 0 ? 'profit-positive' : 'profit-negative'}">$${p.profit}</td>
+                            <td>${p.comment}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    positionsTable.innerHTML = `<tr><td colspan='8' style='text-align: center; color: #888;'>No active positions</td></tr>`;
+                }
+                
+                // Update Recent Trades History Table
+                const historyTable = document.getElementById('history-body');
+                if (data.history && data.history.length > 0) {
+                    historyTable.innerHTML = data.history.map(h => `
+                        <tr>
+                            <td>${h.ticket}</td>
+                            <td>${h.symbol}</td>
+                            <td><span class="badge ${h.type === 'BUY' ? 'buy-badge' : 'sell-badge'}">${h.type}</span></td>
+                            <td>${h.lots}</td>
+                            <td>${h.entry}</td>
+                            <td>${h.close}</td>
+                            <td class="${h.profit >= 0 ? 'profit-positive' : 'profit-negative'}">$${h.profit}</td>
+                            <td>${h.comment}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    historyTable.innerHTML = `<tr><td colspan='8' style='text-align: center; color: #888;'>No trade history in database</td></tr>`;
+                }
+                
+                // Update timestamp
+                document.getElementById('last-update-time').textContent = `Last Update: ${data.last_update} (AJAX Dynamic)`;
+                
+            } catch (error) {
+                clearTimeout(timeoutId);
+                console.error('Error fetching data:', error);
+                document.getElementById('last-update-time').textContent = `Server Connection Lost. Retrying...`;
+                document.getElementById('system-status').textContent = 'OFFLINE (Connection Lost)';
+                document.getElementById('system-status').className = 'card-value status-halted';
+            }
+        }
+
+        function updateActiveButton(activePair) {
+            // Normalise name (e.g. "EURUSD vs GBPUSD" -> "EURUSD/GBPUSD")
+            const pairKey = activePair.replace(' vs ', '/');
+            
+            // Reset all buttons
+            document.getElementById('btn-forex').className = 'btn';
+            document.getElementById('btn-metals').className = 'btn';
+            document.getElementById('btn-crypto').className = 'btn';
+            document.getElementById('btn-stocks').className = 'btn';
+            
+            if (pairKey === 'EURUSD/GBPUSD') {
+                document.getElementById('btn-forex').className = 'btn active';
+            } else if (pairKey === 'XAUUSD/XAGUSD') {
+                document.getElementById('btn-metals').className = 'btn active';
+            } else if (pairKey === 'BTCUSD/ETHUSD') {
+                document.getElementById('btn-crypto').className = 'btn active';
+            } else if (pairKey === 'AAPL/MSFT') {
+                document.getElementById('btn-stocks').className = 'btn active';
+            }
+        }
+
+        async function changeAssetClass(pairStr) {
+            try {
+                const response = await fetch(`${API_URL}/api/change_coin`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ pair: pairStr })
+                });
+                if (response.ok) {
+                    console.log(`Successfully switched trading assets to ${pairStr}`);
+                    // Instantly fetch updated stats
+                    await fetchStats();
+                } else {
+                    console.error('Failed to change trading assets');
+                }
+            } catch (err) {
+                console.error('Network error switching assets:', err);
+            }
+        }
+
+        async function applyCustomPair() {
+            const legA = document.getElementById('custom-leg-a').value.trim().toUpperCase();
+            const legB = document.getElementById('custom-leg-b').value.trim().toUpperCase();
+            if (!legA || !legB) {
+                alert('Please enter both Leg A and Leg B symbols');
+                return;
+            }
+            const pairStr = `${legA}/${legB}`;
+            await changeAssetClass(pairStr);
+        }
+
+        function updateMarketHoursStatus() {
+            const now = new Date();
+            const day = now.getUTCDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+            const utcHours = now.getUTCHours();
+            const utcMins = now.getUTCMinutes();
+            const totalUtcMins = utcHours * 60 + utcMins;
+            
+            // 1. US STOCKS (NYSE/NASDAQ): 13:30 UTC to 20:00 UTC (9:30 AM - 4:00 PM EST), Mon-Fri (1-5)
+            const isStocksOpen = (day >= 1 && day <= 5) && (totalUtcMins >= 810 && totalUtcMins < 1200);
+            const badgeStocks = document.getElementById('badge-us-stocks');
+            if (badgeStocks) {
+                badgeStocks.textContent = isStocksOpen ? 'LIVE OPEN 🟢' : 'MARKET CLOSED 🔴';
+                badgeStocks.className = isStocksOpen ? 'market-badge badge-open' : 'market-badge badge-closed';
+            }
+            
+            // 2. FOREX MARKET: 22:00 UTC Sunday (5:00 PM EST) to 22:00 UTC Friday (5:00 PM EST)
+            const isForexOpen = !(day === 6 || (day === 0 && totalUtcMins < 1320) || (day === 5 && totalUtcMins >= 1320));
+            const badgeForex = document.getElementById('badge-forex');
+            if (badgeForex) {
+                badgeForex.textContent = isForexOpen ? 'LIVE OPEN 🟢' : 'MARKET CLOSED 🔴';
+                badgeForex.className = isForexOpen ? 'market-badge badge-open' : 'market-badge badge-closed';
+            }
+
+            // 3. PRECIOUS METALS: Sun 23:00 UTC to Fri 22:00 UTC (Daily break 21:00-22:00 UTC)
+            const isDailyMetalBreak = (totalUtcMins >= 1260 && totalUtcMins < 1320); // 21:00 to 22:00 UTC
+            const isMetalsOpen = isForexOpen && !isDailyMetalBreak;
+            const badgeMetals = document.getElementById('badge-metals');
+            if (badgeMetals) {
+                badgeMetals.textContent = isMetalsOpen ? 'LIVE OPEN 🟢' : (isDailyMetalBreak ? 'DAILY BREAK ⏸' : 'MARKET CLOSED 🔴');
+                badgeMetals.className = isMetalsOpen ? 'market-badge badge-open' : 'market-badge badge-closed';
+            }
+
+            // 4. INDICES: Sun 23:00 UTC to Fri 22:00 UTC (Daily break 20:15-20:30 & 21:00-22:00 UTC)
+            const isDailyIndexBreak = (totalUtcMins >= 1215 && totalUtcMins < 1230) || (totalUtcMins >= 1260 && totalUtcMins < 1320);
+            const isIndicesOpen = isForexOpen && !isDailyIndexBreak;
+            const badgeIndices = document.getElementById('badge-indices');
+            if (badgeIndices) {
+                badgeIndices.textContent = isIndicesOpen ? 'LIVE OPEN 🟢' : (isDailyIndexBreak ? 'DAILY BREAK ⏸' : 'MARKET CLOSED 🔴');
+                badgeIndices.className = isIndicesOpen ? 'market-badge badge-open' : 'market-badge badge-closed';
+            }
+        }
+
+        // Start non-blocking recursive polling
+        async function startPolling() {
+            updateMarketHoursStatus();
+            await fetchStats();
+            setTimeout(startPolling, 1000); // 1-second delay after previous call finishes
+        }
+        window.onload = startPolling;
+    </script>
+</body>
+</html>

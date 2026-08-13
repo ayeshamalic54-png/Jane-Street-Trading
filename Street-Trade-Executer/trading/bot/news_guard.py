@@ -10,6 +10,53 @@ logger = logging.getLogger("SMC_Forex_Bot")
 CACHE_FILE = "news_cache.json"
 CACHE_EXPIRY_SECONDS = 300 # 5 minutes cache
 
+import requests
+import threading
+
+_DISCORD_NEWS_NOTIFIED = {}
+
+def send_discord_news_alert(country, event_title, mins, stage="Stage 1"):
+    """Sends a rich Discord Webhook alert for High-Impact News events with 15m throttling."""
+    global _DISCORD_NEWS_NOTIFIED
+    now = time.time()
+    event_key = f"{country}_{event_title}_{stage}"
+
+    # Throttle to send maximum ONCE per 15 minutes per event
+    if event_key in _DISCORD_NEWS_NOTIFIED and (now - _DISCORD_NEWS_NOTIFIED[event_key]) < 900:
+        return
+
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        return
+
+    _DISCORD_NEWS_NOTIFIED[event_key] = now
+
+    def _async_send():
+        try:
+            time_desc = f"in {mins} minutes" if stage == "Stage 1" else f"{abs(mins)} minutes ago"
+            payload = {
+                "username": "Jane Street News Guard",
+                "avatar_url": "https://cdn-icons-png.flaticon.com/512/2965/2965300.png",
+                "embeds": [{
+                    "title": "📰 HIGH-IMPACT NEWS GUARD ALERT",
+                    "description": "**High-Impact Economic News Protection Active!**\nNew trade entries for affected currency pairs are being blocked to protect capital.",
+                    "color": 15158332, # Crimson Red
+                    "fields": [
+                        {"name": "🌐 Currency", "value": f"**{country}**", "inline": True},
+                        {"name": "🗞️ Event", "value": f"**{event_title}**", "inline": True},
+                        {"name": "⏱️ Time", "value": f"**{time_desc}**", "inline": True},
+                        {"name": "🛡️ Protection Layer", "value": "**Stage 1: Pre-News Entry Block**" if stage == "Stage 1" else "**Stage 2: Post-News Volatility Protection**", "inline": False}
+                    ],
+                    "footer": {"text": "Jane Street Quantitative System • Risk Guard Layer"},
+                    "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }]
+            }
+            requests.post(webhook_url, json=payload, timeout=5)
+        except Exception as ex:
+            logger.error(f"Error sending Discord News alert: {ex}")
+
+    threading.Thread(target=_async_send, daemon=True).start()
+
 def get_news_halt_status(symbols, buffer_minutes=15.0):
     """
     Checks for high impact economic news for the currencies in symbols (USD, EUR, GBP, etc.).
@@ -199,6 +246,7 @@ def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
                     reason = f"{country} HIGH IMPACT NEWS ({event_title})"
                     mins = max(1, int(round(diff_minutes)))
                     logger.info(f"📰 HIGH-IMPACT NEWS IMMINENT: High impact {country} news ({event_title}) in {mins}m. Blocking new trade entries to protect capital.")
+                    send_discord_news_alert(country, event_title, mins, stage="Stage 1")
                     return True, reason, country, event_title
             except Exception:
                 pass
@@ -277,6 +325,7 @@ def check_post_news_stability(symbols, kf_pair=None, post_window_minutes=120.0):
                         
                         if is_expanding_fast:
                             reason = f"Post-news momentum shock active ({country} news {abs(int(diff_minutes))}m ago | Z={z_curr:.2f}, Z-Vel={z_vel:+.4f} > limit {z_vel_limit:.4f})"
+                            send_discord_news_alert(country, event_title, int(diff_minutes), stage="Stage 2")
                             return True, reason, country, event_title
             except Exception:
                 pass
