@@ -161,24 +161,28 @@ def log_trade_exit(ticket, close_price, profit, close_time):
 
 def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_count):
     """Updates the daily challenge metrics in database."""
-    query = """
-        INSERT INTO daily_metrics (trading_date, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
-        VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        ON CONFLICT (trading_date) DO UPDATE 
-        SET current_equity = EXCLUDED.current_equity,
-            max_drawdown_percent = GREATEST(daily_metrics.max_drawdown_percent, EXCLUDED.max_drawdown_percent),
-            trades_today = EXCLUDED.trades_today,
-            updated_at = CURRENT_TIMESTAMP
-    """
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(query, (
-            date_obj, 
-            float(start_equity), float(current_equity), 
-            float(max_dd), int(trades_count)
-        ))
+        cur.execute("SELECT trading_date FROM daily_metrics WHERE trading_date = %s", (date_obj,))
+        row = cur.fetchone()
+        if row:
+            update_q = """
+                UPDATE daily_metrics
+                SET current_equity = %s,
+                    max_drawdown_percent = GREATEST(max_drawdown_percent, %s),
+                    trades_today = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE trading_date = %s
+            """
+            cur.execute(update_q, (float(current_equity), float(max_dd), int(trades_count), date_obj))
+        else:
+            insert_q = """
+                INSERT INTO daily_metrics (trading_date, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            """
+            cur.execute(insert_q, (date_obj, float(start_equity), float(current_equity), float(max_dd), int(trades_count)))
         conn.commit()
         cur.close()
     except Exception as e:
