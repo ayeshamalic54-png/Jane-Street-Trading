@@ -1,0 +1,3 @@
+- [WebSocket Architecture](ws-architecture.md) — WS server at /api/ws, HTTP server wraps Express app, broadcasts every 1s from DB.
+- [FVG Zones Flow](fvg-zones.md) — Bot writes to fvg_zones table every ~20s; API reads and formats for dashboard activeZones field.
+- [Auto Execute Flag](auto-execute.md) — auto_execute in bot_state: dashboard writes it, bot reads via /api/config every 10s, update_bot_state never overwrites it.
