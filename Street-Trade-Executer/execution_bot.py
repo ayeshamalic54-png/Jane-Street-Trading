@@ -496,3 +496,30 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
     logger.error(f"Failed to close position ticket {ticket}: {err_comment}")
     return False
 
+
+def check_pre_entry_direction_confirmation(signal_type, z_score, z_velocity, velocity_threshold=0.015):
+    """
+    Protection 3: Pre-Entry Direction Confirmation.
+    Confirms that spread momentum is beginning to revert toward the mean before executing.
+    SELL_SPREAD: if spread is still expanding upward (Z-velocity > +velocity_threshold), DEFER.
+    BUY_SPREAD: if spread is still expanding downward (Z-velocity < -velocity_threshold), DEFER.
+    Returns (is_confirmed, reason)
+    """
+    z_val = float(z_score or 0.0)
+    v_val = float(z_velocity or 0.0)
+
+    if signal_type in ["SELL_SPREAD", "SELL", "BEARISH"]:
+        if v_val > velocity_threshold:
+            reason = f"PRE-ENTRY DIRECTION DEFERRED | Signal: {signal_type} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} > limit {velocity_threshold:.4f} (Spread expanding upward)"
+            logger.info(reason)
+            return False, reason
+
+    elif signal_type in ["BUY_SPREAD", "BUY", "BULLISH"]:
+        if v_val < -velocity_threshold:
+            reason = f"PRE-ENTRY DIRECTION DEFERRED | Signal: {signal_type} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} < limit -{velocity_threshold:.4f} (Spread expanding downward)"
+            logger.info(reason)
+            return False, reason
+
+    return True, "Pre-entry direction confirmed (Spread velocity stable/reverting)"
+
+

@@ -1982,6 +1982,43 @@ def main():
                         peak_floating_profit = 0.0
                         has_positions = False
 
+            # ── Protection 5: LOGIC-BASED AUTOMATIC ADVERSE-REGIME EXIT (Evaluated after 140s hold) ──
+            if has_positions and active_js_positions:
+                try:
+                    from risk_safeguards import check_adverse_regime_exit
+                    conn_time = get_connection()
+                    cur_time = conn_time.cursor()
+                    cur_time.execute("SELECT entry_time, order_type FROM trades WHERE status = 'OPEN' ORDER BY entry_time ASC LIMIT 1")
+                    time_row = cur_time.fetchone()
+                    cur_time.close()
+                    conn_time.close()
+                    
+                    if time_row and time_row[0]:
+                        first_entry_time = time_row[0]
+                        dir_str = str(time_row[1]).upper()
+                        kf_active = get_kf_for_pair(S_A_resolved, S_B_resolved)
+                        current_z_val = kf_active.z_history[-1] if kf_active.z_history else 0.0
+                        current_v_val = kf_active.get_velocity(k=3)
+                        
+                        if isinstance(first_entry_time, (int, float)):
+                            t_age = time.time() - first_entry_time
+                        elif isinstance(first_entry_time, datetime.datetime):
+                            now_utc = datetime.datetime.now(datetime.timezone.utc)
+                            if first_entry_time.tzinfo is None:
+                                first_entry_time = first_entry_time.replace(tzinfo=datetime.timezone.utc)
+                            t_age = (now_utc - first_entry_time).total_seconds()
+                        else:
+                            t_age = 0.0
+
+                        should_adv_close, adv_reason = check_adverse_regime_exit(current_pair_context, dir_str, current_z_val, current_v_val, t_age)
+                        if should_adv_close:
+                            logger.warning(f"[ADVERSE REGIME AUTO-CLOSE] {adv_reason}. AUTO-CLOSING ALL TRADES BEFORE SL REACHED!")
+                            close_all_positions("ALL")
+                            has_positions = False
+                except Exception as ex_adv:
+                    logger.error(f"Error evaluating adverse regime exit: {ex_adv}")
+
+
             # Sync open trades live prices and profit/loss in DB
             try:
                 conn = get_connection()
@@ -2191,7 +2228,16 @@ def main():
                 elif pass_z_sell and pass_vel_sell and pass_obi_sell and pass_smc_sell and pass_turn_sell:
                     action = "SELL_SPREAD"
 
+                # Protection 3: Pre-Entry Direction Confirmation
+                if action != "NONE":
+                    from execution_bot import check_pre_entry_direction_confirmation
+                    is_confirmed, pre_reason = check_pre_entry_direction_confirmation(action, z, z_velocity)
+                    if not is_confirmed:
+                        logger.info(pre_reason)
+                        action = "NONE"
+
                 # Validate beta sign and magnitude to prevent same-side hedge order anomalies
+
                 if action != "NONE":
                     expected_sign = EXPECTED_BETA_SIGN.get(pk, 1)
                     beta_sign = 1 if beta >= 0 else -1

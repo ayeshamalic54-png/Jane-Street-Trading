@@ -301,3 +301,64 @@ def is_spread_valid(symbol):
         return False
         
     return True
+
+
+MINIMUM_HOLD_ENABLED = True
+MINIMUM_HOLD_TIME_SECONDS = 140
+ADVERSE_REGIME_EXIT_ENABLED = True
+
+def check_minimum_hold(entry_time_val):
+    """
+    Protection 4: 140-Second Minimum Hold.
+    Blocks normal strategy-based early closure before 140s while keeping SL/TP 100% active.
+    Returns (is_blocked, trade_age_seconds, reason)
+    """
+    if not MINIMUM_HOLD_ENABLED or entry_time_val is None:
+        return False, 0, ""
+
+    if isinstance(entry_time_val, (int, float)):
+        trade_age = time.time() - entry_time_val
+    elif isinstance(entry_time_val, datetime.datetime):
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        if entry_time_val.tzinfo is None:
+            entry_time_val = entry_time_val.replace(tzinfo=datetime.timezone.utc)
+        trade_age = (now_utc - entry_time_val).total_seconds()
+    else:
+        return False, 0, ""
+
+    if trade_age < MINIMUM_HOLD_TIME_SECONDS:
+        msg = f"MIN_HOLD BLOCK | Trade age: {int(trade_age)}s / {MINIMUM_HOLD_TIME_SECONDS}s | Reason: normal early-close"
+        logger.info(msg)
+        return True, int(trade_age), msg
+
+    return False, int(trade_age), ""
+
+def check_adverse_regime_exit(pair_str, direction, z_score, z_velocity, trade_age_seconds):
+    """
+    Protection 5: LOGIC-BASED AUTOMATIC ADVERSE-REGIME EXIT.
+    Evaluated ONLY after 140s minimum hold.
+    Checks if mean-reversion thesis is invalidated.
+    Returns (should_close, reason)
+    """
+    if not ADVERSE_REGIME_EXIT_ENABLED or trade_age_seconds < 140:
+        return False, ""
+
+    z_val = float(z_score or 0.0)
+    v_val = float(z_velocity or 0.0)
+
+    # SELL_SPREAD: Invalidated if Z remains strongly positive (>2.2) and velocity expanding upward (>0.015)
+    if direction in ["SELL_SPREAD", "SELL", "BEARISH"]:
+        if z_val > 2.2 and v_val > 0.015:
+            reason = f"ADVERSE REGIME EXIT | Pair: {pair_str} | Direction: {direction} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} | Reason: Mean-Reversion Thesis Invalidated"
+            logger.info(reason)
+            return True, reason
+
+    # BUY_SPREAD: Invalidated if Z remains strongly negative (<-2.2) and velocity expanding downward (<-0.015)
+    if direction in ["BUY_SPREAD", "BUY", "BULLISH"]:
+        if z_val < -2.2 and v_val < -0.015:
+            reason = f"ADVERSE REGIME EXIT | Pair: {pair_str} | Direction: {direction} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} | Reason: Mean-Reversion Thesis Invalidated"
+            logger.info(reason)
+            return True, reason
+
+    return False, ""
+

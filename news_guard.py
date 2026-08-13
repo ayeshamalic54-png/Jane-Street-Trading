@@ -245,7 +245,8 @@ def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
                 if -post_minutes <= diff_minutes <= pre_minutes:
                     reason = f"{country} HIGH IMPACT NEWS ({event_title})"
                     mins = max(1, int(round(diff_minutes)))
-                    logger.info(f"📰 HIGH-IMPACT NEWS IMMINENT: High impact {country} news ({event_title}) in {mins}m. Blocking new trade entries to protect capital.")
+                    pair_str = "/".join(symbols) if isinstance(symbols, (list, tuple, set)) else str(symbols)
+                    logger.info(f"NEWS BLOCK | Currency: {country} | Event: {event_title} | Pair: {pair_str} | Time: {mins}m | TRADE BLOCKED")
                     send_discord_news_alert(country, event_title, mins, stage="Stage 1")
                     return True, reason, country, event_title
             except Exception:
