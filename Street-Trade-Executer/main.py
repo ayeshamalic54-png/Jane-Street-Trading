@@ -1981,12 +1981,19 @@ def main():
                             all_success = False
                     if all_success:
                         peak_floating_profit = 0.0
-                        has_positions = False
+            # ── HEDGE-EFFECTIVENESS MONITORING LAYER ──
+            if has_positions and active_js_positions:
+                try:
+                    from risk_safeguards import evaluate_hedge_effectiveness
+                    evaluate_hedge_effectiveness(active_js_positions)
+                except Exception as ex_hm:
+                    logger.error(f"Error in hedge effectiveness monitoring: {ex_hm}")
 
             # ── Protection 5: LOGIC-BASED AUTOMATIC ADVERSE-REGIME EXIT (Evaluated after 140s hold) ──
             if has_positions and active_js_positions:
                 try:
                     from risk_safeguards import check_adverse_regime_exit
+
                     conn_time = get_connection()
                     cur_time = conn_time.cursor()
                     cur_time.execute("SELECT entry_time, order_type FROM trades WHERE status = 'OPEN' ORDER BY entry_time ASC LIMIT 1")
