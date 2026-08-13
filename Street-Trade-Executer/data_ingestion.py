@@ -58,8 +58,14 @@ def initialize_mt5():
     logger.info(f"Login: {acc_info.login} | Server: {acc_info.server} | Balance: ${acc_info.balance:.2f} | Equity: ${acc_info.equity:.2f}")
     return acc_info
 
+_SUBSCRIBED_SYMBOLS = set()
+
 def check_and_subscribe_symbol(symbol):
-    """Ensures that the symbol is visible in the Market Watch and subscribes to its order book."""
+    """Ensures that the symbol is visible in the Market Watch and subscribes to its order book once."""
+    global _SUBSCRIBED_SYMBOLS
+    if symbol in _SUBSCRIBED_SYMBOLS:
+        return True
+        
     selected = mt5.symbol_select(symbol, True)
     if not selected:
         logger.error(f"Symbol {symbol} is not available in the Market Watch or is invalid.")
@@ -67,6 +73,7 @@ def check_and_subscribe_symbol(symbol):
         
     # Subscribe to L2 depth of market book
     book_sub = mt5.market_book_add(symbol)
+    _SUBSCRIBED_SYMBOLS.add(symbol)
     if book_sub:
         logger.info(f"Subscribed to Order Book updates for {symbol}")
     else:
