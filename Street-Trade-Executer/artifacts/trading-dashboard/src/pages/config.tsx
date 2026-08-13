@@ -208,7 +208,7 @@ export default function Config() {
       volatilityFilterEnabled: true,
       defaultLots: 0.01,
       maxDailyTrades: 3,
-      haltDrawdownLimit: 0.78,
+      haltDrawdownLimit: 0.80,
       maxDrawdownLimit: 3.30,
     },
     values: config
@@ -230,8 +230,8 @@ export default function Config() {
           volatilityFilterEnabled: (config as any).volatilityFilterEnabled ?? true,
           defaultLots: (config as any).defaultLots ?? 0.01,
           maxDailyTrades: config.maxDailyTrades,
-          haltDrawdownLimit: (config as any).haltDrawdownLimit ?? 0.78,
-          maxDrawdownLimit: (config as any).maxDrawdownLimit ?? 3.30,
+          haltDrawdownLimit: (config as any).haltDrawdownLimit ?? (config as any).halt_drawdown_limit ?? 0.80,
+          maxDrawdownLimit: (config as any).maxDrawdownLimit ?? (config as any).max_drawdown_limit ?? 3.30,
         }
       : undefined,
   });

@@ -148,6 +148,8 @@ export interface BotConfig {
   indicesEnabled: boolean;
   riskLimitsEnabled: boolean;
   defaultLots?: number;
+  haltDrawdownLimit?: number;
+  maxDrawdownLimit?: number;
 }
 
 export interface BotConfigInput {
@@ -163,6 +165,8 @@ export interface BotConfigInput {
   indicesEnabled?: boolean;
   riskLimitsEnabled?: boolean;
   defaultLots?: number;
+  haltDrawdownLimit?: number;
+  maxDrawdownLimit?: number;
 }
 
 export type ManualTradeRequestDirection = typeof ManualTradeRequestDirection[keyof typeof ManualTradeRequestDirection];
