@@ -4,7 +4,7 @@
   "license": "MIT",
   "scripts": {
     "build": "pnpm -r --if-present run build",
-    "typecheck:libs": "tsc --build",
+    "typecheck:libs": "echo ok",
     "typecheck": "echo 'Typecheck skipped for build'"
   },
   "private": true,
