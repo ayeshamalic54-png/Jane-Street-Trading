@@ -50,15 +50,15 @@ def initialize_mt5():
         init_args = {"timeout": 60000}
         if terminal_path:
             init_args["path"] = terminal_path
-            logger.info(f"Initializing MT5 using path: {terminal_path} (no credentials provided)")
+            logger.info("Initializing MetaTrader 5 Terminal...")
         else:
-            logger.info("Initializing MT5 using currently running terminal instance (no path or credentials provided)")
+            logger.info("Initializing MT5 using running terminal instance...")
             
         if not mt5.initialize(**init_args):
             # Fallback to default path if no path was provided and default initialization failed
             if not terminal_path:
                 default_path = "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
-                logger.info(f"Currently running instance not found. Falling back to default path: {default_path}")
+                logger.info("Falling back to default MT5 installation path...")
                 if mt5.initialize(path=default_path, timeout=60000):
                     logger.info("Successfully connected to default MT5 Terminal!")
                 else:
