@@ -1599,8 +1599,18 @@ def main():
     low_correlation_warning = False
     correlation_check_counter = 0
 
+    db_cfg = fetch_db_config()
+    if db_cfg:
+        new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg
+        SL_PIPS = new_sl
+        TP_PIPS = new_tp
+        import risk_safeguards
+        risk_safeguards.HALT_DAILY_DRAWDOWN_PCT = float(new_halt) if new_halt is not None else 0.78
+        risk_safeguards.MAX_DAILY_DRAWDOWN_PCT = float(new_max_dd) if new_max_dd is not None else 3.30
+
+    import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Halt Limit: 0.78% | Max Limit: 3.30% ($330.00) | Win-Rate Guard: [>=65.0% REQUIRED] | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT}% | Win-Rate Guard: [>=65.0% REQUIRED] | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
     win_rate_loop_counter = 0
     loop_log_counter = 0
     SMC_ZONES_CACHE = {}
