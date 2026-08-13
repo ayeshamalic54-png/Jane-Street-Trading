@@ -24,6 +24,7 @@ from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_vali
 from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket
 from smc_indicators import detect_smc_zones, is_price_in_zones
 from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset
+from news_guard import check_pair_news_block, check_post_news_stability
 try:
     from binance_execution import (
         get_binance_usdt_balance,
@@ -1825,6 +1826,13 @@ def main():
 
             # ── 0. INSTANT LIVE DB TOGGLES SYNC (2s LOOP) ──
             update_live_toggles_from_db()
+
+            # ── 2-STAGE NEWS GUARD EVALUATION ──
+            is_news_blocked, news_reason, news_country, news_title = check_pair_news_block([S_A_resolved, S_B_resolved])
+            if not is_news_blocked:
+                kf_curr = get_kf_for_pair(S_A_resolved, S_B_resolved)
+                is_news_blocked, news_reason, news_country, news_title = check_post_news_stability([S_A_resolved, S_B_resolved], kf_pair=kf_curr)
+            is_news_halted = is_news_blocked
 
             # ── 1. COMPILE CANDIDATE PAIRS ──
             pairs_to_scan = []
