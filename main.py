@@ -2231,8 +2231,9 @@ def main():
                 # Protection 3: Pre-Entry Direction Confirmation
                 if action != "NONE":
                     from execution_bot import check_pre_entry_direction_confirmation
-                    is_confirmed, pre_reason = check_pre_entry_direction_confirmation(action, z, z_velocity)
+                    is_confirmed, pre_reason = check_pre_entry_direction_confirmation(action, z, z_velocity, pair_str=f"{s_a_resolved}/{s_b_resolved}")
                     if not is_confirmed:
+
                         logger.info(pre_reason)
                         action = "NONE"
 

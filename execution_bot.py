@@ -497,29 +497,37 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
     return False
 
 
-def check_pre_entry_direction_confirmation(signal_type, z_score, z_velocity, velocity_threshold=0.015):
+def check_pre_entry_direction_confirmation(signal_type, z_score, z_velocity, pair_str="", velocity_threshold=None):
     """
     Protection 3: Pre-Entry Direction Confirmation.
     Confirms that spread momentum is beginning to revert toward the mean before executing.
-    SELL_SPREAD: if spread is still expanding upward (Z-velocity > +velocity_threshold), DEFER.
-    BUY_SPREAD: if spread is still expanding downward (Z-velocity < -velocity_threshold), DEFER.
-    Returns (is_confirmed, reason)
+    Uses asset-tailored dynamic velocity limits (Forex: 0.015, Metals: 0.035, Indices: 0.025).
     """
     z_val = float(z_score or 0.0)
     v_val = float(z_velocity or 0.0)
 
+    if velocity_threshold is None:
+        p_upper = str(pair_str).upper()
+        if any(m in p_upper for m in ["XAU", "XAG", "GOLD", "SILVER"]):
+            velocity_threshold = 0.035
+        elif any(idx in p_upper for idx in ["US30", "NAS100", "US500", "GER30", "UK100", "USTEC"]):
+            velocity_threshold = 0.025
+        else:
+            velocity_threshold = 0.015
+
     if signal_type in ["SELL_SPREAD", "SELL", "BEARISH"]:
         if v_val > velocity_threshold:
-            reason = f"PRE-ENTRY DIRECTION DEFERRED | Signal: {signal_type} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} > limit {velocity_threshold:.4f} (Spread expanding upward)"
+            reason = f"PRE-ENTRY DIRECTION DEFERRED | Signal: {signal_type} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} > dynamic limit {velocity_threshold:.4f} (Spread expanding upward)"
             logger.info(reason)
             return False, reason
 
     elif signal_type in ["BUY_SPREAD", "BUY", "BULLISH"]:
         if v_val < -velocity_threshold:
-            reason = f"PRE-ENTRY DIRECTION DEFERRED | Signal: {signal_type} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} < limit -{velocity_threshold:.4f} (Spread expanding downward)"
+            reason = f"PRE-ENTRY DIRECTION DEFERRED | Signal: {signal_type} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} < dynamic limit -{velocity_threshold:.4f} (Spread expanding downward)"
             logger.info(reason)
             return False, reason
 
     return True, "Pre-entry direction confirmed (Spread velocity stable/reverting)"
+
 
 
