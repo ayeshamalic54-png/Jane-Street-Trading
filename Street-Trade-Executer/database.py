@@ -123,9 +123,17 @@ def initialize_database():
             indices_enabled BOOLEAN DEFAULT TRUE,
             stocks_enabled BOOLEAN DEFAULT TRUE,
             risk_limits_enabled BOOLEAN DEFAULT TRUE,
+            halt_drawdown_limit NUMERIC(5, 2) DEFAULT 0.78,
+            max_drawdown_limit NUMERIC(5, 2) DEFAULT 3.30,
             last_heartbeat TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+        """,
+        """
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS halt_drawdown_limit NUMERIC(5, 2) DEFAULT 0.78;
+        """,
+        """
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS max_drawdown_limit NUMERIC(5, 2) DEFAULT 3.30;
         """,
         """
         CREATE TABLE IF NOT EXISTS fvg_zones (

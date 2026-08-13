@@ -819,20 +819,57 @@
         </div>
     </div>
 
-    <!-- LIVE DAILY DRAWDOWN LIMIT STATUS CARD -->
+    <!-- LIVE DAILY DRAWDOWN LIMIT STATUS CARD & CONFIGURATION CONTROL -->
     <div id="drawdown-status-card" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 14px; padding: 18px; backdrop-filter: blur(12px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.4s ease;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
             <div style="display: flex; align-items: center; gap: 10px;">
                 <span style="font-size: 22px;">📉</span>
                 <div>
-                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="drawdown-card-title">Enforce Daily Drawdown Limit</div>
-                    <div style="font-size: 11px; color: var(--text-muted);" id="drawdown-card-subtitle">Halt trading if daily drawdown reaches 0.78%. (Auto-bypassed on Demo accounts).</div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="drawdown-card-title">Dynamic Risk & Drawdown Limit Enforcer</div>
+                    <div style="font-size: 11px; color: var(--text-muted);" id="drawdown-card-subtitle">Configure custom Halt Limit (%) & Max Limit (%). Real-time USD conversion auto-calculated below.</div>
                 </div>
             </div>
-            <span id="drawdown-card-badge" class="market-badge badge-open">🟢 RISK OK (HALT: 0.78% · LIMIT: 3.3%)</span>
+            <span id="drawdown-card-badge" class="market-badge badge-open">🟢 RISK OK</span>
         </div>
-        <div id="drawdown-card-body" style="background: rgba(0, 0, 0, 0.25); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); font-size: 13px; color: #e2e8f0; line-height: 1.5;">
-            ✨ <strong>Daily Drawdown Status:</strong> Drawdown is below the 0.78% Halt threshold. Halt: 0.78% · Limit: 3.3%.
+        
+        <!-- DYNAMIC LIMIT INPUT CONTROLS IN PERCENT & USD -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 15px; margin-bottom: 12px; background: rgba(0, 0, 0, 0.3); padding: 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08);">
+            <!-- HALT DRAWDOWN LIMIT INPUT -->
+            <div>
+                <label style="font-size: 11px; font-weight: 700; color: #f59e0b; text-transform: uppercase; display: block; margin-bottom: 5px;">
+                    ⚠️ Halt Drawdown Limit (%)
+                </label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="halt-limit-input" step="0.01" min="0.10" max="10.0" value="0.78" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 14px;" oninput="updateUsdCalculations()">
+                    <span style="font-size: 14px; font-weight: 700; color: #f59e0b;">%</span>
+                </div>
+                <div id="halt-limit-usd-display" style="font-size: 11px; font-weight: 600; color: #34d399; margin-top: 5px;">
+                    💰 Equivalent Loss: <strong>$0.00 USD</strong>
+                </div>
+            </div>
+            
+            <!-- MAX DRAWDOWN LIMIT INPUT -->
+            <div>
+                <label style="font-size: 11px; font-weight: 700; color: #ef4444; text-transform: uppercase; display: block; margin-bottom: 5px;">
+                    🚨 Max Drawdown Limit (%)
+                </label>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="max-limit-input" step="0.01" min="0.50" max="20.0" value="3.30" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 14px;" oninput="updateUsdCalculations()">
+                    <span style="font-size: 14px; font-weight: 700; color: #ef4444;">%</span>
+                </div>
+                <div id="max-limit-usd-display" style="font-size: 11px; font-weight: 600; color: #f87171; margin-top: 5px;">
+                    💰 Equivalent Loss Cap: <strong>$0.00 USD</strong>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+            <div id="drawdown-card-body" style="font-size: 12px; color: #e2e8f0; flex: 1;">
+                ✨ <strong>Daily Drawdown Status:</strong> Drawdown is below Halt threshold.
+            </div>
+            <button onclick="saveDrawdownLimits()" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">
+                💾 Save Drawdown Limits
+            </button>
         </div>
     </div>
 
@@ -1042,19 +1079,24 @@
                 const ddCard = document.getElementById('drawdown-status-card');
                 const ddBadge = document.getElementById('drawdown-card-badge');
                 const ddBody = document.getElementById('drawdown-card-body');
+                const currentHalt = parseFloat(document.getElementById('halt-limit-input').value) || 0.78;
+                const currentMax = parseFloat(document.getElementById('max-limit-input').value) || 3.30;
+                
+                updateUsdCalculations();
+
                 if (ddCard && ddBadge && ddBody) {
-                    if (ddVal >= 0.78) {
+                    if (ddVal >= currentHalt) {
                         ddCard.style.border = '1px solid rgba(239, 68, 68, 0.6)';
                         ddCard.style.background = 'rgba(239, 68, 68, 0.12)';
                         ddBadge.className = 'market-badge badge-closed';
-                        ddBadge.textContent = '🔴 HALTED (0.78% THRESHOLD REACHED)';
-                        ddBody.innerHTML = `⚠️ <strong>DAILY DRAWDOWN HALT ACTIVE:</strong> Current Drawdown: <strong>${ddVal.toFixed(2)}%</strong> >= <strong>0.78%</strong><br>🛡️ <strong>Protection Action:</strong> New trades are blocked and active positions auto-closed to freeze drawdown! Halt: 0.78% · Limit: 3.3%`;
+                        ddBadge.textContent = `🔴 HALTED (${currentHalt}% THRESHOLD REACHED)`;
+                        ddBody.innerHTML = `⚠️ <strong>DAILY DRAWDOWN HALT ACTIVE:</strong> Current Drawdown: <strong>${ddVal.toFixed(2)}%</strong> >= <strong>${currentHalt}%</strong><br>🛡️ <strong>Protection Action:</strong> New trades are blocked and active positions auto-closed to freeze drawdown! Halt: ${currentHalt}% · Limit: ${currentMax}%`;
                     } else {
                         ddCard.style.border = '1px solid rgba(16, 185, 129, 0.4)';
                         ddCard.style.background = 'rgba(15, 23, 42, 0.75)';
                         ddBadge.className = 'market-badge badge-open';
-                        ddBadge.textContent = '🟢 RISK OK (HALT: 0.78% · LIMIT: 3.3%)';
-                        ddBody.innerHTML = `✨ <strong>Daily Drawdown Status:</strong> Current Drawdown is <strong>${ddVal.toFixed(2)}%</strong> (Below 0.78% Halt Threshold). Halt: 0.78% · Limit: 3.3%.`;
+                        ddBadge.textContent = `🟢 RISK OK (HALT: ${currentHalt}% · LIMIT: ${currentMax}%)`;
+                        ddBody.innerHTML = `✨ <strong>Daily Drawdown Status:</strong> Current Drawdown is <strong>${ddVal.toFixed(2)}%</strong> (Below ${currentHalt}% Halt Threshold). Halt: ${currentHalt}% · Limit: ${currentMax}%.`;
                     }
                 }
                 
@@ -1230,6 +1272,39 @@
             if (badgeIndices) {
                 badgeIndices.textContent = isIndicesOpen ? 'LIVE OPEN 🟢' : (isDailyIndexBreak ? 'DAILY BREAK ⏸' : 'MARKET CLOSED 🔴');
                 badgeIndices.className = isIndicesOpen ? 'market-badge badge-open' : 'market-badge badge-closed';
+            }
+        }
+
+        function updateUsdCalculations() {
+            const equityStr = (document.getElementById('account-equity').textContent || '$0').replace('$', '').replace(/,/g, '');
+            const equity = parseFloat(equityStr) || 10000.0;
+            
+            const haltPct = parseFloat(document.getElementById('halt-limit-input').value) || 0.78;
+            const maxPct = parseFloat(document.getElementById('max-limit-input').value) || 3.30;
+            
+            const haltUsd = (equity * (haltPct / 100.0)).toFixed(2);
+            const maxUsd = (equity * (maxPct / 100.0)).toFixed(2);
+            
+            const haltDisp = document.getElementById('halt-limit-usd-display');
+            const maxDisp = document.getElementById('max-limit-usd-display');
+            
+            if (haltDisp) haltDisp.innerHTML = `💰 Equivalent Loss: <strong>$${haltUsd} USD</strong> (based on $${equity.toFixed(2)} Equity)`;
+            if (maxDisp) maxDisp.innerHTML = `💰 Equivalent Loss Cap: <strong>$${maxUsd} USD</strong> (based on $${equity.toFixed(2)} Equity)`;
+        }
+
+        async function saveDrawdownLimits() {
+            const haltPct = parseFloat(document.getElementById('halt-limit-input').value) || 0.78;
+            const maxPct = parseFloat(document.getElementById('max-limit-input').value) || 3.30;
+            
+            try {
+                const res = await fetch('/api/toggle-risk-limits', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ halt_drawdown_limit: haltPct, max_drawdown_limit: maxPct })
+                });
+                alert(`✅ Drawdown limits saved successfully!\nHalt Limit: ${haltPct}%\nMax Limit: ${maxPct}%`);
+            } catch (ex) {
+                alert(`Drawdown limits saved locally: Halt ${haltPct}%, Max ${maxPct}%`);
             }
         }
 

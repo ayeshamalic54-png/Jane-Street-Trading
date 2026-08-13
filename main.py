@@ -138,7 +138,7 @@ def fetch_db_config():
                crypto_enabled, metals_enabled, forex_enabled, indices_enabled,
                risk_limits_enabled, z_entry_threshold, default_lots, max_trades,
                knife_protection_enabled, obi_enabled, volatility_filter_enabled,
-               stocks_enabled
+               stocks_enabled, halt_drawdown_limit, max_drawdown_limit
         FROM bot_state
         WHERE id = 1
     """
@@ -1688,7 +1688,7 @@ def main():
             if db_config_counter % 5 == 0:
                 db_cfg = fetch_db_config()
                 if db_cfg:
-                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks = db_cfg
+                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg
                     parts = new_pair.split("/")
                     if len(parts) == 2 and parts[0] != parts[1]:
                         if GLOBAL_CONFIG["SYMBOL_A"] != parts[0] or GLOBAL_CONFIG["SYMBOL_B"] != parts[1]:
@@ -1742,6 +1742,15 @@ def main():
                     if risk_safeguards.MAX_DAILY_TRADES != new_max_trades:
                         logger.info(f"[CONFIG UPDATE] Max Daily Trades updated: {risk_safeguards.MAX_DAILY_TRADES} -> {new_max_trades}")
                         risk_safeguards.MAX_DAILY_TRADES = new_max_trades
+                    new_h_val = float(new_halt) if new_halt is not None else risk_safeguards.HALT_DAILY_DRAWDOWN_PCT
+                    new_m_val = float(new_max_dd) if new_max_dd is not None else risk_safeguards.MAX_DAILY_DRAWDOWN_PCT
+                    if risk_safeguards.HALT_DAILY_DRAWDOWN_PCT != new_h_val:
+                        logger.info(f"[CONFIG UPDATE] Halt Drawdown Limit updated: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT}% -> {new_h_val}%")
+                        risk_safeguards.HALT_DAILY_DRAWDOWN_PCT = new_h_val
+                        risk_safeguards.MAX_DAILY_LOSS_PERCENT = new_h_val
+                    if risk_safeguards.MAX_DAILY_DRAWDOWN_PCT != new_m_val:
+                        logger.info(f"[CONFIG UPDATE] Max Drawdown Limit updated: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT}% -> {new_m_val}%")
+                        risk_safeguards.MAX_DAILY_DRAWDOWN_PCT = new_m_val
                     
                     # Clean up disabled categories in the database immediately
                     cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED, STOCKS_ENABLED)
