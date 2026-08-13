@@ -134,3 +134,19 @@ def shutdown_mt5(symbol=None):
             pass
     mt5.shutdown()
     logger.info("MT5 connection closed.")
+
+def resolve_broker_symbol(symbol):
+    """Resolves broker-specific symbol suffixes (e.g. EURUSD.a, EURUSD.m, EURUSD.ecn, XAUUSD.pro)."""
+    try:
+        all_symbols = mt5.symbols_get()
+        if not all_symbols:
+            return symbol
+        sym_names = [s.name for s in all_symbols]
+        if symbol in sym_names:
+            return symbol
+        for s in sym_names:
+            if s.startswith(symbol) or symbol in s or s.replace('.', '').replace('-', '') == symbol:
+                return s
+    except Exception:
+        pass
+    return symbol
