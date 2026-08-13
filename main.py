@@ -2318,7 +2318,14 @@ def main():
                     COOLDOWN_DIRECTIONS[pk] = None
                     cooldown_dir = None
 
-                if action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved):
+                from risk_safeguards import get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES
+                active_pairs_cnt, active_pairs_set, active_symbols_set = get_active_pairs_and_symbols()
+                
+                base_a_check = s_a_resolved.upper().split('.')[0]
+                base_b_check = s_b_resolved.upper().split('.')[0]
+                is_duplicate_open = (base_a_check in active_symbols_set) or (base_b_check in active_symbols_set) or (f"{base_a_check}/{base_b_check}" in active_pairs_set)
+
+                if action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved) and not is_duplicate_open:
                     cand_cat_a = get_symbol_category(s_a_resolved)
                     cand_cat_b = get_symbol_category(s_b_resolved)
                     if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)) and (cand_cat_b == "crypto" or is_spread_valid(s_b_resolved)):
@@ -2335,6 +2342,8 @@ def main():
                             "price_a": p_a,
                             "price_b": p_b
                         })
+                elif action != "NONE" and is_duplicate_open:
+                    logger.info(f"[DUPLICATE TRADE BLOCKED] Signal generated for {s_a_resolved}/{s_b_resolved}, but trade is already open on this symbol/pair. Entry skipped.")
 
             # ── 3. MANAGE ACTIVE POSITION EXITS ──
             kf_active = get_kf_for_pair(S_A_resolved, S_B_resolved)
@@ -2349,10 +2358,21 @@ def main():
             # ── 5. ALGO TRADING & AUTO-EXECUTION ──
             trades_today = get_trades_count_today()
             is_trade_limit_ok = (not RISK_LIMITS_ENABLED) or is_demo or (trades_today < MAX_DAILY_TRADES)
+            active_pairs_cnt, active_pairs_set, active_symbols_set = get_active_pairs_and_symbols()
             
-            if AUTO_EXECUTE and not has_positions and is_trade_limit_ok and not is_news_halted and candidate_signals:
-                # Filter candidates to require a minimum 65.0% win rate and sort by win rate descending
-                qualifying_candidates = [c for c in candidate_signals if c["win_rate"] >= 65.0]
+            if active_pairs_cnt >= MAX_CONCURRENT_TRADES:
+                if candidate_signals:
+                    logger.info(f"[MAX CONCURRENT TRADES LIMIT] {active_pairs_cnt}/{MAX_CONCURRENT_TRADES} active pairs currently open. New entries blocked until an existing trade closes.")
+            elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and candidate_signals:
+                # Filter candidates to require a minimum 65.0% win rate, non-duplicate, and sort by win rate descending
+                qualifying_candidates = []
+                for c in candidate_signals:
+                    c_a, c_b = c["pair"]
+                    ca_base = c_a.upper().split('.')[0]
+                    cb_base = c_b.upper().split('.')[0]
+                    if c["win_rate"] >= 65.0 and (ca_base not in active_symbols_set) and (cb_base not in active_symbols_set):
+                        qualifying_candidates.append(c)
+
                 if not qualifying_candidates:
                     logger.info(f"Skipping trade execution: All candidate signals have win rate < 65.0% (Best candidate was {candidate_signals[0]['pair']} with {candidate_signals[0]['win_rate']}%)")
                     best_sig = None
