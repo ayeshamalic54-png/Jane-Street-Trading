@@ -591,6 +591,11 @@ def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_
     query = """
         INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today, updated_at)
         VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (trading_date, mt5_login) DO UPDATE 
+        SET current_equity = EXCLUDED.current_equity,
+            max_drawdown_percent = GREATEST(daily_metrics.max_drawdown_percent, EXCLUDED.max_drawdown_percent),
+            trades_today = EXCLUDED.trades_today,
+            updated_at = CURRENT_TIMESTAMP
     """
     def _do_update():
         conn = None
@@ -677,6 +682,9 @@ def reset_database_metrics_for_new_account(login_id, equity):
         cur.execute("""
             INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
             VALUES (%s, %s, %s, %s, 0.0, 0)
+            ON CONFLICT (trading_date, mt5_login) DO UPDATE 
+            SET start_equity = EXCLUDED.start_equity,
+                current_equity = EXCLUDED.current_equity,
                 max_drawdown_percent = 0.0,
                 trades_today = 0,
                 updated_at = CURRENT_TIMESTAMP
