@@ -333,13 +333,22 @@ def check_minimum_hold(entry_time_val):
 
     return False, int(trade_age), ""
 
-def check_adverse_regime_exit(pair_str, direction, z_score, z_velocity, trade_age_seconds):
+_ADVERSE_CONFIRMATION_COUNTERS = {}
+REQUIRED_CONSECUTIVE_OBSERVATIONS = 3
+
+def check_adverse_regime_exit(pair_str, direction, z_score, z_velocity, trade_age_seconds, required_obs=REQUIRED_CONSECUTIVE_OBSERVATIONS):
     """
     Protection 5: LOGIC-BASED AUTOMATIC ADVERSE-REGIME EXIT.
     Evaluated ONLY after 140s minimum hold.
     Uses asset-tailored dynamic velocity thresholds (Forex: 0.015, Metals: 0.035, Indices: 0.025).
+    Requires sustained adverse Z-score + Z-velocity over multiple consecutive scan observations (default: 3)
+    to prevent 1-tick / 1-cycle false exit spikes.
+    Returns (should_close, reason)
     """
+    global _ADVERSE_CONFIRMATION_COUNTERS
+
     if not ADVERSE_REGIME_EXIT_ENABLED or trade_age_seconds < 140:
+        _ADVERSE_CONFIRMATION_COUNTERS[pair_str] = 0
         return False, ""
 
     z_val = float(z_score or 0.0)
@@ -353,20 +362,32 @@ def check_adverse_regime_exit(pair_str, direction, z_score, z_velocity, trade_ag
     else:
         v_limit = 0.015
 
+    is_adverse_now = False
+
     # SELL_SPREAD: Invalidated if Z remains strongly positive (>2.2) and velocity expanding upward (>v_limit)
     if direction in ["SELL_SPREAD", "SELL", "BEARISH"]:
         if z_val > 2.2 and v_val > v_limit:
-            reason = f"ADVERSE REGIME EXIT | Pair: {pair_str} | Direction: {direction} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} > limit {v_limit:.4f} | Reason: Mean-Reversion Thesis Invalidated"
-            logger.info(reason)
-            return True, reason
+            is_adverse_now = True
 
     # BUY_SPREAD: Invalidated if Z remains strongly negative (<-2.2) and velocity expanding downward (<-v_limit)
     if direction in ["BUY_SPREAD", "BUY", "BULLISH"]:
         if z_val < -2.2 and v_val < -v_limit:
-            reason = f"ADVERSE REGIME EXIT | Pair: {pair_str} | Direction: {direction} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} < limit -{v_limit:.4f} | Reason: Mean-Reversion Thesis Invalidated"
+            is_adverse_now = True
+
+    if is_adverse_now:
+        current_count = _ADVERSE_CONFIRMATION_COUNTERS.get(pair_str, 0) + 1
+        _ADVERSE_CONFIRMATION_COUNTERS[pair_str] = current_count
+
+        if current_count >= required_obs:
+            reason = f"ADVERSE REGIME EXIT CONFIRMED | Pair: {pair_str} | Direction: {direction} | Z-Score: {z_val:.2f} | Z-Velocity: {v_val:+.4f} > limit {v_limit:.4f} | Sustained Observations: {current_count}/{required_obs} | Reason: Mean-Reversion Thesis Invalidated"
             logger.info(reason)
             return True, reason
+        else:
+            logger.info(f"ADVERSE REGIME DETECTED (Observation {current_count}/{required_obs}) for {pair_str} | Deferring exit until sustained confirmation.")
+            return False, ""
+    else:
+        _ADVERSE_CONFIRMATION_COUNTERS[pair_str] = 0
+        return False, ""
 
-    return False, ""
 
 

@@ -2013,9 +2013,14 @@ def main():
 
                         should_adv_close, adv_reason = check_adverse_regime_exit(current_pair_context, dir_str, current_z_val, current_v_val, t_age)
                         if should_adv_close:
-                            logger.warning(f"[ADVERSE REGIME AUTO-CLOSE] {adv_reason}. AUTO-CLOSING ALL TRADES BEFORE SL REACHED!")
-                            close_all_positions("ALL")
-                            has_positions = False
+                            logger.warning(f"[PAIR-SPECIFIC ADVERSE EXIT] {adv_reason}. AUTO-CLOSING ONLY {current_pair_context} POSITIONS BEFORE SL REACHED!")
+                            pair_syms = {S_A_resolved.upper().split('.')[0], S_B_resolved.upper().split('.')[0]}
+                            for pos in active_js_positions:
+                                pos_base = pos.symbol.upper().split('.')[0]
+                                if pos_base in pair_syms:
+                                    pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+                                    close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+
                 except Exception as ex_adv:
                     logger.error(f"Error evaluating adverse regime exit: {ex_adv}")
 
