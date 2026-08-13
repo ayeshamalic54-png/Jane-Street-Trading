@@ -40,7 +40,7 @@ router.get("/config", async (req, res) => {
       maxDrawdownLimit: Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30),
     });
   } catch (err) {
-    req.log.error({ err }, "Failed to get config");
+    console.error("Failed to get config", err);
     return res.status(500).json({ error: "Failed to get config" });
   }
 });
@@ -141,7 +141,7 @@ router.post("/config", async (req, res) => {
       maxDrawdownLimit: maxLimit,
     });
   } catch (err) {
-    req.log.error({ err }, "Failed to update config");
+    console.error("Failed to update config", err);
     return res.status(500).json({ error: "Failed to update config" });
   }
 });
