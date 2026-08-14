@@ -162,11 +162,12 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
                 comment=f"JaneStreet {part_name}",
                 signal_id=signal_id
             )
-            logger.info(f"Successfully executed {part_name} order ({filled_lots} lots | Server TP and SL set; 140s / 2m20s hold enforced). Ticket: {ticket}")
+            logger.info(f"🟢 [ENTRY SUCCESS] Ticket #{ticket} | Symbol: {symbol} | Type: {'BUY' if is_long else 'SELL'} | {part_name} Volume: {filled_lots} Lots | Target TP: {tp_val:.5f} | SL: {sl_price:.5f}")
             success = True
         else:
             err_msg = res.comment if res else "No response"
-            logger.error(f"Failed to execute {part_name} order: {err_msg}")
+            logger.error(f"❌ [ENTRY FAILED] {part_name} Order Execution Error: {err_msg}")
+
             
     return success, total_filled_lots
 
@@ -523,9 +524,10 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
         res = mt5.order_send(request)
         if res:
             if res.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info(f"Successfully closed position ticket {ticket} | Volume: {vol} | Mode: {mode}")
+                logger.info(f"🔴 [TRADE EXIT EXECUTED] Ticket #{ticket} | Symbol: {symbol} | Volume: {vol} Lots | Execution Mode: {mode}")
                 check_closed_trades(symbol)
                 return True
+
             elif res.retcode in (10018, 10021): # Market is closed
                 logger.warning(f"Market is closed for {symbol} (Ticket {ticket}). Deferring close until market reopens.")
                 return False

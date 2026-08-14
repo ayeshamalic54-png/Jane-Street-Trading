@@ -1266,11 +1266,12 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 140s minimum hold time.")
 
         if exit_triggered:
-            logger.info(f"Dynamic exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all positions.")
+            logger.info(f"🏁 [TRADE BASKET EXIT TRIGGERED] Signal ID #{sig_id} | Reason: {exit_reason} | Closing All Pair Positions 🔴")
             for t_a in open_leg_a_trades:
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
             for t_b in open_leg_b_trades:
                 close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+
 
             # Sync closed details immediately to database
             try:
