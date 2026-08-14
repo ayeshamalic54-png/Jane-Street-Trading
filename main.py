@@ -1210,7 +1210,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         # Check standard Z-score exit conditions if time exit didn't trigger
         if not exit_triggered:
             tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
-            is_mean_reached = (is_buy_spread and z_score_for_pair >= z_ex_val) or (not is_buy_spread and z_score_for_pair <= -z_ex_val)
+            # Active mean threshold: Trigger TP1 partial exit when Z reaches 0.50 (near mean) or touches 0.0
+            is_mean_reached = (is_buy_spread and z_score_for_pair >= -0.50) or (not is_buy_spread and z_score_for_pair <= 0.50)
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
             if is_sl_breached:
@@ -1220,7 +1221,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 if tp1_trade is not None:
                     # OPTION 1: Partial Mean Exit — Bank TP1 profit & move TP2/TP3 SL to Breakeven
                     from execution_bot import modify_position_sl
-                    logger.info(f"🎯 [PARTIAL MEAN EXIT] Z-score touched mean ({z_score_for_pair:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                    logger.info(f"🎯 [PARTIAL MEAN EXIT] Z-score reached near-mean zone ({z_score_for_pair:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+
                     
                     # 1. Close TP1 Ticket
                     close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
