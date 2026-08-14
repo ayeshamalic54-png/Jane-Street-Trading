@@ -404,7 +404,7 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                 pass
 
 
-Z_ENTRY_THRESHOLD = 2.0
+Z_ENTRY_THRESHOLD = 2.4
 ML_MODEL = None
 DEFAULT_LOTS = 0.01
 Z_EXIT_MEAN = 0.0
@@ -421,13 +421,14 @@ LOOP_INTERVAL = 2
 
 CANDIDATE_PAIRS = {
     "forex": [
+        ("EURUSD", "USDCHF"),  # Priority 1: Strongest negative correlation
+        ("GBPUSD", "USDJPY"),  # Priority 2: High volatility mean reversion
+        ("AUDUSD", "NZDUSD"),  # Priority 3: Tightest co-integration spread
         ("EURUSD", "GBPUSD"),
-        ("AUDUSD", "NZDUSD"),
-        ("EURUSD", "USDCHF"),
         ("GBPUSD", "USDCHF"),
         ("EURUSD", "USDJPY"),
-        ("GBPUSD", "USDJPY"),
     ],
+
     "metals": [
         ("XAUUSD", "XAGUSD"),
     ],
