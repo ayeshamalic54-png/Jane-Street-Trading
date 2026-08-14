@@ -1975,8 +1975,9 @@ def main():
             is_friday_close = is_friday_market_close_approaching(lead_minutes=45)
             if is_friday_close and cat_a != "crypto":
                 logger.warning("🌅 FRIDAY MARKET CLOSE IMMINENT: Blocking new entries and auto-closing active positions to prevent Sunday opening gap risk!")
-                if has_positions:
+                if get_open_trades_count() > 0:
                     close_all_positions("ALL")
+
 
             # Determine equity based on asset class
             if cat_a == "crypto":
