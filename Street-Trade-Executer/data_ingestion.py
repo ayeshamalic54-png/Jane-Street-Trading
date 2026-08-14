@@ -77,9 +77,10 @@ def check_and_subscribe_symbol(symbol):
     if book_sub:
         logger.info(f"Subscribed to Order Book updates for {symbol}")
     else:
-        logger.warning(f"Could not subscribe to Order Book for {symbol} (Level-2 depth might be disabled by broker)")
+        logger.info(f"Market Watch active for {symbol} (Level-1 Bid/Ask ticks active; L2 DOM depth not required).")
         
     return True
+
 
 def get_rates_df(symbol, timeframe, count=200):
     """Fetches historical price candles and returns them as a pandas DataFrame."""
