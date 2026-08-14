@@ -2928,9 +2928,10 @@ def main():
 
                 logger.info(
                     f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} "
-                    f"| Target Z: <= 0.50 (Or Reversal) | TP1 Lock Rule: ACTIVE 🎯 "
-                    f"| Breakeven Guard: ENABLED 🛡️ | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
+                    f"| Target Z: 0.0 (Pure Baseline Reversion) | Partial Exit: DISABLED (Pure Baseline Sweep) "
+                    f"| Breakeven Guard: DISABLED | Milestone Trailing SL: DISABLED | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
+
 
 
             loop_log_counter += 1
