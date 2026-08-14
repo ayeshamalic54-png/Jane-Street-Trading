@@ -1194,7 +1194,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if kf_pair is not None:
             from math_models import calculate_half_life
             half_life_bars = calculate_half_life(kf_pair.spread_history)
-        max_holding_seconds = half_life_bars * 300.0 * 2.5
+        is_buy_spread = (open_leg_a_trades[0]["order_type"] == "BUY") if open_leg_a_trades else False
+        exit_triggered = False
+        exit_reason = ""
 
         # Calculate TOTAL NET CASH PROFIT across all positions in this trade basket
         total_basket_pnl = 0.0
@@ -1207,6 +1209,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if "GLOBAL_PEAK_BASKET_PNL" not in globals():
             global GLOBAL_PEAK_BASKET_PNL
             GLOBAL_PEAK_BASKET_PNL = {}
+
 
         current_peak = GLOBAL_PEAK_BASKET_PNL.get(sig_id, 0.0)
         if total_basket_pnl > current_peak:
