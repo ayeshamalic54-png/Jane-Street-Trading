@@ -1859,8 +1859,9 @@ def main():
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
                         logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry}")
-                        logger.info(f"🎯 [EXIT STRATEGY ACTIVE] Option 1 Partial Exit: ENABLED (Z <= 0.50 triggers TP1 Profit Bank + TP2/TP3 Breakeven SL)")
-                        logger.info(f"🛡️ [TRAILING GUARDS ACTIVE] Milestone SL (+8 pips -> +4 pips lock | +12 pips -> +8 pips lock) | Max Concurrent Trades: 2")
+                        logger.info("🎯 [EXIT STRATEGY ACTIVE] Target Z: 0.0 (Pure Original Baseline Reversion Sweep)")
+                        logger.info("🛑 [DISABLED GUARDS] Option 1 Z<=0.50 Exit: DISABLED | Breakeven SL Guard: DISABLED | Milestone Trailing SL: DISABLED")
+
 
                     if REQUIRE_SMC_CONFLUENCE != new_smc:
                         logger.info(f"[CONFIG UPDATE] SMC Confluence updated: {REQUIRE_SMC_CONFLUENCE} -> {new_smc}")
