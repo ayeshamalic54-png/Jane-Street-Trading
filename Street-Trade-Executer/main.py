@@ -1240,8 +1240,50 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     # Keep TP2 & TP3 running risk-free toward full targets
                     exit_triggered = False
                 else:
-                    # TP1 is already banked. Check if full broker TPs hit or if extreme re-divergence occurs
-                    pass
+                    # TP1 is already banked. Evaluate Stepped Milestone Trailing SL for TP2 & TP3
+                    from execution_bot import modify_position_sl
+                    pip_unit = 0.01 if "JPY" in sym_a.upper() else 0.0001
+                    if any(x in sym_a.upper() for x in ["XAU", "XAG"]):
+                        pip_unit = 0.10
+                    elif any(x in sym_a.upper() for x in ["US30", "NAS100", "US500"]):
+                        pip_unit = 1.0
+
+                    for t_a in open_leg_a_trades:
+                        entry_p = t_a.get("entry_price")
+                        tkt = t_a.get("ticket")
+                        sym = t_a.get("symbol")
+                        pos_type = t_a.get("order_type")
+                        
+                        pos_info = mt5.positions_get(ticket=tkt)
+                        if pos_info and entry_p:
+                            curr_p = pos_info[0].price_current
+                            curr_sl = pos_info[0].sl
+
+                            if pos_type == "BUY":
+                                pips_profit = (curr_p - entry_p) / pip_unit
+                                if pips_profit >= 12.0:
+                                    target_sl = entry_p + (8.0 * pip_unit)
+                                    if curr_sl < target_sl:
+                                        modify_position_sl(tkt, sym, target_sl)
+                                        logger.info(f"🚀 [MILESTONE 2 TRAIL] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +8.0 pips profit lock ({target_sl:.5f})!")
+                                elif pips_profit >= 8.0:
+                                    target_sl = entry_p + (4.0 * pip_unit)
+                                    if curr_sl < target_sl:
+                                        modify_position_sl(tkt, sym, target_sl)
+                                        logger.info(f"🛡️ [MILESTONE 1 TRAIL] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
+                            elif pos_type == "SELL":
+                                pips_profit = (entry_p - curr_p) / pip_unit
+                                if pips_profit >= 12.0:
+                                    target_sl = entry_p - (8.0 * pip_unit)
+                                    if curr_sl == 0.0 or curr_sl > target_sl:
+                                        modify_position_sl(tkt, sym, target_sl)
+                                        logger.info(f"🚀 [MILESTONE 2 TRAIL] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +8.0 pips profit lock ({target_sl:.5f})!")
+                                elif pips_profit >= 8.0:
+                                    target_sl = entry_p - (4.0 * pip_unit)
+                                    if curr_sl == 0.0 or curr_sl > target_sl:
+                                        modify_position_sl(tkt, sym, target_sl)
+                                        logger.info(f"🛡️ [MILESTONE 1 TRAIL] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
+
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
         min_hold_ok = True
