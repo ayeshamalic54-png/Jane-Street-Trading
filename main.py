@@ -1216,22 +1216,107 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             GLOBAL_PEAK_BASKET_PNL[sig_id] = total_basket_pnl
             current_peak = total_basket_pnl
 
-        # ── PURE ORIGINAL BASELINE Z = 0.0 MEAN REVERSION EXIT ──
-        # Revert to exact August 12 & 13 baseline setup:
-        # When Z-score crosses 0.0 mean AND total basket PnL > $0.00 -> CLOSE ALL 4 POSITIONS TOGETHER!
-        is_mean_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
-        is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
+        # ── MASTER UNIFIED REVERSAL & PROFIT LOCK ENGINE ──
+        # Rule 1: High Profit Reversal Lock ($40.00+ Peak -> Drops to $38.00)
+        tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
+        is_reversion_momentum = (is_buy_spread and pair_velocity > 0.0) or (not is_buy_spread and pair_velocity < 0.0)
 
-        if is_sl_breached:
+        if current_peak >= 40.0 and total_basket_pnl <= 38.0:
+            if tp1_trade is not None:
+                from execution_bot import modify_position_sl
+                logger.info(f"🎯 [HIGH PROFIT REVERSAL LOCK] Peak reached ${current_peak:.2f} & dropped to ${total_basket_pnl:.2f} (<= $38.00). Closing TP1 & moving TP2/TP3 SL to Breakeven!")
+                close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+                if open_leg_b_trades:
+                    h_trade = open_leg_b_trades[0]
+                    h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
+                    if h_part_vol > 0:
+                        close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
+                for t_a in open_leg_a_trades:
+                    if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
+                        modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+
+        # Rule 2: Mid Profit Reversal Lock ($30.00+ Peak -> Drops to $25.00)
+        elif current_peak >= 30.0 and total_basket_pnl <= 25.0:
+            if tp1_trade is not None:
+                from execution_bot import modify_position_sl
+                logger.info(f"🎯 [MID PROFIT REVERSAL LOCK] Peak reached ${current_peak:.2f} & dropped to ${total_basket_pnl:.2f} (<= $25.00). Closing TP1 & moving TP2/TP3 SL to Breakeven!")
+                close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+                if open_leg_b_trades:
+                    h_trade = open_leg_b_trades[0]
+                    h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
+                    if h_part_vol > 0:
+                        close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
+                for t_a in open_leg_a_trades:
+                    if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
+                        modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+
+        # Rule 3: Loss Reversal Safeguard (Trade in Loss + Confirmed Velocity Reversal)
+        elif total_basket_pnl < 0.0 and is_reversion_momentum:
+            logger.info(f"🎯 [CONFIRMED REVERSAL IN LOSS] Velocity confirms reversal ({pair_velocity:+.4f}) while PnL is ${total_basket_pnl:.2f}. Closing trade in minimal loss to prevent drawdown!")
             exit_triggered = True
-            exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
-        elif is_mean_reached and total_basket_pnl > 0.0:
-            exit_triggered = True
-            exit_reason = f"Z_MEAN_REVERSION_0.0 (z={z_score_for_pair:.2f}, PnL=${total_basket_pnl:.2f})"
+            exit_reason = f"LOSS_REVERSAL_CONFIRMED (PnL=${total_basket_pnl:.2f}, Vel={pair_velocity:+.4f})"
+
+        # Rule 4: Z <= 0.50 Near-Mean Target OR Anywhere Confirmed Reversal
+        if not exit_triggered:
+            has_reverted_from_entry = (is_buy_spread and z_score_for_pair > entry_z) or (not is_buy_spread and z_score_for_pair < entry_z)
+            is_mean_reached = (has_reverted_from_entry and is_reversion_momentum) or (total_basket_pnl >= 35.0) or ((is_buy_spread and z_score_for_pair >= -0.50) or (not is_buy_spread and z_score_for_pair <= 0.50))
+            is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
+
+            if is_sl_breached:
+                exit_triggered = True
+                exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
+            elif is_mean_reached:
+                if tp1_trade is not None:
+                    from execution_bot import modify_position_sl
+                    logger.info(f"🎯 [ANYWHERE CONFIRMED REVERSAL EXIT] Reversal/Target confirmed at Z={z_score_for_pair:.2f} (Basket PnL=${total_basket_pnl:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                    
+                    pos_info_tp1 = mt5.positions_get(ticket=tp1_trade["ticket"])
+                    tp1_pnl = float(pos_info_tp1[0].profit) if pos_info_tp1 else 0.0
+
+                    if tp1_pnl > 0.0:
+                        close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+                        if open_leg_b_trades:
+                            h_trade = open_leg_b_trades[0]
+                            h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
+                            if h_part_vol > 0:
+                                close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
+                        for t_a in open_leg_a_trades:
+                            if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
+                                modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+
+
+
+                    
+                    # Require TP1 position to be in POSITIVE PROFIT (> $0.00) before executing partial exit!
+                    pos_info_tp1 = mt5.positions_get(ticket=tp1_trade["ticket"])
+                    tp1_pnl = float(pos_info_tp1[0].profit) if pos_info_tp1 else 0.0
+
+                    if tp1_pnl > 0.0:
+                        from execution_bot import modify_position_sl
+                        logger.info(f"🎯 [PARTIAL MEAN EXIT] Z-score reached near-mean zone ({z_score_for_pair:.2f}) & TP1 PnL is positive (${tp1_pnl:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                        
+                        # 1. Close TP1 Ticket
+                        close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+                        
+                        # 2. Close 1/3 of Hedge Ticket
+                        if open_leg_b_trades:
+                            h_trade = open_leg_b_trades[0]
+                            h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
+                            if h_part_vol > 0:
+                                close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
+                        
+                        # 3. Move Stop Loss for remaining TP2 & TP3 to Entry Price (Breakeven)
+                        for t_a in open_leg_a_trades:
+                            if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
+                                modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+                    else:
+                        logger.info(f"🛡️ [PARTIAL EXIT DEFERRED] Z-score touched near-mean ({z_score_for_pair:.2f}), but TP1 PnL is currently negative (${tp1_pnl:.2f}). Exit deferred until positive profit.")
+                    
+                    # Keep TP2 & TP3 running risk-free toward full targets
+                    exit_triggered = False
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
         min_hold_ok = True
-
         for t in trades:
             entry_t = t["entry_time"]
             if entry_t is not None:
@@ -1859,9 +1944,8 @@ def main():
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
                         logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry}")
-                        logger.info("🎯 [EXIT STRATEGY ACTIVE] Target Z: 0.0 (Pure Original Baseline Reversion Sweep)")
-                        logger.info("🛑 [DISABLED GUARDS] Option 1 Z<=0.50 Exit: DISABLED | Breakeven SL Guard: DISABLED | Milestone Trailing SL: DISABLED")
-
+                        logger.info(f"🎯 [EXIT STRATEGY ACTIVE] Option 1 Partial Exit: ENABLED (Z <= 0.50 triggers TP1 Profit Bank + TP2/TP3 Breakeven SL)")
+                        logger.info(f"🛡️ [TRAILING GUARDS ACTIVE] Milestone SL (+8 pips -> +4 pips lock | +12 pips -> +8 pips lock) | Max Concurrent Trades: 2")
 
                     if REQUIRE_SMC_CONFLUENCE != new_smc:
                         logger.info(f"[CONFIG UPDATE] SMC Confluence updated: {REQUIRE_SMC_CONFLUENCE} -> {new_smc}")
@@ -2929,10 +3013,9 @@ def main():
 
                 logger.info(
                     f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} "
-                    f"| Target Z: 0.0 (Pure Baseline Reversion) | Partial Exit: DISABLED (Pure Baseline Sweep) "
-                    f"| Breakeven Guard: DISABLED | Milestone Trailing SL: DISABLED | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
+                    f"| Target Z: <= 0.50 (Or Reversal) | TP1 Lock Rule: ACTIVE 🎯 "
+                    f"| Breakeven Guard: ENABLED 🛡️ | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
-
 
 
             loop_log_counter += 1
