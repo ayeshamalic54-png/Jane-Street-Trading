@@ -1875,7 +1875,10 @@ def main():
                     SL_PIPS = new_sl
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
-                        logger.info(f"[ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry Threshold: {new_z_entry}")
+                        logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry}")
+                        logger.info(f"🎯 [EXIT STRATEGY ACTIVE] Option 1 Partial Exit: ENABLED (Z <= 0.50 triggers TP1 Profit Bank + TP2/TP3 Breakeven SL)")
+                        logger.info(f"🛡️ [TRAILING GUARDS ACTIVE] Milestone SL (+8 pips -> +4 pips lock | +12 pips -> +8 pips lock) | Max Concurrent Trades: 2")
+
                     if REQUIRE_SMC_CONFLUENCE != new_smc:
                         logger.info(f"[CONFIG UPDATE] SMC Confluence updated: {REQUIRE_SMC_CONFLUENCE} -> {new_smc}")
                         REQUIRE_SMC_CONFLUENCE = new_smc
@@ -2942,9 +2945,10 @@ def main():
 
                 logger.info(
                     f"[LIVE SCAN DETAIL] Active Focus: {S_A}/{S_B} | Z-Score: {active_pair_z_score:.3f} "
-                    f"| Z-Velocity: {active_pair_velocity:.3f} | OBI A/B: {active_pair_obi_a:.1f}/{active_pair_obi_b:.1f} "
-                    f"| Status: {status_str}"
+                    f"| Exit Rule: Z<=0.50 (TP1 Bank + Breakeven SL) | Z-Velocity: {active_pair_velocity:.3f} "
+                    f"| OBI A/B: {active_pair_obi_a:.1f}/{active_pair_obi_b:.1f} | Status: {status_str}"
                 )
+
             loop_log_counter += 1
 
         except Exception as loop_err:
