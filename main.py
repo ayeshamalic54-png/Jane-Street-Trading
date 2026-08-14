@@ -1213,10 +1213,34 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             GLOBAL_PEAK_BASKET_PNL[sig_id] = total_basket_pnl
             current_peak = total_basket_pnl
 
-        # 1. Total Net Profit Peak Drawdown Lock: If peak reached +$20.00+ and profit drops by $6.00 from peak (e.g. from +$40 to +$34) -> CLOSE ALL BASKET POSITIONS IMMEDIATELY!
-        if current_peak >= 20.0 and (current_peak - total_basket_pnl) >= 6.0:
+        # ── EXACT PEAK PROFIT REVERSAL LOCK ($40-$46+ Peak -> Drops to $36) ──
+        # If total profit reaches $40.00+ (or up to $46.00+) and drops back to $36.00:
+        # Close TP1 IMMEDIATELY to bank profit & move TP2/TP3 SL to Breakeven!
+        if current_peak >= 40.0 and total_basket_pnl <= 36.0:
+            if tp1_trade is not None:
+                from execution_bot import modify_position_sl
+                logger.info(f"🎯 [PEAK PROFIT REVERSAL LOCK] Profit hit Peak ${current_peak:.2f} & dropped to ${total_basket_pnl:.2f}. Closing TP1 immediately & moving TP2/TP3 SL to Breakeven!")
+                
+                # 1. Close TP1 Ticket
+                close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+                
+                # 2. Close 1/3 of Hedge Ticket
+                if open_leg_b_trades:
+                    h_trade = open_leg_b_trades[0]
+                    h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
+                    if h_part_vol > 0:
+                        close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
+                
+                # 3. Move Stop Loss for remaining TP2 & TP3 to Entry Price (Breakeven)
+                for t_a in open_leg_a_trades:
+                    if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
+                        modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+
+        # General Peak Drawdown Lock: If peak reached +$20.00+ and profit drops by $6.00 from peak -> CLOSE ALL BASKET POSITIONS IMMEDIATELY!
+        elif current_peak >= 20.0 and (current_peak - total_basket_pnl) >= 6.0:
             exit_triggered = True
             exit_reason = f"NET_PROFIT_PEAK_LOCK (Peak=${current_peak:.2f} -> Cur=${total_basket_pnl:.2f})"
+
 
         # Check standard Z-score exit conditions if peak lock didn't trigger
         if not exit_triggered:
