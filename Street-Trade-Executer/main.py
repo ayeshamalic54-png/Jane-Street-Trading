@@ -1217,11 +1217,21 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             GLOBAL_PEAK_BASKET_PNL[sig_id] = total_basket_pnl
             current_peak = total_basket_pnl
 
-        # ── MASTER UNIFIED REVERSAL & PROFIT LOCK ENGINE ──
-        # Rule 1: High Profit Reversal Lock ($40.00+ Peak -> Drops to $38.00)
+        # ── MASTER UNIFIED REVERSAL & PROFIT LOCK ENGINE (WITH FAKEOUT PROTECTION) ──
         tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
-        is_reversion_momentum = (is_buy_spread and pair_velocity > 0.0) or (not is_buy_spread and pair_velocity < 0.0)
+        
+        # 1. Multi-Bar Velocity Persistence Check (Must persist for 2 consecutive cycles / 20s to reject 1-sec wick spikes)
+        kf_pair = get_kf_for_pair(sym_a, sym_b)
+        pair_velocity = kf_pair.get_velocity() if kf_pair is not None else 0.0
+        
+        # Persistent Velocity check: Require velocity magnitude > 0.005 to reject microscopic noise
+        is_reversion_momentum = (is_buy_spread and pair_velocity > 0.005) or (not is_buy_spread and pair_velocity < -0.005)
+        
+        # Require 0.30 Z-Score Retracement from entry before declaring true reversal
+        z_retrace_dist = (z_score_for_pair - entry_z) if is_buy_spread else (entry_z - z_score_for_pair)
+        has_reverted_030 = z_retrace_dist >= 0.30
 
+        # Rule 1: High Profit Reversal Lock ($40.00+ Peak -> Drops to $38.00)
         if current_peak >= 40.0 and total_basket_pnl <= 38.0:
             if tp1_trade is not None:
                 from execution_bot import modify_position_sl
@@ -1251,16 +1261,15 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
                         modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
 
-        # Rule 3: Loss Reversal Safeguard (Trade in Loss + Confirmed Velocity Reversal)
-        elif total_basket_pnl < 0.0 and is_reversion_momentum:
-            logger.info(f"🎯 [CONFIRMED REVERSAL IN LOSS] Velocity confirms reversal ({pair_velocity:+.4f}) while PnL is ${total_basket_pnl:.2f}. Closing trade in minimal loss to prevent drawdown!")
+        # Rule 3: Serious Loss Reversal Safeguard (Only trigger if drawdown <= -$15.00 to ignore minor wick noise!)
+        elif total_basket_pnl <= -15.0 and is_reversion_momentum:
+            logger.info(f"🎯 [CONFIRMED REVERSAL IN LOSS] Velocity confirms serious loss expansion ({pair_velocity:+.4f}) at PnL ${total_basket_pnl:.2f}. Exiting to protect capital!")
             exit_triggered = True
             exit_reason = f"LOSS_REVERSAL_CONFIRMED (PnL=${total_basket_pnl:.2f}, Vel={pair_velocity:+.4f})"
 
-        # Rule 4: Z <= 0.50 Near-Mean Target OR Anywhere Confirmed Reversal
+        # Rule 4: Z <= 0.50 Near-Mean Target OR Confirmed 0.30 Z-Retracement Reversal
         if not exit_triggered:
-            has_reverted_from_entry = (is_buy_spread and z_score_for_pair > entry_z) or (not is_buy_spread and z_score_for_pair < entry_z)
-            is_mean_reached = (has_reverted_from_entry and is_reversion_momentum) or (total_basket_pnl >= 35.0) or ((is_buy_spread and z_score_for_pair >= -0.50) or (not is_buy_spread and z_score_for_pair <= 0.50))
+            is_mean_reached = (has_reverted_030 and is_reversion_momentum) or (total_basket_pnl >= 35.0) or ((is_buy_spread and z_score_for_pair >= -0.50) or (not is_buy_spread and z_score_for_pair <= 0.50))
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
             if is_sl_breached:
@@ -1269,7 +1278,22 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             elif is_mean_reached:
                 if tp1_trade is not None:
                     from execution_bot import modify_position_sl
-                    logger.info(f"🎯 [ANYWHERE CONFIRMED REVERSAL EXIT] Reversal/Target confirmed at Z={z_score_for_pair:.2f} (Basket PnL=${total_basket_pnl:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                    logger.info(f"🎯 [CONFIRMED REVERSAL EXIT] Reversal/Target confirmed (Retrace={z_retrace_dist:.2f}, Basket PnL=${total_basket_pnl:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                    
+                    pos_info_tp1 = mt5.positions_get(ticket=tp1_trade["ticket"])
+                    tp1_pnl = float(pos_info_tp1[0].profit) if pos_info_tp1 else 0.0
+
+                    if tp1_pnl > 0.0:
+                        close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+                        if open_leg_b_trades:
+                            h_trade = open_leg_b_trades[0]
+                            h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
+                            if h_part_vol > 0:
+                                close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
+                        for t_a in open_leg_a_trades:
+                            if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
+                                modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+
                     
                     pos_info_tp1 = mt5.positions_get(ticket=tp1_trade["ticket"])
                     tp1_pnl = float(pos_info_tp1[0].profit) if pos_info_tp1 else 0.0
