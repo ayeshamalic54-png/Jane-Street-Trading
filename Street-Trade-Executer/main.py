@@ -1209,20 +1209,43 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
         # Check standard Z-score exit conditions if time exit didn't trigger
         if not exit_triggered:
-            if is_buy_spread:
-                if z_score_for_pair >= z_ex_val:
-                    exit_triggered = True
-                    exit_reason = f"Z_TP_REVERSION (z={z_score_for_pair:.2f} >= {z_ex_val})"
-                elif z_score_for_pair <= -effective_z_sl:
-                    exit_triggered = True
-                    exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} <= {-effective_z_sl:.2f})"
-            else:
-                if z_score_for_pair <= -z_ex_val:
-                    exit_triggered = True
-                    exit_reason = f"Z_TP_REVERSION (z={z_score_for_pair:.2f} <= {-z_ex_val})"
-                elif z_score_for_pair >= effective_z_sl:
-                    exit_triggered = True
-                    exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} >= {effective_z_sl:.2f})"
+            tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
+            # Active mean threshold: Trigger TP1 partial exit when Z reaches 0.50 (near mean) or touches 0.0
+            is_mean_reached = (is_buy_spread and z_score_for_pair >= -0.50) or (not is_buy_spread and z_score_for_pair <= 0.50)
+            is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
+
+            if is_sl_breached:
+                exit_triggered = True
+                exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
+            elif is_mean_reached:
+                if tp1_trade is not None:
+                    # Require TP1 position to be in POSITIVE PROFIT (> $0.00) before executing partial exit!
+                    pos_info_tp1 = mt5.positions_get(ticket=tp1_trade["ticket"])
+                    tp1_pnl = float(pos_info_tp1[0].profit) if pos_info_tp1 else 0.0
+
+                    if tp1_pnl > 0.0:
+                        from execution_bot import modify_position_sl
+                        logger.info(f"🎯 [PARTIAL MEAN EXIT] Z-score reached near-mean zone ({z_score_for_pair:.2f}) & TP1 PnL is positive (${tp1_pnl:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                        
+                        # 1. Close TP1 Ticket
+                        close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+                        
+                        # 2. Close 1/3 of Hedge Ticket
+                        if open_leg_b_trades:
+                            h_trade = open_leg_b_trades[0]
+                            h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
+                            if h_part_vol > 0:
+                                close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
+                        
+                        # 3. Move Stop Loss for remaining TP2 & TP3 to Entry Price (Breakeven)
+                        for t_a in open_leg_a_trades:
+                            if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
+                                modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+                    else:
+                        logger.info(f"🛡️ [PARTIAL EXIT DEFERRED] Z-score touched near-mean ({z_score_for_pair:.2f}), but TP1 PnL is currently negative (${tp1_pnl:.2f}). Exit deferred until positive profit.")
+                    
+                    # Keep TP2 & TP3 running risk-free toward full targets
+                    exit_triggered = False
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
         min_hold_ok = True
@@ -1247,7 +1270,6 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
             for t_b in open_leg_b_trades:
                 close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
-
 
             # Sync closed details immediately to database
             try:
