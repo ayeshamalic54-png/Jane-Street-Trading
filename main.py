@@ -1216,89 +1216,22 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             GLOBAL_PEAK_BASKET_PNL[sig_id] = total_basket_pnl
             current_peak = total_basket_pnl
 
-        # ── EXACT PEAK PROFIT REVERSAL LOCK ($40-$46+ Peak -> Drops to $36) ──
-        # If total profit reaches $40.00+ (or up to $46.00+) and drops back to $36.00:
-        # Close TP1 IMMEDIATELY to bank profit & move TP2/TP3 SL to Breakeven!
-        if current_peak >= 40.0 and total_basket_pnl <= 36.0:
-            if tp1_trade is not None:
-                from execution_bot import modify_position_sl
-                logger.info(f"🎯 [PEAK PROFIT REVERSAL LOCK] Profit hit Peak ${current_peak:.2f} & dropped to ${total_basket_pnl:.2f}. Closing TP1 immediately & moving TP2/TP3 SL to Breakeven!")
-                
-                # 1. Close TP1 Ticket
-                close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
-                
-                # 2. Close 1/3 of Hedge Ticket
-                if open_leg_b_trades:
-                    h_trade = open_leg_b_trades[0]
-                    h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
-                    if h_part_vol > 0:
-                        close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
-                
-                # 3. Move Stop Loss for remaining TP2 & TP3 to Entry Price (Breakeven)
-                for t_a in open_leg_a_trades:
-                    if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
-                        modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+        # ── PURE ORIGINAL BASELINE Z = 0.0 MEAN REVERSION EXIT ──
+        # Revert to exact August 12 & 13 baseline setup:
+        # When Z-score crosses 0.0 mean AND total basket PnL > $0.00 -> CLOSE ALL 4 POSITIONS TOGETHER!
+        is_mean_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
+        is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
-        # General Peak Drawdown Lock: If peak reached +$20.00+ and profit drops by $6.00 from peak -> CLOSE ALL BASKET POSITIONS IMMEDIATELY!
-        elif current_peak >= 20.0 and (current_peak - total_basket_pnl) >= 6.0:
+        if is_sl_breached:
             exit_triggered = True
-            exit_reason = f"NET_PROFIT_PEAK_LOCK (Peak=${current_peak:.2f} -> Cur=${total_basket_pnl:.2f})"
-
-
-        # Check standard Z-score exit conditions if peak lock didn't trigger
-        if not exit_triggered:
-            tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
-            
-            # Reversion Momentum Direction Change Confirmation (Active momentum reverting toward mean)
-            is_reversion_momentum = (is_buy_spread and pair_velocity > 0.0) or (not is_buy_spread and pair_velocity < 0.0)
-            
-            # Reversion Check from Entry Z (ANYWHERE REVERSAL: Not restricted to Z<=0.50!)
-            has_reverted_from_entry = (is_buy_spread and z_score_for_pair > entry_z) or (not is_buy_spread and z_score_for_pair < entry_z)
-            
-            # Anywhere Confirmed Reversal Exit Trigger OR Net Cash Profit >= $35.00
-            is_mean_reached = (has_reverted_from_entry and is_reversion_momentum) or (total_basket_pnl >= 35.0)
-            is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
-
-            if is_sl_breached:
-                exit_triggered = True
-                exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
-            elif is_mean_reached:
-                if tp1_trade is not None:
-                    from execution_bot import modify_position_sl
-                    logger.info(f"🎯 [CONFIRMED REVERSAL EXIT] Reversal/Cash Target confirmed (Basket PnL=${total_basket_pnl:.2f}, Z={z_score_for_pair:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
-
-
-                    
-                    # Require TP1 position to be in POSITIVE PROFIT (> $0.00) before executing partial exit!
-                    pos_info_tp1 = mt5.positions_get(ticket=tp1_trade["ticket"])
-                    tp1_pnl = float(pos_info_tp1[0].profit) if pos_info_tp1 else 0.0
-
-                    if tp1_pnl > 0.0:
-                        from execution_bot import modify_position_sl
-                        logger.info(f"🎯 [PARTIAL MEAN EXIT] Z-score reached near-mean zone ({z_score_for_pair:.2f}) & TP1 PnL is positive (${tp1_pnl:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
-                        
-                        # 1. Close TP1 Ticket
-                        close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
-                        
-                        # 2. Close 1/3 of Hedge Ticket
-                        if open_leg_b_trades:
-                            h_trade = open_leg_b_trades[0]
-                            h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
-                            if h_part_vol > 0:
-                                close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
-                        
-                        # 3. Move Stop Loss for remaining TP2 & TP3 to Entry Price (Breakeven)
-                        for t_a in open_leg_a_trades:
-                            if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
-                                modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
-                    else:
-                        logger.info(f"🛡️ [PARTIAL EXIT DEFERRED] Z-score touched near-mean ({z_score_for_pair:.2f}), but TP1 PnL is currently negative (${tp1_pnl:.2f}). Exit deferred until positive profit.")
-                    
-                    # Keep TP2 & TP3 running risk-free toward full targets
-                    exit_triggered = False
+            exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
+        elif is_mean_reached and total_basket_pnl > 0.0:
+            exit_triggered = True
+            exit_reason = f"Z_MEAN_REVERSION_0.0 (z={z_score_for_pair:.2f}, PnL=${total_basket_pnl:.2f})"
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
         min_hold_ok = True
+
         for t in trades:
             entry_t = t["entry_time"]
             if entry_t is not None:
