@@ -1211,11 +1211,14 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if not exit_triggered:
             tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
             
-            # Reversion Momentum Direction Change Confirmation
+            # Reversion Momentum Direction Change Confirmation (Active momentum reverting toward mean)
             is_reversion_momentum = (is_buy_spread and active_pair_velocity > 0.0) or (not is_buy_spread and active_pair_velocity < 0.0)
             
-            # Clean 0.50 Near-Mean Exit Trigger WITH Confirmed Reversal Momentum
-            is_mean_reached = ((is_buy_spread and z_score_for_pair >= -0.50) or (not is_buy_spread and z_score_for_pair <= 0.50)) and is_reversion_momentum
+            # Reversion Check from Entry Z (ANYWHERE REVERSAL: Not restricted to Z<=0.50!)
+            has_reverted_from_entry = (is_buy_spread and z_score_for_pair > entry_z) or (not is_buy_spread and z_score_for_pair < entry_z)
+            
+            # Anywhere Confirmed Reversal Exit Trigger
+            is_mean_reached = has_reverted_from_entry and is_reversion_momentum
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
             if is_sl_breached:
@@ -1223,6 +1226,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
             elif is_mean_reached:
                 if tp1_trade is not None:
+                    from execution_bot import modify_position_sl
+                    logger.info(f"🎯 [ANYWHERE CONFIRMED REVERSAL EXIT] Reversal confirmed at Z={z_score_for_pair:.2f} (Vel={active_pair_velocity:.4f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                    
                     # Require TP1 position to be in POSITIVE PROFIT (> $0.00) before executing partial exit!
                     pos_info_tp1 = mt5.positions_get(ticket=tp1_trade["ticket"])
                     tp1_pnl = float(pos_info_tp1[0].profit) if pos_info_tp1 else 0.0
