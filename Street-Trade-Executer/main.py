@@ -1150,8 +1150,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if not open_leg_a_trades:
             continue
 
-        # Dynamically calculate the Z-score for this specific pair
+        # Dynamically calculate the Z-score and velocity for this specific pair
         z_score_for_pair = 0.0
+        pair_velocity = 0.0
         try:
             tick_a = mt5.symbol_info_tick(sym_a) if get_symbol_category(sym_a) != "crypto" else get_binance_live_tick(sym_a)
             tick_b = mt5.symbol_info_tick(sym_b) if get_symbol_category(sym_b) != "crypto" else get_binance_live_tick(sym_b)
@@ -1159,7 +1160,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 p_a = (tick_a.bid + tick_a.ask) / 2.0
                 p_b = (tick_b.bid + tick_b.ask) / 2.0
                 kf_pair = get_kf_for_pair(sym_a, sym_b)
-                z_score_for_pair = kf_pair.get_current_z(p_b, p_a)
+                if kf_pair is not None:
+                    z_score_for_pair = kf_pair.get_current_z(p_b, p_a)
+                    pair_velocity = kf_pair.get_velocity()
             else:
                 if sym_a.split('.')[0].upper() == symbol_a.split('.')[0].upper() and sym_b.split('.')[0].upper() == symbol_b.split('.')[0].upper():
                     z_score_for_pair = z_score
@@ -1212,7 +1215,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
             
             # Reversion Momentum Direction Change Confirmation (Active momentum reverting toward mean)
-            is_reversion_momentum = (is_buy_spread and active_pair_velocity > 0.0) or (not is_buy_spread and active_pair_velocity < 0.0)
+            is_reversion_momentum = (is_buy_spread and pair_velocity > 0.0) or (not is_buy_spread and pair_velocity < 0.0)
             
             # Reversion Check from Entry Z (ANYWHERE REVERSAL: Not restricted to Z<=0.50!)
             has_reverted_from_entry = (is_buy_spread and z_score_for_pair > entry_z) or (not is_buy_spread and z_score_for_pair < entry_z)
@@ -1227,7 +1230,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             elif is_mean_reached:
                 if tp1_trade is not None:
                     from execution_bot import modify_position_sl
-                    logger.info(f"🎯 [ANYWHERE CONFIRMED REVERSAL EXIT] Reversal confirmed at Z={z_score_for_pair:.2f} (Vel={active_pair_velocity:.4f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                    logger.info(f"🎯 [ANYWHERE CONFIRMED REVERSAL EXIT] Reversal confirmed at Z={z_score_for_pair:.2f} (Vel={pair_velocity:.4f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+
                     
                     # Require TP1 position to be in POSITIVE PROFIT (> $0.00) before executing partial exit!
                     pos_info_tp1 = mt5.positions_get(ticket=tp1_trade["ticket"])
