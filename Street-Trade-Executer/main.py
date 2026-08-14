@@ -1196,13 +1196,29 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             half_life_bars = calculate_half_life(kf_pair.spread_history)
         max_holding_seconds = half_life_bars * 300.0 * 2.5
 
-        # Time-based OU_HALF_LIFE_EXPIRATION exit is COMPLETELY DISABLED per user directive.
-        # Trades will ONLY exit on Confirmed Reversal / TP or Z Stop Loss!
-        exit_triggered = False
-        exit_reason = ""
+        # Calculate TOTAL NET CASH PROFIT across all positions in this trade basket
+        total_basket_pnl = 0.0
+        for t in open_leg_a_trades + open_leg_b_trades:
+            pos_info = mt5.positions_get(ticket=t["ticket"])
+            if pos_info:
+                total_basket_pnl += float(pos_info[0].profit)
 
+        # ── TOTAL BASKET NET CASH PROFIT PEAK GUARD ──
+        if "GLOBAL_PEAK_BASKET_PNL" not in globals():
+            global GLOBAL_PEAK_BASKET_PNL
+            GLOBAL_PEAK_BASKET_PNL = {}
 
-        # Check standard Z-score exit conditions if time exit didn't trigger
+        current_peak = GLOBAL_PEAK_BASKET_PNL.get(sig_id, 0.0)
+        if total_basket_pnl > current_peak:
+            GLOBAL_PEAK_BASKET_PNL[sig_id] = total_basket_pnl
+            current_peak = total_basket_pnl
+
+        # 1. Total Net Profit Peak Drawdown Lock: If peak reached +$20.00+ and profit drops by $6.00 from peak (e.g. from +$40 to +$34) -> CLOSE ALL BASKET POSITIONS IMMEDIATELY!
+        if current_peak >= 20.0 and (current_peak - total_basket_pnl) >= 6.0:
+            exit_triggered = True
+            exit_reason = f"NET_PROFIT_PEAK_LOCK (Peak=${current_peak:.2f} -> Cur=${total_basket_pnl:.2f})"
+
+        # Check standard Z-score exit conditions if peak lock didn't trigger
         if not exit_triggered:
             tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
             
@@ -1212,8 +1228,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             # Reversion Check from Entry Z (ANYWHERE REVERSAL: Not restricted to Z<=0.50!)
             has_reverted_from_entry = (is_buy_spread and z_score_for_pair > entry_z) or (not is_buy_spread and z_score_for_pair < entry_z)
             
-            # Anywhere Confirmed Reversal Exit Trigger
-            is_mean_reached = has_reverted_from_entry and is_reversion_momentum
+            # Anywhere Confirmed Reversal Exit Trigger OR Net Cash Profit >= $35.00
+            is_mean_reached = (has_reverted_from_entry and is_reversion_momentum) or (total_basket_pnl >= 35.0)
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
             if is_sl_breached:
@@ -1222,7 +1238,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             elif is_mean_reached:
                 if tp1_trade is not None:
                     from execution_bot import modify_position_sl
-                    logger.info(f"🎯 [ANYWHERE CONFIRMED REVERSAL EXIT] Reversal confirmed at Z={z_score_for_pair:.2f} (Vel={pair_velocity:.4f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                    logger.info(f"🎯 [CONFIRMED REVERSAL EXIT] Reversal/Cash Target confirmed (Basket PnL=${total_basket_pnl:.2f}, Z={z_score_for_pair:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+
 
                     
                     # Require TP1 position to be in POSITIVE PROFIT (> $0.00) before executing partial exit!
