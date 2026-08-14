@@ -547,16 +547,19 @@ def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit
         else:
             if not mt5.initialize():
                 return 50.0
-            check_and_subscribe_symbol(symbol_a)
-            df_a = get_rates_df(symbol_a, mt5.TIMEFRAME_M5, count=150)
+            res_a = resolve_broker_symbol(symbol_a)
+            check_and_subscribe_symbol(res_a)
+            df_a = get_rates_df(res_a, mt5.TIMEFRAME_M5, count=150)
             
         if cat_b == "crypto":
             df_b = get_binance_rates_df(symbol_b, timeframe_minutes=5, count=150)
         else:
             if not mt5.initialize():
                 return 50.0
-            check_and_subscribe_symbol(symbol_b)
-            df_b = get_rates_df(symbol_b, mt5.TIMEFRAME_M5, count=150)
+            res_b = resolve_broker_symbol(symbol_b)
+            check_and_subscribe_symbol(res_b)
+            df_b = get_rates_df(res_b, mt5.TIMEFRAME_M5, count=150)
+
             
         if df_a is None or df_b is None or df_a.empty or df_b.empty:
             return 50.0

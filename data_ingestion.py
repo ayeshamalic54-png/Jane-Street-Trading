@@ -90,14 +90,19 @@ def check_and_subscribe_symbol(symbol):
 
 def get_rates_df(symbol, timeframe, count=200):
     """Fetches historical price candles and returns them as a pandas DataFrame."""
-    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
+    resolved = resolve_broker_symbol(symbol)
+    rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
+    if rates is None and resolved != symbol:
+        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
+        
     if rates is None:
-        logger.error(f"Failed to fetch rates for {symbol}. Error: {mt5.last_error()}")
+        logger.info(f"Broker does not offer candles for {symbol} (resolved: {resolved}). Skipping pair scan.")
         return None
         
     df = pd.DataFrame(rates)
     df['time'] = pd.to_datetime(df['time'], unit='s')
     return df
+
 
 def get_live_ticks(symbol):
     """Fetches the latest tick (bid, ask, time) for a symbol."""
