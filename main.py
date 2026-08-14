@@ -1211,8 +1211,11 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if not exit_triggered:
             tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
             
-            # Clean 0.50 Near-Mean Exit Trigger
-            is_mean_reached = (is_buy_spread and z_score_for_pair >= -0.50) or (not is_buy_spread and z_score_for_pair <= 0.50)
+            # Reversion Momentum Direction Change Confirmation
+            is_reversion_momentum = (is_buy_spread and active_pair_velocity > 0.0) or (not is_buy_spread and active_pair_velocity < 0.0)
+            
+            # Clean 0.50 Near-Mean Exit Trigger WITH Confirmed Reversal Momentum
+            is_mean_reached = ((is_buy_spread and z_score_for_pair >= -0.50) or (not is_buy_spread and z_score_for_pair <= 0.50)) and is_reversion_momentum
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
             if is_sl_breached:
