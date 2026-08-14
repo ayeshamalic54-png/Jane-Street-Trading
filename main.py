@@ -1227,41 +1227,28 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         pair_velocity = kf_pair.get_velocity() if kf_pair is not None else 0.0
         is_reversion_momentum = (is_buy_spread and pair_velocity > 0.005) or (not is_buy_spread and pair_velocity < -0.005)
 
-        # Helper function for 6-pip breathable breakeven SL buffer
-        pip_sz = get_pip_size(sym_a)
-        be_buffer_dist = 6.0 * pip_sz  # 6 pips breathing room from entry price
-
         # Rule 1: High Profit Reversal Lock ($45.00+ Peak -> Drops to $38.00)
         if current_peak >= 45.0 and total_basket_pnl <= 38.0:
             if tp1_trade is not None:
-                from execution_bot import modify_position_sl
-                logger.info(f"🎯 [HIGH PROFIT REVERSAL LOCK] Peak reached ${current_peak:.2f} & dropped to ${total_basket_pnl:.2f} (<= $38.00). Closing TP1 & setting TP2/TP3 SL to 6-pip Breakeven Buffer!")
+                logger.info(f"🎯 [HIGH PROFIT REVERSAL LOCK] Peak reached ${current_peak:.2f} & dropped to ${total_basket_pnl:.2f} (<= $38.00). Closing TP1 to bank profit!")
                 close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
                 if open_leg_b_trades:
                     h_trade = open_leg_b_trades[0]
                     h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
                     if h_part_vol > 0:
                         close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
-                for t_a in open_leg_a_trades:
-                    if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
-                        buf_sl = (t_a["entry_price"] - be_buffer_dist) if t_a["order_type"] == "BUY" else (t_a["entry_price"] + be_buffer_dist)
-                        modify_position_sl(t_a["ticket"], t_a["symbol"], buf_sl)
 
         # Rule 2: Mid Profit Reversal Lock ($30.00+ Peak -> Drops to $25.00)
         elif current_peak >= 30.0 and total_basket_pnl <= 25.0:
             if tp1_trade is not None:
-                from execution_bot import modify_position_sl
-                logger.info(f"🎯 [MID PROFIT REVERSAL LOCK] Peak reached ${current_peak:.2f} & dropped to ${total_basket_pnl:.2f} (<= $25.00). Closing TP1 & setting TP2/TP3 SL to 6-pip Breakeven Buffer!")
+                logger.info(f"🎯 [MID PROFIT REVERSAL LOCK] Peak reached ${current_peak:.2f} & dropped to ${total_basket_pnl:.2f} (<= $25.00). Closing TP1 to bank profit!")
                 close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
                 if open_leg_b_trades:
                     h_trade = open_leg_b_trades[0]
                     h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
                     if h_part_vol > 0:
                         close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
-                for t_a in open_leg_a_trades:
-                    if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
-                        buf_sl = (t_a["entry_price"] - be_buffer_dist) if t_a["order_type"] == "BUY" else (t_a["entry_price"] + be_buffer_dist)
-                        modify_position_sl(t_a["ticket"], t_a["symbol"], buf_sl)
+
 
         # Rule 3: Serious Loss Reversal Safeguard (Only trigger if drawdown <= -$15.00 to ignore minor wick noise!)
         elif total_basket_pnl <= -15.0 and is_reversion_momentum:
