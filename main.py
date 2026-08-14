@@ -2954,10 +2954,11 @@ def main():
                     logger.error(f"Error compiling scan summary log: {ex_sum}")
 
                 logger.info(
-                    f"[LIVE SCAN DETAIL] Active Focus: {S_A}/{S_B} | Z-Score: {active_pair_z_score:.3f} "
-                    f"| Exit Rule: Z<=0.50 (TP1 Bank + Breakeven SL) | Z-Velocity: {active_pair_velocity:.3f} "
-                    f"| OBI A/B: {active_pair_obi_a:.1f}/{active_pair_obi_b:.1f} | Status: {status_str}"
+                    f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} "
+                    f"| Target Z: <= 0.50 (Or Reversal) | TP1 Lock Rule: ACTIVE 🎯 "
+                    f"| Breakeven Guard: ENABLED 🛡️ | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
+
 
             loop_log_counter += 1
 
