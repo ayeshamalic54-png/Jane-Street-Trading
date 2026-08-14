@@ -1219,28 +1219,126 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
             elif is_mean_reached:
                 if tp1_trade is not None:
-                    # OPTION 1: Partial Mean Exit — Bank TP1 profit & move TP2/TP3 SL to Breakeven
-                    from execution_bot import modify_position_sl
-                    logger.info(f"🎯 [PARTIAL MEAN EXIT] Z-score reached near-mean zone ({z_score_for_pair:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                    # Require TP1 position to be in POSITIVE PROFIT (> $0.00) before executing partial exit!
+                    pos_info_tp1 = mt5.positions_get(ticket=tp1_trade["ticket"])
+                    tp1_pnl = float(pos_info_tp1[0].profit) if pos_info_tp1 else 0.0
 
-                    
-                    # 1. Close TP1 Ticket
-                    close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
-                    
-                    # 2. Close 1/3 of Hedge Ticket
-                    if open_leg_b_trades:
-                        h_trade = open_leg_b_trades[0]
-                        h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
-                        if h_part_vol > 0:
-                            close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
-                    
-                    # 3. Move Stop Loss for remaining TP2 & TP3 to Entry Price (Breakeven)
-                    for t_a in open_leg_a_trades:
-                        if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
-                            modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+                    if tp1_pnl > 0.0:
+                        from execution_bot import modify_position_sl
+                        logger.info(f"🎯 [PARTIAL MEAN EXIT] Z-score reached near-mean zone ({z_score_for_pair:.2f}) & TP1 PnL is positive (${tp1_pnl:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                        
+                        # 1. Close TP1 Ticket
+                        close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+                        
+                        # 2. Close 1/3 of Hedge Ticket
+                        if open_leg_b_trades:
+                            h_trade = open_leg_b_trades[0]
+                            h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
+                            if h_part_vol > 0:
+                                close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
+                        
+                        # 3. Move Stop Loss for remaining TP2 & TP3 to Entry Price (Breakeven)
+                        for t_a in open_leg_a_trades:
+                            if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
+                                modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+                    else:
+                        logger.info(f"🛡️ [PARTIAL EXIT DEFERRED] Z-score touched near-mean ({z_score_for_pair:.2f}), but TP1 PnL is currently negative (${tp1_pnl:.2f}). Exit deferred until positive profit.")
                     
                     # Keep TP2 & TP3 running risk-free toward full targets
                     exit_triggered = False
+
+        # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
+        min_hold_ok = True
+        for t in trades:
+            entry_t = t["entry_time"]
+            if entry_t is not None:
+                if hasattr(entry_t, "tzinfo") and entry_t.tzinfo is not None:
+                    elapsed = abs((datetime.datetime.now(datetime.timezone.utc) - entry_t).total_seconds())
+                else:
+                    elapsed = abs((datetime.datetime.utcnow() - entry_t).total_seconds())
+                if elapsed < 140.0:
+                    min_hold_ok = False
+                    break
+
+        if exit_triggered and not min_hold_ok:
+            exit_triggered = False
+            logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 140s minimum hold time.")
+
+        if exit_triggered:
+            logger.info(f"Dynamic exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all positions.")
+            for t_a in open_leg_a_trades:
+                close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
+            for t_b in open_leg_b_trades:
+                close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+
+            # Sync closed details immediately to database
+            try:
+                check_closed_trades(sym_a)
+                check_closed_trades(sym_b)
+                
+                # Query the database to ensure ALL trades in this set are truly CLOSED before sending notification
+                conn_pnl = get_connection()
+                cur_pnl = conn_pnl.cursor()
+                cur_pnl.execute("SELECT COUNT(*) FROM trades WHERE signal_id = %s AND status = 'OPEN'", (int(sig_id),))
+                still_open_count = cur_pnl.fetchone()[0]
+                cur_pnl.close()
+                conn_pnl.close()
+                
+                if still_open_count == 0:
+                    tot_profit = calculate_closed_signal_pnl(sig_id)
+                    logger.info(f"📊 [PROFIT REPORT] Closed signal_id {sig_id} | Total Net Profit: ${tot_profit:.2f}")
+                    send_discord_exit_notification(sig_id, sym_a, sym_b, exit_reason, tot_profit)
+            except Exception as e_pnl:
+                logger.error(f"Error calculating closed signal PnL: {e_pnl}")
+
+            # Put pair in cooldown after dynamic exit to prevent immediate re-entry
+            set_pair_cooldown(sym_a, sym_b, cooldown_seconds=600)
+            break
+
+            # ── Emergency Maximum Floating Loss Guard ──
+            if has_positions and active_js_positions:
+                try:
+                    conn_eq = get_connection()
+                    cur_eq = conn_eq.cursor()
+                    cur_eq.execute("SELECT start_of_day_equity FROM bot_state WHERE id = 1")
+                    eq_row = cur_eq.fetchone()
+                    cur_eq.close()
+                    conn_eq.close()
+                    start_eq_guard = float(eq_row[0]) if (eq_row and eq_row[0]) else 10000.0
+                    
+                    daily_loss_usd = max(0.0, start_eq_guard - acc_info.equity) if acc_info else 0.0
+                    daily_loss_pct = (daily_loss_usd / start_eq_guard) * 100.0 if start_eq_guard > 0 else 0.0
+                    
+                    if floating_profit <= -330.0 or daily_loss_pct >= 3.30:
+                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) / Daily loss ({daily_loss_pct:.2f}%) breached safety cap (-$330.00 / 3.30%). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
+                        for pos in active_js_positions:
+                            pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+                            close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+                except Exception as ex_dd:
+                    logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
+
+            # ── Multi-Tier Equity Trailing Stop Safeguard (Triple Tier Profit Protection) ──
+            if has_positions:
+                if floating_profit > peak_floating_profit:
+                    peak_floating_profit = floating_profit
+
+                should_close_trail = False
+                trail_close_reason = ""
+
+                # Tier 0 (Micro Peak Lock at +$15.00 Peak -> Locks +$10.00 Cash Profit):
+                if peak_floating_profit >= 15.0 and peak_floating_profit < 75.0:
+                    tier0_floor = 10.0
+                    if floating_profit <= tier0_floor:
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 0] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier0_floor:.2f}). Auto-closing to lock +$10.00 profit."
+
+                # Tier 1 (Safety Floor at +$75.00 Peak -> Locks +$69.00 Cash Profit):
+                elif peak_floating_profit >= 75.0 and peak_floating_profit < 100.0:
+                    tier1_floor = 69.0
+                    if floating_profit <= tier1_floor:
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock +$69.00 profit."
+
                 else:
                     # TP1 is already banked. Evaluate Stepped Milestone Trailing SL for TP2 & TP3
                     from execution_bot import modify_position_sl
