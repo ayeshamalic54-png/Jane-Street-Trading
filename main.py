@@ -1250,13 +1250,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                         close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
 
 
-        # Rule 3: Serious Loss Reversal Safeguard (Only trigger if drawdown <= -$15.00 to ignore minor wick noise!)
-        elif total_basket_pnl <= -15.0 and is_reversion_momentum:
-            logger.info(f"🎯 [CONFIRMED REVERSAL IN LOSS] Velocity confirms serious loss expansion ({pair_velocity:+.4f}) at PnL ${total_basket_pnl:.2f}. Exiting to protect capital!")
-            exit_triggered = True
-            exit_reason = f"LOSS_REVERSAL_CONFIRMED (PnL=${total_basket_pnl:.2f}, Vel={pair_velocity:+.4f})"
-
-        # Rule 4: PURE Z = 0.0 FULL MEAN REVERSION EXIT (or Net Cash Target >= $35.00)
+        # Rule 3: PURE Z = 0.0 FULL MEAN REVERSION EXIT (or Net Cash Target >= $35.00)
         if not exit_triggered:
             is_mean_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0) or (total_basket_pnl >= 35.0)
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
@@ -1267,6 +1261,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             elif is_mean_reached and total_basket_pnl > 0.0:
                 exit_triggered = True
                 exit_reason = f"Z_MEAN_REVERSION_0.0 (z={z_score_for_pair:.2f}, Basket PnL=${total_basket_pnl:.2f})"
+
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
         min_hold_ok = True
