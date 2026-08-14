@@ -1209,20 +1209,39 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
         # Check standard Z-score exit conditions if time exit didn't trigger
         if not exit_triggered:
-            if is_buy_spread:
-                if z_score_for_pair >= z_ex_val:
-                    exit_triggered = True
-                    exit_reason = f"Z_TP_REVERSION (z={z_score_for_pair:.2f} >= {z_ex_val})"
-                elif z_score_for_pair <= -effective_z_sl:
-                    exit_triggered = True
-                    exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} <= {-effective_z_sl:.2f})"
-            else:
-                if z_score_for_pair <= -z_ex_val:
-                    exit_triggered = True
-                    exit_reason = f"Z_TP_REVERSION (z={z_score_for_pair:.2f} <= {-z_ex_val})"
-                elif z_score_for_pair >= effective_z_sl:
-                    exit_triggered = True
-                    exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} >= {effective_z_sl:.2f})"
+            tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
+            is_mean_reached = (is_buy_spread and z_score_for_pair >= z_ex_val) or (not is_buy_spread and z_score_for_pair <= -z_ex_val)
+            is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
+
+            if is_sl_breached:
+                exit_triggered = True
+                exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
+            elif is_mean_reached:
+                if tp1_trade is not None:
+                    # OPTION 1: Partial Mean Exit — Bank TP1 profit & move TP2/TP3 SL to Breakeven
+                    from execution_bot import modify_position_sl
+                    logger.info(f"🎯 [PARTIAL MEAN EXIT] Z-score touched mean ({z_score_for_pair:.2f}). Closing TP1 to bank profit & moving TP2/TP3 SL to Breakeven!")
+                    
+                    # 1. Close TP1 Ticket
+                    close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+                    
+                    # 2. Close 1/3 of Hedge Ticket
+                    if open_leg_b_trades:
+                        h_trade = open_leg_b_trades[0]
+                        h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
+                        if h_part_vol > 0:
+                            close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
+                    
+                    # 3. Move Stop Loss for remaining TP2 & TP3 to Entry Price (Breakeven)
+                    for t_a in open_leg_a_trades:
+                        if t_a["ticket"] != tp1_trade["ticket"] and t_a.get("entry_price"):
+                            modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+                    
+                    # Keep TP2 & TP3 running risk-free toward full targets
+                    exit_triggered = False
+                else:
+                    # TP1 is already banked. Check if full broker TPs hit or if extreme re-divergence occurs
+                    pass
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
         min_hold_ok = True
@@ -1247,6 +1266,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
             for t_b in open_leg_b_trades:
                 close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+
                 
             # Sync closed details immediately to database
             try:

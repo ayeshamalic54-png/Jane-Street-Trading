@@ -232,6 +232,44 @@ def close_all_positions(symbol, comment_filter="JS_"):
                 err_msg = res.comment if res else "No response"
                 logger.error(f"Failed to close position ticket {pos.ticket}: {err_msg}")
 
+def modify_position_sl(ticket, symbol, new_sl):
+    """
+    Modifies the Stop Loss of an active MT5 position to new_sl (e.g. Breakeven / Entry Price).
+    """
+    try:
+        mt5.symbol_select(symbol, True)
+        positions = mt5.positions_get(ticket=ticket)
+        if not positions:
+            # Try searching by symbol if ticket lookup fails
+            all_pos = mt5.positions_get(symbol=symbol)
+            if all_pos:
+                positions = [p for p in all_pos if p.ticket == ticket]
+        if not positions:
+            logger.warning(f"Could not find position ticket {ticket} ({symbol}) to modify SL.")
+            return False
+
+        pos = positions[0]
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": ticket,
+            "symbol": symbol,
+            "sl": float(new_sl),
+            "tp": float(pos.tp) if hasattr(pos, 'tp') and pos.tp else 0.0,
+            "magic": MAGIC_NUMBER,
+        }
+        res = mt5.order_send(request)
+        if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+            logger.info(f"🛡️ [BREAKEVEN SL ACTIVATED] Moved Stop Loss for ticket {ticket} ({symbol}) to Breakeven entry price: {new_sl:.5f}")
+            return True
+        else:
+            err_c = res.comment if res else mt5.last_error()
+            logger.error(f"Failed to modify SL for ticket {ticket}: {err_c}")
+            return False
+    except Exception as e:
+        logger.error(f"Error modifying SL for ticket {ticket}: {e}")
+        return False
+
+
 def modify_sl_for_trade(symbol, new_sl):
     """Modifies the Stop Loss of all active trade parts to the new_sl price."""
     positions = mt5.positions_get(symbol=symbol)
