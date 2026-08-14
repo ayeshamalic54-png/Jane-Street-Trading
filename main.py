@@ -1196,19 +1196,11 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             half_life_bars = calculate_half_life(kf_pair.spread_history)
         max_holding_seconds = half_life_bars * 300.0 * 2.5
 
-        is_buy_spread = (open_leg_a_trades[0]["order_type"] == "BUY")
+        # Time-based OU_HALF_LIFE_EXPIRATION exit is COMPLETELY DISABLED per user directive.
+        # Trades will ONLY exit on Confirmed Reversal / TP or Z Stop Loss!
         exit_triggered = False
         exit_reason = ""
 
-        # Check statistical half-life time exit first
-        for t in trades:
-            entry_t = t["entry_time"]
-            if entry_t is not None:
-                elapsed = (datetime.datetime.now() - entry_t).total_seconds()
-                if elapsed > max_holding_seconds:
-                    exit_triggered = True
-                    exit_reason = f"OU_HALF_LIFE_EXPIRATION (elapsed {elapsed/60:.1f}m > {max_holding_seconds/60:.1f}m)"
-                    break
 
         # Check standard Z-score exit conditions if time exit didn't trigger
         if not exit_triggered:
