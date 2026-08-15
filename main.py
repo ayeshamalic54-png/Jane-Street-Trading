@@ -1210,31 +1210,35 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             if pos_info:
                 total_basket_pnl += float(pos_info[0].profit)
 
-        # ── TOTAL BASKET NET CASH PROFIT PEAK GUARD ──
+        # ── MASTER PROP FIRM THREE-STEP EXIT ARCHITECTURE ──
+
         if "GLOBAL_PEAK_BASKET_PNL" not in globals():
             global GLOBAL_PEAK_BASKET_PNL
             GLOBAL_PEAK_BASKET_PNL = {}
         if "GLOBAL_HYBRID_BE_SHIFTED" not in globals():
             global GLOBAL_HYBRID_BE_SHIFTED
             GLOBAL_HYBRID_BE_SHIFTED = {}
-
+        if "GLOBAL_STEP2_SCALED_OUT" not in globals():
+            global GLOBAL_STEP2_SCALED_OUT
+            GLOBAL_STEP2_SCALED_OUT = {}
 
         current_peak = GLOBAL_PEAK_BASKET_PNL.get(sig_id, 0.0)
         if total_basket_pnl > current_peak:
             GLOBAL_PEAK_BASKET_PNL[sig_id] = total_basket_pnl
             current_peak = total_basket_pnl
 
-        # ── MASTER PROP FIRM HYBRID EXIT ARCHITECTURE (DUAL BREAKEVEN + OPPOSITE EXTREME EXIT) ──
         tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
-        
-        # 1. DUAL BREAKEVEN SHIFT ENGINE (Trigger A: Z=0.0 & Trigger B: PnL >= +$15.00 / 1.0% Gain)
+        tp2_trade = next((t for t in open_leg_a_trades if "TP2" in str(t.get("comment", "")).upper()), None)
+        tp3_trade = next((t for t in open_leg_a_trades if "TP3" in str(t.get("comment", "")).upper()), None)
+
+        # ── STEP 1: Z=0.0 OR PnL >= +$15.00 BREAK-EVEN (RISK-FREE MODE) ──
         z_neutral_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
         pnl_be_reached = total_basket_pnl >= 15.0
         be_already_shifted = GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False)
 
         if not be_already_shifted and (z_neutral_reached or pnl_be_reached):
             trigger_name = "Z=0.0 Neutral Mean Line" if z_neutral_reached else "Price PnL >= +$15.00 (1.0% Gain)"
-            logger.info(f"🛡️ [PROP FIRM HYBRID BREAKEVEN SHIFT] Triggered by {trigger_name}! Shifting SL to Entry Price (100% Risk-Free). Letting trade run to Opposite Extreme (+1.50 / -1.50) for MAX PROFIT!")
+            logger.info(f"🛡️ [THREE-STEP EXIT - STEP 1] Triggered by {trigger_name}! Shifting Stop Loss for all orders to Entry Price (100% Risk-Free Mode)! Trade continues running for Step 2 (+1.50)!")
             from execution_bot import modify_position_sl
             for t_a in open_leg_a_trades:
                 if t_a.get("entry_price") and t_a.get("ticket"):
@@ -1243,6 +1247,23 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 if t_b.get("entry_price") and t_b.get("ticket"):
                     modify_position_sl(t_b["ticket"], t_b["symbol"], t_b["entry_price"])
             GLOBAL_HYBRID_BE_SHIFTED[sig_id] = True
+
+        # ── STEP 2: Z = +1.50 / -1.50 PARTIAL PROFIT (70% VOLUME CLOSE: TP1 + TP2) ──
+        z_step2_reached = (is_buy_spread and z_score_for_pair >= 1.50) or (not is_buy_spread and z_score_for_pair <= -1.50)
+        step2_done = GLOBAL_STEP2_SCALED_OUT.get(sig_id, False)
+
+        if z_step2_reached and not step2_done and total_basket_pnl > 0.0:
+            logger.info(f"💰 [THREE-STEP EXIT - STEP 2] Z reached +1.50 / -1.50 (Z={z_score_for_pair:.2f})! Closing 70% Volume (TP1 & TP2) to bank handsome cash profit (${total_basket_pnl:.2f})! Leaving 30% Runner (TP3) for Step 3 (+3.0 Jackpot)!")
+            if tp1_trade is not None:
+                close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+            if tp2_trade is not None:
+                close_single_trade(tp2_trade["symbol"], tp2_trade["ticket"], tp2_trade["lots"], tp2_trade["order_type"])
+            if open_leg_b_trades:
+                h_trade = open_leg_b_trades[0]
+                h_23_vol = round(float(h_trade["lots"]) * (2.0 / 3.0), 2)
+                if h_23_vol > 0:
+                    close_single_trade(h_trade["symbol"], h_trade["ticket"], h_23_vol, h_trade["order_type"])
+            GLOBAL_STEP2_SCALED_OUT[sig_id] = True
 
         # Rule 1: High Profit Reversal Lock ($45.00+ Peak -> Drops to $38.00)
         if current_peak >= 45.0 and total_basket_pnl <= 38.0:
@@ -1255,30 +1276,20 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     if h_part_vol > 0:
                         close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
 
-        # Rule 2: Mid Profit Reversal Lock ($30.00+ Peak -> Drops to $25.00)
-        elif current_peak >= 30.0 and total_basket_pnl <= 25.0:
-            if tp1_trade is not None:
-                logger.info(f"🎯 [MID PROFIT REVERSAL LOCK] Peak reached ${current_peak:.2f} & dropped to ${total_basket_pnl:.2f} (<= $25.00). Closing TP1 to bank profit!")
-                close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
-                if open_leg_b_trades:
-                    h_trade = open_leg_b_trades[0]
-                    h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
-                    if h_part_vol > 0:
-                        close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
-
-        # 2. FINAL PROFIT EXIT: OPPOSITE EXTREME LEVEL (Z >= +1.50 / Z <= -1.50) OR 1:2+ RR TARGET ($45.00+)
+        # ── STEP 3: Z = +2.40 / +3.00 RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
         if not exit_triggered:
-            is_opposite_extreme_reached = (is_buy_spread and z_score_for_pair >= 1.50) or (not is_buy_spread and z_score_for_pair <= -1.50)
-            is_high_rr_reached = total_basket_pnl >= 45.0
+            z_step3_jackpot = (is_buy_spread and z_score_for_pair >= 2.40) or (not is_buy_spread and z_score_for_pair <= -2.40)
+            is_high_rr_reached = total_basket_pnl >= 60.0
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
             if is_sl_breached:
                 exit_triggered = True
                 exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
-            elif (is_opposite_extreme_reached or is_high_rr_reached) and total_basket_pnl > 0.0:
+            elif (z_step3_jackpot or is_high_rr_reached) and total_basket_pnl > 0.0:
                 exit_triggered = True
-                reason_detail = f"Opposite Extreme Z={z_score_for_pair:.2f}" if is_opposite_extreme_reached else "1:2+ RR Target"
-                exit_reason = f"PROP_FIRM_HYBRID_EXIT ({reason_detail}, Basket PnL=${total_basket_pnl:.2f})"
+                reason_detail = f"Step 3 Jackpot Z={z_score_for_pair:.2f}" if z_step3_jackpot else "1:3+ High RR Target"
+                exit_reason = f"THREE_STEP_EXIT_JACKPOT ({reason_detail}, Basket PnL=${total_basket_pnl:.2f})"
+
 
 
 
@@ -1911,9 +1922,10 @@ def main():
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
                         logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry}")
-                        logger.info(f"🎯 [PROP FIRM HYBRID EXIT ACTIVE] Dual Breakeven: ENABLED (Z=0.0 & PnL>=$15.00) 🛡️ | Final Target: Opposite Extreme Z=+1.50 / -1.50 (1:2+ RR) 🚀")
+                        logger.info(f"🎯 [THREE-STEP EXIT ACTIVE] Step 1: BE at Z=0.0 / PnL>=$15 🛡️ | Step 2: 70% Profit Bank at Z=1.50 💰 | Step 3: 30% Runner Jackpot at Z=2.40/3.00 🚀")
                         logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | SMC: DISABLED ❌")
                         logger.info(f"🛡️ [ACTIVE GUARDS] News Guard: ENABLED 📰 | Breakeven Guard: ENABLED 🛡️ | Friday Close Guard: ENABLED 🌅")
+
 
 
 
@@ -2983,9 +2995,10 @@ def main():
 
                 logger.info(
                     f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} "
-                    f"| Hybrid Target: Opposite Extreme Z=+1.50/-1.50 (1:2+ RR) | Dual BE: ACTIVE 🛡️ (Z=0.0 & PnL>=$15.00) "
+                    f"| Three-Step Target: Step 1 BE(Z=0/+$15), Step 2 (70%@Z=1.5), Step 3 (30%@Z=2.4) "
                     f"| Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
+
 
 
 
