@@ -1924,9 +1924,10 @@ def main():
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
                         logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry}")
-                        logger.info(f"🎯 [THREE-STEP EXIT ACTIVE] Step 1: BE at Z=0.0 / PnL>=$15 🛡️ | Step 2: 70% Profit Bank at Z=1.50 💰 | Step 3: 30% Runner Jackpot at Z=2.40/3.00 🚀")
-                        logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | SMC: DISABLED ❌")
+                        logger.info(f"🎯 [THREE-STEP EXIT ACTIVE] Step 1: BE at Z=0.0 / PnL>=$15 🛡️ | Step 2: 70% Profit Bank at Z=0.0 💰 | Step 3: 30% Runner Jackpot at Z=1.50 🚀")
+                        logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | Multi-Tier Equity Trailing: DISABLED ❌ | SMC: DISABLED ❌")
                         logger.info(f"🛡️ [ACTIVE GUARDS] News Guard: ENABLED 📰 | Breakeven Guard: ENABLED 🛡️ | Friday Close Guard: ENABLED 🌅")
+
 
 
 
@@ -2166,40 +2167,8 @@ def main():
                 except Exception as ex_dd:
                     logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
 
-            # ── Multi-Tier Equity Trailing Stop Safeguard (Dual Tier Profit Protection) ──
-            if has_positions:
-                if floating_profit > peak_floating_profit:
-                    peak_floating_profit = floating_profit
+            # ── Multi-Tier Equity Trailing Stop Safeguard (DISABLED per user directive for Three-Step Exit Strategy) ──
 
-                should_close_trail = False
-                trail_close_reason = ""
-
-                # Tier 1 (Safety Floor at +$75.00 Peak -> Locks +$69.00 Cash Profit):
-                # If peak profit reached $75-$99 and reverses below +$69.00, lock +$69.00 profit!
-                if peak_floating_profit >= 75.0 and peak_floating_profit < 100.0:
-                    tier1_floor = 69.0
-                    if floating_profit <= tier1_floor:
-                        should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock +$69.00 profit."
-
-                # Tier 2 (Full Trailing Stop at +$100.00+ / 1.0% Account Gain):
-                # When peak profit reaches $100.00+, lock 91% of peak earnings ($91.00 to $900+)
-                elif peak_floating_profit >= 100.0:
-                    trail_stop_level = max(91.0, peak_floating_profit * 0.91)
-                    if floating_profit <= trail_stop_level:
-                        should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 2] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${trail_stop_level:.2f}). Auto-closing to lock 91% profit."
-
-                if should_close_trail:
-                    logger.info(trail_close_reason)
-                    all_success = True
-                    for pos in active_js_positions:
-                        pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
-                        success = close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
-                        if not success:
-                            all_success = False
-                    if all_success:
-                        peak_floating_profit = 0.0
             # ── HEDGE-EFFECTIVENESS MONITORING LAYER ──
             if has_positions and active_js_positions:
                 try:
@@ -2998,8 +2967,9 @@ def main():
                 logger.info(
                     f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) "
                     f"| Three-Step Target: Step 1 BE (Z=0.0/+$15), Step 2 (70% Cash @ Z=0.0), Step 3 (30% Runner @ Z=1.50) "
-                    f"| Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
+                    f"| Filters: Multi-Tier Equity Trailing DISABLED ❌ | Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
+
 
 
 
