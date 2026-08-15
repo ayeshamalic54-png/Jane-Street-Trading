@@ -6,10 +6,11 @@ from database import update_daily_metrics, get_connection
 
 logger = logging.getLogger("SMC_Forex_Bot")
 
-# Maximum daily drawdown allowed before halting trading (0.78% Halt Buffer / 3.30% Max Loss Cap)
-HALT_DAILY_DRAWDOWN_PCT = 0.78
+# Maximum daily drawdown allowed before halting trading (Dynamic Halt Limit / Max Loss Cap)
+HALT_DAILY_DRAWDOWN_PCT = 0.80
 MAX_DAILY_DRAWDOWN_PCT = 3.30
-MAX_DAILY_LOSS_PERCENT = 0.78
+MAX_DAILY_LOSS_PERCENT = 0.80
+
 MAX_FLOATING_LOSS_USD = 330.0
 # Maximum number of trades allowed per day
 MAX_DAILY_TRADES = 3

@@ -840,7 +840,8 @@
                     ⚠️ Halt Drawdown Limit (%)
                 </label>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <input type="number" id="halt-limit-input" step="0.01" min="0.10" max="10.0" value="0.78" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 14px;" oninput="updateUsdCalculations()">
+                    <input type="number" id="halt-limit-input" step="0.01" min="0.10" max="10.0" value="0.80" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 14px;" oninput="updateUsdCalculations()">
+
                     <span style="font-size: 14px; font-weight: 700; color: #f59e0b;">%</span>
                 </div>
                 <div id="halt-limit-usd-display" style="font-size: 11px; font-weight: 600; color: #34d399; margin-top: 5px;">
@@ -1079,8 +1080,19 @@
                 const ddCard = document.getElementById('drawdown-status-card');
                 const ddBadge = document.getElementById('drawdown-card-badge');
                 const ddBody = document.getElementById('drawdown-card-body');
-                const currentHalt = parseFloat(document.getElementById('halt-limit-input').value) || 0.78;
-                const currentMax = parseFloat(document.getElementById('max-limit-input').value) || 3.30;
+                
+                const haltInput = document.getElementById('halt-limit-input');
+                const maxInput = document.getElementById('max-limit-input');
+
+                const currentHalt = (data.halt_drawdown_limit !== undefined && data.halt_drawdown_limit !== null) ? Number(data.halt_drawdown_limit) : (parseFloat(haltInput.value) || 0.80);
+                const currentMax = (data.max_drawdown_limit !== undefined && data.max_drawdown_limit !== null) ? Number(data.max_drawdown_limit) : (parseFloat(maxInput.value) || 3.30);
+
+                if (haltInput && document.activeElement !== haltInput) {
+                    haltInput.value = currentHalt.toFixed(2);
+                }
+                if (maxInput && document.activeElement !== maxInput) {
+                    maxInput.value = currentMax.toFixed(2);
+                }
                 
                 updateUsdCalculations();
 
@@ -1089,16 +1101,17 @@
                         ddCard.style.border = '1px solid rgba(239, 68, 68, 0.6)';
                         ddCard.style.background = 'rgba(239, 68, 68, 0.12)';
                         ddBadge.className = 'market-badge badge-closed';
-                        ddBadge.textContent = `🔴 HALTED (${currentHalt}% THRESHOLD REACHED)`;
-                        ddBody.innerHTML = `⚠️ <strong>DAILY DRAWDOWN HALT ACTIVE:</strong> Current Drawdown: <strong>${ddVal.toFixed(2)}%</strong> >= <strong>${currentHalt}%</strong><br>🛡️ <strong>Protection Action:</strong> New trades are blocked and active positions auto-closed to freeze drawdown! Halt: ${currentHalt}% · Limit: ${currentMax}%`;
+                        ddBadge.textContent = `🔴 HALTED (${currentHalt.toFixed(2)}% THRESHOLD REACHED)`;
+                        ddBody.innerHTML = `⚠️ <strong>DAILY DRAWDOWN HALT ACTIVE:</strong> Current Drawdown: <strong>${ddVal.toFixed(2)}%</strong> >= <strong>${currentHalt.toFixed(2)}%</strong><br>🛡️ <strong>Protection Action:</strong> New trades are blocked and active positions auto-closed to freeze drawdown! Halt: ${currentHalt.toFixed(2)}% · Limit: ${currentMax.toFixed(2)}%`;
                     } else {
                         ddCard.style.border = '1px solid rgba(16, 185, 129, 0.4)';
                         ddCard.style.background = 'rgba(15, 23, 42, 0.75)';
                         ddBadge.className = 'market-badge badge-open';
-                        ddBadge.textContent = `🟢 RISK OK (HALT: ${currentHalt}% · LIMIT: ${currentMax}%)`;
-                        ddBody.innerHTML = `✨ <strong>Daily Drawdown Status:</strong> Current Drawdown is <strong>${ddVal.toFixed(2)}%</strong> (Below ${currentHalt}% Halt Threshold). Halt: ${currentHalt}% · Limit: ${currentMax}%.`;
+                        ddBadge.textContent = `🟢 RISK OK (HALT: ${currentHalt.toFixed(2)}% · LIMIT: ${currentMax.toFixed(2)}%)`;
+                        ddBody.innerHTML = `✨ <strong>Daily Drawdown Status:</strong> Current Drawdown is <strong>${ddVal.toFixed(2)}%</strong> (Below ${currentHalt.toFixed(2)}% Halt Threshold). Halt: ${currentHalt.toFixed(2)}% · Limit: ${currentMax.toFixed(2)}%.`;
                     }
                 }
+
                 
                 // Update Trades Today
                 document.getElementById('trades-today').textContent = `${data.trades_today} / ${data.max_trades}`;
