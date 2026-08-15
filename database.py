@@ -751,13 +751,22 @@ def reset_database_metrics_for_new_account(login_id, equity):
                 daily_max_dd = float(daily_row[1])
                 trades_cnt = int(daily_row[2])
             else:
+                # Carry forward recent session's drawdown metric for continuity on market-close/weekends
+                cur.execute("""
+                    SELECT max_drawdown_percent FROM daily_metrics 
+                    WHERE mt5_login = %s ORDER BY trading_date DESC LIMIT 1
+                """, (login_val,))
+                prev_daily = cur.fetchone()
+                prev_dd = float(prev_daily[0]) if (prev_daily and prev_daily[0] is not None) else 0.00
+
                 daily_start_eq = current_equity_val
-                daily_max_dd = 0.00
+                daily_max_dd = prev_dd
                 trades_cnt = 0
                 cur.execute("""
                     INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
-                    VALUES (%s, %s, %s, %s, 0.0, 0)
-                """, (today, login_val, daily_start_eq, current_equity_val))
+                    VALUES (%s, %s, %s, %s, %s, 0)
+                """, (today, login_val, daily_start_eq, current_equity_val, daily_max_dd))
+
 
             # Update bot_state with RESTORED history
             cur.execute("""
