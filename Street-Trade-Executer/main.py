@@ -1214,6 +1214,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if "GLOBAL_PEAK_BASKET_PNL" not in globals():
             global GLOBAL_PEAK_BASKET_PNL
             GLOBAL_PEAK_BASKET_PNL = {}
+        if "GLOBAL_HYBRID_BE_SHIFTED" not in globals():
+            global GLOBAL_HYBRID_BE_SHIFTED
+            GLOBAL_HYBRID_BE_SHIFTED = {}
 
 
         current_peak = GLOBAL_PEAK_BASKET_PNL.get(sig_id, 0.0)
@@ -1221,12 +1224,25 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             GLOBAL_PEAK_BASKET_PNL[sig_id] = total_basket_pnl
             current_peak = total_basket_pnl
 
-        # ── MASTER UNIFIED REVERSAL & PROFIT LOCK ENGINE (PURE Z=0.0 BASELINE + 6-PIP BE BUFFER) ──
+        # ── MASTER PROP FIRM HYBRID EXIT ARCHITECTURE (DUAL BREAKEVEN + OPPOSITE EXTREME EXIT) ──
         tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
         
-        kf_pair = get_kf_for_pair(sym_a, sym_b)
-        pair_velocity = kf_pair.get_velocity() if kf_pair is not None else 0.0
-        is_reversion_momentum = (is_buy_spread and pair_velocity > 0.005) or (not is_buy_spread and pair_velocity < -0.005)
+        # 1. DUAL BREAKEVEN SHIFT ENGINE (Trigger A: Z=0.0 & Trigger B: PnL >= +$15.00 / 1.0% Gain)
+        z_neutral_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
+        pnl_be_reached = total_basket_pnl >= 15.0
+        be_already_shifted = GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False)
+
+        if not be_already_shifted and (z_neutral_reached or pnl_be_reached):
+            trigger_name = "Z=0.0 Neutral Mean Line" if z_neutral_reached else "Price PnL >= +$15.00 (1.0% Gain)"
+            logger.info(f"🛡️ [PROP FIRM HYBRID BREAKEVEN SHIFT] Triggered by {trigger_name}! Shifting SL to Entry Price (100% Risk-Free). Letting trade run to Opposite Extreme (+1.50 / -1.50) for MAX PROFIT!")
+            from execution_bot import modify_position_sl
+            for t_a in open_leg_a_trades:
+                if t_a.get("entry_price") and t_a.get("ticket"):
+                    modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+            for t_b in open_leg_b_trades:
+                if t_b.get("entry_price") and t_b.get("ticket"):
+                    modify_position_sl(t_b["ticket"], t_b["symbol"], t_b["entry_price"])
+            GLOBAL_HYBRID_BE_SHIFTED[sig_id] = True
 
         # Rule 1: High Profit Reversal Lock ($45.00+ Peak -> Drops to $38.00)
         if current_peak >= 45.0 and total_basket_pnl <= 38.0:
@@ -1250,18 +1266,20 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     if h_part_vol > 0:
                         close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
 
-
-        # Rule 3: PURE Z = 0.0 FULL MEAN REVERSION EXIT (or Net Cash Target >= $35.00)
+        # 2. FINAL PROFIT EXIT: OPPOSITE EXTREME LEVEL (Z >= +1.50 / Z <= -1.50) OR 1:2+ RR TARGET ($45.00+)
         if not exit_triggered:
-            is_mean_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0) or (total_basket_pnl >= 35.0)
+            is_opposite_extreme_reached = (is_buy_spread and z_score_for_pair >= 1.50) or (not is_buy_spread and z_score_for_pair <= -1.50)
+            is_high_rr_reached = total_basket_pnl >= 45.0
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
             if is_sl_breached:
                 exit_triggered = True
                 exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
-            elif is_mean_reached and total_basket_pnl > 0.0:
+            elif (is_opposite_extreme_reached or is_high_rr_reached) and total_basket_pnl > 0.0:
                 exit_triggered = True
-                exit_reason = f"Z_MEAN_REVERSION_0.0 (z={z_score_for_pair:.2f}, Basket PnL=${total_basket_pnl:.2f})"
+                reason_detail = f"Opposite Extreme Z={z_score_for_pair:.2f}" if is_opposite_extreme_reached else "1:2+ RR Target"
+                exit_reason = f"PROP_FIRM_HYBRID_EXIT ({reason_detail}, Basket PnL=${total_basket_pnl:.2f})"
+
 
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
@@ -1893,9 +1911,10 @@ def main():
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
                         logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry}")
-                        logger.info(f"🎯 [EXIT STRATEGY ACTIVE] Target Z: 0.0 (Pure Baseline Mean Reversion Exit)")
+                        logger.info(f"🎯 [PROP FIRM HYBRID EXIT ACTIVE] Dual Breakeven: ENABLED (Z=0.0 & PnL>=$15.00) 🛡️ | Final Target: Opposite Extreme Z=+1.50 / -1.50 (1:2+ RR) 🚀")
                         logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | SMC: DISABLED ❌")
                         logger.info(f"🛡️ [ACTIVE GUARDS] News Guard: ENABLED 📰 | Breakeven Guard: ENABLED 🛡️ | Friday Close Guard: ENABLED 🌅")
+
 
 
                     if REQUIRE_SMC_CONFLUENCE != new_smc:
@@ -2964,9 +2983,10 @@ def main():
 
                 logger.info(
                     f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} "
-                    f"| Target Z: 0.0 (Pure Baseline Mean Reversion) | Filters: Pre-Entry DISABLED ❌, Min Beta DISABLED ❌, Option 1 Z<=0.50 DISABLED ❌ "
+                    f"| Hybrid Target: Opposite Extreme Z=+1.50/-1.50 (1:2+ RR) | Dual BE: ACTIVE 🛡️ (Z=0.0 & PnL>=$15.00) "
                     f"| Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
+
 
 
 
