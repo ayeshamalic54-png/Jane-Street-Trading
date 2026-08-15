@@ -1231,39 +1231,40 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         tp2_trade = next((t for t in open_leg_a_trades if "TP2" in str(t.get("comment", "")).upper()), None)
         tp3_trade = next((t for t in open_leg_a_trades if "TP3" in str(t.get("comment", "")).upper()), None)
 
-        # ── STEP 1: Z=0.0 OR PnL >= +$15.00 BREAK-EVEN (RISK-FREE MODE) ──
+        # ── STEP 1 & STEP 2 AT Z = 0.0 (OR PnL >= +$15.00): BREAK-EVEN + 70% PROFIT BANK ──
         z_neutral_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
         pnl_be_reached = total_basket_pnl >= 15.0
         be_already_shifted = GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False)
-
-        if not be_already_shifted and (z_neutral_reached or pnl_be_reached):
-            trigger_name = "Z=0.0 Neutral Mean Line" if z_neutral_reached else "Price PnL >= +$15.00 (1.0% Gain)"
-            logger.info(f"🛡️ [THREE-STEP EXIT - STEP 1] Triggered by {trigger_name}! Shifting Stop Loss for all orders to Entry Price (100% Risk-Free Mode)! Trade continues running for Step 2 (+1.50)!")
-            from execution_bot import modify_position_sl
-            for t_a in open_leg_a_trades:
-                if t_a.get("entry_price") and t_a.get("ticket"):
-                    modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
-            for t_b in open_leg_b_trades:
-                if t_b.get("entry_price") and t_b.get("ticket"):
-                    modify_position_sl(t_b["ticket"], t_b["symbol"], t_b["entry_price"])
-            GLOBAL_HYBRID_BE_SHIFTED[sig_id] = True
-
-        # ── STEP 2: Z = +1.50 / -1.50 PARTIAL PROFIT (70% VOLUME CLOSE: TP1 + TP2) ──
-        z_step2_reached = (is_buy_spread and z_score_for_pair >= 1.50) or (not is_buy_spread and z_score_for_pair <= -1.50)
         step2_done = GLOBAL_STEP2_SCALED_OUT.get(sig_id, False)
 
-        if z_step2_reached and not step2_done and total_basket_pnl > 0.0:
-            logger.info(f"💰 [THREE-STEP EXIT - STEP 2] Z reached +1.50 / -1.50 (Z={z_score_for_pair:.2f})! Closing 70% Volume (TP1 & TP2) to bank handsome cash profit (${total_basket_pnl:.2f})! Leaving 30% Runner (TP3) for Step 3 (+3.0 Jackpot)!")
-            if tp1_trade is not None:
-                close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
-            if tp2_trade is not None:
-                close_single_trade(tp2_trade["symbol"], tp2_trade["ticket"], tp2_trade["lots"], tp2_trade["order_type"])
-            if open_leg_b_trades:
-                h_trade = open_leg_b_trades[0]
-                h_23_vol = round(float(h_trade["lots"]) * (2.0 / 3.0), 2)
-                if h_23_vol > 0:
-                    close_single_trade(h_trade["symbol"], h_trade["ticket"], h_23_vol, h_trade["order_type"])
-            GLOBAL_STEP2_SCALED_OUT[sig_id] = True
+        if (z_neutral_reached or pnl_be_reached) and total_basket_pnl > 0.0:
+            trigger_name = "Z=0.0 Neutral Mean Line" if z_neutral_reached else "Price PnL >= +$15.00 (1.0% Gain)"
+            
+            # Action A: Shift SL to Entry Price (100% Risk-Free)
+            if not be_already_shifted:
+                logger.info(f"🛡️ [THREE-STEP EXIT - STEP 1] Triggered by {trigger_name}! Shifting Stop Loss for all orders to Entry Price (100% Risk-Free Mode)!")
+                from execution_bot import modify_position_sl
+                for t_a in open_leg_a_trades:
+                    if t_a.get("entry_price") and t_a.get("ticket"):
+                        modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+                for t_b in open_leg_b_trades:
+                    if t_b.get("entry_price") and t_b.get("ticket"):
+                        modify_position_sl(t_b["ticket"], t_b["symbol"], t_b["entry_price"])
+                GLOBAL_HYBRID_BE_SHIFTED[sig_id] = True
+
+            # Action B: Close 70% Volume (TP1 & TP2) right at Z=0.0 to bank handsome cash profit!
+            if not step2_done:
+                logger.info(f"💰 [THREE-STEP EXIT - STEP 2] Z reached 0.0 (Neutral Mean)! Banking 70% Volume (TP1 & TP2) in Cash (${total_basket_pnl:.2f})! Leaving 30% Runner (TP3) for Step 3 (Z = +1.50 / -1.50 Jackpot)!")
+                if tp1_trade is not None:
+                    close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+                if tp2_trade is not None:
+                    close_single_trade(tp2_trade["symbol"], tp2_trade["ticket"], tp2_trade["lots"], tp2_trade["order_type"])
+                if open_leg_b_trades:
+                    h_trade = open_leg_b_trades[0]
+                    h_23_vol = round(float(h_trade["lots"]) * (2.0 / 3.0), 2)
+                    if h_23_vol > 0:
+                        close_single_trade(h_trade["symbol"], h_trade["ticket"], h_23_vol, h_trade["order_type"])
+                GLOBAL_STEP2_SCALED_OUT[sig_id] = True
 
         # Rule 1: High Profit Reversal Lock ($45.00+ Peak -> Drops to $38.00)
         if current_peak >= 45.0 and total_basket_pnl <= 38.0:
@@ -1276,10 +1277,10 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     if h_part_vol > 0:
                         close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
 
-        # ── STEP 3: Z = +2.40 / +3.00 RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
+        # ── STEP 3: Z = +1.50 / -1.50 RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
         if not exit_triggered:
-            z_step3_jackpot = (is_buy_spread and z_score_for_pair >= 2.40) or (not is_buy_spread and z_score_for_pair <= -2.40)
-            is_high_rr_reached = total_basket_pnl >= 60.0
+            z_step3_jackpot = (is_buy_spread and z_score_for_pair >= 1.50) or (not is_buy_spread and z_score_for_pair <= -1.50)
+            is_high_rr_reached = total_basket_pnl >= 45.0
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
             if is_sl_breached:
@@ -1287,8 +1288,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
             elif (z_step3_jackpot or is_high_rr_reached) and total_basket_pnl > 0.0:
                 exit_triggered = True
-                reason_detail = f"Step 3 Jackpot Z={z_score_for_pair:.2f}" if z_step3_jackpot else "1:3+ High RR Target"
+                reason_detail = f"Step 3 Jackpot Z={z_score_for_pair:.2f}" if z_step3_jackpot else "1:2+ High RR Target"
                 exit_reason = f"THREE_STEP_EXIT_JACKPOT ({reason_detail}, Basket PnL=${total_basket_pnl:.2f})"
+
 
 
 
