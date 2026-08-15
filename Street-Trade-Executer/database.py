@@ -685,8 +685,10 @@ def update_scanned_asset(symbol_pair, price_a, price_b, win_rate, z_score, actio
 
 def reset_database_metrics_for_new_account(login_id, equity):
     """
-    Force-updates the database metrics (both bot_state and daily_metrics for today)
-    to match the new connected account's starting balance, restoring saved values if available.
+    Syncs database metrics for a connected MT5 account.
+    If the account exists in account_states, it RESTORES saved initial balance, peak equity,
+    overall drawdown, and daily metrics without resetting history.
+    If it is a brand-new account, it initializes fresh starting metrics.
     """
     today = datetime.date.today()
     conn = None
@@ -697,47 +699,94 @@ def reset_database_metrics_for_new_account(login_id, equity):
         if login_val == 0:
             return
 
-        initial_balance_val = float(equity)
-        max_equity_peak_val = float(equity)
-        overall_drawdown_val = 0.00
-        
-        # Save or update state in account_states for login_val
+        current_equity_val = float(equity)
+
+        # Check if account already exists in account_states history
         cur.execute("""
-            INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (mt5_login) DO UPDATE
-            SET initial_balance = EXCLUDED.initial_balance,
-                max_equity_peak = EXCLUDED.max_equity_peak,
-                overall_drawdown = EXCLUDED.overall_drawdown
-        """, (login_val, initial_balance_val, max_equity_peak_val, overall_drawdown_val))
-        
-        # 1. Update bot_state
-        cur.execute("""
-            UPDATE bot_state 
-            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, drawdown_percent = 0.00, trades_today = 0, overall_drawdown = 0.00 
-            WHERE id = 1
-        """, (initial_balance_val, max_equity_peak_val, login_val, float(equity)))
-        
-        # 2. Update or Insert daily_metrics for today and this specific login
-        cur.execute("""
-            INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
-            VALUES (%s, %s, %s, %s, 0.0, 0)
-            ON CONFLICT (trading_date, mt5_login) DO UPDATE
-            SET start_equity = EXCLUDED.start_equity,
-                current_equity = EXCLUDED.current_equity,
-                max_drawdown_percent = 0.0,
-                trades_today = 0,
-                updated_at = CURRENT_TIMESTAMP
-        """, (today, login_val, initial_balance_val, float(equity)))
-            
+            SELECT initial_balance, max_equity_peak, overall_drawdown 
+            FROM account_states 
+            WHERE mt5_login = %s
+        """, (login_val,))
+        acc_row = cur.fetchone()
+
+        if acc_row:
+            # RETURNING ACCOUNT: Restore saved history!
+            initial_balance_val = float(acc_row[0])
+            max_equity_peak_val = max(float(acc_row[1]), current_equity_val)
+            overall_drawdown_val = max(0.0, ((max_equity_peak_val - current_equity_val) / max_equity_peak_val) * 100.0) if max_equity_peak_val > 0 else 0.0
+
+            # Update account_states with new peak/drawdown if applicable
+            cur.execute("""
+                UPDATE account_states
+                SET max_equity_peak = %s, overall_drawdown = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE mt5_login = %s
+            """, (max_equity_peak_val, overall_drawdown_val, login_val))
+
+            # Fetch today's daily metrics if already exists
+            cur.execute("""
+                SELECT start_equity, max_drawdown_percent, trades_today
+                FROM daily_metrics
+                WHERE trading_date = %s AND mt5_login = %s
+            """, (today, login_val))
+            daily_row = cur.fetchone()
+
+            if daily_row:
+                daily_start_eq = float(daily_row[0])
+                daily_max_dd = float(daily_row[1])
+                trades_cnt = int(daily_row[2])
+            else:
+                daily_start_eq = current_equity_val
+                daily_max_dd = 0.00
+                trades_cnt = 0
+                cur.execute("""
+                    INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
+                    VALUES (%s, %s, %s, %s, 0.0, 0)
+                """, (today, login_val, daily_start_eq, current_equity_val))
+
+            # Update bot_state with RESTORED history
+            cur.execute("""
+                UPDATE bot_state 
+                SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, 
+                    drawdown_percent = %s, trades_today = %s, overall_drawdown = %s 
+                WHERE id = 1
+            """, (initial_balance_val, max_equity_peak_val, login_val, current_equity_val, daily_max_dd, trades_cnt, overall_drawdown_val))
+
+            print(f"Restored saved metrics for returning account {login_val}: Initial=${initial_balance_val:.2f}, Peak=${max_equity_peak_val:.2f}, Overall DD={overall_drawdown_val:.2f}%")
+
+        else:
+            # BRAND NEW UNSEEN ACCOUNT: Initialize fresh!
+            initial_balance_val = current_equity_val
+            max_equity_peak_val = current_equity_val
+            overall_drawdown_val = 0.00
+
+            cur.execute("""
+                INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown)
+                VALUES (%s, %s, %s, %s)
+            """, (login_val, initial_balance_val, max_equity_peak_val, overall_drawdown_val))
+
+            cur.execute("""
+                UPDATE bot_state 
+                SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, 
+                    drawdown_percent = 0.00, trades_today = 0, overall_drawdown = 0.00 
+                WHERE id = 1
+            """, (initial_balance_val, max_equity_peak_val, login_val, current_equity_val))
+
+            cur.execute("""
+                INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
+                VALUES (%s, %s, %s, %s, 0.0, 0)
+                ON CONFLICT (trading_date, mt5_login) DO NOTHING
+            """, (today, login_val, initial_balance_val, current_equity_val))
+
+            print(f"Initialized fresh state for new account {login_val}: Equity=${current_equity_val:.2f}")
+
         conn.commit()
         cur.close()
-        print(f"Successfully reset/restored database metrics for account {login_val} (Equity: ${equity:.2f})")
     except Exception as e:
-        print(f"Error resetting database metrics for new account: {e}")
+        print(f"Error syncing database metrics for account: {e}")
     finally:
         if conn:
             conn.close()
+
 
 
 def update_bot_volatility_toggles(vol_enabled: bool, knife_enabled: bool):

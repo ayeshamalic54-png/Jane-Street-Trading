@@ -88,14 +88,6 @@ def get_or_create_daily_start_equity(current_equity):
         
         if row:
             start_equity = float(row[0])
-            # If database has a different initial_balance (suggesting manual reset), sync it to start_equity
-            if db_initial_balance is not None and abs(start_equity - db_initial_balance) > 0.01:
-                start_equity = db_initial_balance
-                cur.execute(
-                    "UPDATE daily_metrics SET start_equity = %s WHERE trading_date = %s AND mt5_login = %s",
-                    (db_initial_balance, today, current_login)
-                )
-                
             cur.execute(
                 "UPDATE daily_metrics SET current_equity = %s WHERE trading_date = %s AND mt5_login = %s",
                 (current_equity, today, current_login)
@@ -105,6 +97,7 @@ def get_or_create_daily_start_equity(current_equity):
                 (current_login, current_equity)
             )
             conn.commit()
+
         else:
             # Create a new record for today for this specific login
             start_equity = db_initial_balance if db_initial_balance is not None else current_equity
