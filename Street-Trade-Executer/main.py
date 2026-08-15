@@ -2996,10 +2996,11 @@ def main():
                     logger.error(f"Error compiling scan summary log: {ex_sum}")
 
                 logger.info(
-                    f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} "
-                    f"| Three-Step Target: Step 1 BE(Z=0/+$15), Step 2 (70%@Z=1.5), Step 3 (30%@Z=2.4) "
+                    f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) "
+                    f"| Three-Step Target: Step 1 BE (Z=0.0/+$15), Step 2 (70% Cash @ Z=0.0), Step 3 (30% Runner @ Z=1.50) "
                     f"| Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
+
 
 
 
