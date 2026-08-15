@@ -408,7 +408,7 @@ Z_ENTRY_THRESHOLD = 2.4
 ML_MODEL = None
 DEFAULT_LOTS = 0.01
 Z_EXIT_MEAN = 0.0
-REQUIRE_SMC_CONFLUENCE = True
+REQUIRE_SMC_CONFLUENCE = False
 AUTO_EXECUTE = True          # toggled from dashboard via DB
 CRYPTO_ENABLED = False
 METALS_ENABLED = True
@@ -418,6 +418,7 @@ STOCKS_ENABLED = True
 RISK_LIMITS_ENABLED = True
 SMC_TIMEFRAME = mt5.TIMEFRAME_M5
 LOOP_INTERVAL = 2
+
 
 CANDIDATE_PAIRS = {
     "forex": [
@@ -1892,8 +1893,10 @@ def main():
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
                         logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry}")
-                        logger.info(f"🎯 [EXIT STRATEGY ACTIVE] Option 1 Partial Exit: ENABLED (Z <= 0.50 triggers TP1 Profit Bank + TP2/TP3 Breakeven SL)")
-                        logger.info(f"🛡️ [TRAILING GUARDS ACTIVE] Milestone SL (+8 pips -> +4 pips lock | +12 pips -> +8 pips lock) | Max Concurrent Trades: 2")
+                        logger.info(f"🎯 [EXIT STRATEGY ACTIVE] Target Z: 0.0 (Pure Baseline Mean Reversion Exit)")
+                        logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | SMC: DISABLED ❌")
+                        logger.info(f"🛡️ [ACTIVE GUARDS] News Guard: ENABLED 📰 | Breakeven Guard: ENABLED 🛡️ | Friday Close Guard: ENABLED 🌅")
+
 
                     if REQUIRE_SMC_CONFLUENCE != new_smc:
                         logger.info(f"[CONFIG UPDATE] SMC Confluence updated: {REQUIRE_SMC_CONFLUENCE} -> {new_smc}")
@@ -2456,9 +2459,8 @@ def main():
                     if beta_sign != expected_sign:
                         logger.warning(f"Correlation anomaly for {pk}: estimated beta {beta:.4f} has wrong sign (expected {expected_sign}). Skipping signal.")
                         action = "NONE"
-                    elif abs(beta) < 0.20:
-                        logger.warning(f"Hedge ratio too low for {pk}: beta {beta:.4f} < 0.20. Skipping signal to protect win-rate.")
-                        action = "NONE"
+                    # Min beta (<0.20) filter DISABLED per user directive to ensure pure baseline trade execution
+
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
                 base_z_triggered = (z < -Z_ENTRY_THRESHOLD) or (z > Z_ENTRY_THRESHOLD)
@@ -2962,8 +2964,10 @@ def main():
 
                 logger.info(
                     f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} "
-                    f"| Target Z: 0.0 (Pure Baseline Mean Reversion) | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
+                    f"| Target Z: 0.0 (Pure Baseline Mean Reversion) | Filters: Pre-Entry DISABLED ❌, Min Beta DISABLED ❌, Option 1 Z<=0.50 DISABLED ❌ "
+                    f"| Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
+
 
 
 
