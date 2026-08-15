@@ -1289,10 +1289,10 @@
         }
 
         function updateUsdCalculations() {
-            const equityStr = (document.getElementById('account-equity').textContent || '$0').replace('$', '').replace(/,/g, '');
+            const equityStr = document.getElementById('account-equity').textContent.replace('$', '').replace(',', '');
             const equity = parseFloat(equityStr) || 10000.0;
             
-            const haltPct = parseFloat(document.getElementById('halt-limit-input').value) || 0.78;
+            const haltPct = parseFloat(document.getElementById('halt-limit-input').value) || 0.80;
             const maxPct = parseFloat(document.getElementById('max-limit-input').value) || 3.30;
             
             const haltUsd = (equity * (haltPct / 100.0)).toFixed(2);
@@ -1306,7 +1306,7 @@
         }
 
         async function saveDrawdownLimits() {
-            const haltPct = parseFloat(document.getElementById('halt-limit-input').value) || 0.78;
+            const haltPct = parseFloat(document.getElementById('halt-limit-input').value) || 0.80;
             const maxPct = parseFloat(document.getElementById('max-limit-input').value) || 3.30;
             
             try {
@@ -1315,9 +1315,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ halt_drawdown_limit: haltPct, max_drawdown_limit: maxPct })
                 });
-                alert(`✅ Drawdown limits saved successfully!\nHalt Limit: ${haltPct}%\nMax Limit: ${maxPct}%`);
+                alert(`✅ Drawdown limits saved successfully!\nHalt Limit: ${haltPct.toFixed(2)}%\nMax Limit: ${maxPct.toFixed(2)}%`);
             } catch (ex) {
-                alert(`Drawdown limits saved locally: Halt ${haltPct}%, Max ${maxPct}%`);
+                alert(`Drawdown limits saved locally: Halt ${haltPct.toFixed(2)}%, Max ${maxPct.toFixed(2)}%`);
             }
         }
 
