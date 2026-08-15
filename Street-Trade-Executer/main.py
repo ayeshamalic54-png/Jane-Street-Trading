@@ -20,7 +20,7 @@ import joblib
 
 from math_models import KalmanFilterRegression, calculate_obi, test_cointegration, is_turning_point_confirmed
 from data_ingestion import initialize_mt5, check_and_subscribe_symbol, get_live_ticks, get_market_book, shutdown_mt5, get_rates_df, resolve_broker_symbol
-from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT
+from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT, get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES
 from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket
 from smc_indicators import detect_smc_zones, is_price_in_zones
 from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset
@@ -2510,8 +2510,8 @@ def main():
                     COOLDOWN_DIRECTIONS[pk] = None
                     cooldown_dir = None
 
-                from risk_safeguards import get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES
                 active_pairs_cnt, active_pairs_set, active_symbols_set = get_active_pairs_and_symbols()
+
                 
                 base_a_check = s_a_resolved.upper().split('.')[0]
                 base_b_check = s_b_resolved.upper().split('.')[0]
