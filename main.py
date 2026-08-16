@@ -2929,7 +2929,7 @@ def main():
                                         close_all_positions(S_A_resolved)
                     invalidate_trades_cache()
 
-            # Trail Stop Loss if active (move to breakeven once TP1 is closed/hit in database)
+            # Trail Stop Loss to Breakeven if TP1 closed, net PnL >= $15.00 USD, or Z-Score crosses 0.0
             best_cat_a_check = get_symbol_category(S_A)
             if best_cat_a_check != "crypto" and len(active_js_positions) > 0:
                 leg_a_parts = [p for p in active_js_positions if p.symbol == S_A_resolved]
@@ -2949,11 +2949,17 @@ def main():
                         cur_sl.close()
                         conn_sl.close()
                         
-                        if tp1_closed:
-                            logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVATED] Step 1 TP1 Hit/Closed! Moving SL of remaining Leg A parts ({S_A_resolved}) to Entry Price ${leg_a_parts[0].price_open:.5f} (Risk-Free Trade) 🛡️")
+                        # Dual Breakeven Trigger: TP1 closed OR Floating Profit >= $15.00 USD OR Z crosses 0.0
+                        is_long_pos = (leg_a_parts[0].type == mt5.ORDER_TYPE_BUY)
+                        z_at_be = (active_pair_z_score <= 0.0) if is_long_pos else (active_pair_z_score >= 0.0) if active_pair_z_score is not None else False
+                        
+                        if tp1_closed or floating_profit >= 15.00 or z_at_be:
+                            trigger_reason = "TP1 Hit" if tp1_closed else (f"PnL ${floating_profit:.2f} >= $15" if floating_profit >= 15.00 else f"Z={active_pair_z_score:.2f} at BE")
+                            logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVATED ({trigger_reason})] Moving SL of active Leg A parts ({S_A_resolved}) to Entry Price ${leg_a_parts[0].price_open:.5f} (Risk-Free Trade) 🛡️")
                             modify_sl_for_trade(S_A_resolved, leg_a_parts[0].price_open)
                     except Exception as ex_sl:
                         logger.error(f"Error evaluating breakeven trail SL: {ex_sl}")
+
 
 
             # Update dashboard status
