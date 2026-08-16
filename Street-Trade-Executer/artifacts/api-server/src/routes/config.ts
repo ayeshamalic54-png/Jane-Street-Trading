@@ -36,7 +36,7 @@ router.get("/config", async (req, res) => {
       volatilityFilterEnabled: state?.volatilityFilterEnabled ?? true,
       defaultLots: Number(state?.defaultLots ?? 0.01),
       initialBalance: Number(state?.initialBalance ?? 100000.00),
-      haltDrawdownLimit: Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.80),
+      haltDrawdownLimit: Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.83),
       maxDrawdownLimit: Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30),
     });
   } catch (err) {
@@ -57,8 +57,9 @@ router.post("/config", async (req, res) => {
     const indicesEnabled = bodyObj.indicesEnabled !== undefined ? Boolean(bodyObj.indicesEnabled) : (state?.indicesEnabled ?? true);
     const stocksEnabled = bodyObj.stocksEnabled !== undefined ? Boolean(bodyObj.stocksEnabled) : ((state as any)?.stocks_enabled ?? true);
 
-    const haltLimit = bodyObj.haltDrawdownLimit !== undefined ? Number(bodyObj.haltDrawdownLimit) : (bodyObj.halt_drawdown_limit !== undefined ? Number(bodyObj.halt_drawdown_limit) : Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.80));
+    const haltLimit = bodyObj.haltDrawdownLimit !== undefined ? Number(bodyObj.haltDrawdownLimit) : (bodyObj.halt_drawdown_limit !== undefined ? Number(bodyObj.halt_drawdown_limit) : Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.83));
     const maxLimit = bodyObj.maxDrawdownLimit !== undefined ? Number(bodyObj.maxDrawdownLimit) : (bodyObj.max_drawdown_limit !== undefined ? Number(bodyObj.max_drawdown_limit) : Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30));
+
 
     const pairToSave = activePair || state?.activePair || "EURUSD/GBPUSD";
     const parts = pairToSave.split("/");

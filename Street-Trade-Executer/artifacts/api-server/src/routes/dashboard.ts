@@ -101,7 +101,10 @@ router.get("/dashboard", async (req, res) => {
       forexEnabled: botState?.forexEnabled ?? true,
       indicesEnabled: botState?.indicesEnabled ?? true,
       stocksEnabled: botState?.stocksEnabled ?? true,
+      halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? (botState as any)?.halt_drawdown_limit ?? 0.83),
+      max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? (botState as any)?.max_drawdown_limit ?? 3.30),
     });
+
   } catch (err) {
     req.log.error({ err }, "Failed to get dashboard data");
     return res.status(500).json({ error: "Failed to get dashboard data" });

@@ -840,10 +840,10 @@
                     ⚠️ Halt Drawdown Limit (%)
                 </label>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <input type="number" id="halt-limit-input" step="0.01" min="0.10" max="10.0" value="0.80" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 14px;" oninput="updateUsdCalculations()">
-
+                    <input type="number" id="halt-limit-input" step="0.01" min="0.10" max="10.0" value="0.83" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 14px;" oninput="updateUsdCalculations()">
                     <span style="font-size: 14px; font-weight: 700; color: #f59e0b;">%</span>
                 </div>
+
                 <div id="halt-limit-usd-display" style="font-size: 11px; font-weight: 600; color: #34d399; margin-top: 5px;">
                     💰 Equivalent Loss: <strong>$0.00 USD</strong>
                 </div>
@@ -1086,7 +1086,8 @@
                 const haltInput = document.getElementById('halt-limit-input');
                 const maxInput = document.getElementById('max-limit-input');
 
-                const currentHalt = (data.halt_drawdown_limit !== undefined && data.halt_drawdown_limit !== null) ? Number(data.halt_drawdown_limit) : (parseFloat(haltInput.value) || 0.80);
+                const currentHalt = (data.halt_drawdown_limit !== undefined && data.halt_drawdown_limit !== null) ? Number(data.halt_drawdown_limit) : (parseFloat(haltInput.value) || 0.83);
+
                 const currentMax = (data.max_drawdown_limit !== undefined && data.max_drawdown_limit !== null) ? Number(data.max_drawdown_limit) : (parseFloat(maxInput.value) || 3.30);
 
                 if (haltInput && document.activeElement !== haltInput) {
