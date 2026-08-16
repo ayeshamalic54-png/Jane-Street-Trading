@@ -2789,6 +2789,22 @@ def main():
                                 best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5),
                                 signal_id=signal_id
                             )
+                            if not exec_a_ok:
+                                # Check if MT5 actually filled Leg A positions despite initial response timeout
+                                try:
+                                    live_mt5_pos = mt5.positions_get()
+                                    if live_mt5_pos:
+                                        filled_a_total = sum(
+                                            float(p.volume) for p in live_mt5_pos
+                                            if p.symbol.upper().split('.')[0] == S_A_resolved.upper().split('.')[0]
+                                            and p.magic == MAGIC_NUMBER
+                                        )
+                                        if filled_a_total > 0:
+                                            exec_a_ok = True
+                                            logger.info(f"🛡️ [HEDGE RECOVERY] MT5 verified {filled_a_total:.2f} lots filled for Leg A ({S_A_resolved})! Proceeding with Leg B ({S_B_resolved}) Hedge Order!")
+                                except Exception as ex_recv:
+                                    logger.error(f"Error checking hedge recovery MT5 positions: {ex_recv}")
+
                             if exec_a_ok:
                                 if filled_a_total > 0:
                                     qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, filled_a_total, best_sig["beta"], best_cat_a, best_cat_b)
@@ -2818,6 +2834,8 @@ def main():
                                         res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
                                         if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                             log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
+                                            break
+
                                             break
                                         time.sleep(0.5)
                                     if not (res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE):
