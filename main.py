@@ -1822,7 +1822,8 @@ def main():
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Adverse Exit: DISABLED ❌ | Dynamic Velocity Filter: DISABLED ❌ | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Dynamic ATR Target: ENABLED 🟢 (2.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Adverse Exit: DISABLED ❌ | Dynamic Velocity Filter: DISABLED ❌ | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+
 
 
 
@@ -2650,14 +2651,27 @@ def main():
                         entry_b = best_sig["tick_b"].bid if is_long else best_sig["tick_b"].ask
                         
                         sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
+                        # Feature 3 & Feature 4: Dynamic ATR & Swing High/Low Structure Targets
+                        from math_models import calculate_dynamic_atr_tp_pips, find_swing_high_low_tp
+                        dynamic_atr_tp = calculate_dynamic_atr_tp_pips(S_A, timeframe=mt5.TIMEFRAME_M15, multiplier=2.5, fallback_tp_pips=TP_PIPS)
+                        swing_tp_price, swing_type, swing_pips = find_swing_high_low_tp(S_A, order_type="BUY" if is_long else "SELL", timeframe=mt5.TIMEFRAME_M15, lookback=30, fallback_pips=dynamic_atr_tp)
+                        
+                        logger.info(f"🎯 [DYNAMIC ATR TARGET] Active M15 ATR TP: {dynamic_atr_tp:.1f} pips (Multiplier: 2.5x | Base TP Pips: {TP_PIPS:.1f})")
+                        logger.info(f"🏛️ [SWING STRUCTURE TARGET] Structure Target: {swing_tp_price:.5f} ({swing_type} | Distance: {swing_pips:.1f} pips)")
+                        
+                        info_pip_a = mt5.symbol_info(S_A)
+                        pt_a = info_pip_a.point if info_pip_a else 0.0001
+                        pip_sz_a = (pt_a * 10.0) if (info_pip_a and info_pip_a.digits in (3, 5)) else pt_a
+
                         if is_long:
                             tp1_val = best_sig["price_a"] + sl_dist
-                            tp2_val = best_sig["price_a"] + max(tp_dist, sl_dist * 1.5)
-                            tp3_val = best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5)
+                            tp2_val = best_sig["price_a"] + (dynamic_atr_tp * pip_sz_a)
+                            tp3_val = swing_tp_price if (swing_tp_price > best_sig["price_a"]) else (best_sig["price_a"] + (sl_dist * 3.5))
                         else:
                             tp1_val = best_sig["price_a"] - sl_dist
-                            tp2_val = best_sig["price_a"] - max(tp_dist, sl_dist * 1.5)
-                            tp3_val = best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5)
+                            tp2_val = best_sig["price_a"] - (dynamic_atr_tp * pip_sz_a)
+                            tp3_val = swing_tp_price if (swing_tp_price > 0 and swing_tp_price < best_sig["price_a"]) else (best_sig["price_a"] - (sl_dist * 3.5))
+
                             
                         if DEFAULT_LOTS > 0.005:
                             disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
@@ -2969,9 +2983,11 @@ def main():
 
                 logger.info(
                     f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) "
-                    f"| Three-Step Target: Step 1 BE (Z=0.0/+$15), Step 2 (70% Cash @ Z=0.0), Step 3 (30% Runner @ Z=1.50) "
+                    f"| Dynamic ATR Target: ENABLED 🟢 (2.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) "
+                    f"| Exit Engine: Step 1 BE (Z=0.0/+$15), Step 2 (70% Cash @ Z=0.0), Step 3 (30% Runner @ Z=1.50) "
                     f"| Filters: Multi-Tier Equity Trailing DISABLED ❌ | Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
+
 
 
 

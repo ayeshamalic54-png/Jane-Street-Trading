@@ -260,3 +260,83 @@ def calculate_atr_volatility_ratio(df):
         return ratio, (ratio >= 1.30)
     except Exception:
         return 1.0, False
+
+
+def calculate_dynamic_atr_tp_pips(symbol, timeframe=None, period=14, multiplier=2.5, fallback_tp_pips=12.0):
+    """
+    Feature 3: Dynamic ATR (Average True Range) Based Targets
+    Calculates the 14-period ATR for a symbol and derives dynamic Take Profit (TP) in pips based on 2.0x–3.0x ATR multiplier.
+    In high market volatility, TP expands for maximum profit; in low volatility, TP tightens to secure account.
+    """
+    import MetaTrader5 as mt5
+    if timeframe is None:
+        timeframe = mt5.TIMEFRAME_M15
+        
+    try:
+        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, period + 10)
+        if rates is None or len(rates) < period + 1:
+            return fallback_tp_pips
+            
+        highs = rates['high']
+        lows = rates['low']
+        closes = rates['close']
+        
+        tr1 = highs[1:] - lows[1:]
+        tr2 = np.abs(highs[1:] - closes[:-1])
+        tr3 = np.abs(lows[1:] - closes[:-1])
+        tr = np.maximum(tr1, np.maximum(tr2, tr3))
+        
+        atr_price = np.mean(tr[-period:])
+        
+        # Convert ATR to pips based on symbol point/digits
+        symbol_info = mt5.symbol_info(symbol)
+        point = symbol_info.point if symbol_info else 0.0001
+        pip_size = (point * 10.0) if (symbol_info and symbol_info.digits in (3, 5)) else point
+        if pip_size <= 0:
+            pip_size = 0.0001
+            
+        atr_pips = float(atr_price / pip_size)
+        dynamic_tp_pips = round(float(atr_pips * multiplier), 1)
+        return max(dynamic_tp_pips, 5.0)
+    except Exception as e:
+        return fallback_tp_pips
+
+
+def find_swing_high_low_tp(symbol, order_type="BUY", timeframe=None, lookback=30, fallback_pips=15.0):
+    """
+    Feature 4: Swing High / Swing Low (Structure Based) TP Targets
+    Finds recent M15/H1 price action structure:
+      - For BUY trades: Recent Swing High (Resistance level) target.
+      - For SELL trades: Recent Swing Low (Support level) target.
+    Returns: (target_tp_price, structure_type, target_pips)
+    """
+    import MetaTrader5 as mt5
+    if timeframe is None:
+        timeframe = mt5.TIMEFRAME_M15
+        
+    try:
+        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, lookback)
+        if rates is None or len(rates) < 5:
+            tick = mt5.symbol_info_tick(symbol)
+            curr = tick.ask if tick else 1.0
+            return curr, "FALLBACK", fallback_pips
+            
+        symbol_info = mt5.symbol_info(symbol)
+        point = symbol_info.point if symbol_info else 0.0001
+        pip_size = (point * 10.0) if (symbol_info and symbol_info.digits in (3, 5)) else point
+        tick = mt5.symbol_info_tick(symbol)
+        curr_price = tick.ask if (tick and order_type == "BUY") else (tick.bid if tick else 1.0)
+        
+        if order_type == "BUY":
+            # Target is recent Swing High (highest high in lookback)
+            swing_high = float(np.max(rates['high']))
+            target_pips = (swing_high - curr_price) / pip_size if pip_size > 0 else fallback_pips
+            return swing_high, "SWING_HIGH_RESISTANCE", round(target_pips, 1)
+        else:
+            # Target is recent Swing Low (lowest low in lookback)
+            swing_low = float(np.min(rates['low']))
+            target_pips = (curr_price - swing_low) / pip_size if pip_size > 0 else fallback_pips
+            return swing_low, "SWING_LOW_SUPPORT", round(target_pips, 1)
+    except Exception as e:
+        return 0.0, "ERROR", fallback_pips
+
