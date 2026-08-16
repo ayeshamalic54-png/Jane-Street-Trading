@@ -101,20 +101,17 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             return None
 
         # Check if the error is due to disabled auto-trading on client or server
-        if "AutoTrading disabled" in comment_str or result.retcode in [10022, 10026, 10034]:
-            logger.error(f"Order rejected: AutoTrading is disabled! Details: {result.comment}")
+        if "AutoTrading disabled" in comment_str or result.retcode in [10022, 10026, 10027, 10034]:
+            logger.error(f"⚠️ [ALGO TRADING DISABLED] Order rejected (retcode={result.retcode}): Enable 'Algo Trading' button in MT5 top toolbar! Details: {result.comment}")
             return None
             
-        # If the failure is not related to filling mode, we should not retry other modes
-        if result.retcode not in [10013, 10030]:
-            break
-            
-        logger.warning(f"Order mode {mode} failed: {result.comment}. Retrying next mode...")
+        logger.warning(f"Order mode {mode} failed (retcode={result.retcode}): {result.comment}. Trying next filling mode...")
         
     if result:
-        err_comment = result.comment if result else "No response"
+        err_comment = f"retcode={result.retcode} ({result.comment})" if result else "No response"
         logger.error(f"Order failed after trying all filling modes: {err_comment}")
     return None
+
 
 def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots, tp1, tp2, tp3, signal_id=None):
     """
