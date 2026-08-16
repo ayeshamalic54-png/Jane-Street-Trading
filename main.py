@@ -1277,11 +1277,13 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     if h_part_vol > 0:
                         close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
 
-        # ── STEP 3: Z = +1.50 / -1.50 RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
+        # ── STEP 3: Z = ±Z_ENTRY_THRESHOLD RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
         if not exit_triggered:
-            z_step3_jackpot = (is_buy_spread and z_score_for_pair >= 1.50) or (not is_buy_spread and z_score_for_pair <= -1.50)
+            target_step3_z = Z_ENTRY_THRESHOLD
+            z_step3_jackpot = (is_buy_spread and z_score_for_pair >= target_step3_z) or (not is_buy_spread and z_score_for_pair <= -target_step3_z)
             is_high_rr_reached = total_basket_pnl >= 45.0
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
+
 
             if is_sl_breached:
                 exit_triggered = True
@@ -1929,7 +1931,8 @@ def main():
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
                         logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry}")
-                        logger.info(f"🎯 [THREE-STEP EXIT ACTIVE] Step 1: BE at Z=0.0 / PnL>=$15 🛡️ | Step 2: 70% Profit Bank at Z=0.0 💰 | Step 3: 30% Runner Jackpot at Z=1.50 🚀")
+                        logger.info(f"🎯 [THREE-STEP EXIT ACTIVE] Step 1: BE at Z=0.0 / PnL>=$15 🛡️ | Step 2: 70% Profit Bank at Z=0.0 💰 | Step 3: 30% Runner Jackpot at Z=±{Z_ENTRY_THRESHOLD:.2f} 🚀")
+
                         logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | Multi-Tier Equity Trailing: DISABLED ❌ | SMC: DISABLED ❌")
                         logger.info(f"🛡️ [ACTIVE GUARDS] News Guard: ENABLED 📰 | Breakeven Guard: ENABLED 🛡️ | Friday Close Guard: ENABLED 🌅")
 
@@ -2987,7 +2990,8 @@ def main():
                     f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) "
                     f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) "
 
-                    f"| Exit Engine: Step 1 BE (Z=0.0/+$15), Step 2 (70% Cash @ Z=0.0), Step 3 (30% Runner @ Z=1.50) "
+                    f"| Exit Engine: Step 1 BE (Z=0.0/+$15), Step 2 (70% Cash @ Z=0.0), Step 3 (30% Runner @ Z=±{Z_ENTRY_THRESHOLD:.2f}) "
+
                     f"| Filters: Multi-Tier Equity Trailing DISABLED ❌ | Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
 

@@ -265,6 +265,17 @@ def initialize_database():
             conn.commit()
             print("Added stocks_enabled column to bot_state table.")
 
+        # Add atr_multiplier column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='atr_multiplier'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN atr_multiplier NUMERIC(3, 1) DEFAULT 1.5")
+            conn.commit()
+            print("Added atr_multiplier column to bot_state table.")
+
+
         # Auto-migrate any legacy NDX100 active_pair in bot_state to US30/NAS100 and clean tables
         cur.execute("UPDATE bot_state SET active_pair = 'US30/NAS100' WHERE active_pair LIKE '%NDX100%'")
         cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%NDX100%'")
