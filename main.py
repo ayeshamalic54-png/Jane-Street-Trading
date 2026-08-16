@@ -1884,7 +1884,7 @@ def main():
                 cur.execute("SELECT COUNT(*) FROM trades WHERE status = 'OPEN'")
                 open_trades_count = cur.fetchone()[0] or 0
                 
-                if db_login > 0 and db_login != current_login:
+                if db_login == 0 or db_login != current_login:
                     startup_mismatch = True
                 
                 # Purge any legacy Platinum/Palladium rows from scanned_assets
@@ -1899,10 +1899,10 @@ def main():
             except Exception as e:
                 logger.error(f"Error checking startup metrics sync: {e}")
                 
-            login_changed = (active_login_id is not None and active_login_id != current_login) or startup_mismatch
+            login_changed = (active_login_id is not None and active_login_id != current_login) or startup_mismatch or (active_login_id is None and (db_login == 0 or db_login != current_login))
             
             if login_changed:
-                logger.info(f"Syncing metrics (login_changed={login_changed}). Resetting metrics to {acc_info.equity:.2f} due to account switch.")
+                logger.info(f"🔄 [ACCOUNT SWITCH DETECTED] Connected MT5 Login #{current_login} (Previous DB Login #{db_login}). Syncing Initial Balance to ${acc_info.equity:.2f} & resetting metrics!")
                 from database import reset_database_metrics_for_new_account
                 reset_database_metrics_for_new_account(current_login, acc_info.equity)
                 
@@ -1919,6 +1919,7 @@ def main():
                     logger.error(f"Error updating risk_safeguards cache in main loop: {ex}")
                 
             active_login_id = current_login
+
 
             # ── DB CONFIG SYNC (every ~10s) ─────────────────────────────────
             if db_config_counter % 5 == 0:
@@ -2319,10 +2320,12 @@ def main():
 
             # ── 2. SCANNING LOOP FOR ALL PAIRS ──
             active_pair_z_score = 0.0
-            active_pair_beta = 0.0
+            if active_pair_beta == 0.0 or active_pair_beta is None:
+                active_pair_beta = float(init_beta_val)
             active_pair_obi_a = 0.0
             active_pair_obi_b = 0.0
             active_pair_velocity = 0.0
+
 
             for s_a, s_b in pairs_to_scan:
                 pk = f"{s_a}/{s_b}"
