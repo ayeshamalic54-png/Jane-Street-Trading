@@ -2950,9 +2950,11 @@ def main():
                         conn_sl.close()
                         
                         if tp1_closed:
+                            logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVATED] Step 1 TP1 Hit/Closed! Moving SL of remaining Leg A parts ({S_A_resolved}) to Entry Price ${leg_a_parts[0].price_open:.5f} (Risk-Free Trade) 🛡️")
                             modify_sl_for_trade(S_A_resolved, leg_a_parts[0].price_open)
                     except Exception as ex_sl:
                         logger.error(f"Error evaluating breakeven trail SL: {ex_sl}")
+
 
             # Update dashboard status
             if is_news_halted or should_close_news:

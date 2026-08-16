@@ -297,8 +297,9 @@ def modify_sl_for_trade(symbol, new_sl):
                 }
                 res = mt5.order_send(request)
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    logger.info(f"Modified SL to {new_sl:.5f} for position ticket: {pos.ticket}")
+                    logger.info(f"🛡️ [BREAKEVEN APPLIED] MT5 Ticket #{pos.ticket} SL moved to Breakeven (${new_sl:.5f}) 🛡️")
                 else:
+
                     err_msg = res.comment if res else "No response"
                     logger.error(f"Failed to modify SL for position ticket {pos.ticket}: {err_msg}")
 
