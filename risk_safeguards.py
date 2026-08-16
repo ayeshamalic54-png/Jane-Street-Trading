@@ -59,6 +59,7 @@ def get_or_create_daily_start_equity(current_equity):
     Retrieves the starting equity for the current day from the database.
     If it doesn't exist, date/account ID mismatches, initializes it with the current equity.
     """
+    global _cached_start_equity, _cached_start_equity_date, _cached_last_login
     today = get_broker_today_date()
     
     current_login = 0
@@ -68,6 +69,11 @@ def get_or_create_daily_start_equity(current_equity):
             current_login = int(acc.login)
     except Exception:
         pass
+
+    if _cached_last_login != current_login:
+        _cached_last_login = current_login
+        _cached_start_equity = None
+        _cached_start_equity_date = None
         
     conn = None
     start_equity = current_equity
@@ -76,17 +82,12 @@ def get_or_create_daily_start_equity(current_equity):
         conn = get_connection()
         cur = conn.cursor()
         
-        # Check if database has a different initial_balance (suggesting user manually reset it)
+        # Check if database has initial_balance for current login
         cur.execute("SELECT initial_balance FROM bot_state WHERE id = 1 AND mt5_login = %s", (current_login,))
         state_row = cur.fetchone()
         db_initial_balance = None
         if state_row and state_row[0] is not None:
             db_initial_balance = float(state_row[0])
-
-        if _cached_last_login != current_login:
-            _cached_last_login = current_login
-            _cached_start_equity = None
-            _cached_start_equity_date = None
 
         # Check if we already have a record for today and this specific login
         cur.execute("SELECT start_equity FROM daily_metrics WHERE trading_date = %s AND mt5_login = %s", (today, current_login))
@@ -105,7 +106,7 @@ def get_or_create_daily_start_equity(current_equity):
             conn.commit()
 
         else:
-            # Create a new record for today for this specific login
+            # Create a fresh daily record for today using active MT5 equity
             start_equity = db_initial_balance if db_initial_balance is not None else current_equity
             cur.execute(
                 """
@@ -121,7 +122,6 @@ def get_or_create_daily_start_equity(current_equity):
             conn.commit()
             logger.info(f"Initialized new daily trading session for account {current_login}. Starting equity: ${start_equity:.2f}")
 
-            
         cur.close()
     except Exception as e:
         logger.error(f"Error in get_or_create_daily_start_equity: {e}")
@@ -130,6 +130,7 @@ def get_or_create_daily_start_equity(current_equity):
             conn.close()
             
     return start_equity
+
 
 def check_drawdown_limit(current_equity):
     """
