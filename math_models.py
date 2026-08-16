@@ -262,12 +262,13 @@ def calculate_atr_volatility_ratio(df):
         return 1.0, False
 
 
-def calculate_dynamic_atr_tp_pips(symbol, timeframe=None, period=14, multiplier=2.5, fallback_tp_pips=12.0):
+def calculate_dynamic_atr_tp_pips(symbol, timeframe=None, period=14, multiplier=1.5, fallback_tp_pips=12.0):
     """
     Feature 3: Dynamic ATR (Average True Range) Based Targets
-    Calculates the 14-period ATR for a symbol and derives dynamic Take Profit (TP) in pips based on 2.0x–3.0x ATR multiplier.
+    Calculates the 14-period ATR for a symbol and derives dynamic Take Profit (TP) in pips based on 1.5x ATR multiplier.
     In high market volatility, TP expands for maximum profit; in low volatility, TP tightens to secure account.
     """
+
     import MetaTrader5 as mt5
     if timeframe is None:
         timeframe = mt5.TIMEFRAME_M15

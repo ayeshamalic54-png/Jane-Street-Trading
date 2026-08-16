@@ -1822,7 +1822,8 @@ def main():
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Dynamic ATR Target: ENABLED 🟢 (2.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Adverse Exit: DISABLED ❌ | Dynamic Velocity Filter: DISABLED ❌ | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Adverse Exit: DISABLED ❌ | Dynamic Velocity Filter: DISABLED ❌ | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+
 
 
 
@@ -2653,10 +2654,11 @@ def main():
                         sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
                         # Feature 3 & Feature 4: Dynamic ATR & Swing High/Low Structure Targets
                         from math_models import calculate_dynamic_atr_tp_pips, find_swing_high_low_tp
-                        dynamic_atr_tp = calculate_dynamic_atr_tp_pips(S_A, timeframe=mt5.TIMEFRAME_M15, multiplier=2.5, fallback_tp_pips=TP_PIPS)
+                        dynamic_atr_tp = calculate_dynamic_atr_tp_pips(S_A, timeframe=mt5.TIMEFRAME_M15, multiplier=1.5, fallback_tp_pips=TP_PIPS)
                         swing_tp_price, swing_type, swing_pips = find_swing_high_low_tp(S_A, order_type="BUY" if is_long else "SELL", timeframe=mt5.TIMEFRAME_M15, lookback=30, fallback_pips=dynamic_atr_tp)
                         
-                        logger.info(f"🎯 [DYNAMIC ATR TARGET] Active M15 ATR TP: {dynamic_atr_tp:.1f} pips (Multiplier: 2.5x | Base TP Pips: {TP_PIPS:.1f})")
+                        logger.info(f"🎯 [DYNAMIC ATR TARGET] Active M15 ATR TP: {dynamic_atr_tp:.1f} pips (Multiplier: 1.5x | Base TP Pips: {TP_PIPS:.1f})")
+
                         logger.info(f"🏛️ [SWING STRUCTURE TARGET] Structure Target: {swing_tp_price:.5f} ({swing_type} | Distance: {swing_pips:.1f} pips)")
                         
                         info_pip_a = mt5.symbol_info(S_A)
@@ -2983,7 +2985,8 @@ def main():
 
                 logger.info(
                     f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) "
-                    f"| Dynamic ATR Target: ENABLED 🟢 (2.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) "
+                    f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) "
+
                     f"| Exit Engine: Step 1 BE (Z=0.0/+$15), Step 2 (70% Cash @ Z=0.0), Step 3 (30% Runner @ Z=1.50) "
                     f"| Filters: Multi-Tier Equity Trailing DISABLED ❌ | Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
                 )
