@@ -731,20 +731,17 @@ def get_atr(symbol: str, timeframe, count=30) -> float:
 
 def is_friday_market_close_approaching(lead_minutes=45):
     """
-    Returns True if current UTC time is within lead_minutes (default 45 mins) of Friday Forex market close,
-    or on Saturday/Sunday. Used to block new entries and prevent weekend opening gap risk.
+    Returns True ONLY if current UTC time is within lead_minutes (default 45 mins) of Friday Forex market close (21:15 UTC - 22:00 UTC Friday).
+    Auto-closes active trades 45m before Friday close to prevent weekend gap risk.
     """
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    if now_utc.weekday() == 4: # Friday
+    if now_utc.weekday() == 4: # Friday ONLY
         if now_utc.hour >= 21 and now_utc.minute >= (60 - lead_minutes):
             return True
         elif now_utc.hour >= 22:
             return True
-    elif now_utc.weekday() == 5: # Saturday
-        return True
-    elif now_utc.weekday() == 6: # Sunday (block all Sunday entries until Monday session)
-        return True
     return False
+
 
 
 def get_kf_parameters(symbol: str):
