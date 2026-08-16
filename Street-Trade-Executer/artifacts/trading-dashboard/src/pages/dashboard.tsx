@@ -743,8 +743,9 @@ export default function Dashboard() {
                   {drawdownPercent < 0 ? "+" : ""}{Math.abs(drawdownPercent).toFixed(2)}%
                 </div>
                 <div className="text-[10px] text-zinc-500 mb-1 font-mono">
-                  Halt: <span className="text-amber-500">0.78%</span> · Limit: <span className="text-red-500">3.3%</span>
+                  Halt: <span className="text-amber-500">{Number((data as any)?.halt_drawdown_limit ?? (data as any)?.haltDrawdownLimit ?? 0.83).toFixed(2)}%</span> · Limit: <span className="text-red-500">{Number((data as any)?.max_drawdown_limit ?? (data as any)?.maxDrawdownLimit ?? 3.3).toFixed(1)}%</span>
                 </div>
+
               </div>
               <Progress 
                 value={drawdownPercent < 0 ? 0 : Math.min((drawdownPercent / 3.3) * 100, 100)} 

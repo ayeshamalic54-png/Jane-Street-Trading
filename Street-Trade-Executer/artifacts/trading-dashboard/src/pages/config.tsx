@@ -75,7 +75,8 @@ const PAIR_CATEGORIES: Record<Category, { label: string; pairs: string[] }> = {
 };
 
 const BLUE_GUARDIAN_RULES = [
-  { rule: "Max Daily Loss", value: "3.3% limit", botValue: "0.78% Bot Halt Buffer (Safe)", safe: true },
+  { rule: "Max Daily Loss", value: "3.3% limit", botValue: "0.83% Bot Halt Buffer (Safe)", safe: true },
+
   { rule: "Max Overall Loss", value: "8% limit (Static Drawdown)", botValue: "Managed via active drawdown checks", safe: true },
   {rule: "Quick Strike Rule", value: "Hold trades >= 140s (2m 20s)", botValue: "Bot enforces 140s min hold on all exits", safe: true },
   { rule: "News Trading", value: "5m before/after split", botValue: "Allowed on Challenge; Restricted on Funded", safe: true },
@@ -818,8 +819,9 @@ export default function Config() {
                 <Badge className="bg-green-500/15 text-green-500 border-green-500/30 text-xs rounded-sm">SAFE</Badge>
               </div>
               <CardDescription className="text-xs">
-                Bot configured to stay within Blue Guardian limits. 0.78% daily halt = intentional buffer below the 3.3% hard limit.
+                Bot configured to stay within Blue Guardian limits. 0.83% daily halt = intentional buffer below the 3.3% hard limit.
               </CardDescription>
+
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
