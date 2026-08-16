@@ -830,6 +830,15 @@ def sync_mt5_open_positions_with_db():
         cur = conn.cursor()
         cur.execute("SELECT ticket, symbol, lots, entry_price, order_type, entry_time FROM trades WHERE status = 'OPEN'")
         db_open_trades = cur.fetchall()
+        db_tickets = {r[0] for r in db_open_trades}
+
+        # Auto-import active MT5 positions if missing from database
+        from database import log_trade_entry
+        for p in positions:
+            if p.ticket not in db_tickets:
+                dir_str = "BUY" if p.type == mt5.ORDER_TYPE_BUY else "SELL"
+                log_trade_entry(p.ticket, p.symbol, dir_str, float(p.volume), float(p.price_open), datetime.datetime.now(), "MT5_AUTO_IMPORTED")
+                logger.info(f"📥 [MT5 AUTO-IMPORT] Active MT5 Ticket #{p.ticket} ({p.symbol} {dir_str} {p.volume} lots @ {p.price_open}) auto-imported to DB & Dashboard!")
 
         for ticket, symbol, lots, entry_price, order_type, entry_time in db_open_trades:
             if ticket < 1000:
@@ -838,6 +847,7 @@ def sync_mt5_open_positions_with_db():
             if ticket in active_tickets:
                 # Ticket is still active in MT5 — no action needed
                 continue
+
 
             # Safeguard: If the trade was opened less than 140 seconds ago, do not mark it closed yet (prevents Blue Guardian 2-minute consistency breach)
             if entry_time is not None:
