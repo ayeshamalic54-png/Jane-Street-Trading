@@ -736,81 +736,43 @@ def reset_database_metrics_for_new_account(login_id, equity):
         except Exception:
             pass
 
-        if acc_row:
-            # RETURNING ACCOUNT: Restore saved history for THIS specific login
-            saved_initial = float(acc_row[0])
-            initial_balance_val = saved_initial if saved_initial > 0 else (mt5_initial_deposit or current_equity_val)
-            max_equity_peak_val = max(float(acc_row[1]), current_equity_val)
-            overall_drawdown_val = max(0.0, ((initial_balance_val - current_equity_val) / initial_balance_val) * 100.0) if initial_balance_val > 0 else 0.0
+        # Set initial balance to true MT5 deposit or current connected account equity ($10,000.00)
+        initial_balance_val = mt5_initial_deposit or current_equity_val
+        max_equity_peak_val = max(initial_balance_val, current_equity_val)
+        overall_drawdown_val = max(0.0, ((initial_balance_val - current_equity_val) / initial_balance_val) * 100.0) if initial_balance_val > 0 else 0.0
 
-            # Update account_states with initial balance / peak / drawdown
-            cur.execute("""
-                UPDATE account_states
-                SET initial_balance = %s, max_equity_peak = %s, overall_drawdown = %s, updated_at = CURRENT_TIMESTAMP
-                WHERE mt5_login = %s
-            """, (initial_balance_val, max_equity_peak_val, overall_drawdown_val, login_val))
+        # Upsert fresh account_states for THIS login
+        cur.execute("""
+            INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown, updated_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (mt5_login) DO UPDATE SET
+                initial_balance = EXCLUDED.initial_balance,
+                max_equity_peak = EXCLUDED.max_equity_peak,
+                overall_drawdown = EXCLUDED.overall_drawdown,
+                updated_at = CURRENT_TIMESTAMP
+        """, (login_val, initial_balance_val, max_equity_peak_val, overall_drawdown_val))
 
-            # Fetch today's daily metrics if already exists
-            cur.execute("""
-                SELECT start_equity, max_drawdown_percent, trades_today
-                FROM daily_metrics
-                WHERE trading_date = %s AND mt5_login = %s
-            """, (today, login_val))
-            daily_row = cur.fetchone()
+        # Reset daily_metrics for THIS login today
+        cur.execute("""
+            INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
+            VALUES (%s, %s, %s, %s, 0.00, 0)
+            ON CONFLICT (trading_date, mt5_login) DO UPDATE SET
+                start_equity = EXCLUDED.start_equity,
+                current_equity = EXCLUDED.current_equity,
+                max_drawdown_percent = 0.00,
+                trades_today = 0
+        """, (today, login_val, current_equity_val, current_equity_val))
 
-            if daily_row:
-                daily_start_eq = float(daily_row[0])
-                daily_max_dd = float(daily_row[1])
-                trades_cnt = int(daily_row[2])
-            else:
-                daily_start_eq = current_equity_val
-                daily_max_dd = 0.00
-                trades_cnt = 0
-                cur.execute("""
-                    INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
-                    VALUES (%s, %s, %s, %s, 0.00, 0)
-                """, (today, login_val, daily_start_eq, current_equity_val))
+        # Update main bot_state table with fresh account values ($10,000.00, 0.00% drawdown)
+        cur.execute("""
+            UPDATE bot_state 
+            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, 
+                drawdown_percent = 0.00, trades_today = 0, overall_drawdown = %s, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = 1
+        """, (initial_balance_val, max_equity_peak_val, login_val, current_equity_val, overall_drawdown_val))
 
-            # Update bot_state with RESTORED history
-            cur.execute("""
-                UPDATE bot_state 
-                SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, 
-                    drawdown_percent = %s, trades_today = %s, overall_drawdown = %s 
-                WHERE id = 1
-            """, (initial_balance_val, max_equity_peak_val, login_val, current_equity_val, daily_max_dd, trades_cnt, overall_drawdown_val))
+        print(f"Syncing account {login_val} metrics: Initial=${initial_balance_val:.2f}, Peak=${max_equity_peak_val:.2f}, Drawdown=0.00%")
 
-            print(f"Restored saved metrics for account {login_val}: Initial=${initial_balance_val:.2f}, Peak=${max_equity_peak_val:.2f}, Overall DD={overall_drawdown_val:.2f}%")
-
-        else:
-            # BRAND NEW UNSEEN ACCOUNT: Initialize fresh with MT5 deposit auto-discovery!
-            initial_balance_val = mt5_initial_deposit or current_equity_val
-            max_equity_peak_val = max(initial_balance_val, current_equity_val)
-            overall_drawdown_val = max(0.0, ((initial_balance_val - current_equity_val) / initial_balance_val) * 100.0) if initial_balance_val > 0 else 0.0
-
-            cur.execute("""
-                INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (mt5_login) DO UPDATE SET
-                    initial_balance = EXCLUDED.initial_balance,
-                    max_equity_peak = EXCLUDED.max_equity_peak,
-                    overall_drawdown = EXCLUDED.overall_drawdown,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (login_val, initial_balance_val, max_equity_peak_val, overall_drawdown_val))
-
-            cur.execute("""
-                UPDATE bot_state 
-                SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, 
-                    drawdown_percent = 0.00, trades_today = 0, overall_drawdown = %s 
-                WHERE id = 1
-            """, (initial_balance_val, max_equity_peak_val, login_val, current_equity_val, overall_drawdown_val))
-
-            cur.execute("""
-                INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
-                VALUES (%s, %s, %s, %s, 0.00, 0)
-                ON CONFLICT (trading_date, mt5_login) DO NOTHING
-            """, (today, login_val, current_equity_val, current_equity_val))
-
-            print(f"Initialized fresh state for new account {login_val}: Initial=${initial_balance_val:.2f}, Peak=${max_equity_peak_val:.2f}")
 
         conn.commit()
         cur.close()
