@@ -2072,9 +2072,10 @@ def main():
                     equity=acc_info.equity,
                     drawdown_percent=daily_loss_p,
                     floating_profit=0.0,
-                    z_score=0.0,
-                    hedge_ratio=0.0,
+                    z_score=active_pair_z_score,
+                    hedge_ratio=active_pair_beta,
                     obi_a=0.0,
+
                     obi_b=0.0,
                     trades_today=get_trades_count_today(),
                     sl_pips=SL_PIPS,
