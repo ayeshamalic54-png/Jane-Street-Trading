@@ -2049,17 +2049,15 @@ def main():
             is_demo = getattr(acc_info, "trade_mode", 0) in (0, 1)  # 0 is DEMO, 1 is CONTEST
 
             if is_limit_breached:
-                if is_demo:
-                    logger.info(f"🎮 [DEMO ACCOUNT BYPASS] Account #{acc_info.login if acc_info else 0}: Drawdown limit ({daily_loss_p:.2f}%) bypassed for Demo testing! Live scanning active.")
-                    is_halted = False
-                elif RISK_LIMITS_ENABLED:
+                if RISK_LIMITS_ENABLED:
                     logger.warning(f"🚨 DAILY DRAWDOWN LIMIT BREACHED ({daily_loss_p:.2f}% >= {MAX_DAILY_LOSS_PERCENT}%). ENFORCING STRICT RISK HALT & BLOCKING ALL NEW TRADES!")
                     is_halted = True
                 else:
-                    logger.info(f"Daily drawdown limit breached ({daily_loss_p:.2f}%), but Risk Limits Enforcer is toggled OFF on Dashboard.")
+                    logger.info(f"🎮 [RISK HALT BYPASSED] Drawdown limit breached ({daily_loss_p:.2f}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Live scanning active.")
                     is_halted = False
             else:
                 is_halted = False
+
 
 
             if daily_start_equity is None and current_equity > 0.0:
