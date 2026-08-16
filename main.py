@@ -1811,6 +1811,10 @@ def main():
     db_config_counter = 0
     low_correlation_warning = False
     correlation_check_counter = 0
+    active_pair_beta = float(init_beta_val)
+    active_pair_z_score = 0.0
+    active_pair_velocity = 0.0
+
 
     db_cfg = fetch_db_config()
     if db_cfg:
