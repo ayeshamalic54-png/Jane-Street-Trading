@@ -106,21 +106,35 @@ def get_or_create_daily_start_equity(current_equity):
             conn.commit()
 
         else:
-            # Create a fresh daily record for today using active MT5 equity
-            start_equity = db_initial_balance if db_initial_balance is not None else current_equity
+            # Create a fresh daily record for today using active MT5 equity for new login/day
+            start_equity = current_equity if (db_initial_balance is None or _cached_last_login != current_login) else db_initial_balance
             cur.execute(
                 """
                 INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
                 VALUES (%s, %s, %s, %s, 0.0, 0)
+                ON CONFLICT (trading_date, mt5_login) DO UPDATE
+                SET start_equity = EXCLUDED.start_equity,
+                    current_equity = EXCLUDED.current_equity
                 """,
                 (today, current_login, start_equity, current_equity)
             )
             cur.execute(
-                "UPDATE bot_state SET initial_balance = %s, mt5_login = %s, equity = %s WHERE id = 1",
-                (start_equity, current_login, current_equity)
+                """
+                UPDATE bot_state SET 
+                    initial_balance = %s, 
+                    mt5_login = %s, 
+                    equity = %s,
+                    start_of_day_equity = %s,
+                    drawdown_percent = 0.0,
+                    overall_drawdown = 0.0,
+                    max_equity_peak = %s
+                WHERE id = 1
+                """,
+                (start_equity, current_login, current_equity, start_equity, current_equity)
             )
             conn.commit()
-            logger.info(f"Initialized new daily trading session for account {current_login}. Starting equity: ${start_equity:.2f}")
+            logger.info(f"Initialized fresh session for account {current_login}. Starting equity: ${start_equity:.2f}")
+
 
         cur.close()
     except Exception as e:
@@ -134,21 +148,18 @@ def get_or_create_daily_start_equity(current_equity):
 
 _PEAK_DAILY_DRAWDOWN_PCT = 0.0
 _PEAK_DAILY_DRAWDOWN_DATE = None
+_PEAK_DAILY_DRAWDOWN_LOGIN = None
 
 def check_drawdown_limit(current_equity):
     """
     Checks if the daily drawdown limit has been breached.
     Tracks and preserves peak daily drawdown hit today even after positions close.
+    Automatically resets for NEW MT5 accounts and NEW trading days.
     Returns: (is_breached, daily_loss_percent, peak_daily_drawdown_percent)
     """
-    global _last_metrics_update_time, _cached_last_login, _PEAK_DAILY_DRAWDOWN_PCT, _PEAK_DAILY_DRAWDOWN_DATE
+    global _last_metrics_update_time, _cached_last_login, _PEAK_DAILY_DRAWDOWN_PCT, _PEAK_DAILY_DRAWDOWN_DATE, _PEAK_DAILY_DRAWDOWN_LOGIN
     start_equity = get_or_create_daily_start_equity(current_equity)
     
-    today = get_broker_today_date()
-    if _PEAK_DAILY_DRAWDOWN_DATE != today:
-        _PEAK_DAILY_DRAWDOWN_PCT = 0.0
-        _PEAK_DAILY_DRAWDOWN_DATE = today
-
     current_login = 0
     try:
         acc = mt5.account_info()
@@ -156,6 +167,13 @@ def check_drawdown_limit(current_equity):
             current_login = int(acc.login)
     except Exception:
         pass
+
+    today = get_broker_today_date()
+    if _PEAK_DAILY_DRAWDOWN_DATE != today or _PEAK_DAILY_DRAWDOWN_LOGIN != current_login:
+        _PEAK_DAILY_DRAWDOWN_PCT = 0.0
+        _PEAK_DAILY_DRAWDOWN_DATE = today
+        _PEAK_DAILY_DRAWDOWN_LOGIN = current_login
+
         
     daily_loss = start_equity - current_equity
     daily_loss_percent = (daily_loss / start_equity) * 100.0 if start_equity > 0 else 0.0
