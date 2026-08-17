@@ -23,7 +23,8 @@ from data_ingestion import initialize_mt5, check_and_subscribe_symbol, get_live_
 from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT, get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES
 
 
-from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success
+from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl
+
 
 from smc_indicators import detect_smc_zones, is_price_in_zones
 from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset
