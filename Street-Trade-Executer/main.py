@@ -1239,14 +1239,14 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         tp2_trade = next((t for t in open_leg_a_trades if "TP2" in str(t.get("comment", "")).upper()), None)
         tp3_trade = next((t for t in open_leg_a_trades if "TP3" in str(t.get("comment", "")).upper()), None)
 
-        # ── STEP 1: BREAK-EVEN SL SHIFT AT 1.5% EQUITY GAIN (ALL 3 PARTS STAY OPEN!) ──
-        acc_eq = mt5.account_info().equity if mt5.account_info() else 1000.0
-        be_target_pnl = max(15.0, acc_eq * 0.015)  # Exactly 1.5% Equity Gain
+        # ── STEP 1: BREAK-EVEN SL SHIFT AT PnL >= +$15.00 FOR TESTING (ALL 3 PARTS STAY OPEN!) ──
+        be_target_pnl = 15.0  # Testing threshold so current +$19.00 profit triggers immediately!
         pnl_be_reached = total_basket_pnl >= be_target_pnl
         be_already_shifted = GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False)
 
         if pnl_be_reached and not be_already_shifted and total_basket_pnl > 0.0:
-            logger.info(f"🛡️ [THREE-STEP EXIT - STEP 1] Triggered by 1.5% Equity Gain (${total_basket_pnl:.2f} >= ${be_target_pnl:.2f})! Shifting Stop Loss for all orders to Entry Price (All 3 Parts Open)!")
+            logger.info(f"🛡️ [THREE-STEP EXIT - STEP 1] Triggered by PnL >= +$15.00! Shifting Stop Loss for all orders to Entry Price (All 3 Parts Open)!")
+
 
 
             from execution_bot import modify_position_sl
@@ -2958,15 +2958,14 @@ def main():
                 leg_a_parts = [p for p in active_js_positions if p.symbol == S_A_resolved]
                 if leg_a_parts:
                     try:
-                        # Step 1: Move SL of ALL 3 Leg A parts to Entry Price when 1.5% Equity Gain is reached (NO CLOSES YET! All 3 parts stay open!)
-                        acc_check = mt5.account_info()
-                        eq_base = acc_check.equity if acc_check else 1000.0
-                        be_target_pnl = max(15.0, eq_base * 0.015)
+                        # Step 1: Move SL of ALL 3 Leg A parts to Entry Price when PnL >= +$15.00 for testing (NO CLOSES YET! All 3 parts stay open!)
+                        be_target_pnl = 15.0  # Testing threshold so current +$19.00 profit triggers immediately!
                         if floating_profit >= be_target_pnl:
                             for p in leg_a_parts:
                                 if getattr(p, 'sl', 0.0) != leg_a_parts[0].price_open:
                                     modify_position_sl(p.ticket, S_A_resolved, leg_a_parts[0].price_open)
                                     logger.info(f"🛡️ [STEP 1 BREAKEVEN ACTIVATED] Moved SL for ticket #{p.ticket} ({S_A_resolved}) to Entry Price ${leg_a_parts[0].price_open:.5f} (All 3 Parts Open | PnL ${floating_profit:.2f} >= ${be_target_pnl:.2f})")
+
 
 
 
