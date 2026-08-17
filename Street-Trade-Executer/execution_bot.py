@@ -46,9 +46,12 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             logger.error(f"MT5 order_send returned None for mode {mode}. Error: {mt5.last_error()}")
             continue
             
-        if result.retcode == mt5.TRADE_RETCODE_DONE:
-            logger.info(f"Order filled successfully using mode {mode}")
+        # Recognize retcode 0, 10008, 10009, or comment 'Done' as successful order execution
+        is_done = (result.retcode in [mt5.TRADE_RETCODE_DONE, 10008, 10009, 0]) or (result.comment and result.comment.lower() in ["done", "request executed", "order executed"])
+        if is_done:
+            logger.info(f"Order filled successfully using mode {mode} (retcode={result.retcode}, comment='{result.comment}')")
             return result
+
             
         # Check if volume is invalid and auto-correct to broker volume_min
         if result.retcode == 10014:
