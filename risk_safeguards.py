@@ -106,8 +106,9 @@ def get_or_create_daily_start_equity(current_equity):
             conn.commit()
 
         else:
-            # Create a fresh daily record for today using active MT5 equity for new login/day
-            start_equity = current_equity if (db_initial_balance is None or _cached_last_login != current_login) else db_initial_balance
+            # Create a fresh daily record for today using active MT5 equity at day start
+            start_equity = current_equity
+
             cur.execute(
                 """
                 INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
