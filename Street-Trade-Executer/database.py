@@ -553,8 +553,15 @@ def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, c
     query = """
         INSERT INTO trades (ticket, symbol, order_type, lots, entry_price, entry_time, status, comment, signal_id)
         VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', %s, %s)
-        ON CONFLICT (ticket) DO NOTHING
+        ON CONFLICT (ticket) DO UPDATE 
+        SET status = 'OPEN',
+            lots = EXCLUDED.lots,
+            entry_price = EXCLUDED.entry_price,
+            entry_time = EXCLUDED.entry_time,
+            comment = EXCLUDED.comment,
+            signal_id = COALESCE(EXCLUDED.signal_id, trades.signal_id)
     """
+
     conn = None
     try:
         conn = get_connection()
