@@ -853,7 +853,8 @@ def sync_mt5_open_positions_with_db():
                 continue
 
 
-            logger.info(f"🔴 [MANUAL CLOSE DETECTED] MT5 Ticket #{ticket} ({symbol}) is no longer in MT5 positions! Syncing close state to DB...")
+            logger.info(f"🔴 [MT5 BROKER / EXTERNAL CLOSE] Ticket #{ticket} ({symbol}) exited MT5 positions (SL/TP or Broker fill). Syncing close state to DB...")
+
 
 
             # Ticket is NOT in active MT5 positions. Determine if it is a true close
