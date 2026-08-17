@@ -1262,16 +1262,17 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         tp2_trade = next((t for t in open_leg_a_trades if "TP2" in str(t.get("comment", "")).upper()), None)
         tp3_trade = next((t for t in open_leg_a_trades if "TP3" in str(t.get("comment", "")).upper()), None)
 
-        # ── STEP 1: DUAL BREAKEVEN SL SHIFT (TRIGGER A: Z=0.00 OR TRIGGER B: PnL >= +$9.00 USD) ──
+        # ── STEP 1: DUAL BREAKEVEN SL SHIFT (TRIGGER A: Z=0.00 OR TRIGGER B: PnL >= +$56.00 USD / 0.56% Equity) ──
         acc_eq = mt5.account_info().equity if mt5.account_info() else 10000.0
-        be_target_pnl = max(9.0, acc_eq * 0.0009)
+        be_target_pnl = max(56.0, acc_eq * 0.0056)
         z_be_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
         pnl_be_reached = total_basket_pnl >= be_target_pnl
         be_already_shifted = GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False)
 
         if (z_be_reached or pnl_be_reached) and not be_already_shifted and total_basket_pnl > 0.0:
-            trig_name = f"Z-Score {z_score_for_pair:.2f}" if z_be_reached else f"PnL ${total_basket_pnl:.2f} >= ${be_target_pnl:.2f}"
+            trig_name = f"Z-Score {z_score_for_pair:.2f}" if z_be_reached else f"PnL ${total_basket_pnl:.2f} >= ${be_target_pnl:.2f} (0.56% Equity Gain)"
             logger.info(f"🛡️ [STEP 1 BREAKEVEN ACTIVATED] Triggered by {trig_name}! Shifting Stop Loss for all orders to Entry Price (All 3 Parts Open)!")
+
 
             from execution_bot import modify_position_sl
             for t_a in open_leg_a_trades:
@@ -1970,7 +1971,8 @@ def main():
                     if db_config_counter == 0:
                         logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry} | Kalman Beta: {active_pair_beta:.4f} (Dynamic Hedge Ratio) 🟢")
 
-                        logger.info(f"🎯 [THREE-STEP EXIT ACTIVE] Step 1: Dual BE (Z=0.00 OR +$9.00 USD) 🛡️ | Step 2: 70% Profit Bank at Z=0.00 💰 | Step 3: 30% Runner Jackpot at Z=±{Z_ENTRY_THRESHOLD:.2f} 🚀")
+                        logger.info(f"🎯 [THREE-STEP EXIT ACTIVE] Step 1: Dual BE (Z=0.00 OR +$56.00 USD / 0.56% Equity) 🛡️ | Step 2: 70% Profit Bank at Z=0.00 💰 | Step 3: 30% Runner Jackpot at Z=±{Z_ENTRY_THRESHOLD:.2f} 🚀")
+
 
 
                         logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | Multi-Tier Equity Trailing: DISABLED ❌ | SMC: DISABLED ❌")
@@ -2987,10 +2989,11 @@ def main():
                 leg_a_parts = [p for p in active_js_positions if p.symbol == S_A_resolved]
                 if leg_a_parts:
                     try:
-                        # Step 1: Move SL of ALL 3 Leg A parts to Entry Price (Trigger A: Z=0.00 OR Trigger B: PnL >= +$9.00 USD)
+                        # Step 1: Move SL of ALL 3 Leg A parts to Entry Price (Trigger A: Z=0.00 OR Trigger B: PnL >= +$56.00 USD / 0.56% Equity)
                         acc_check = mt5.account_info()
                         eq_base = acc_check.equity if acc_check else 10000.0
-                        be_target_pnl = max(9.0, eq_base * 0.0009)
+                        be_target_pnl = max(56.0, eq_base * 0.0056)
+
                         z_at_neutral = abs(active_pair_z_score) <= 0.15
                         pnl_at_target = floating_profit >= be_target_pnl
 
@@ -3094,7 +3097,8 @@ def main():
                 f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 ({sw_str}) | Turning Point Inflection: ENABLED 🟢 "
 
 
-                f"| Exit Engine: Step 1 Dual Breakeven (Z=0.00 OR +$9.00 USD), Step 2 Mean Reversion (70% Cash @ Z=0.00), Step 3 Jackpot (30% Runner @ Z=±{Z_ENTRY_THRESHOLD:.2f}) "
+                f"| Exit Engine: Step 1 Dual Breakeven (Z=0.00 OR +$56.00 USD / 0.56% Equity), Step 2 Mean Reversion (70% Cash @ Z=0.00), Step 3 Jackpot (30% Runner @ Z=±{Z_ENTRY_THRESHOLD:.2f}) "
+
 
 
 
