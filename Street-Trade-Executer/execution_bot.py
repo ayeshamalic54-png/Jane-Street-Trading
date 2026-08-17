@@ -506,14 +506,8 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
     close_order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
     price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
     
-    vol = min(float(volume_to_close), float(pos.volume))
-    
-    info = mt5.symbol_info(symbol)
-    if info:
-        step = info.volume_step
-        vol = round(round(vol / step) * step, 2)
-        if vol < info.volume_min:
-            vol = info.volume_min
+    from risk_safeguards import round_volume
+    vol = round_volume(symbol, min(float(volume_to_close), float(pos.volume)))
             
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
@@ -533,15 +527,14 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
     for mode in filling_modes:
         request["type_filling"] = mode
         res = mt5.order_send(request)
-        if res:
-            if res.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info(f"🔴 [TRADE EXIT EXECUTED] Ticket #{ticket} | Symbol: {symbol} | Volume: {vol} Lots | Execution Mode: {mode}")
-                check_closed_trades(symbol)
-                return True
+        if is_retcode_success(res):
+            logger.info(f"🔴 [TRADE EXIT EXECUTED] Ticket #{ticket} | Symbol: {symbol} | Volume: {vol} Lots | Execution Mode: {mode}")
+            check_closed_trades(symbol)
+            return True
+        elif res and res.retcode in (10018, 10021): # Market is closed
+            logger.warning(f"Market is closed for {symbol} (Ticket {ticket}). Deferring close until market reopens.")
+            return False
 
-            elif res.retcode in (10018, 10021): # Market is closed
-                logger.warning(f"Market is closed for {symbol} (Ticket {ticket}). Deferring close until market reopens.")
-                return False
             
     err_comment = res.comment if res else "No response"
     logger.error(f"Failed to close position ticket {ticket}: {err_comment}")
