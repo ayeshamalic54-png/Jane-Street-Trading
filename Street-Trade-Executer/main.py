@@ -849,12 +849,8 @@ def sync_mt5_open_positions_with_db():
                 continue
 
 
-            # Safeguard: If the trade was opened less than 140 seconds ago, do not mark it closed yet (prevents Blue Guardian 2-minute consistency breach)
-            if entry_time is not None:
-                elapsed = (datetime.datetime.now() - entry_time).total_seconds()
-                if elapsed < 140.0:
-                    logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) not in active positions but is only {elapsed:.1f}s old. Skipping close to enforce 140s hold.")
-                    continue
+            logger.info(f"🔴 [MANUAL CLOSE DETECTED] MT5 Ticket #{ticket} ({symbol}) is no longer in MT5 positions! Syncing close state to DB...")
+
 
             # Ticket is NOT in active MT5 positions. Determine if it is a true close
             # or a netting scale-down where the symbol position still exists.
@@ -3031,7 +3027,8 @@ def main():
                 login_id=current_login,
             )
 
-            if loop_log_counter % 15 == 0:
+            if loop_log_counter % 5 == 0:
+
                 try:
                     summary_parts = []
                     conn_scan = get_connection()
