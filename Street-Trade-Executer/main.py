@@ -2490,13 +2490,13 @@ def main():
                 pass_z_buy = (z < -effective_dyn_z) and (z > -z_sl_val)
                 pass_z_sell = (z > effective_dyn_z) and (z < z_sl_val)
                 
-                # Turning Point Inflection Filter: TEMPORARILY DISABLED 🔴 (BYPASSED PER USER DIRECTIVE)
+                # Turning Point Inflection Filter: ENABLED 🟢
                 pass_turn_buy = True
                 pass_turn_sell = True
-                # Bypassed per user request:
-                # if kf_pair and len(kf_pair.z_history) >= 3:
-                #     pass_turn_buy = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "BUY_SPREAD")
-                #     pass_turn_sell = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "SELL_SPREAD")
+                if kf_pair and len(kf_pair.z_history) >= 3:
+                    pass_turn_buy = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "BUY_SPREAD")
+                    pass_turn_sell = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "SELL_SPREAD")
+
 
 
 
@@ -3100,7 +3100,8 @@ def main():
 
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
-                f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 ({sw_str}) | Turning Point Inflection: DISABLED 🔴 (TEMPORARILY OFF) "
+                f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 ({sw_str}) | Turning Point Inflection: ENABLED 🟢 "
+
 
 
 
