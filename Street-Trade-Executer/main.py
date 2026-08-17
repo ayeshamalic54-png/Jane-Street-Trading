@@ -20,7 +20,8 @@ import joblib
 
 from math_models import KalmanFilterRegression, calculate_obi, test_cointegration, is_turning_point_confirmed
 from data_ingestion import initialize_mt5, check_and_subscribe_symbol, get_live_ticks, get_market_book, shutdown_mt5, get_rates_df, resolve_broker_symbol
-from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT, get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES, calculate_closed_signal_pnl, set_pair_cooldown
+from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT, get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES
+
 
 from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success
 
@@ -1024,7 +1025,27 @@ def close_single_trade(symbol, ticket, volume, order_type):
     else:
         return close_position_by_ticket(symbol, ticket, volume)
 
+GLOBAL_PAIR_COOLDOWNS = {}
+
+
+def set_pair_cooldown(sym_a, sym_b, cooldown_seconds=600):
+    pair_key = f"{sym_a}/{sym_b}"
+    GLOBAL_PAIR_COOLDOWNS[pair_key] = time.time() + cooldown_seconds
+
+def calculate_closed_signal_pnl(sig_id):
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT SUM(profit) FROM trades WHERE signal_id = %s", (int(sig_id),))
+        res = cur.fetchone()
+        cur.close()
+        conn.close()
+        return float(res[0]) if (res and res[0] is not None) else 0.0
+    except Exception:
+        return 0.0
+
 def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
+
     """
     Monitors active positions for symbol_a and symbol_b.
     1. Handles dynamic Z-score exits (mean reversion and Z-score SL).
