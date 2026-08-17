@@ -267,12 +267,13 @@ def modify_position_sl(ticket, symbol, new_sl):
             "magic": MAGIC_NUMBER,
         }
         res = mt5.order_send(request)
-        if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+        if is_retcode_success(res):
             logger.info(f"🛡️ [BREAKEVEN SL ACTIVATED] Moved Stop Loss for ticket {ticket} ({symbol}) to Breakeven entry price: {new_sl:.5f}")
             return True
         else:
             err_c = res.comment if res else mt5.last_error()
             logger.error(f"Failed to modify SL for ticket {ticket}: {err_c}")
+
             return False
     except Exception as e:
         logger.error(f"Error modifying SL for ticket {ticket}: {e}")
