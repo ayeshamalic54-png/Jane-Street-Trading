@@ -132,14 +132,23 @@ def get_or_create_daily_start_equity(current_equity):
     return start_equity
 
 
+_PEAK_DAILY_DRAWDOWN_PCT = 0.0
+_PEAK_DAILY_DRAWDOWN_DATE = None
+
 def check_drawdown_limit(current_equity):
     """
     Checks if the daily drawdown limit has been breached.
-    Returns: (is_breached, daily_loss_percent)
+    Tracks and preserves peak daily drawdown hit today even after positions close.
+    Returns: (is_breached, daily_loss_percent, peak_daily_drawdown_percent)
     """
-    global _last_metrics_update_time, _cached_last_login
+    global _last_metrics_update_time, _cached_last_login, _PEAK_DAILY_DRAWDOWN_PCT, _PEAK_DAILY_DRAWDOWN_DATE
     start_equity = get_or_create_daily_start_equity(current_equity)
     
+    today = get_broker_today_date()
+    if _PEAK_DAILY_DRAWDOWN_DATE != today:
+        _PEAK_DAILY_DRAWDOWN_PCT = 0.0
+        _PEAK_DAILY_DRAWDOWN_DATE = today
+
     current_login = 0
     try:
         acc = mt5.account_info()
@@ -151,27 +160,28 @@ def check_drawdown_limit(current_equity):
     daily_loss = start_equity - current_equity
     daily_loss_percent = (daily_loss / start_equity) * 100.0 if start_equity > 0 else 0.0
 
+    # Track worst peak drawdown hit today
+    if daily_loss_percent > _PEAK_DAILY_DRAWDOWN_PCT:
+        _PEAK_DAILY_DRAWDOWN_PCT = daily_loss_percent
 
-    
-    today = get_broker_today_date()
     _cached_last_login = current_login
-    
     trades_today = get_trades_count_today()
     
     # Real-time metrics database writes (1.0 second high-frequency sync)
     now = time.time()
     if now - _last_metrics_update_time >= 1.0:
         try:
-            update_daily_metrics(today, start_equity, current_equity, daily_loss_percent, trades_today, login_id=current_login)
+            update_daily_metrics(today, start_equity, current_equity, _PEAK_DAILY_DRAWDOWN_PCT, trades_today, login_id=current_login)
             _last_metrics_update_time = now
         except Exception as e:
             logger.error(f"Error updating daily metrics: {e}")
     
     if daily_loss_percent >= MAX_DAILY_LOSS_PERCENT:
         logger.info(f"Daily drawdown limit reached: {daily_loss_percent:.2f}% (Halt Limit: {MAX_DAILY_LOSS_PERCENT}% | Max Limit: {MAX_DAILY_DRAWDOWN_PCT}%)")
-        return True, daily_loss_percent
+        return True, daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT
         
-    return False, daily_loss_percent
+    return False, daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT
+
 
 def get_trades_count_today():
     """Returns the number of trades taken today with caching."""

@@ -2080,9 +2080,10 @@ def main():
 
             # Calculate daily drawdown using the correct equity (only if equity > 0.0)
             if current_equity > 0.0:
-                is_limit_breached, daily_loss_p = check_drawdown_limit(current_equity)
+                is_limit_breached, daily_loss_p, peak_dd_p = check_drawdown_limit(current_equity)
             else:
-                is_limit_breached, daily_loss_p = False, 0.0
+                is_limit_breached, daily_loss_p, peak_dd_p = False, 0.0, 0.0
+
 
             # Detect if it's a demo or contest account
             is_demo = getattr(acc_info, "trade_mode", 0) in (0, 1)  # 0 is DEMO, 1 is CONTEST
@@ -3064,10 +3065,11 @@ def main():
                 active_pair=current_pair_context,
                 system_status=status_str,
                 equity=current_equity,
-                drawdown_percent=daily_loss_p,
+                drawdown_percent=peak_dd_p if 'peak_dd_p' in locals() else daily_loss_p,
                 floating_profit=floating_profit,
                 z_score=active_pair_z_score,
                 hedge_ratio=active_pair_beta,
+
                 obi_a=active_pair_obi_a,
                 obi_b=active_pair_obi_b,
                 trades_today=trades_today,
