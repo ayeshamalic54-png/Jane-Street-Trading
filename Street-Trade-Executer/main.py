@@ -2061,8 +2061,10 @@ def main():
                     logger.warning(f"🚨 DAILY DRAWDOWN LIMIT BREACHED ({daily_loss_p:.2f}% >= {MAX_DAILY_LOSS_PERCENT}%). ENFORCING STRICT RISK HALT & BLOCKING ALL NEW TRADES!")
                     is_halted = True
                 else:
-                    logger.info(f"🎮 [RISK HALT BYPASSED] Drawdown limit breached ({daily_loss_p:.2f}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Live scanning active.")
+                    if loop_log_counter % 30 == 0:
+                        logger.info(f"🎮 [RISK HALT BYPASSED] Drawdown limit breached ({daily_loss_p:.2f}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Live scanning active.")
                     is_halted = False
+
             else:
                 is_halted = False
 
@@ -2121,13 +2123,18 @@ def main():
 
             candidate_signals = []
 
-            # Periodically update win rates
+            # Periodically update win rates asynchronously in background thread (never blocking main scan loop)
             if win_rate_loop_counter % 300 == 0:
-                logger.info("Recalculating historical win rates for all enabled candidate pairs...")
-                for s_a, s_b in pairs_to_scan:
-                    pair_key = f"{s_a}/{s_b}"
-                    WIN_RATE_CACHE[pair_key] = simulate_win_rate_for_pair(s_a, s_b, z_entry=Z_ENTRY_THRESHOLD)
+                def bg_win_rate_calc(pairs, z_thresh):
+                    for s_a, s_b in pairs:
+                        pair_key = f"{s_a}/{s_b}"
+                        try:
+                            WIN_RATE_CACHE[pair_key] = simulate_win_rate_for_pair(s_a, s_b, z_entry=z_thresh)
+                        except Exception:
+                            WIN_RATE_CACHE[pair_key] = 100.0
+                threading.Thread(target=bg_win_rate_calc, args=(list(pairs_to_scan), Z_ENTRY_THRESHOLD), daemon=True).start()
             win_rate_loop_counter += 1
+
 
             # Check closed trades for all currently open symbols in the database
             try:
@@ -3029,29 +3036,13 @@ def main():
                 login_id=current_login,
             )
 
-            if loop_log_counter % 5 == 0:
+            logger.info(
+                f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
+                f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) "
+                f"| Exit Engine: Step 1 BE (Z=0.0/+$15), Step 2 (70% Cash @ Z=0.0), Step 3 (30% Runner @ Z=±{Z_ENTRY_THRESHOLD:.2f}) "
+                f"| Filters: Multi-Tier Equity Trailing DISABLED ❌ | Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
+            )
 
-                try:
-                    summary_parts = []
-                    conn_scan = get_connection()
-                    cur_scan = conn_scan.cursor()
-                    cur_scan.execute("SELECT symbol_pair, z_score FROM scanned_assets ORDER BY symbol_pair")
-                    scanned_rows = cur_scan.fetchall()
-                    cur_scan.close()
-                    conn_scan.close()
-                    for pair_name, z_val in scanned_rows:
-                        summary_parts.append(f"{pair_name}: {float(z_val):.2f}")
-                    scan_summary_str = " | ".join(summary_parts)
-                    logger.info(f"[LIVE SCAN SUMMARY] {scan_summary_str}")
-                except Exception as ex_sum:
-                    logger.error(f"Error compiling scan summary log: {ex_sum}")
-
-                logger.info(
-                    f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
-                    f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) "
-                    f"| Exit Engine: Step 1 BE (Z=0.0/+$15), Step 2 (70% Cash @ Z=0.0), Step 3 (30% Runner @ Z=±{Z_ENTRY_THRESHOLD:.2f}) "
-                    f"| Filters: Multi-Tier Equity Trailing DISABLED ❌ | Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
-                )
 
 
 
