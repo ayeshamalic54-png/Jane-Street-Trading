@@ -6,6 +6,18 @@ from database import log_trade_entry, log_trade_exit, get_connection
 logger = logging.getLogger("SMC_Forex_Bot")
 MAGIC_NUMBER = 992026           # Unique magic number for Jane Street system trades
 
+def is_retcode_success(res):
+    """Returns True if MT5 order_send result represents a successful fill."""
+    if res is None:
+        return False
+    retcode = getattr(res, 'retcode', None)
+    comment = str(getattr(res, 'comment', '') or '').lower()
+    if retcode in [mt5.TRADE_RETCODE_DONE, 10008, 10009, 0]:
+        return True
+    if comment in ["done", "request executed", "order executed"]:
+        return True
+    return False
+
 def send_order(symbol, order_type, price, volume, sl, tp, comment):
     """Submits order to MT5. Automatically handles FOK vs IOC vs RETURN filling modes."""
     # Ensure symbol is active and selected in MT5 Market Watch
@@ -46,12 +58,9 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             logger.error(f"MT5 order_send returned None for mode {mode}. Error: {mt5.last_error()}")
             continue
             
-        # Recognize retcode 0, 10008, 10009, or comment 'Done' as successful order execution
-        is_done = (result.retcode in [mt5.TRADE_RETCODE_DONE, 10008, 10009, 0]) or (result.comment and result.comment.lower() in ["done", "request executed", "order executed"])
-        if is_done:
+        if is_retcode_success(result):
             logger.info(f"Order filled successfully using mode {mode} (retcode={result.retcode}, comment='{result.comment}')")
             return result
-
             
         # Check if volume is invalid and auto-correct to broker volume_min
         if result.retcode == 10014:
@@ -61,7 +70,7 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
                 logger.warning(f"[VOLUME HEAL] Retrying order for {symbol} with broker min volume: {corrected_vol}")
                 request["volume"] = corrected_vol
                 res_retry = mt5.order_send(request)
-                if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+                if is_retcode_success(res_retry):
                     logger.info(f"Order filled successfully after volume auto-correction.")
                     return res_retry
             logger.error(f"Order rejected due to invalid volume: {result.comment}")
@@ -72,7 +81,7 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             logger.warning(f"[STOPS HEAL] Retrying order for {symbol} with sl=0.0 due to invalid broker stops level: {result.comment}")
             request["sl"] = 0.0
             res_retry = mt5.order_send(request)
-            if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+            if is_retcode_success(res_retry):
                 logger.info(f"Order filled successfully after stops auto-correction.")
                 return res_retry
             logger.error(f"Order rejected due to invalid stops: {result.comment}")
@@ -97,7 +106,7 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
                     logger.warning(f"[MARGIN HEAL] Insufficient margin ({result.comment}). Auto-scaling volume {request['volume']} -> {scaled_vol}")
                     request["volume"] = scaled_vol
                     res_retry = mt5.order_send(request)
-                    if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+                    if is_retcode_success(res_retry):
                         logger.info(f"Order filled successfully after margin auto-scaling.")
                         return res_retry
             logger.error(f"Order rejected due to insufficient margin: {result.comment}")
@@ -111,8 +120,7 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
         logger.warning(f"Order mode {mode} failed (retcode={result.retcode}): {result.comment}. Trying next filling mode...")
         
     if result:
-        err_comment = f"retcode={result.retcode} ({result.comment})" if result else "No response"
-        logger.error(f"Order failed after trying all filling modes: {err_comment}")
+        logger.error(f"Order failed after trying all filling modes: retcode={result.retcode} ({result.comment})")
     return None
 
 
@@ -140,7 +148,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
     for part_name, tp_val in parts:
         # Pass the actual tp_val so the MT5 broker server executes the target exit reliably!
         res = send_order(symbol, order_type, entry_price, part_lots, sl_price, tp_val, f"JS_{part_name}")
-        if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+        if is_retcode_success(res):
             ticket = res.order
             filled_lots = getattr(res, 'volume', part_lots)
             if filled_lots <= 0:
@@ -299,7 +307,7 @@ def modify_sl_for_trade(symbol, new_sl):
                     "tp": pos.tp
                 }
                 res = mt5.order_send(request)
-                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                if is_retcode_success(res):
                     logger.info(f"🛡️ [BREAKEVEN APPLIED] MT5 Ticket #{pos.ticket} SL moved to Breakeven (${new_sl:.5f}) 🛡️")
                 else:
 
