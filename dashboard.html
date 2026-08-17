@@ -1098,14 +1098,16 @@
                 const ddVal = Number(data.drawdown || 0.0);
                 const pnlUsdVal = eqVal - startEqVal;
 
-                if (pnlUsdVal > 0.01 || ddVal < -0.001) {
+                if (pnlUsdVal > 0.001 || ddVal < -0.0001) {
                     const pnlGainPct = (startEqVal > 0) ? (Math.abs(pnlUsdVal) / startEqVal) * 100.0 : Math.abs(ddVal);
-                    drawdownEl.textContent = `+$${Math.abs(pnlUsdVal).toFixed(2)} (+${pnlGainPct.toFixed(2)}%)`;
+                    const pctStr = (pnlGainPct < 0.01) ? pnlGainPct.toFixed(3) : pnlGainPct.toFixed(2);
+                    drawdownEl.textContent = `+$${Math.abs(pnlUsdVal).toFixed(2)} (+${pctStr}%)`;
                     drawdownEl.className = 'card-value metric-positive';
                     if (ddSubEl) ddSubEl.textContent = `Net Gain (Start: $${startEqVal.toFixed(2)})`;
-                } else if (pnlUsdVal < -0.01 || ddVal > 0.001) {
+                } else if (pnlUsdVal < -0.001 || ddVal > 0.0001) {
                     const pnlLossPct = (startEqVal > 0) ? (Math.abs(pnlUsdVal) / startEqVal) * 100.0 : Math.abs(ddVal);
-                    drawdownEl.textContent = `-$${Math.abs(pnlUsdVal).toFixed(2)} (-${pnlLossPct.toFixed(2)}%)`;
+                    const pctStr = (pnlLossPct < 0.01) ? pnlLossPct.toFixed(3) : pnlLossPct.toFixed(2);
+                    drawdownEl.textContent = `-$${Math.abs(pnlUsdVal).toFixed(2)} (-${pctStr}%)`;
                     drawdownEl.className = 'card-value metric-negative';
                     if (ddSubEl) ddSubEl.textContent = `Net Loss (Start: $${startEqVal.toFixed(2)})`;
                 } else {
@@ -1113,6 +1115,7 @@
                     drawdownEl.className = 'card-value metric-positive';
                     if (ddSubEl) ddSubEl.textContent = `Start: $${startEqVal.toFixed(2)}`;
                 }
+
 
 
 
