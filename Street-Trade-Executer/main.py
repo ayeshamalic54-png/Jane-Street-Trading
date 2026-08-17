@@ -2363,6 +2363,8 @@ def main():
             active_pair_obi_a = 0.0
             active_pair_obi_b = 0.0
             active_pair_velocity = 0.0
+            all_scanned_z_summary = []
+
 
 
             for s_a, s_b in pairs_to_scan:
@@ -2552,6 +2554,8 @@ def main():
 
                 win_rate = WIN_RATE_CACHE.get(pk, 50.0)
                 update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
+                all_scanned_z_summary.append(f"{pk}: Z={z:.3f}")
+
 
                 # Track telemetry for current active pair (case-insensitive & alias resilient)
                 norm_pk = pk.upper().replace(" ", "").strip()
@@ -3072,7 +3076,11 @@ def main():
                 login_id=current_login,
             )
 
+            if all_scanned_z_summary:
+                logger.info(f"🌐 [ALL SCANNED ASSETS Z-SCORES] " + " | ".join(all_scanned_z_summary))
+
             logger.info(
+
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
                 f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) | Turning Point Inflection: ENABLED 🟢 "
 
