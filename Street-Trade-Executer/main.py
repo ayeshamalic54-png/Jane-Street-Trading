@@ -1239,40 +1239,39 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         tp2_trade = next((t for t in open_leg_a_trades if "TP2" in str(t.get("comment", "")).upper()), None)
         tp3_trade = next((t for t in open_leg_a_trades if "TP3" in str(t.get("comment", "")).upper()), None)
 
-        # ── STEP 1 & STEP 2 AT Z = 0.0 (OR PnL >= +$15.00): BREAK-EVEN + 70% PROFIT BANK ──
-        z_neutral_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
-        pnl_be_reached = total_basket_pnl >= 15.0
+        # ── STEP 1: BREAK-EVEN SL SHIFT AT PnL >= +$27.00 (ALL 3 PARTS STAY OPEN!) ──
+        pnl_be_reached = total_basket_pnl >= 27.0
         be_already_shifted = GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False)
+
+        if pnl_be_reached and not be_already_shifted and total_basket_pnl > 0.0:
+            logger.info(f"🛡️ [THREE-STEP EXIT - STEP 1] Triggered by Price PnL >= +$27.00! Shifting Stop Loss for all orders to Entry Price (All 3 Parts Open)!")
+            from execution_bot import modify_position_sl
+            for t_a in open_leg_a_trades:
+                if t_a.get("entry_price") and t_a.get("ticket"):
+                    modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
+            for t_b in open_leg_b_trades:
+                if t_b.get("entry_price") and t_b.get("ticket"):
+                    modify_position_sl(t_b["ticket"], t_b["symbol"], t_b["entry_price"])
+            GLOBAL_HYBRID_BE_SHIFTED[sig_id] = True
+
+        # ── STEP 2: CLOSE 70% VOLUME (TP1 & TP2) ONLY WHEN LIVE Z-SCORE REACHES NEUTRAL Z=0.0 ──
+        z_neutral_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
         step2_done = GLOBAL_STEP2_SCALED_OUT.get(sig_id, False)
 
-        if (z_neutral_reached or pnl_be_reached) and total_basket_pnl > 0.0:
-            trigger_name = "Z=0.0 Neutral Mean Line" if z_neutral_reached else "Price PnL >= +$15.00 (1.0% Gain)"
-            
-            # Action A: Shift SL to Entry Price (100% Risk-Free)
-            if not be_already_shifted:
-                logger.info(f"🛡️ [THREE-STEP EXIT - STEP 1] Triggered by {trigger_name}! Shifting Stop Loss for all orders to Entry Price (100% Risk-Free Mode)!")
-                from execution_bot import modify_position_sl
-                for t_a in open_leg_a_trades:
-                    if t_a.get("entry_price") and t_a.get("ticket"):
-                        modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
-                for t_b in open_leg_b_trades:
-                    if t_b.get("entry_price") and t_b.get("ticket"):
-                        modify_position_sl(t_b["ticket"], t_b["symbol"], t_b["entry_price"])
-                GLOBAL_HYBRID_BE_SHIFTED[sig_id] = True
+        if z_neutral_reached and not step2_done and total_basket_pnl > 0.0:
+            logger.info(f"💰 [THREE-STEP EXIT - STEP 2] Z reached 0.0 (Neutral Mean)! Banking 70% Volume (TP1 & TP2) in Cash (${total_basket_pnl:.2f})! Leaving 30% Runner (TP3) for Step 3 (Z = +2.60 / -2.60 Jackpot)!")
 
-            # Action B: Close 70% Volume (TP1 & TP2) right at Z=0.0 to bank handsome cash profit!
-            if not step2_done:
-                logger.info(f"💰 [THREE-STEP EXIT - STEP 2] Z reached 0.0 (Neutral Mean)! Banking 70% Volume (TP1 & TP2) in Cash (${total_basket_pnl:.2f})! Leaving 30% Runner (TP3) for Step 3 (Z = +1.50 / -1.50 Jackpot)!")
-                if tp1_trade is not None:
-                    close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
-                if tp2_trade is not None:
-                    close_single_trade(tp2_trade["symbol"], tp2_trade["ticket"], tp2_trade["lots"], tp2_trade["order_type"])
-                if open_leg_b_trades:
-                    h_trade = open_leg_b_trades[0]
-                    h_23_vol = round(float(h_trade["lots"]) * (2.0 / 3.0), 2)
-                    if h_23_vol > 0:
-                        close_single_trade(h_trade["symbol"], h_trade["ticket"], h_23_vol, h_trade["order_type"])
-                GLOBAL_STEP2_SCALED_OUT[sig_id] = True
+            if tp1_trade is not None:
+                close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
+            if tp2_trade is not None:
+                close_single_trade(tp2_trade["symbol"], tp2_trade["ticket"], tp2_trade["lots"], tp2_trade["order_type"])
+            if open_leg_b_trades:
+                h_trade = open_leg_b_trades[0]
+                h_23_vol = round(float(h_trade["lots"]) * (2.0 / 3.0), 2)
+                if h_23_vol > 0:
+                    close_single_trade(h_trade["symbol"], h_trade["ticket"], h_23_vol, h_trade["order_type"])
+            GLOBAL_STEP2_SCALED_OUT[sig_id] = True
+
 
         # Rule 1: High Profit Reversal Lock ($45.00+ Peak -> Drops to $38.00)
         if current_peak >= 45.0 and total_basket_pnl <= 38.0:
