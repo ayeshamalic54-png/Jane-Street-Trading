@@ -1313,10 +1313,11 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     if h_part_vol > 0:
                         close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
 
-        # ── STEP 3: Z = ±Z_ENTRY_THRESHOLD RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
+        # ── STEP 3: Z = ±2.40 RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
         if not exit_triggered:
-            target_step3_z = Z_ENTRY_THRESHOLD
+            target_step3_z = max(2.40, Z_ENTRY_THRESHOLD)
             z_step3_jackpot = (is_buy_spread and z_score_for_pair >= target_step3_z) or (not is_buy_spread and z_score_for_pair <= -target_step3_z)
+
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
             if is_sl_breached:
