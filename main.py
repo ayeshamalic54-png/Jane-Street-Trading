@@ -3074,7 +3074,8 @@ def main():
 
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
-                f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) "
+                f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) | Turning Point Inflection: ENABLED 🟢 "
+
                 f"| Exit Engine: Step 1 Dual Breakeven (Z=0.00 OR +$9.00 USD), Step 2 Mean Reversion (70% Cash @ Z=0.00), Step 3 Jackpot (30% Runner @ Z=±{Z_ENTRY_THRESHOLD:.2f}) "
 
 
