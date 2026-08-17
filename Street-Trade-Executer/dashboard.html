@@ -1069,14 +1069,22 @@
                 // Update Equity
                 document.getElementById('account-equity').textContent = `$${Number(data.equity).toFixed(2)}`;
                 
-                // Update Daily Drawdown
+                // Update Daily Drawdown / Daily Gain
                 const drawdownEl = document.getElementById('daily-drawdown');
                 const ddVal = Number(data.drawdown || 0.0);
-                drawdownEl.textContent = `${ddVal.toFixed(2)}%`;
-                if (ddVal <= 0.0) {
+                const eqVal = Number(data.equity || 0.0);
+                const startEqVal = Number(data.start_equity || eqVal);
+                const pnlUsdVal = eqVal - startEqVal;
+
+                if (ddVal < 0.0) {
+                    drawdownEl.textContent = `+$${Math.abs(pnlUsdVal).toFixed(2)} (+${Math.abs(ddVal).toFixed(2)}% GAIN)`;
                     drawdownEl.className = 'card-value metric-positive';
-                } else {
+                } else if (ddVal > 0.0) {
+                    drawdownEl.textContent = `-$${Math.abs(pnlUsdVal).toFixed(2)} (-${Math.abs(ddVal).toFixed(2)}% DD)`;
                     drawdownEl.className = 'card-value metric-negative';
+                } else {
+                    drawdownEl.textContent = `$0.00 (0.00%)`;
+                    drawdownEl.className = 'card-value metric-positive';
                 }
 
                 // Update Daily Drawdown Status Card
@@ -1088,7 +1096,6 @@
                 const maxInput = document.getElementById('max-limit-input');
 
                 const currentHalt = (data.halt_drawdown_limit !== undefined && data.halt_drawdown_limit !== null) ? Number(data.halt_drawdown_limit) : (parseFloat(haltInput.value) || 0.83);
-
                 const currentMax = (data.max_drawdown_limit !== undefined && data.max_drawdown_limit !== null) ? Number(data.max_drawdown_limit) : (parseFloat(maxInput.value) || 3.30);
 
                 if (haltInput && document.activeElement !== haltInput) {
@@ -1107,6 +1114,12 @@
                         ddBadge.className = 'market-badge badge-closed';
                         ddBadge.textContent = `🔴 HALTED (${currentHalt.toFixed(2)}% THRESHOLD REACHED)`;
                         ddBody.innerHTML = `⚠️ <strong>DAILY DRAWDOWN HALT ACTIVE:</strong> Current Drawdown: <strong>${ddVal.toFixed(2)}%</strong> >= <strong>${currentHalt.toFixed(2)}%</strong><br>🛡️ <strong>Protection Action:</strong> New trades are blocked and active positions auto-closed to freeze drawdown! Halt: ${currentHalt.toFixed(2)}% · Limit: ${currentMax.toFixed(2)}%`;
+                    } else if (ddVal < 0.0) {
+                        ddCard.style.border = '1px solid rgba(16, 185, 129, 0.6)';
+                        ddCard.style.background = 'rgba(16, 185, 129, 0.12)';
+                        ddBadge.className = 'market-badge badge-open';
+                        ddBadge.textContent = `🟢 PROFIT GAIN (+${Math.abs(ddVal).toFixed(2)}% / +$${Math.abs(pnlUsdVal).toFixed(2)})`;
+                        ddBody.innerHTML = `✨ <strong>Daily Equity Status:</strong> Account is in Net Profit Gain <strong>+$${Math.abs(pnlUsdVal).toFixed(2)} (+${Math.abs(ddVal).toFixed(2)}% Gain)</strong> relative to daily starting equity $${startEqVal.toFixed(2)}. Risk limits active (Halt: ${currentHalt.toFixed(2)}% · Limit: ${currentMax.toFixed(2)}%).`;
                     } else {
                         ddCard.style.border = '1px solid rgba(16, 185, 129, 0.4)';
                         ddCard.style.background = 'rgba(15, 23, 42, 0.75)';
@@ -1115,6 +1128,7 @@
                         ddBody.innerHTML = `✨ <strong>Daily Drawdown Status:</strong> Current Drawdown is <strong>${ddVal.toFixed(2)}%</strong> (Below ${currentHalt.toFixed(2)}% Halt Threshold). Halt: ${currentHalt.toFixed(2)}% · Limit: ${currentMax.toFixed(2)}%.`;
                     }
                 }
+
 
                 
                 // Update Trades Today

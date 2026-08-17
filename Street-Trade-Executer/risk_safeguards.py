@@ -151,25 +151,6 @@ def check_drawdown_limit(current_equity):
     daily_loss = start_equity - current_equity
     daily_loss_percent = (daily_loss / start_equity) * 100.0 if start_equity > 0 else 0.0
 
-    # Ensure daily drawdown reflects active loss relative to account initial balance
-    try:
-        conn_dd = get_connection()
-        cur_dd = conn_dd.cursor()
-        cur_dd.execute("SELECT initial_balance FROM bot_state WHERE id = 1 AND mt5_login = %s", (current_login,))
-        row_init = cur_dd.fetchone()
-        if not row_init or not row_init[0]:
-            cur_dd.execute("SELECT initial_balance FROM account_states WHERE mt5_login = %s", (current_login,))
-            row_init = cur_dd.fetchone()
-        cur_dd.close()
-        conn_dd.close()
-
-        if row_init and row_init[0]:
-            db_init_bal = float(row_init[0])
-            if db_init_bal > current_equity and db_init_bal > 0:
-                init_dd = ((db_init_bal - current_equity) / db_init_bal) * 100.0
-                daily_loss_percent = max(daily_loss_percent, init_dd)
-    except Exception:
-        pass
 
     
     today = get_broker_today_date()
