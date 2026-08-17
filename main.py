@@ -2696,14 +2696,12 @@ def main():
                         pt_a = info_pip_a.point if info_pip_a else 0.0001
                         pip_sz_a = (pt_a * 10.0) if (info_pip_a and info_pip_a.digits in (3, 5)) else pt_a
 
-                        if is_long:
-                            tp1_val = best_sig["price_a"] + sl_dist
-                            tp2_val = best_sig["price_a"] + (dynamic_atr_tp * pip_sz_a)
-                            tp3_val = swing_tp_price if (swing_tp_price > best_sig["price_a"]) else (best_sig["price_a"] + (sl_dist * 3.5))
-                        else:
-                            tp1_val = best_sig["price_a"] - sl_dist
-                            tp2_val = best_sig["price_a"] - (dynamic_atr_tp * pip_sz_a)
-                            tp3_val = swing_tp_price if (swing_tp_price > 0 and swing_tp_price < best_sig["price_a"]) else (best_sig["price_a"] - (sl_dist * 3.5))
+                        # Set MT5 order TP to 0.0 so MT5 broker NEVER closes trades prematurely!
+                        # All exits are controlled 100% strictly by Python 3-step exit pipeline!
+                        tp1_val = 0.0
+                        tp2_val = 0.0
+                        tp3_val = 0.0
+
 
                             
                         if DEFAULT_LOTS > 0.005:
