@@ -3081,10 +3081,18 @@ def main():
             if all_scanned_z_summary:
                 logger.info(f"🌐 [ALL SCANNED ASSETS Z-SCORES] " + " | ".join(all_scanned_z_summary))
 
-            logger.info(
+            sw_str = "M15 Swing Level: ACTIVE"
+            try:
+                from math_models import find_swing_high_low_tp
+                sw_p, sw_typ, sw_pips = find_swing_high_low_tp(S_A, order_type="BUY", timeframe=mt5.TIMEFRAME_M15, lookback=30)
+                sw_str = f"M15 Swing Level: {sw_p:.5f}"
+            except Exception:
+                pass
 
+            logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
-                f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) | Turning Point Inflection: ENABLED 🟢 "
+                f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 ({sw_str}) | Turning Point Inflection: ENABLED 🟢 "
+
 
                 f"| Exit Engine: Step 1 Dual Breakeven (Z=0.00 OR +$9.00 USD), Step 2 Mean Reversion (70% Cash @ Z=0.00), Step 3 Jackpot (30% Runner @ Z=±{Z_ENTRY_THRESHOLD:.2f}) "
 
