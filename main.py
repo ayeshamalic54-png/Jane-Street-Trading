@@ -2951,31 +2951,29 @@ def main():
                                         close_all_positions(S_A_resolved)
                     invalidate_trades_cache()
 
-            # Trail Stop Loss if active (move to breakeven once TP1 is closed/hit in database)
+            # Three-Step Sequential Exit Pipeline
             best_cat_a_check = get_symbol_category(S_A)
             if best_cat_a_check != "crypto" and len(active_js_positions) > 0:
                 leg_a_parts = [p for p in active_js_positions if p.symbol == S_A_resolved]
                 if leg_a_parts:
-                    sample_ticket = leg_a_parts[0].ticket
                     try:
-                        conn_sl = get_connection()
-                        cur_sl = conn_sl.cursor()
-                        cur_sl.execute("""
-                            SELECT t2.status 
-                            FROM trades t1
-                            JOIN trades t2 ON t1.signal_id = t2.signal_id
-                            WHERE t1.ticket = %s AND t2.comment = 'JaneStreet TP1'
-                        """, (sample_ticket,))
-                        row_sl = cur_sl.fetchone()
-                        tp1_closed = (row_sl is not None and row_sl[0] == 'CLOSED')
-                        cur_sl.close()
-                        conn_sl.close()
+                        # Step 1: Move SL of ALL 3 Leg A parts to Entry Price when PnL >= +$15.00 (NO CLOSES YET! All 3 parts stay open!)
+                        if floating_profit >= 15.00:
+                            for p in leg_a_parts:
+                                if getattr(p, 'sl', 0.0) != leg_a_parts[0].price_open:
+                                    modify_position_sl(p.ticket, S_A_resolved, leg_a_parts[0].price_open)
+                                    logger.info(f"🛡️ [STEP 1 BREAKEVEN ACTIVATED] Moved SL for ticket #{p.ticket} ({S_A_resolved}) to Entry Price ${leg_a_parts[0].price_open:.5f} (All 3 Parts Open)")
                         
-                        if tp1_closed:
-                            logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVATED] Step 1 TP1 Hit/Closed! Moving SL of remaining Leg A parts ({S_A_resolved}) to Entry Price ${leg_a_parts[0].price_open:.5f} (Risk-Free Trade) 🛡️")
-                            modify_sl_for_trade(S_A_resolved, leg_a_parts[0].price_open)
+                        # Step 2: Close 70% Volume (TP1 & TP2 parts) + Leg B ONLY WHEN live Z-Score reaches 0.00 (abs(z) <= 0.15)
+                        if abs(active_pair_z_score) <= 0.15:
+                            logger.info(f"💰 [STEP 2 MEAN REVERSION AT Z=0.00] Live Z={active_pair_z_score:.3f} reached Z=0.00! Closing 70% Volume (TP1 & TP2) and Leg B Hedge Order!")
+                            for p in leg_a_parts:
+                                if "TP1" in str(p.comment) or "TP2" in str(p.comment):
+                                    close_position_by_ticket(p.ticket, p.symbol, p.volume, p.type)
+                            close_all_positions(S_B_resolved, comment_filter="JS_HEDGE")
                     except Exception as ex_sl:
-                        logger.error(f"Error evaluating breakeven trail SL: {ex_sl}")
+                        logger.error(f"Error evaluating 3-step exit pipeline: {ex_sl}")
+
 
 
 
