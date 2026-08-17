@@ -339,30 +339,19 @@ def get_active_pairs_and_symbols():
     active_symbols = set()
     
     try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT DISTINCT symbol, comment FROM trades WHERE status = 'OPEN'")
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-
-        for sym, comm in rows:
-            sym_base = str(sym).upper().split('.')[0]
-            active_symbols.add(sym_base)
-            if comm:
-                comm_str = str(comm).upper()
-                parts = comm_str.split('_')
-                if len(parts) >= 4:
-                    p1, p2 = parts[-2], parts[-1]
-                    if len(p1) >= 5 and len(p2) >= 5:
-                        active_pairs.add(f"{p1}/{p2}")
-
         import MetaTrader5 as mt5
         positions = mt5.positions_get()
         if positions:
             for pos in positions:
                 pos_sym = pos.symbol.upper().split('.')[0]
                 active_symbols.add(pos_sym)
+                comm_str = str(getattr(pos, 'comment', '')).upper()
+                if comm_str:
+                    parts = comm_str.split('_')
+                    if len(parts) >= 4:
+                        p1, p2 = parts[-2], parts[-1]
+                        if len(p1) >= 5 and len(p2) >= 5:
+                            active_pairs.add(f"{p1}/{p2}")
 
         pairs_count = len(active_pairs) if active_pairs else (len(active_symbols) // 2)
     except Exception as e:
@@ -370,6 +359,7 @@ def get_active_pairs_and_symbols():
         pairs_count = 0
 
     return pairs_count, active_pairs, active_symbols
+
 
 
 def check_minimum_hold(entry_time_val):
