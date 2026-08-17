@@ -975,7 +975,8 @@
 
         async function fetchStats() {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 800); // 800ms threshold for connection timeout
+            const timeoutId = setTimeout(() => controller.abort(), 12000); // 12-second threshold for resilient connection timeout
+
 
             try {
                 const response = await fetch(`${API_URL}/api/data`, { signal: controller.signal });
