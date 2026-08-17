@@ -303,9 +303,11 @@ def modify_sl_for_trade(symbol, new_sl):
                 request = {
                     "action": mt5.TRADE_ACTION_SLTP,
                     "position": pos.ticket,
+                    "symbol": pos.symbol,
                     "sl": new_sl,
                     "tp": pos.tp
                 }
+
                 res = mt5.order_send(request)
                 if is_retcode_success(res):
                     logger.info(f"🛡️ [BREAKEVEN APPLIED] MT5 Ticket #{pos.ticket} SL moved to Breakeven (${new_sl:.5f}) 🛡️")
