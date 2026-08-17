@@ -2957,12 +2957,13 @@ def main():
                 leg_a_parts = [p for p in active_js_positions if p.symbol == S_A_resolved]
                 if leg_a_parts:
                     try:
-                        # Step 1: Move SL of ALL 3 Leg A parts to Entry Price when PnL >= +$15.00 (NO CLOSES YET! All 3 parts stay open!)
-                        if floating_profit >= 15.00:
+                        # Step 1: Move SL of ALL 3 Leg A parts to Entry Price when PnL >= +$27.00 (NO CLOSES YET! All 3 parts stay open!)
+                        if floating_profit >= 27.00:
                             for p in leg_a_parts:
                                 if getattr(p, 'sl', 0.0) != leg_a_parts[0].price_open:
                                     modify_position_sl(p.ticket, S_A_resolved, leg_a_parts[0].price_open)
                                     logger.info(f"🛡️ [STEP 1 BREAKEVEN ACTIVATED] Moved SL for ticket #{p.ticket} ({S_A_resolved}) to Entry Price ${leg_a_parts[0].price_open:.5f} (All 3 Parts Open)")
+
                         
                         # Step 2: Close 70% Volume (TP1 & TP2 parts) + Leg B ONLY WHEN live Z-Score reaches 0.00 (abs(z) <= 0.15)
                         if abs(active_pair_z_score) <= 0.15:
