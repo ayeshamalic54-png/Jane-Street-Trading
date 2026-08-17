@@ -2584,19 +2584,21 @@ def main():
                 if candidate_signals:
                     logger.info(f"[MAX CONCURRENT TRADES LIMIT] {active_pairs_cnt}/{MAX_CONCURRENT_TRADES} active pairs currently open. New entries blocked until an existing trade closes.")
             elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and candidate_signals:
-                # Filter candidates to require a minimum 65.0% win rate, non-duplicate, and sort by win rate descending
+                # Select candidate signals based on Z-score deviation and valid spread (win_rate filter disabled)
                 qualifying_candidates = []
                 for c in candidate_signals:
                     c_a, c_b = c["pair"]
                     ca_base = c_a.upper().split('.')[0]
                     cb_base = c_b.upper().split('.')[0]
-                    if c["win_rate"] >= 65.0 and (ca_base not in active_symbols_set) and (cb_base not in active_symbols_set):
+                    if (ca_base not in active_symbols_set) and (cb_base not in active_symbols_set):
                         qualifying_candidates.append(c)
 
                 if not qualifying_candidates:
-                    logger.info(f"Skipping trade execution: All candidate signals have win rate < 65.0% (Best candidate was {candidate_signals[0]['pair']} with {candidate_signals[0]['win_rate']}%)")
+                    logger.info("Skipping trade execution: All candidate pairs have active symbols open.")
                     best_sig = None
                 else:
+                    best_sig = None
+
                     qualifying_candidates.sort(key=lambda x: x["win_rate"], reverse=True)
                     best_sig = None
                     for cand in qualifying_candidates:
