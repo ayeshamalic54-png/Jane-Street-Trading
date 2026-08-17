@@ -20,7 +20,8 @@ import joblib
 
 from math_models import KalmanFilterRegression, calculate_obi, test_cointegration, is_turning_point_confirmed
 from data_ingestion import initialize_mt5, check_and_subscribe_symbol, get_live_ticks, get_market_book, shutdown_mt5, get_rates_df, resolve_broker_symbol
-from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT, get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES
+from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT, get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES, calculate_closed_signal_pnl, set_pair_cooldown
+
 from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success
 
 from smc_indicators import detect_smc_zones, is_price_in_zones
@@ -1294,17 +1295,15 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if not exit_triggered:
             target_step3_z = Z_ENTRY_THRESHOLD
             z_step3_jackpot = (is_buy_spread and z_score_for_pair >= target_step3_z) or (not is_buy_spread and z_score_for_pair <= -target_step3_z)
-            is_high_rr_reached = total_basket_pnl >= 45.0
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
-
 
             if is_sl_breached:
                 exit_triggered = True
                 exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
-            elif (z_step3_jackpot or is_high_rr_reached) and total_basket_pnl > 0.0:
+            elif z_step3_jackpot and total_basket_pnl > 0.0:
                 exit_triggered = True
-                reason_detail = f"Step 3 Jackpot Z={z_score_for_pair:.2f}" if z_step3_jackpot else "1:2+ High RR Target"
-                exit_reason = f"THREE_STEP_EXIT_JACKPOT ({reason_detail}, Basket PnL=${total_basket_pnl:.2f})"
+                exit_reason = f"THREE_STEP_EXIT_JACKPOT (Step 3 Jackpot Z={z_score_for_pair:.2f}, Basket PnL=${total_basket_pnl:.2f})"
+
 
 
 
