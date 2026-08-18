@@ -763,9 +763,14 @@ export default function Dashboard() {
                     <div className={cn("text-xl font-mono font-bold leading-tight", isNetGain ? "text-emerald-400" : "text-amber-400")}>
                       {isNetGain ? `+${Math.abs(netGainPct).toFixed(2)}%` : `${drawdownPercent.toFixed(2)}%`}
                     </div>
-                    {isNetGain && (
+                    {isNetGain ? (
                       <div className="text-xs font-mono text-emerald-400/90 font-semibold mt-0.5">
                         (+${netGainUsd.toFixed(2)} USD)
+                      </div>
+                    ) : null}
+                    {drawdownPercent > 0.001 && (
+                      <div className="text-[10px] font-mono text-zinc-400 mt-1">
+                        Peak DD Hit Today: <span className="text-amber-400 font-semibold">-{drawdownPercent.toFixed(2)}%</span>
                       </div>
                     )}
                   </div>
@@ -777,6 +782,7 @@ export default function Dashboard() {
               </Card>
             );
           })()}
+
 
 
 

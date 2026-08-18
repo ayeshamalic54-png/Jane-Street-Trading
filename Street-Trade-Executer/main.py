@@ -2113,11 +2113,11 @@ def main():
                     logger.warning(f"🚨 DAILY DRAWDOWN LIMIT BREACHED (Peak DD: {effective_dd_val:.2f}% >= Halt Limit {MAX_DAILY_LOSS_PERCENT}%). ENFORCING STRICT RISK HALT & BLOCKING ALL NEW TRADES!")
                     is_halted = True
                 else:
-                    if loop_log_counter % 10 == 0:
-                        logger.info(f"🎮 [RISK HALT BYPASSED] Drawdown limit breached (Peak DD: {effective_dd_val:.2f}% >= Halt Limit {MAX_DAILY_LOSS_PERCENT}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Trades allowed.")
+                    logger.info(f"🎮 [RISK HALT BYPASSED] Drawdown limit breached (Peak DD: {effective_dd_val:.2f}% >= Halt Limit {MAX_DAILY_LOSS_PERCENT}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Trades allowed.")
                     is_halted = False
             else:
                 is_halted = False
+
 
 
 
@@ -3100,7 +3100,7 @@ def main():
                 active_pair=current_pair_context,
                 system_status=status_str,
                 equity=current_equity,
-                drawdown_percent=peak_dd_p if 'peak_dd_p' in locals() else daily_loss_p,
+                drawdown_percent=peak_dd_p,
                 floating_profit=floating_profit,
                 z_score=active_pair_z_score,
                 hedge_ratio=active_pair_beta,
@@ -3115,10 +3115,11 @@ def main():
                 datetime.date.today(),
                 start_equity=daily_start_equity,
                 current_equity=current_equity,
-                max_dd=daily_loss_p,
+                max_dd=peak_dd_p,
                 trades_count=trades_today,
                 login_id=current_login,
             )
+
 
             if all_scanned_z_summary:
                 logger.info(f"🌐 [ALL SCANNED ASSETS Z-SCORES] " + " | ".join(all_scanned_z_summary))
