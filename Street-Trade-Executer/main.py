@@ -3063,7 +3063,7 @@ def main():
                             logger.info(f"💰 [STEP 2 MEAN REVERSION AT Z=0.00] Live Z={active_pair_z_score:.3f} reached Z=0.00! Closing 70% Volume (TP1 & TP2) and Leg B Hedge Order!")
                             for p in leg_a_parts:
                                 if "TP1" in str(p.comment) or "TP2" in str(p.comment):
-                                    close_position_by_ticket(p.ticket, p.symbol, p.volume, p.type)
+                                    close_position_by_ticket(p.symbol, p.ticket, p.volume)
                             close_all_positions(S_B_resolved, comment_filter="JS_HEDGE")
                     except Exception as ex_sl:
                         logger.error(f"Error evaluating 3-step exit pipeline: {ex_sl}")
