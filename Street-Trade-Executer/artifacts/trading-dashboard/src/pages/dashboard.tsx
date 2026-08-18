@@ -745,24 +745,29 @@ export default function Dashboard() {
             const isNetGain = netGainUsd > 0.001 || netGainPct > 0.001;
 
             return (
-              <Card className={cn("bg-zinc-900 border-zinc-800 border-t-2 transition-all rounded-md", 
+              <Card className={cn("bg-zinc-900 border-zinc-800 border-t-2 transition-all rounded-md overflow-hidden", 
                 isNetGain 
                   ? "border-t-emerald-500 hover:border-emerald-400/40 shadow-[0_4px_24px_rgba(16,185,129,0.06)]" 
                   : "border-t-amber-500 hover:border-amber-400/40 shadow-[0_4px_24px_rgba(245,158,11,0.06)]"
               )}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono">
-                    {isNetGain ? "Daily Gain" : "Daily Drawdown"}
+                <CardHeader className="pb-1">
+                  <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono flex items-center justify-between">
+                    <span>{isNetGain ? "Daily Gain" : "Daily Drawdown"}</span>
+                    <span className="text-[9px] text-zinc-500 font-mono">
+                      Halt: <span className="text-amber-500">{Number((dashboard as any)?.halt_drawdown_limit ?? (dashboard as any)?.haltDrawdownLimit ?? 0.83).toFixed(2)}%</span> · Limit: <span className="text-red-500">{Number((dashboard as any)?.max_drawdown_limit ?? (dashboard as any)?.maxDrawdownLimit ?? 3.3).toFixed(1)}%</span>
+                    </span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex justify-between items-end">
-                    <div className={cn("text-2xl font-mono font-bold", isNetGain ? "text-emerald-400" : "text-amber-400")}>
-                      {isNetGain ? `+${Math.abs(netGainPct).toFixed(2)}% (+$${netGainUsd.toFixed(2)})` : `${drawdownPercent.toFixed(2)}%`}
+                <CardContent className="space-y-2 pb-3">
+                  <div>
+                    <div className={cn("text-xl font-mono font-bold leading-tight", isNetGain ? "text-emerald-400" : "text-amber-400")}>
+                      {isNetGain ? `+${Math.abs(netGainPct).toFixed(2)}%` : `${drawdownPercent.toFixed(2)}%`}
                     </div>
-                    <div className="text-[10px] text-zinc-500 mb-1 font-mono">
-                      Halt: <span className="text-amber-500">{Number((dashboard as any)?.halt_drawdown_limit ?? (dashboard as any)?.haltDrawdownLimit ?? 0.83).toFixed(2)}%</span> · Limit: <span className="text-red-500">{Number((dashboard as any)?.max_drawdown_limit ?? (dashboard as any)?.maxDrawdownLimit ?? 3.3).toFixed(1)}%</span>
-                    </div>
+                    {isNetGain && (
+                      <div className="text-xs font-mono text-emerald-400/90 font-semibold mt-0.5">
+                        (+${netGainUsd.toFixed(2)} USD)
+                      </div>
+                    )}
                   </div>
                   <Progress 
                     value={isNetGain ? 0 : Math.min((drawdownPercent / 3.3) * 100, 100)} 
@@ -772,6 +777,7 @@ export default function Dashboard() {
               </Card>
             );
           })()}
+
 
 
           <Card className="bg-zinc-900 border-zinc-800 border-t-2 border-t-emerald-500 hover:border-emerald-400/40 transition-all shadow-[0_4px_24px_rgba(16,185,129,0.06)] rounded-md">
