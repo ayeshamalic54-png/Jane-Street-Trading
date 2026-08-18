@@ -1506,8 +1506,12 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     break
 
         if exit_triggered and not min_hold_ok:
-            exit_triggered = False
-            logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 140s minimum hold time.")
+            if trail_close_reason and "[PROFIT GUARD" in trail_close_reason:
+                logger.info(f"💰 [PROFIT GUARD OVERRIDE] Trailing profit lock ({trail_close_reason}) exempt from 140s minimum hold! Executing instant cash profit lock.")
+            else:
+                exit_triggered = False
+                logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 140s minimum hold time.")
+
 
         if exit_triggered:
             logger.info(f"Dynamic exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all positions.")
