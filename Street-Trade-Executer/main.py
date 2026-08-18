@@ -3137,15 +3137,17 @@ def main():
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
                 f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 ({sw_str}) | Turning Point Inflection: ENABLED 🟢 "
-
-
-
-
-                f"| Exit Engine: Step 1 Breakeven Guard (DISABLED 🔴), Step 2 Mean Reversion (70% Cash @ Z=0.00), Step 3 Runner Sync Exit "
-                f"| Profit Guard: Multi-Tier Equity Trailing ENABLED 🟢 (Option B: Tier 1: +$60->$45 | Tier 2: +$150->$120 | Tier 3: +$250->$200) | Guards: News 📰, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
-
-
             )
+
+            eff_dd_log = max(daily_loss_p, peak_dd_p)
+            if eff_dd_log >= risk_safeguards.MAX_DAILY_LOSS_PERCENT:
+                if RISK_LIMITS_ENABLED:
+                    logger.warning(f"🚨 [RISK LIMIT ENFORCED] Peak Daily Drawdown hit {eff_dd_log:.2f}% (Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}%). STRICT RISK HALT ACTIVE & ALL NEW TRADES BLOCKED!")
+                else:
+                    logger.info(f"🎮 [RISK HALT BYPASSED] Peak Daily Drawdown hit {eff_dd_log:.2f}% (Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Scanning active.")
+            else:
+                logger.info(f"🛡️ [RISK LIMIT STATUS] Current Drawdown: {eff_dd_log:.2f}% / Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}% | Enforcer: {'ENABLED 🟢' if RISK_LIMITS_ENABLED else 'DISABLED 🔴'}")
+
 
 
 
