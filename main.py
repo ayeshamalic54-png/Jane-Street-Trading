@@ -1275,23 +1275,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         # Step 1 Breakeven SL shift is disabled. SL is locked in profit via Multi-Tier Trailing System instead.
 
 
-        # ── STEP 2: CLOSE 70% VOLUME (TP1 & TP2) ONLY WHEN LIVE Z-SCORE REACHES NEUTRAL Z=0.0 ──
-        z_neutral_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
-        step2_done = GLOBAL_STEP2_SCALED_OUT.get(sig_id, False)
+        # ── STEP 2: MEAN REVERSION SCALE-OUT DISABLED 🔴 (PER USER DIRECTIVE: TRADES RUN AS WHOLE BASKET UNTIL TRAILING STOP OR HARD TP/SL) ──
+        # Step 2 partial scale-out is disabled so trade runs completely without mid-way closures.
 
-        if z_neutral_reached and not step2_done and total_basket_pnl > 0.0:
-            logger.info(f"💰 [THREE-STEP EXIT - STEP 2] Z reached 0.0 (Neutral Mean)! Banking 70% Volume (TP1 & TP2) in Cash (${total_basket_pnl:.2f})! Leaving 30% Runner (TP3) for Step 3 (Z = +2.60 / -2.60 Jackpot)!")
-
-            if tp1_trade is not None:
-                close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
-            if tp2_trade is not None:
-                close_single_trade(tp2_trade["symbol"], tp2_trade["ticket"], tp2_trade["lots"], tp2_trade["order_type"])
-            if open_leg_b_trades:
-                h_trade = open_leg_b_trades[0]
-                h_23_vol = round(float(h_trade["lots"]) * (2.0 / 3.0), 2)
-                if h_23_vol > 0:
-                    close_single_trade(h_trade["symbol"], h_trade["ticket"], h_23_vol, h_trade["order_type"])
-            GLOBAL_STEP2_SCALED_OUT[sig_id] = True
 
 
         # Option B Multi-Tier Trailing Profit Lock (Triple Tier Profit Protection for entire basket)
@@ -1320,13 +1306,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             target_step3_z = max(2.40, Z_ENTRY_THRESHOLD)
             z_step3_jackpot = (is_buy_spread and z_score_for_pair >= target_step3_z) or (not is_buy_spread and z_score_for_pair <= -target_step3_z)
 
-            # Auto-sync runner exit: If TP1 & TP2 are already closed, close TP3 runner when Z is neutral or basket in profit
-            tp1_tp2_closed = (tp1_trade is None) and (tp2_trade is None)
-            if tp1_tp2_closed and tp3_trade is not None and (z_neutral_reached or total_basket_pnl > 0.0):
-                exit_triggered = True
-                exit_reason = f"THREE_STEP_EXIT_RUNNER_SYNC (TP1 & TP2 Closed -> Auto-Closing TP3 Runner at Z={z_score_for_pair:.2f}, Basket PnL=${total_basket_pnl:.2f})"
-
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
+
 
             if is_sl_breached:
                 exit_triggered = True
