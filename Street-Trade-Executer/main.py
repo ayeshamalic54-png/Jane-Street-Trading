@@ -1976,12 +1976,11 @@ def main():
                     if db_config_counter == 0:
                         logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry} | Kalman Beta: {active_pair_beta:.4f} (Dynamic Hedge Ratio) 🟢")
 
-                        logger.info(f"🎯 [THREE-STEP EXIT ACTIVE] Step 1: Dual BE (Z=0.00 OR +$56.00 USD / 0.56% Equity) 🛡️ | Step 2: 70% Profit Bank at Z=0.00 💰 | Step 3: 30% Runner Jackpot at Z=±{Z_ENTRY_THRESHOLD:.2f} 🚀")
+                        logger.info(f"🎯 [THREE-STEP EXIT ACTIVE] Step 1: Breakeven Guard (DISABLED 🔴) | Step 2: 70% Profit Bank at Z=0.00 💰 | Step 3: Runner Sync Exit 🚀")
 
+                        logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | Breakeven Guard ($0.00 Entry SL): DISABLED 🔴 | SMC: DISABLED ❌")
+                        logger.info(f"🛡️ [ACTIVE GUARDS] News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Option B: Tier 1: +$60->$45 | Tier 2: +$150->$120 | Tier 3: +$250->$200) | Friday Close Guard: ENABLED 🌅")
 
-
-                        logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | Multi-Tier Equity Trailing: DISABLED ❌ | SMC: DISABLED ❌")
-                        logger.info(f"🛡️ [ACTIVE GUARDS] News Guard: ENABLED 📰 | Breakeven Guard: ENABLED 🛡️ | Friday Close Guard: ENABLED 🌅")
 
 
 
