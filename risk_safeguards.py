@@ -216,11 +216,13 @@ def check_drawdown_limit(current_equity):
         except Exception as e:
             logger.error(f"Error updating daily metrics: {e}")
     
-    if daily_loss_percent >= MAX_DAILY_LOSS_PERCENT:
-        logger.info(f"Daily drawdown limit reached: {daily_loss_percent:.2f}% (Halt Limit: {MAX_DAILY_LOSS_PERCENT}% | Max Limit: {MAX_DAILY_DRAWDOWN_PCT}%)")
+    effective_drawdown = max(daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT)
+    if effective_drawdown >= MAX_DAILY_LOSS_PERCENT:
+        logger.info(f"Daily drawdown limit reached: {effective_drawdown:.2f}% (Halt Limit: {MAX_DAILY_LOSS_PERCENT}% | Max Limit: {MAX_DAILY_DRAWDOWN_PCT}%)")
         return True, daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT
         
     return False, daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT
+
 
 
 def get_trades_count_today():

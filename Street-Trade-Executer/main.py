@@ -2108,16 +2108,17 @@ def main():
             is_demo = getattr(acc_info, "trade_mode", 0) in (0, 1)  # 0 is DEMO, 1 is CONTEST
 
             if is_limit_breached:
+                effective_dd_val = max(daily_loss_p, peak_dd_p)
                 if RISK_LIMITS_ENABLED:
-                    logger.warning(f"🚨 DAILY DRAWDOWN LIMIT BREACHED ({daily_loss_p:.2f}% >= {MAX_DAILY_LOSS_PERCENT}%). ENFORCING STRICT RISK HALT & BLOCKING ALL NEW TRADES!")
+                    logger.warning(f"🚨 DAILY DRAWDOWN LIMIT BREACHED (Peak DD: {effective_dd_val:.2f}% >= Halt Limit {MAX_DAILY_LOSS_PERCENT}%). ENFORCING STRICT RISK HALT & BLOCKING ALL NEW TRADES!")
                     is_halted = True
                 else:
-                    if loop_log_counter % 30 == 0:
-                        logger.info(f"🎮 [RISK HALT BYPASSED] Drawdown limit breached ({daily_loss_p:.2f}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Live scanning active.")
+                    if loop_log_counter % 10 == 0:
+                        logger.info(f"🎮 [RISK HALT BYPASSED] Drawdown limit breached (Peak DD: {effective_dd_val:.2f}% >= Halt Limit {MAX_DAILY_LOSS_PERCENT}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Trades allowed.")
                     is_halted = False
-
             else:
                 is_halted = False
+
 
 
 
