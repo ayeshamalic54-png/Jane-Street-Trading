@@ -1006,15 +1006,22 @@ def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
         return False
 
 def get_strategy_parameters(symbol: str):
+    """
+    Returns dynamic z_entry, z_exit, z_sl, sl_atr_mult.
+    z_entry dynamically uses global Z_ENTRY_THRESHOLD (updated live from DB/Dashboard)
+    so user can set 1.80, 2.00, 2.40, etc. anytime without any hardcoding!
+    """
     cat = get_symbol_category(symbol)
+    dyn_z_entry = float(Z_ENTRY_THRESHOLD)
     if cat == "metals":
-        return 1.80, 0.0, 4.2, 5.0  # z_entry=1.80
+        return dyn_z_entry, 0.0, 4.2, 5.0
     elif cat == "indices":
-        return 1.80, 0.0, 4.2, 5.0  # z_entry=1.80
+        return dyn_z_entry, 0.0, 4.2, 5.0
     elif cat == "crypto":
-        return 2.00, 0.0, 4.2, 6.0
+        return dyn_z_entry, 0.0, 4.2, 6.0
     else: # forex/stocks/default
-        return 1.80, 0.0, 4.2, 6.0  # z_entry=1.80 (1.8 Standard Deviation Baseline Entry)
+        return dyn_z_entry, 0.0, 4.2, 6.0
+
 
 
 def close_single_trade(symbol, ticket, volume, order_type):
