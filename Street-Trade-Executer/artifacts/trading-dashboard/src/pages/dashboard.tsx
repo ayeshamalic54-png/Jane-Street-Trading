@@ -621,19 +621,21 @@ export default function Dashboard() {
 
         {/* Equity Trailing Stop Guard Card */}
         {(() => {
-          const isTrailActiveText = systemStatus && systemStatus.includes("Trail Active");
-          const isTier3 = floatingProfit >= 250.0 || (isTrailActiveText && systemStatus.includes("Tier 3"));
-          const isTier2 = floatingProfit >= 150.0 || (isTrailActiveText && systemStatus.includes("Tier 2"));
-          const isTier1 = floatingProfit >= 60.0 || isTrailActiveText;
+          const isTrailActiveText = systemStatus && (systemStatus.includes("Trail Active") || systemStatus.includes("TRAILING"));
+          const peakP = Math.max(floatingProfit, (dashboard as any)?.peak_floating_profit ?? (dashboard as any)?.peakPnL ?? 0);
+          const isTier3 = peakP >= 250.0 || (isTrailActiveText && systemStatus.includes("Tier 3"));
+          const isTier2 = peakP >= 150.0 || (isTrailActiveText && systemStatus.includes("Tier 2"));
+          const isTier1 = peakP >= 60.0 || floatingProfit >= 60.0 || isTrailActiveText;
           return (
             <Card className={cn(
               "bg-zinc-900 border transition-all rounded-md p-4",
               isTier3 || isTier2
                 ? "border-emerald-500/60 bg-emerald-950/20 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.15)]"
                 : isTier1
-                ? "border-blue-500/60 bg-blue-950/20 text-blue-400"
+                ? "border-blue-500/60 bg-blue-950/20 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
                 : "border-zinc-800 bg-zinc-900/80 text-zinc-100"
             )}>
+
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-xl">🛡️</span>
