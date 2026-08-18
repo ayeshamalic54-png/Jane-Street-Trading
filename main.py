@@ -2603,8 +2603,11 @@ def main():
                 base_a_check = s_a_resolved.upper().split('.')[0]
                 base_b_check = s_b_resolved.upper().split('.')[0]
                 is_duplicate_open = (base_a_check in active_symbols_set) or (base_b_check in active_symbols_set) or (f"{base_a_check}/{base_b_check}" in active_pairs_set)
+                has_any_active_trade = (active_pairs_cnt > 0) or (len(active_symbols_set) > 0)
 
-                if action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved) and not is_duplicate_open:
+                if action != "NONE" and (has_any_active_trade or is_duplicate_open):
+                    logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but 1 active trade is already open on MT5. Entry BLOCKED.")
+                elif action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved):
                     cand_cat_a = get_symbol_category(s_a_resolved)
                     cand_cat_b = get_symbol_category(s_b_resolved)
                     if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)) and (cand_cat_b == "crypto" or is_spread_valid(s_b_resolved)):
@@ -2621,8 +2624,6 @@ def main():
                             "price_a": p_a,
                             "price_b": p_b
                         })
-                elif action != "NONE" and is_duplicate_open:
-                    logger.info(f"[DUPLICATE TRADE BLOCKED] Signal generated for {s_a_resolved}/{s_b_resolved}, but trade is already open on this symbol/pair. Entry skipped.")
 
             # ── 3. MANAGE ACTIVE POSITION EXITS ──
             kf_active = get_kf_for_pair(S_A_resolved, S_B_resolved)
@@ -2639,10 +2640,11 @@ def main():
             is_trade_limit_ok = (not RISK_LIMITS_ENABLED) or is_demo or (trades_today < MAX_DAILY_TRADES)
             active_pairs_cnt, active_pairs_set, active_symbols_set = get_active_pairs_and_symbols()
             
-            if active_pairs_cnt >= MAX_CONCURRENT_TRADES:
+            if active_pairs_cnt >= MAX_CONCURRENT_TRADES or len(active_symbols_set) > 0:
                 if candidate_signals:
-                    logger.info(f"[MAX CONCURRENT TRADES LIMIT] {active_pairs_cnt}/{MAX_CONCURRENT_TRADES} active pairs currently open. New entries blocked until an existing trade closes.")
+                    logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] An active trade is currently open on MT5 ({len(active_symbols_set)} active symbols). New entries BLOCKED until the active trade closes.")
             elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and candidate_signals:
+
                 # Select candidate signals based on Z-score deviation and valid spread (win_rate filter disabled)
                 qualifying_candidates = []
                 for c in candidate_signals:

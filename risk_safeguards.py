@@ -344,15 +344,17 @@ MAX_CONCURRENT_TRADES = 1
 def get_active_pairs_and_symbols():
     """
     Returns (active_pairs_count, active_pairs_set, active_symbols_set).
-    Tracks open trades to strictly enforce max 2 active trades limit and prevent duplicate signals.
+    Strictly enforces single trade concurrency limit across all MT5 open positions.
     """
     active_pairs = set()
     active_symbols = set()
+    raw_positions_count = 0
     
     try:
         import MetaTrader5 as mt5
         positions = mt5.positions_get()
         if positions:
+            raw_positions_count = len(positions)
             for pos in positions:
                 pos_sym = pos.symbol.upper().split('.')[0]
                 active_symbols.add(pos_sym)
@@ -364,12 +366,14 @@ def get_active_pairs_and_symbols():
                         if len(p1) >= 5 and len(p2) >= 5:
                             active_pairs.add(f"{p1}/{p2}")
 
-        pairs_count = len(active_pairs) if active_pairs else (len(active_symbols) // 2)
+        # If MT5 has ANY active open position, active_pairs_count MUST be at least 1!
+        pairs_count = len(active_pairs) if active_pairs else (1 if raw_positions_count > 0 else 0)
     except Exception as e:
         logger.error(f"Error fetching active pairs and symbols: {e}")
         pairs_count = 0
 
     return pairs_count, active_pairs, active_symbols
+
 
 
 
