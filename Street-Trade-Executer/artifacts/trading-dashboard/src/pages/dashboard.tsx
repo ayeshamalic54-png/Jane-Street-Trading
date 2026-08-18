@@ -622,13 +622,14 @@ export default function Dashboard() {
         {/* Equity Trailing Stop Guard Card */}
         {(() => {
           const isTrailActiveText = systemStatus && systemStatus.includes("Trail Active");
-          const isTier2 = floatingProfit >= 100.0 || (isTrailActiveText && systemStatus.includes("Tier 2"));
-          const isTier1 = floatingProfit >= 75.0 || isTrailActiveText;
+          const isTier3 = floatingProfit >= 250.0 || (isTrailActiveText && systemStatus.includes("Tier 3"));
+          const isTier2 = floatingProfit >= 150.0 || (isTrailActiveText && systemStatus.includes("Tier 2"));
+          const isTier1 = floatingProfit >= 60.0 || isTrailActiveText;
           return (
             <Card className={cn(
               "bg-zinc-900 border transition-all rounded-md p-4",
-              isTier2
-                ? "border-emerald-500/60 bg-emerald-950/20 text-emerald-400"
+              isTier3 || isTier2
+                ? "border-emerald-500/60 bg-emerald-950/20 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.15)]"
                 : isTier1
                 ? "border-blue-500/60 bg-blue-950/20 text-blue-400"
                 : "border-zinc-800 bg-zinc-900/80 text-zinc-100"
@@ -637,33 +638,44 @@ export default function Dashboard() {
                 <div className="flex items-center gap-3">
                   <span className="text-xl">🛡️</span>
                   <div>
-                    <div className="font-bold text-sm text-zinc-100">Multi-Tier Equity Profit Lock Guard (Dual Tier)</div>
-                    <div className="text-xs text-zinc-400">Tier 1 (+ $75 peak locks + $69) | Tier 2 (+ $100+ peak locks 91%)</div>
+                    <div className="font-bold text-sm text-zinc-100">Multi-Tier Equity Profit Lock Guard (Option B - Balanced Buffer)</div>
+                    <div className="text-xs text-zinc-400">Tier 1 (+$60 Peak locks +$45.00) | Tier 2 (+$150 Peak locks +$120.00) | Tier 3 (+$250+ Peak locks 80%)</div>
                   </div>
                 </div>
                 <span className={cn(
                   "px-2.5 py-1 rounded text-xs font-bold border",
-                  isTier2
+                  isTier3
+                    ? "bg-emerald-500/30 text-emerald-300 border-emerald-500 animate-pulse shadow-[0_0_12px_rgba(52,211,153,0.4)]"
+                    : isTier2
                     ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse"
                     : isTier1
                     ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}>
-                  {isTier2 ? "🟢 TIER 2 TRAILING ACTIVE (91% LOCK)" : isTier1 ? "🔵 TIER 1 SAFETY FLOOR (+$69 LOCK)" : "⚪ TRAILING STOP INACTIVE"}
+                  {isTier3
+                    ? "🟢 TIER 3 MEGA RUNNER TRAILING ACTIVE (80% LOCK)"
+                    : isTier2
+                    ? "🟢 TIER 2 TRAILING ACTIVE (+$120.00 LOCK)"
+                    : isTier1
+                    ? "🔵 TIER 1 BASELINE TRAILING ACTIVE (+$45.00 LOCK)"
+                    : "⚪ TRAILING STOP INACTIVE"}
                 </span>
               </div>
               <div className="mt-3 p-2.5 rounded bg-zinc-950/60 border border-zinc-800 text-xs text-zinc-300">
-                {isTier2 ? (
-                  <span>🛡️ <strong>TIER 2 PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 100.0).toFixed(2)}</strong> | Locked Floor (91%): <strong>+${(Math.max(floatingProfit, 100.0) * 0.91).toFixed(2)}</strong> — Position is locking 91% of peak earnings!</span>
+                {isTier3 ? (
+                  <span>🛡️ <strong>TIER 3 MEGA RUNNER LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 250.0).toFixed(2)}</strong> | Locked Floor (80%): <strong>+${(Math.max(floatingProfit, 250.0) * 0.80).toFixed(2)}</strong> — Trailing stop active locking 80% of peak earnings ($50.00 noise buffer)!</span>
+                ) : isTier2 ? (
+                  <span>🛡️ <strong>TIER 2 BALANCED PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 150.0).toFixed(2)}</strong> | Locked Floor: <strong>+$120.00</strong> — Trailing stop active! Giving $30.00 noise room to push towards Tier 3 ($250+)!</span>
                 ) : isTier1 ? (
-                  <span>🛡️ <strong>TIER 1 SAFETY FLOOR ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 75.0).toFixed(2)}</strong> | Safety Floor: <strong>+$69.00</strong> — If market reverses from $75–$99, bot will auto-close at +$69.00+ to lock first target profit!</span>
+                  <span>🛡️ <strong>TIER 1 BASELINE LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 60.0).toFixed(2)}</strong> | Safety Floor: <strong>+$45.00</strong> — Trailing stop active! If market reverses from $60–$149, bot auto-closes at +$45.00+ cash!</span>
                 ) : (
-                  <span>⚪ <strong>Multi-Tier Mode:</strong> Reversing from $75–$99 locks +$69.00+ cash profit! Reaching +$100+ locks 91% of peak earnings! (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
+                  <span>⚪ <strong>Option B Active:</strong> Tier 1 (+$60 Peak locks +$45) | Tier 2 (+$150 Peak locks +$120) | Tier 3 (+$250+ Peak locks 80%) (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
                 )}
               </div>
             </Card>
           );
         })()}
+
 
         {/* Global Market Operating Hours Cards */}
         <MarketHoursCards />
@@ -727,33 +739,40 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card className={cn("bg-zinc-900 border-zinc-800 border-t-2 transition-all rounded-md", 
-            drawdownPercent < 0 
-              ? "border-t-emerald-500 hover:border-emerald-400/40 shadow-[0_4px_24px_rgba(16,185,129,0.06)]" 
-              : "border-t-amber-500 hover:border-amber-400/40 shadow-[0_4px_24px_rgba(245,158,11,0.06)]"
-          )}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono">
-                {drawdownPercent < 0 ? "Daily Gain" : "Daily Drawdown"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex justify-between items-end">
-                <div className={cn("text-2xl font-mono", drawdownPercent < 0 ? "text-emerald-400" : "text-amber-400")}>
-                  {drawdownPercent < 0 ? "+" : ""}{Math.abs(drawdownPercent).toFixed(2)}%
-                </div>
-                <div className="text-[10px] text-zinc-500 mb-1 font-mono">
-                  Halt: <span className="text-amber-500">{Number((dashboard as any)?.halt_drawdown_limit ?? (dashboard as any)?.haltDrawdownLimit ?? 0.83).toFixed(2)}%</span> · Limit: <span className="text-red-500">{Number((dashboard as any)?.max_drawdown_limit ?? (dashboard as any)?.maxDrawdownLimit ?? 3.3).toFixed(1)}%</span>
-                </div>
+          {(() => {
+            const netGainUsd = equity - (initialBalance || 10000.0);
+            const netGainPct = initialBalance > 0 ? (netGainUsd / initialBalance) * 100 : 0;
+            const isNetGain = netGainUsd > 0.001 || netGainPct > 0.001;
 
+            return (
+              <Card className={cn("bg-zinc-900 border-zinc-800 border-t-2 transition-all rounded-md", 
+                isNetGain 
+                  ? "border-t-emerald-500 hover:border-emerald-400/40 shadow-[0_4px_24px_rgba(16,185,129,0.06)]" 
+                  : "border-t-amber-500 hover:border-amber-400/40 shadow-[0_4px_24px_rgba(245,158,11,0.06)]"
+              )}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono">
+                    {isNetGain ? "Daily Gain" : "Daily Drawdown"}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="flex justify-between items-end">
+                    <div className={cn("text-2xl font-mono font-bold", isNetGain ? "text-emerald-400" : "text-amber-400")}>
+                      {isNetGain ? `+${Math.abs(netGainPct).toFixed(2)}% (+$${netGainUsd.toFixed(2)})` : `${drawdownPercent.toFixed(2)}%`}
+                    </div>
+                    <div className="text-[10px] text-zinc-500 mb-1 font-mono">
+                      Halt: <span className="text-amber-500">{Number((dashboard as any)?.halt_drawdown_limit ?? (dashboard as any)?.haltDrawdownLimit ?? 0.83).toFixed(2)}%</span> · Limit: <span className="text-red-500">{Number((dashboard as any)?.max_drawdown_limit ?? (dashboard as any)?.maxDrawdownLimit ?? 3.3).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                  <Progress 
+                    value={isNetGain ? 0 : Math.min((drawdownPercent / 3.3) * 100, 100)} 
+                    className="h-1.5 bg-zinc-800 [&>div]:bg-rose-500" 
+                  />
+                </CardContent>
+              </Card>
+            );
+          })()}
 
-              </div>
-              <Progress 
-                value={drawdownPercent < 0 ? 0 : Math.min((drawdownPercent / 3.3) * 100, 100)} 
-                className="h-1.5 bg-zinc-800 [&>div]:bg-rose-500" 
-              />
-            </CardContent>
-          </Card>
 
           <Card className="bg-zinc-900 border-zinc-800 border-t-2 border-t-emerald-500 hover:border-emerald-400/40 transition-all shadow-[0_4px_24px_rgba(16,185,129,0.06)] rounded-md">
             <CardHeader className="pb-2">
