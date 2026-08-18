@@ -1103,7 +1103,14 @@
                 
                 // Update Equity
                 const eqVal = Number(data.equity || 0.0);
-                const startEqVal = Number(data.start_equity || eqVal);
+                const initBalVal = Number(data.initial_balance || 10000.0);
+                let startEqVal = Number(data.start_equity || eqVal);
+                
+                // Bulletproof Failsafe: If startEqVal is missing or equals current equity, fallback to initial_balance ($10,000.00)
+                if ((Math.abs(eqVal - startEqVal) < 0.01 || startEqVal <= 0.0) && initBalVal > 0 && Math.abs(eqVal - initBalVal) >= 0.01) {
+                    startEqVal = initBalVal;
+                }
+
                 document.getElementById('account-equity').textContent = `$${eqVal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
                 const eqSubEl = document.getElementById('account-equity-sub');
                 if (eqSubEl) eqSubEl.textContent = `Start: $${startEqVal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
@@ -1135,6 +1142,7 @@
                     drawdownEl.className = (ddVal > 0.001) ? 'card-value metric-negative' : 'card-value metric-positive';
                     if (ddSubEl) ddSubEl.textContent = (ddVal > 0.001) ? `Peak DD Hit Today (All Positions Closed)` : `Start: $${startEqVal.toFixed(2)}`;
                 }
+
 
 
 
