@@ -1263,26 +1263,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         tp2_trade = next((t for t in open_leg_a_trades if "TP2" in str(t.get("comment", "")).upper()), None)
         tp3_trade = next((t for t in open_leg_a_trades if "TP3" in str(t.get("comment", "")).upper()), None)
 
-        # ── STEP 1: BREAKEVEN SL SHIFT (STRICTLY AT PnL >= +$56.00 USD / 0.56% Equity) ──
-        acc_eq = mt5.account_info().equity if mt5.account_info() else 10000.0
-        be_target_pnl = max(56.0, acc_eq * 0.0056)
-        pnl_be_reached = total_basket_pnl >= be_target_pnl
-        be_already_shifted = GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False)
+        # ── STEP 1: BREAKEVEN GUARD DISABLED 🔴 (PER USER DIRECTIVE: SL NEVER MOVED TO $0.00 ENTRY) ──
+        # Step 1 Breakeven SL shift is disabled. SL is locked in profit via Multi-Tier Trailing System instead.
 
-        if pnl_be_reached and not be_already_shifted and total_basket_pnl > 0.0:
-            trig_name = f"PnL ${total_basket_pnl:.2f} >= ${be_target_pnl:.2f} (0.56% Equity Gain)"
-
-            logger.info(f"🛡️ [STEP 1 BREAKEVEN ACTIVATED] Triggered by {trig_name}! Shifting Stop Loss for all orders to Entry Price (All 3 Parts Open)!")
-
-
-            from execution_bot import modify_position_sl
-            for t_a in open_leg_a_trades:
-                if t_a.get("entry_price") and t_a.get("ticket"):
-                    modify_position_sl(t_a["ticket"], t_a["symbol"], t_a["entry_price"])
-            for t_b in open_leg_b_trades:
-                if t_b.get("entry_price") and t_b.get("ticket"):
-                    modify_position_sl(t_b["ticket"], t_b["symbol"], t_b["entry_price"])
-            GLOBAL_HYBRID_BE_SHIFTED[sig_id] = True
 
         # ── STEP 2: CLOSE 70% VOLUME (TP1 & TP2) ONLY WHEN LIVE Z-SCORE REACHES NEUTRAL Z=0.0 ──
         z_neutral_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
@@ -1419,64 +1402,76 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 should_close_trail = False
                 trail_close_reason = ""
 
-                # Tier 0 (Micro Peak Lock at +$15.00 Peak -> Locks +$10.00 Cash Profit):
-                if peak_floating_profit >= 15.0 and peak_floating_profit < 75.0:
-                    tier0_floor = 10.0
-                    if floating_profit <= tier0_floor:
-                        should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 0] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier0_floor:.2f}). Auto-closing to lock +$10.00 profit."
-
-                # Tier 1 (Safety Floor at +$75.00 Peak -> Locks +$69.00 Cash Profit):
-                elif peak_floating_profit >= 75.0 and peak_floating_profit < 100.0:
-                    tier1_floor = 69.0
+                # Tier 1 (Micro Peak Lock: +$35.00 Peak -> Locks +$25.00 Cash Profit):
+                if peak_floating_profit >= 35.0 and peak_floating_profit < 100.0:
+                    tier1_floor = 25.0
                     if floating_profit <= tier1_floor:
                         should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock +$69.00 profit."
+                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock +$25.00 USD cash profit!"
 
-                else:
-                    # TP1 is already banked. Evaluate Stepped Milestone Trailing SL for TP2 & TP3
-                    from execution_bot import modify_position_sl
-                    pip_unit = 0.01 if "JPY" in sym_a.upper() else 0.0001
-                    if any(x in sym_a.upper() for x in ["XAU", "XAG"]):
-                        pip_unit = 0.10
-                    elif any(x in sym_a.upper() for x in ["US30", "NAS100", "US500"]):
-                        pip_unit = 1.0
+                # Tier 2 (User Directive Rule: +$100.00 Peak -> Locks +$75.00 Cash Profit):
+                elif peak_floating_profit >= 100.0 and peak_floating_profit < 150.0:
+                    tier2_floor = 75.0
+                    if floating_profit <= tier2_floor:
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 2 - USER RULE] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier2_floor:.2f}). Auto-closing to lock +$75.00 USD cash profit!"
 
-                    for t_a in open_leg_a_trades:
-                        entry_p = t_a.get("entry_price")
-                        tkt = t_a.get("ticket")
-                        sym = t_a.get("symbol")
-                        pos_type = t_a.get("order_type")
-                        
-                        pos_info = mt5.positions_get(ticket=tkt)
-                        if pos_info and entry_p:
-                            curr_p = pos_info[0].price_current
-                            curr_sl = pos_info[0].sl
+                # Tier 3 (High Profit Dynamic Peak Lock: +$150.00+ Peak -> Locks 91% Peak Cash Profit):
+                elif peak_floating_profit >= 150.0:
+                    tier3_floor = max(125.0, peak_floating_profit * 0.91)
+                    if floating_profit <= tier3_floor:
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 3] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier3_floor:.2f}). Auto-closing to lock 91% (${tier3_floor:.2f}) cash profit!"
 
-                            if pos_type == "BUY":
-                                pips_profit = (curr_p - entry_p) / pip_unit
-                                if pips_profit >= 12.0:
-                                    target_sl = entry_p + (8.0 * pip_unit)
-                                    if curr_sl < target_sl:
-                                        modify_position_sl(tkt, sym, target_sl)
-                                        logger.info(f"🚀 [MILESTONE 2 TRAIL] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +8.0 pips profit lock ({target_sl:.5f})!")
-                                elif pips_profit >= 8.0:
-                                    target_sl = entry_p + (4.0 * pip_unit)
-                                    if curr_sl < target_sl:
-                                        modify_position_sl(tkt, sym, target_sl)
-                                        logger.info(f"🛡️ [MILESTONE 1 TRAIL] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
-                            elif pos_type == "SELL":
-                                pips_profit = (entry_p - curr_p) / pip_unit
-                                if pips_profit >= 12.0:
-                                    target_sl = entry_p - (8.0 * pip_unit)
-                                    if curr_sl == 0.0 or curr_sl > target_sl:
-                                        modify_position_sl(tkt, sym, target_sl)
-                                        logger.info(f"🚀 [MILESTONE 2 TRAIL] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +8.0 pips profit lock ({target_sl:.5f})!")
-                                elif pips_profit >= 8.0:
-                                    target_sl = entry_p - (4.0 * pip_unit)
-                                    if curr_sl == 0.0 or curr_sl > target_sl:
-                                        modify_position_sl(tkt, sym, target_sl)
-                                        logger.info(f"🛡️ [MILESTONE 1 TRAIL] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
+                if should_close_trail and not exit_triggered:
+                    exit_triggered = True
+                    exit_reason = trail_close_reason
+                    logger.info(f"💰 [TRAILING PROFIT LOCK EXECUTED] Triggered by {trail_close_reason}! Closing all basket positions.")
+
+                # Stepped Milestone Trailing SL for open MT5 Leg A positions (Shifting SL into Profit Zone)
+                from execution_bot import modify_position_sl
+                pip_unit = 0.01 if "JPY" in sym_a.upper() else 0.0001
+                if any(x in sym_a.upper() for x in ["XAU", "XAG"]):
+                    pip_unit = 0.10
+                elif any(x in sym_a.upper() for x in ["US30", "NAS100", "US500"]):
+                    pip_unit = 1.0
+
+                for t_a in open_leg_a_trades:
+                    entry_p = t_a.get("entry_price")
+                    tkt = t_a.get("ticket")
+                    sym = t_a.get("symbol")
+                    pos_type = t_a.get("order_type")
+                    
+                    pos_info = mt5.positions_get(ticket=tkt)
+                    if pos_info and entry_p:
+                        curr_p = pos_info[0].price_current
+                        curr_sl = pos_info[0].sl
+
+                        if pos_type == "BUY":
+                            pips_profit = (curr_p - entry_p) / pip_unit
+                            if pips_profit >= 12.0 or peak_floating_profit >= 100.0:
+                                target_sl = entry_p + (8.0 * pip_unit)
+                                if curr_sl < target_sl:
+                                    modify_position_sl(tkt, sym, target_sl)
+                                    logger.info(f"🚀 [MILESTONE 2 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit / Peak ${peak_floating_profit:.2f}. Shifted SL to +8.0 pips profit lock ({target_sl:.5f})!")
+                            elif pips_profit >= 8.0:
+                                target_sl = entry_p + (4.0 * pip_unit)
+                                if curr_sl < target_sl:
+                                    modify_position_sl(tkt, sym, target_sl)
+                                    logger.info(f"🛡️ [MILESTONE 1 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
+                        elif pos_type == "SELL":
+                            pips_profit = (entry_p - curr_p) / pip_unit
+                            if pips_profit >= 12.0 or peak_floating_profit >= 100.0:
+                                target_sl = entry_p - (8.0 * pip_unit)
+                                if curr_sl == 0.0 or curr_sl > target_sl:
+                                    modify_position_sl(tkt, sym, target_sl)
+                                    logger.info(f"🚀 [MILESTONE 2 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit / Peak ${peak_floating_profit:.2f}. Shifted SL to +8.0 pips profit lock ({target_sl:.5f})!")
+                            elif pips_profit >= 8.0:
+                                target_sl = entry_p - (4.0 * pip_unit)
+                                if curr_sl == 0.0 or curr_sl > target_sl:
+                                    modify_position_sl(tkt, sym, target_sl)
+                                    logger.info(f"🛡️ [MILESTONE 1 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
+
 
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
@@ -3114,13 +3109,9 @@ def main():
 
 
 
-                f"| Exit Engine: Step 1 Dual Breakeven (Z=0.00 OR +$56.00 USD / 0.56% Equity), Step 2 Mean Reversion (70% Cash @ Z=0.00), Step 3 Jackpot (30% Runner @ Z=±{Z_ENTRY_THRESHOLD:.2f}) "
+                f"| Exit Engine: Step 1 Breakeven Guard (DISABLED 🔴), Step 2 Mean Reversion (70% Cash @ Z=0.00), Step 3 Runner Sync Exit "
+                f"| Profit Guard: Multi-Tier Equity Trailing ENABLED 🟢 (Tier 1: +$35->$25 | Tier 2: +$100->$75 | Tier 3: +$150->91%) | Guards: News 📰, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
 
-
-
-
-
-                f"| Filters: Multi-Tier Equity Trailing DISABLED ❌ | Guards: News 📰, Breakeven 🛡️, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
             )
 
 
