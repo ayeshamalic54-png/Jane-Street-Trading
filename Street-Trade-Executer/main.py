@@ -1428,6 +1428,14 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     exit_triggered = True
                     exit_reason = trail_close_reason
                     logger.info(f"💰 [TRAILING PROFIT LOCK EXECUTED] Triggered by {trail_close_reason}! Closing all basket positions.")
+                elif peak_floating_profit >= 60.0 and (int(time.time()) % 15 == 0):
+                    if peak_floating_profit >= 250.0:
+                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 3] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +${(peak_floating_profit * 0.80):.2f} (80% Lock, $50.00 Noise Buffer)")
+                    elif peak_floating_profit >= 150.0:
+                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 2] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$120.00 USD ($30.00 Noise Buffer)")
+                    elif peak_floating_profit >= 60.0:
+                        logger.info(f"🔵 [TRAILING STOP ACTIVE - TIER 1] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$45.00 USD ($15.00 Noise Buffer)")
+
 
                 # Stepped Milestone Trailing SL for open MT5 Leg A positions (Shifting SL into Profit Zone)
                 from execution_bot import modify_position_sl

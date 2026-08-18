@@ -819,15 +819,16 @@
             <div style="display: flex; align-items: center; gap: 10px;">
                 <span style="font-size: 22px;">🛡️</span>
                 <div>
-                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="trail-card-title">Multi-Tier Equity Profit Lock Guard (Dual Tier)</div>
-                    <div style="font-size: 11px; color: var(--text-muted);" id="trail-card-subtitle">Tier 1 (+ $60 peak locks + $52) | Tier 2 (+ $100+ peak locks 91%)</div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="trail-card-title">Multi-Tier Equity Profit Lock Guard (Option B - Balanced Buffer)</div>
+                    <div style="font-size: 11px; color: var(--text-muted);" id="trail-card-subtitle">Tier 1 (+$60 Peak locks +$45.00) | Tier 2 (+$150 Peak locks +$120.00) | Tier 3 (+$250+ Peak locks 80%)</div>
                 </div>
             </div>
             <span id="trail-card-badge" class="market-badge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3);">⚪ TRAILING STOP INACTIVE</span>
         </div>
         <div id="trail-card-body" style="background: rgba(0, 0, 0, 0.25); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); font-size: 13px; color: #e2e8f0; line-height: 1.5;">
-            ⚪ <strong>Multi-Tier Mode:</strong> Reversing from $60–$99 locks +$52.00+ cash profit! Reaching +$100+ locks 91% of peak earnings!
+            ⚪ <strong>Option B Active:</strong> Tier 1 (+$60 Peak locks +$45) | Tier 2 (+$150 Peak locks +$120) | Tier 3 (+$250+ Peak locks 80%)
         </div>
+
     </div>
 
     <!-- LIVE DAILY DRAWDOWN LIMIT STATUS CARD & CONFIGURATION CONTROL -->
@@ -1040,24 +1041,37 @@
                 const flProfit = Number(data.floating_profit || 0.0);
 
                 const isTrailActiveText = data.system_status && data.system_status.includes('Trail Active');
-                if (flProfit >= 100.0 || (isTrailActiveText && data.system_status.includes('Tier 2'))) {
-                    const peakVal = Math.max(flProfit, 100.0);
-                    const floorVal = (peakVal * 0.91).toFixed(2);
-                    trailCard.style.border = '1px solid rgba(52, 211, 153, 0.6)';
-                    trailCard.style.background = 'rgba(16, 185, 129, 0.12)';
+                if (flProfit >= 250.0 || (isTrailActiveText && data.system_status.includes('Tier 3'))) {
+                    const peakVal = Math.max(flProfit, 250.0);
+                    const floorVal = (peakVal * 0.80).toFixed(2);
+                    trailCard.style.border = '1px solid #10b981';
+                    trailCard.style.background = 'rgba(16, 185, 129, 0.20)';
                     trailBadge.className = 'market-badge badge-open';
-                    trailBadge.style.background = 'rgba(16, 185, 129, 0.2)';
+                    trailBadge.style.background = 'rgba(16, 185, 129, 0.3)';
                     trailBadge.style.color = '#34d399';
-                    trailBadge.textContent = '🟢 TIER 2 TRAILING ACTIVE (91% LOCK)';
-                    trailBody.innerHTML = `🛡️ <strong>TIER 2 PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+$${peakVal.toFixed(2)}</strong> | Locked Floor (91%): <strong>+$${floorVal}</strong><br>⚡ Position is locking 91% of peak earnings!`;
+                    trailBadge.style.border = '1px solid #10b981';
+                    trailBadge.textContent = '🟢 TIER 3 MEGA RUNNER TRAILING ACTIVE (80% LOCK)';
+                    trailBody.innerHTML = `🛡️ <strong>TIER 3 MEGA RUNNER LOCK ACTIVE:</strong> Peak Profit: <strong>+$${peakVal.toFixed(2)}</strong> | Locked Floor (80%): <strong>+$${floorVal}</strong><br>⚡ Trailing stop active locking 80% of peak earnings ($50.00 noise buffer)!`;
+                } else if (flProfit >= 150.0 || (isTrailActiveText && data.system_status.includes('Tier 2'))) {
+                    const peakVal = Math.max(flProfit, 150.0);
+                    trailCard.style.border = '1px solid #10b981';
+                    trailCard.style.background = 'rgba(16, 185, 129, 0.15)';
+                    trailBadge.className = 'market-badge badge-open';
+                    trailBadge.style.background = 'rgba(16, 185, 129, 0.25)';
+                    trailBadge.style.color = '#34d399';
+                    trailBadge.style.border = '1px solid #34d399';
+                    trailBadge.textContent = '🟢 TIER 2 TRAILING ACTIVE (+$120.00 LOCK)';
+                    trailBody.innerHTML = `🛡️ <strong>TIER 2 BALANCED PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+$${peakVal.toFixed(2)}</strong> | Locked Floor: <strong>+$120.00</strong><br>⚡ Trailing stop active! Giving $30.00 noise room to push towards Tier 3 ($250+)!`;
                 } else if (flProfit >= 60.0 || isTrailActiveText) {
+                    const peakVal = Math.max(flProfit, 60.0);
                     trailCard.style.border = '1px solid rgba(59, 130, 246, 0.6)';
                     trailCard.style.background = 'rgba(59, 130, 246, 0.12)';
                     trailBadge.className = 'market-badge badge-open';
                     trailBadge.style.background = 'rgba(59, 130, 246, 0.2)';
                     trailBadge.style.color = '#60a5fa';
-                    trailBadge.textContent = '🔵 TIER 1 SAFETY FLOOR ACTIVE (+$52 LOCK)';
-                    trailBody.innerHTML = `🛡️ <strong>TIER 1 SAFETY FLOOR ACTIVE:</strong> Peak Profit: <strong>+$${Math.max(flProfit, 60.0).toFixed(2)}</strong> | Safety Floor: <strong>+$52.00</strong><br>⚡ If market reverses from $60–$99, bot will auto-close at +$52.00+ to lock first target profit!`;
+                    trailBadge.style.border = '1px solid rgba(59, 130, 246, 0.4)';
+                    trailBadge.textContent = '🔵 TIER 1 BASELINE TRAILING ACTIVE (+$45.00 LOCK)';
+                    trailBody.innerHTML = `🛡️ <strong>TIER 1 BASELINE LOCK ACTIVE:</strong> Peak Profit: <strong>+$${peakVal.toFixed(2)}</strong> | Safety Floor: <strong>+$45.00</strong><br>⚡ Trailing stop active! If market reverses from $60–$149, bot auto-closes at +$45.00+ cash!`;
                 } else {
                     trailCard.style.border = '1px solid rgba(148, 163, 184, 0.2)';
                     trailCard.style.background = 'rgba(15, 23, 42, 0.75)';
@@ -1065,8 +1079,9 @@
                     trailBadge.style.color = '#94a3b8';
                     trailBadge.style.border = '1px solid rgba(148, 163, 184, 0.3)';
                     trailBadge.textContent = '⚪ TRAILING STOP INACTIVE';
-                    trailBody.innerHTML = `⚪ <strong>Standby Mode:</strong> Reversing from $60–$99 locks +$52.00+ cash profit! Reaching +$100+ locks 91% of peak earnings! (Current Floating: $${flProfit >= 0 ? '+' : ''}${flProfit.toFixed(2)})`;
+                    trailBody.innerHTML = `⚪ <strong>Option B Active:</strong> Tier 1 (+$60 Peak locks +$45) | Tier 2 (+$150 Peak locks +$120) | Tier 3 (+$250+ Peak locks 80%) (Current Floating: $${flProfit >= 0 ? '+' : ''}${flProfit.toFixed(2)})`;
                 }
+
                 
                 // Update Z-Score
                 const zScoreEl = document.getElementById('z-score');
