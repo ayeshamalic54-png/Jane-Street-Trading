@@ -105,11 +105,10 @@ def get_or_create_daily_start_equity(current_equity):
                 UPDATE bot_state SET 
                     mt5_login = %s, 
                     equity = %s, 
-                    start_of_day_equity = %s,
                     drawdown_percent = GREATEST(drawdown_percent, %s)
                 WHERE id = 1
                 """,
-                (current_login, current_equity, start_equity, existing_dd)
+                (current_login, current_equity, existing_dd)
             )
             conn.commit()
 
@@ -133,14 +132,14 @@ def get_or_create_daily_start_equity(current_equity):
                     initial_balance = %s, 
                     mt5_login = %s, 
                     equity = %s,
-                    start_of_day_equity = %s,
                     max_equity_peak = %s
                 WHERE id = 1
                 """,
-                (start_equity, current_login, current_equity, start_equity, current_equity)
+                (start_equity, current_login, current_equity, start_equity)
             )
             conn.commit()
             logger.info(f"Initialized session for account {current_login}. Starting equity: ${start_equity:.2f}")
+
 
         cur.close()
     except Exception as e:
