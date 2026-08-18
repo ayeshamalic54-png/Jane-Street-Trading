@@ -920,7 +920,8 @@
         </div>
         <div class="card" style="position: relative; overflow: hidden; min-width: 0; box-sizing: border-box;">
             <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>DAILY DRAWDOWN</span>
+                <span id="daily-drawdown-title">DAILY DRAWDOWN</span>
+
                 <span id="dd-halt-tag" style="font-size: 10px; opacity: 0.8; color: #f59e0b;">Halt: 0.83%</span>
             </div>
             <div class="card-value" id="daily-drawdown" style="font-size: clamp(14px, 1.7vw, 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; box-sizing: border-box;">$0.00 (0.00%)</div>
@@ -1095,26 +1096,31 @@
                 // Update Daily Drawdown / Daily Gain
                 const drawdownEl = document.getElementById('daily-drawdown');
                 const ddSubEl = document.getElementById('daily-drawdown-card-sub');
+                const ddTitleEl = document.getElementById('daily-drawdown-title');
                 const ddVal = Number(data.drawdown || 0.0);
                 const pnlUsdVal = eqVal - startEqVal;
 
                 if (pnlUsdVal > 0.001) {
+                    if (ddTitleEl) ddTitleEl.textContent = 'DAILY GAIN';
                     const pnlGainPct = (startEqVal > 0) ? (Math.abs(pnlUsdVal) / startEqVal) * 100.0 : 0.0;
                     const pctStr = (pnlGainPct < 0.01) ? pnlGainPct.toFixed(3) : pnlGainPct.toFixed(2);
                     drawdownEl.textContent = `+$${Math.abs(pnlUsdVal).toFixed(2)} (+${pctStr}%)`;
                     drawdownEl.className = 'card-value metric-positive';
                     if (ddSubEl) ddSubEl.textContent = (ddVal > 0.001) ? `Net Gain | Peak DD Today: -${ddVal.toFixed(2)}%` : `Net Gain (Start: $${startEqVal.toFixed(2)})`;
                 } else if (pnlUsdVal < -0.001 || ddVal > 0.0001) {
+                    if (ddTitleEl) ddTitleEl.textContent = 'DAILY DRAWDOWN';
                     const pnlLossPct = (startEqVal > 0) ? (Math.abs(pnlUsdVal) / startEqVal) * 100.0 : Math.abs(ddVal);
                     const pctStr = (pnlLossPct < 0.01) ? pnlLossPct.toFixed(3) : pnlLossPct.toFixed(2);
                     drawdownEl.textContent = `-$${Math.abs(pnlUsdVal).toFixed(2)} (-${pctStr}%)`;
                     drawdownEl.className = 'card-value metric-negative';
                     if (ddSubEl) ddSubEl.textContent = `Net Loss | Peak DD Today: -${Math.max(pnlLossPct, ddVal).toFixed(2)}%`;
                 } else {
+                    if (ddTitleEl) ddTitleEl.textContent = 'DAILY DRAWDOWN';
                     drawdownEl.textContent = (ddVal > 0.001) ? `-$${(startEqVal * (ddVal / 100.0)).toFixed(2)} (-${ddVal.toFixed(2)}%)` : `$0.00 (0.00%)`;
                     drawdownEl.className = (ddVal > 0.001) ? 'card-value metric-negative' : 'card-value metric-positive';
                     if (ddSubEl) ddSubEl.textContent = (ddVal > 0.001) ? `Peak DD Hit Today (All Positions Closed)` : `Start: $${startEqVal.toFixed(2)}`;
                 }
+
 
 
 

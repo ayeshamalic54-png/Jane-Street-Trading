@@ -2106,7 +2106,9 @@ def main():
 
 
             if daily_start_equity is None and current_equity > 0.0:
-                daily_start_equity = current_equity
+                from risk_safeguards import get_or_create_daily_start_equity
+                daily_start_equity = get_or_create_daily_start_equity(current_equity)
+
 
             if is_halted:
                 close_all_positions("ALL")
