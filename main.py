@@ -1319,6 +1319,12 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             target_step3_z = max(2.40, Z_ENTRY_THRESHOLD)
             z_step3_jackpot = (is_buy_spread and z_score_for_pair >= target_step3_z) or (not is_buy_spread and z_score_for_pair <= -target_step3_z)
 
+            # Auto-sync runner exit: If TP1 & TP2 are already closed, close TP3 runner when Z is neutral or basket in profit
+            tp1_tp2_closed = (tp1_trade is None) and (tp2_trade is None)
+            if tp1_tp2_closed and tp3_trade is not None and (z_neutral_reached or total_basket_pnl > 0.0):
+                exit_triggered = True
+                exit_reason = f"THREE_STEP_EXIT_RUNNER_SYNC (TP1 & TP2 Closed -> Auto-Closing TP3 Runner at Z={z_score_for_pair:.2f}, Basket PnL=${total_basket_pnl:.2f})"
+
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
             if is_sl_breached:
@@ -1327,6 +1333,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             elif z_step3_jackpot and total_basket_pnl > 0.0:
                 exit_triggered = True
                 exit_reason = f"THREE_STEP_EXIT_JACKPOT (Step 3 Jackpot Z={z_score_for_pair:.2f}, Basket PnL=${total_basket_pnl:.2f})"
+
 
 
 
@@ -2829,7 +2836,8 @@ def main():
                             
                             exec_a_ok, filled_a_total = execute_three_part_trade(
                                 S_A_resolved, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, actual_lots_a,
-                                best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5),
+                                best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 2.0),
+
                                 signal_id=signal_id
                             )
                             if not exec_a_ok:
@@ -2930,7 +2938,8 @@ def main():
                             
                             exec_a_ok, filled_a_total = execute_three_part_trade(
                                 S_A_resolved, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, actual_lots_a,
-                                best_sig["price_a"] - sl_dist, best_sig["price_a"] - max(tp_dist, sl_dist * 1.5), best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5),
+                                best_sig["price_a"] - sl_dist, best_sig["price_a"] - max(tp_dist, sl_dist * 1.5), best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 2.0),
+
                                 signal_id=signal_id
                             )
                             if not exec_a_ok:
