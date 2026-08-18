@@ -528,15 +528,23 @@ LEVERAGE_FACTORS = {
     "crypto": 0.01    # 100x lower leverage than Forex
 }
 
-def get_blue_guardian_lots(symbol: str, category: str) -> float:
+def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.00083) -> float:
     """
-    Returns exact Blue Guardian standard lot sizes for each asset class:
-    - Forex Pairs:          1.20 Total Lots (3 x 0.40 lots | Hedge: 0.34 lots)
-    - Metals (Gold/Silver): 1.50 Total Lots (3 x 0.50 lots | Hedge: 0.38 lots)
-    - Indices (US30/NAS100): 0.60 Total Lots (3 x 0.20 lots | Hedge: 0.15 lots)
-    - Stock CFDs:          15.00 Total Lots (3 x 5.00 lots | Hedge: 3.75 lots)
+    Calculates dynamic lot size based on 1.0% Account Equity Risk:
+    - $10,000 Equity -> 1.20 Total Lots (3 x 0.40 lots)
+    - $12,000 Equity -> 1.44 Total Lots (3 x 0.48 lots)
     """
+    try:
+        acc_info = mt5.account_info()
+        if acc_info and acc_info.equity > 0:
+            from risk_safeguards import calculate_lots
+            dyn_lots = calculate_lots(symbol, sl_dist_price, acc_info)
+            if dyn_lots and dyn_lots >= 0.03:
+                return dyn_lots
+    except Exception:
+        pass
     return DEFAULT_LOT_SIZES.get(category, 1.20)
+
 
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
     """
