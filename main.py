@@ -409,7 +409,7 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                 pass
 
 
-Z_ENTRY_THRESHOLD = 2.4
+Z_ENTRY_THRESHOLD = 1.80
 ML_MODEL = None
 DEFAULT_LOTS = 0.01
 Z_EXIT_MEAN = 0.0
@@ -1008,13 +1008,14 @@ def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
 def get_strategy_parameters(symbol: str):
     cat = get_symbol_category(symbol)
     if cat == "metals":
-        return 2.00, 0.0, 4.2, 5.0  # z_entry=2.00 (95%+ accuracy extreme outlier)
+        return 1.80, 0.0, 4.2, 5.0  # z_entry=1.80
     elif cat == "indices":
-        return 2.00, 0.0, 4.2, 5.0
+        return 1.80, 0.0, 4.2, 5.0  # z_entry=1.80
     elif cat == "crypto":
         return 2.00, 0.0, 4.2, 6.0
     else: # forex/stocks/default
-        return 2.00, 0.0, 4.2, 6.0  # z_entry=2.00 (2.0 Standard Deviation Statistical Extreme)
+        return 1.80, 0.0, 4.2, 6.0  # z_entry=1.80 (1.8 Standard Deviation Baseline Entry)
+
 
 def close_single_trade(symbol, ticket, volume, order_type):
     cat = get_symbol_category(symbol)
@@ -2552,6 +2553,9 @@ def main():
                 if base_z_triggered and action == "NONE":
                     reasons = []
                     if z < -Z_ENTRY_THRESHOLD:
+                        if not pass_turn_buy:
+                            zh_str = [round(x, 2) for x in list(kf_pair.z_history)[-3:]] if kf_pair and hasattr(kf_pair, 'z_history') else []
+                            reasons.append(f"Turning Point Inflection filter waiting for Z-score reversal momentum (Z-History: {zh_str})")
                         if VOLATILITY_FILTER_ENABLED and not (z < -dynamic_z_entry):
                             reasons.append(f"Z-score {z:.3f} not below dynamic threshold {-dynamic_z_entry:.3f} (volatility protection)")
                         if KNIFE_PROTECTION_ENABLED and not (z_velocity > -z_vel_lim):
@@ -2561,6 +2565,9 @@ def main():
                         if REQUIRE_SMC_CONFLUENCE and not in_bullish_zone:
                             reasons.append("Price not in Bullish SMC Zone (Order Block/FVG)")
                     else:
+                        if not pass_turn_sell:
+                            zh_str = [round(x, 2) for x in list(kf_pair.z_history)[-3:]] if kf_pair and hasattr(kf_pair, 'z_history') else []
+                            reasons.append(f"Turning Point Inflection filter waiting for Z-score reversal momentum (Z-History: {zh_str})")
                         if VOLATILITY_FILTER_ENABLED and not (z > dynamic_z_entry):
                             reasons.append(f"Z-score {z:.3f} not above dynamic threshold {dynamic_z_entry:.3f} (volatility protection)")
                         if KNIFE_PROTECTION_ENABLED and not (z_velocity < z_vel_lim):
@@ -2571,7 +2578,8 @@ def main():
                             reasons.append("Price not in Bearish SMC Zone (Order Block/FVG)")
                     
                     if reasons:
-                        logger.info(f"Signal threshold crossed for {pk} (Z={z:.3f}), but skipped due to: {', '.join(reasons)}")
+                        logger.info(f"🔄 [ENTRY SKIPPED LOG] Signal threshold crossed for {pk} (Z={z:.3f} vs Entry Limit {Z_ENTRY_THRESHOLD:.2f}), but entry deferred due to: {'; '.join(reasons)}")
+
 
                 win_rate = WIN_RATE_CACHE.get(pk, 50.0)
                 update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
