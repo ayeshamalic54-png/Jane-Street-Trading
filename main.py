@@ -1643,46 +1643,41 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
         qty_prec_b = filters_b["quantityPrecision"] if filters_b else 3
         return round(qty_a * abs(beta) * contract_ratio, qty_prec_b)
     else:
-        if cat_a == "crypto":
-            contract_size_a = 1.0
-            pip_val_a = 1.0
-        else:
-            info_a = mt5.symbol_info(symbol_a)
-            contract_size_a = info_a.trade_contract_size if info_a else 1.0
-            pip_val_a = info_a.trade_tick_value if (info_a and info_a.trade_tick_value > 0) else 10.0
-            
-        info_b = mt5.symbol_info(symbol_b)
-        contract_size_b = info_b.trade_contract_size if info_b else 1.0
-        pip_val_b = info_b.trade_tick_value if (info_b and info_b.trade_tick_value > 0) else 10.0
+        tick_a_h = mt5.symbol_info_tick(symbol_a)
+        tick_b_h = mt5.symbol_info_tick(symbol_b)
+        p_a_h = float(tick_a_h.ask if tick_a_h else 1.0) if tick_a_h else (mt5.symbol_info(symbol_a).ask if mt5.symbol_info(symbol_a) else 1.0)
+        p_b_h = float(tick_b_h.bid if tick_b_h else 1.0) if tick_b_h else (mt5.symbol_info(symbol_b).bid if mt5.symbol_info(symbol_b) else 1.0)
         
-        # Dollar Pip Value Weighting Ratio
-        pip_ratio = (pip_val_a / pip_val_b) if (pip_val_b > 0 and pip_val_a > 0) else 1.0
-        if pip_ratio > 3.0 or pip_ratio < 0.33:
-            pip_ratio = 1.0  # Safeguard against extreme exchange rates
-            
-        # For Forex pairs, cap the hedge ratio to 0.35 (producing exact 0.42 lots of Leg B for 1.20 lots of Leg A)
-        eff_beta = abs(beta)
-        if cat_a == "forex":
-            eff_beta = min(eff_beta, 0.35)
-
-        # For stocks and metals, equalize dollar notion so Leg A and Leg B are 100% 1:1 balanced in cash value
-        if cat_a in ["stocks", "metals"] or cat_b in ["stocks", "metals"]:
-            tick_a_h = mt5.symbol_info_tick(symbol_a)
-            tick_b_h = mt5.symbol_info_tick(symbol_b)
-            p_a_h = float(tick_a_h.ask if tick_a_h else 1.0)
-            p_b_h = float(tick_b_h.bid if tick_b_h else 1.0)
-            if p_b_h > 0 and p_a_h > 0:
-                raw_qty = qty_a * (p_a_h / p_b_h)
-            else:
-                raw_qty = qty_a * eff_beta * (contract_size_a / contract_size_b) * pip_ratio
+        info_a = mt5.symbol_info(symbol_a)
+        info_b = mt5.symbol_info(symbol_b)
+        
+        c_size_a = float(info_a.trade_contract_size) if (info_a and getattr(info_a, 'trade_contract_size', 0) > 0) else 100000.0
+        c_size_b = float(info_b.trade_contract_size) if (info_b and getattr(info_b, 'trade_contract_size', 0) > 0) else 100000.0
+        
+        # Base Dollar Notional Exposure of Leg A
+        dollar_notional_a = qty_a * p_a_h * c_size_a
+        
+        # Base Dollar Neutral Quantity for Leg B (100% Symmetric Cash Value)
+        if p_b_h > 0 and c_size_b > 0:
+            dollar_neutral_qty_b = dollar_notional_a / (p_b_h * c_size_b)
         else:
-            raw_qty = qty_a * eff_beta * (contract_size_a / contract_size_b) * pip_ratio
+            dollar_neutral_qty_b = qty_a
+            
+        # Volatility / Beta scaling factor (clamped between 0.75 and 1.25 for safe hedge alignment)
+        eff_beta = abs(float(beta)) if beta else 1.0
+        if eff_beta < 0.75:
+            eff_beta = 0.75
+        elif eff_beta > 1.25:
+            eff_beta = 1.25
+            
+        raw_qty = dollar_neutral_qty_b * eff_beta
         qty_b_final = round_volume(symbol_b, raw_qty)
-        info_b_check = mt5.symbol_info(symbol_b)
-        min_vol_b = info_b_check.volume_min if info_b_check else 0.01
+        
+        min_vol_b = info_b.volume_min if info_b else 0.01
         if qty_b_final < min_vol_b:
             qty_b_final = min_vol_b
         return qty_b_final
+
 
 
 def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float, is_long: bool) -> tuple:
@@ -2900,20 +2895,12 @@ def main():
                                         opp_side_b = "BUY" if side_b == "SELL" else "SELL"
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
-                                    res_hedge = None
-                                    for retry_idx in range(3):
-                                        tick_retry = mt5.symbol_info_tick(S_B_resolved)
-                                        if tick_retry:
-                                            price_b = tick_retry.ask if order_type_b == mt5.ORDER_TYPE_BUY else tick_retry.bid
-                                            sl_b = price_b + sl_sign_b * sl_dist_b
-                                        res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
-                                        if is_retcode_success(res_hedge):
-                                            log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
-                                            break
-                                        time.sleep(0.5)
-                                    if not is_retcode_success(res_hedge):
-                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed after 3 retries! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
+                                    is_long_b = (order_type_b == mt5.ORDER_TYPE_BUY)
+                                    h_ok, _ = execute_three_part_hedge_trade(S_B_resolved, is_long_b, price_b, qty_b, signal_id=signal_id)
+                                    if not h_ok:
+                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
                                         close_all_positions(S_A_resolved)
+
                     else:
                         if best_cat_a == "crypto":
                             usdt_bal, _ = get_binance_usdt_balance()
@@ -3003,21 +2990,10 @@ def main():
                                         opp_side_b = "BUY" if side_b == "SELL" else "SELL"
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
-                                    res_hedge = None
-                                    for retry_idx in range(3):
-                                        mt5.symbol_select(S_B_resolved, True)
-                                        tick_retry = mt5.symbol_info_tick(S_B_resolved)
-                                        if tick_retry:
-                                            price_b = tick_retry.ask if order_type_b == mt5.ORDER_TYPE_BUY else tick_retry.bid
-                                            sl_b = price_b + sl_sign_b * sl_dist_b
-                                        res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
-                                        if is_retcode_success(res_hedge):
-                                            log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
-                                            break
-                                        time.sleep(0.5)
-                                    if not is_retcode_success(res_hedge):
-
-                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed after 3 retries! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
+                                    is_long_b = (order_type_b == mt5.ORDER_TYPE_BUY)
+                                    h_ok, _ = execute_three_part_hedge_trade(S_B_resolved, is_long_b, price_b, qty_b, signal_id=signal_id)
+                                    if not h_ok:
+                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
                                         close_all_positions(S_A_resolved)
                     invalidate_trades_cache()
 
