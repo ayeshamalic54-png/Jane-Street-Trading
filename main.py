@@ -2008,7 +2008,8 @@ def main():
                     if db_config_counter == 0:
                         logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry} | Kalman Beta: {active_pair_beta:.4f} (Dynamic Hedge Ratio) 🟢")
 
-                        logger.info(f"🎯 [THREE-STEP EXIT SYSTEM] Step 1: Breakeven Guard (DISABLED 🔴) | Step 2: 70% Profit Bank at Z=0.00 (DISABLED 🔴) | Step 3: Runner Sync Exit (DISABLED 🔴) — Single Basket Option B Trailing Stop ACTIVE 🟢")
+                        logger.info(f"🎯 [TARGET EXITS SYSTEM] Z=±2.40 Jackpot Target Exit (ENABLED 🟢) | Option B Multi-Tier Trailing Stop (ENABLED 🟢) | Step 2 Mid-Way Scale-Out (DISABLED 🔴)")
+
 
 
                         logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | Breakeven Guard ($0.00 Entry SL): DISABLED 🔴 | Adverse Regime Exit: DISABLED ❌ | SMC: DISABLED ❌")
