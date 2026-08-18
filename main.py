@@ -1657,26 +1657,19 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
         # Base Dollar Notional Exposure of Leg A
         dollar_notional_a = qty_a * p_a_h * c_size_a
         
-        # Base Dollar Neutral Quantity for Leg B (100% Symmetric Cash Value)
+        # Pure Dollar Neutral Quantity for Leg B (100% Symmetric Cash Exposure without Beta Distortion)
         if p_b_h > 0 and c_size_b > 0:
-            dollar_neutral_qty_b = dollar_notional_a / (p_b_h * c_size_b)
+            raw_qty = dollar_notional_a / (p_b_h * c_size_b)
         else:
-            dollar_neutral_qty_b = qty_a
+            raw_qty = qty_a
             
-        # Volatility / Beta scaling factor (clamped between 0.75 and 1.25 for safe hedge alignment)
-        eff_beta = abs(float(beta)) if beta else 1.0
-        if eff_beta < 0.75:
-            eff_beta = 0.75
-        elif eff_beta > 1.25:
-            eff_beta = 1.25
-            
-        raw_qty = dollar_neutral_qty_b * eff_beta
         qty_b_final = round_volume(symbol_b, raw_qty)
         
         min_vol_b = info_b.volume_min if info_b else 0.01
         if qty_b_final < min_vol_b:
             qty_b_final = min_vol_b
         return qty_b_final
+
 
 
 
