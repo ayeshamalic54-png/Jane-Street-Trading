@@ -3142,11 +3142,12 @@ def main():
             eff_dd_log = max(daily_loss_p, peak_dd_p)
             if eff_dd_log >= risk_safeguards.MAX_DAILY_LOSS_PERCENT:
                 if RISK_LIMITS_ENABLED:
-                    logger.warning(f"🚨 [RISK LIMIT ENFORCED] Peak Daily Drawdown hit {eff_dd_log:.2f}% (Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}%). STRICT RISK HALT ACTIVE & ALL NEW TRADES BLOCKED!")
+                    logger.warning(f"🚨 [LIMIT ENFORCE BREACHED] Peak Daily Drawdown: {eff_dd_log:.2f}% (Halt Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}%). STRICT LIMIT ENFORCE ACTIVE & ALL NEW TRADES BLOCKED!")
                 else:
-                    logger.info(f"🎮 [RISK HALT BYPASSED] Peak Daily Drawdown hit {eff_dd_log:.2f}% (Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Scanning active.")
+                    logger.info(f"🎮 [LIMIT ENFORCE BYPASSED] Peak Daily Drawdown: {eff_dd_log:.2f}% (Halt Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Scanning active.")
             else:
-                logger.info(f"🛡️ [RISK LIMIT STATUS] Current Drawdown: {eff_dd_log:.2f}% / Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}% | Enforcer: {'ENABLED 🟢' if RISK_LIMITS_ENABLED else 'DISABLED 🔴'}")
+                logger.info(f"🛡️ [LIMIT ENFORCE CHECK] Current DD: {eff_dd_log:.2f}% | Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}% | Status: LIMIT ENFORCE {'ENABLED 🟢' if RISK_LIMITS_ENABLED else 'DISABLED 🔴'}")
+
 
 
 
