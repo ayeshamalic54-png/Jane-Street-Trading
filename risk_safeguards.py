@@ -86,7 +86,7 @@ def get_or_create_daily_start_equity(current_equity):
         cur.execute("SELECT initial_balance FROM bot_state WHERE id = 1 AND mt5_login = %s", (current_login,))
         state_row = cur.fetchone()
         db_initial_balance = None
-        if state_row and state_row[0] is not None:
+        if state_row and state_row[0] is not None and float(state_row[0]) > 0:
             db_initial_balance = float(state_row[0])
 
         # Check if we already have a record for today and this specific login
@@ -95,7 +95,10 @@ def get_or_create_daily_start_equity(current_equity):
 
         if row:
             start_equity = float(row[0])
+            if db_initial_balance and db_initial_balance > start_equity:
+                start_equity = db_initial_balance
             existing_dd = float(row[1]) if (len(row) > 1 and row[1] is not None) else 0.0
+
             cur.execute(
                 "UPDATE daily_metrics SET current_equity = %s WHERE trading_date = %s AND mt5_login = %s",
                 (current_equity, today, current_login)
