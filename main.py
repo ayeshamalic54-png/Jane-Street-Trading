@@ -1650,7 +1650,7 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
         filters_b = get_symbol_filters(symbol_b)
         qty_prec_b = filters_b["quantityPrecision"] if filters_b else 3
         return round(qty_a * abs(beta) * contract_ratio, qty_prec_b)
-def calculate_bridge_lots(lots_a: float, price_a: float, price_b: float, contract_a: float, contract_b: float, entry_beta: float, atr_a: float = 1.0, atr_b: float = 1.0, symbol_b: str = "") -> float:
+def calculate_bridge_lots(lots_a: float, price_a: float, price_b: float, contract_a: float, contract_b: float, entry_beta: float, atr_a: float = 1.0, atr_b: float = 1.0, symbol_b: str = "", symbol_a: str = "") -> float:
     """
     Option A: Volatility-Adjusted Cointegration Bridge Lot Sizing.
     Binds Entry Beta with 14-Period ATR Volatility Normalization Ratio and Nominal Value Conversion Factor
@@ -1660,12 +1660,25 @@ def calculate_bridge_lots(lots_a: float, price_a: float, price_b: float, contrac
     # Step 1: Statistical Beta Weighting
     beta_weight = abs(float(entry_beta)) if entry_beta else 1.0
     
-    # Step 2: Volatility Normalization Ratio (14-period ATR ratio)
-    volatility_ratio = (atr_a / atr_b) if (atr_a and atr_b and atr_b > 0) else 1.0
+    # Step 2: Volatility Normalization Ratio (Percentage ATR ratio to normalize 5-digit vs 3-digit JPY/CHF pairs)
+    vol_a_pct = (atr_a / price_a) if (atr_a and price_a and price_a > 0) else 0.001
+    vol_b_pct = (atr_b / price_b) if (atr_b and price_b and price_b > 0) else 0.001
+    volatility_ratio = (vol_a_pct / vol_b_pct) if vol_b_pct > 0 else 1.0
     
-    # Step 3: Nominal Value Conversion Factor
-    nominal_value_a = contract_a * price_a
-    nominal_value_b = contract_b * price_b
+    # Step 3: Nominal Value Conversion Factor in USD
+    def get_usd_nominal(sym, p, c_size):
+        if not sym:
+            return c_size if p > 50.0 else c_size * p
+        s = sym.upper()
+        if s.startswith("USD"):
+            return c_size
+        elif s.endswith("USD"):
+            return c_size * p
+        else:
+            return c_size if p > 50.0 else c_size * p
+
+    nominal_value_a = get_usd_nominal(symbol_a, price_a, contract_a)
+    nominal_value_b = get_usd_nominal(symbol_b, price_b, contract_b)
     value_factor = (nominal_value_a / nominal_value_b) if nominal_value_b > 0 else 1.0
     
     # Combined Cointegration Bridge Output
@@ -1703,7 +1716,7 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
         atr_a = get_atr(symbol_a, mt5.TIMEFRAME_M15, count=30)
         atr_b = get_atr(symbol_b, mt5.TIMEFRAME_M15, count=30)
         
-        return calculate_bridge_lots(qty_a, p_a_h, p_b_h, c_size_a, c_size_b, beta, atr_a, atr_b, symbol_b=symbol_b)
+        return calculate_bridge_lots(qty_a, p_a_h, p_b_h, c_size_a, c_size_b, beta, atr_a, atr_b, symbol_b=symbol_b, symbol_a=symbol_a)
     except Exception as e:
         logger.error(f"Error in get_hedge_quantity: {e}")
         return round_volume(symbol_b, qty_a * abs(beta))
