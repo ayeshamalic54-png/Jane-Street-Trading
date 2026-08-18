@@ -90,18 +90,26 @@ def get_or_create_daily_start_equity(current_equity):
             db_initial_balance = float(state_row[0])
 
         # Check if we already have a record for today and this specific login
-        cur.execute("SELECT start_equity FROM daily_metrics WHERE trading_date = %s AND mt5_login = %s", (today, current_login))
+        cur.execute("SELECT start_equity, max_drawdown_percent FROM daily_metrics WHERE trading_date = %s AND mt5_login = %s", (today, current_login))
         row = cur.fetchone()
 
         if row:
             start_equity = float(row[0])
+            existing_dd = float(row[1]) if (len(row) > 1 and row[1] is not None) else 0.0
             cur.execute(
                 "UPDATE daily_metrics SET current_equity = %s WHERE trading_date = %s AND mt5_login = %s",
                 (current_equity, today, current_login)
             )
             cur.execute(
-                "UPDATE bot_state SET mt5_login = %s, equity = %s WHERE id = 1",
-                (current_login, current_equity)
+                """
+                UPDATE bot_state SET 
+                    mt5_login = %s, 
+                    equity = %s, 
+                    start_of_day_equity = %s,
+                    drawdown_percent = GREATEST(drawdown_percent, %s)
+                WHERE id = 1
+                """,
+                (current_login, current_equity, start_equity, existing_dd)
             )
             conn.commit()
 
@@ -126,16 +134,13 @@ def get_or_create_daily_start_equity(current_equity):
                     mt5_login = %s, 
                     equity = %s,
                     start_of_day_equity = %s,
-                    drawdown_percent = 0.0,
-                    overall_drawdown = 0.0,
                     max_equity_peak = %s
                 WHERE id = 1
                 """,
                 (start_equity, current_login, current_equity, start_equity, current_equity)
             )
             conn.commit()
-            logger.info(f"Initialized fresh session for account {current_login}. Starting equity: ${start_equity:.2f}")
-
+            logger.info(f"Initialized session for account {current_login}. Starting equity: ${start_equity:.2f}")
 
         cur.close()
     except Exception as e:
@@ -171,9 +176,26 @@ def check_drawdown_limit(current_equity):
 
     today = get_broker_today_date()
     if _PEAK_DAILY_DRAWDOWN_DATE != today or _PEAK_DAILY_DRAWDOWN_LOGIN != current_login:
-        _PEAK_DAILY_DRAWDOWN_PCT = 0.0
         _PEAK_DAILY_DRAWDOWN_DATE = today
         _PEAK_DAILY_DRAWDOWN_LOGIN = current_login
+        _PEAK_DAILY_DRAWDOWN_PCT = 0.0
+
+        # Query DB to preserve peak daily drawdown hit today for this account!
+        try:
+            conn_dd = get_connection()
+            cur_dd = conn_dd.cursor()
+            cur_dd.execute(
+                "SELECT max_drawdown_percent FROM daily_metrics WHERE trading_date = %s AND mt5_login = %s",
+                (today, current_login)
+            )
+            dd_row = cur_dd.fetchone()
+            if dd_row and dd_row[0] is not None:
+                _PEAK_DAILY_DRAWDOWN_PCT = float(dd_row[0])
+            cur_dd.close()
+            conn_dd.close()
+        except Exception as ex_dd:
+            logger.error(f"Error loading existing peak drawdown for login {current_login}: {ex_dd}")
+
 
         
     daily_loss = start_equity - current_equity
