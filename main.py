@@ -1995,7 +1995,8 @@ def main():
                         logger.info(f"🎯 [THREE-STEP EXIT ACTIVE] Step 1: Breakeven Guard (DISABLED 🔴) | Step 2: 70% Profit Bank at Z=0.00 💰 | Step 3: Runner Sync Exit 🚀")
 
                         logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | Breakeven Guard ($0.00 Entry SL): DISABLED 🔴 | SMC: DISABLED ❌")
-                        logger.info(f"🛡️ [ACTIVE GUARDS] News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Option B: Tier 1: +$60->$45 | Tier 2: +$150->$120 | Tier 3: +$250->$200) | Friday Close Guard: ENABLED 🌅")
+                        logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Option B: Tier 1: +$60->$45 | Tier 2: +$150->$120 | Tier 3: +$250->$200) | Friday Close Guard: ENABLED 🌅")
+
 
 
 
