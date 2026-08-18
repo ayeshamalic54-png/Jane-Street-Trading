@@ -1938,7 +1938,7 @@ def main():
                 cur.execute("SELECT COUNT(*) FROM trades WHERE status = 'OPEN'")
                 open_trades_count = cur.fetchone()[0] or 0
                 
-                if db_login == 0 or db_login != current_login:
+                if db_login > 0 and current_login > 0 and db_login != current_login:
                     startup_mismatch = True
                 
                 # Purge any legacy Platinum/Palladium rows from scanned_assets
@@ -1953,10 +1953,10 @@ def main():
             except Exception as e:
                 logger.error(f"Error checking startup metrics sync: {e}")
                 
-            login_changed = (active_login_id is not None and active_login_id != current_login) or startup_mismatch or (active_login_id is None and (db_login == 0 or db_login != current_login))
+            login_changed = (active_login_id is not None and active_login_id != current_login) or (startup_mismatch and db_login > 0 and db_login != current_login)
             
             if login_changed:
-                logger.info(f"🔄 [ACCOUNT SWITCH DETECTED] Connected MT5 Login #{current_login} (Previous DB Login #{db_login}). Syncing Initial Balance to ${acc_info.equity:.2f} & resetting metrics!")
+                logger.info(f"🔄 [GENUINE ACCOUNT SWITCH DETECTED] Connected new MT5 Login #{current_login} (Previous DB Login #{db_login}). Initializing fresh account session.")
                 from database import reset_database_metrics_for_new_account
                 reset_database_metrics_for_new_account(current_login, acc_info.equity)
                 
@@ -1971,6 +1971,7 @@ def main():
                     risk_safeguards._cached_last_login = int(current_login)
                 except Exception as ex:
                     logger.error(f"Error updating risk_safeguards cache in main loop: {ex}")
+
                 
             active_login_id = current_login
 
