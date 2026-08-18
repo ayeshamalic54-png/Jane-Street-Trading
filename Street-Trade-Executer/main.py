@@ -1294,16 +1294,26 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             GLOBAL_STEP2_SCALED_OUT[sig_id] = True
 
 
-        # Rule 1: High Profit Reversal Lock ($45.00+ Peak -> Drops to $38.00)
-        if current_peak >= 45.0 and total_basket_pnl <= 38.0:
-            if tp1_trade is not None:
-                logger.info(f"🎯 [HIGH PROFIT REVERSAL LOCK] Peak reached ${current_peak:.2f} & dropped to ${total_basket_pnl:.2f} (<= $38.00). Closing TP1 to bank profit!")
-                close_single_trade(tp1_trade["symbol"], tp1_trade["ticket"], tp1_trade["lots"], tp1_trade["order_type"])
-                if open_leg_b_trades:
-                    h_trade = open_leg_b_trades[0]
-                    h_part_vol = round(float(h_trade["lots"]) / 3.0, 2)
-                    if h_part_vol > 0:
-                        close_single_trade(h_trade["symbol"], h_trade["ticket"], h_part_vol, h_trade["order_type"])
+        # Option B Multi-Tier Trailing Profit Lock (Triple Tier Profit Protection for entire basket)
+        if current_peak >= 250.0:
+            tier3_floor = max(200.0, current_peak * 0.80)
+            if total_basket_pnl <= tier3_floor:
+                exit_triggered = True
+                exit_reason = f"PROFIT_LOCK_TIER3 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier3_floor:.2f})"
+                logger.info(f"💰 [PROFIT LOCK TIER 3 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier3_floor:.2f}). Auto-closing entire basket to bank 80% mega runner profit!")
+        elif current_peak >= 150.0:
+            tier2_floor = 120.0
+            if total_basket_pnl <= tier2_floor:
+                exit_triggered = True
+                exit_reason = f"PROFIT_LOCK_TIER2 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier2_floor:.2f})"
+                logger.info(f"💰 [PROFIT LOCK TIER 2 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier2_floor:.2f}). Auto-closing entire basket to bank +$120.00 USD cash profit!")
+        elif current_peak >= 60.0:
+            tier1_floor = 45.0
+            if total_basket_pnl <= tier1_floor:
+                exit_triggered = True
+                exit_reason = f"PROFIT_LOCK_TIER1 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier1_floor:.2f})"
+                logger.info(f"💰 [PROFIT LOCK TIER 1 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing entire basket to bank +$45.00 USD cash profit!")
+
 
         # ── STEP 3: Z = ±2.40 RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
         if not exit_triggered:
