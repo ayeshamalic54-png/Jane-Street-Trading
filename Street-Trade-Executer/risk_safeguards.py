@@ -360,8 +360,9 @@ def is_spread_valid(symbol):
 
 MINIMUM_HOLD_ENABLED = True
 MINIMUM_HOLD_TIME_SECONDS = 140
-ADVERSE_REGIME_EXIT_ENABLED = True
+ADVERSE_REGIME_EXIT_ENABLED = False
 MAX_CONCURRENT_TRADES = 1
+
 
 
 def get_active_pairs_and_symbols():
