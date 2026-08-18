@@ -1394,11 +1394,12 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     daily_loss_usd = max(0.0, start_eq_guard - acc_info.equity) if acc_info else 0.0
                     daily_loss_pct = (daily_loss_usd / start_eq_guard) * 100.0 if start_eq_guard > 0 else 0.0
                     
-                    if floating_profit <= -330.0 or daily_loss_pct >= 3.30:
-                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) / Daily loss ({daily_loss_pct:.2f}%) breached safety cap (-$330.00 / 3.30%). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
+                    if RISK_LIMITS_ENABLED and floating_profit <= -330.0:
+                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) breached safety cap (-$330.00). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
                         for pos in active_js_positions:
                             pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
                             close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+
                 except Exception as ex_dd:
                     logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
 
@@ -2246,11 +2247,12 @@ def main():
                     daily_loss_usd = start_eq_guard - acc_info.equity
                     daily_loss_pct = (daily_loss_usd / start_eq_guard) * 100.0 if start_eq_guard > 0 else 0.0
                     
-                    if floating_profit <= -330.0 or daily_loss_pct >= 3.30:
-                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) / Daily loss ({daily_loss_pct:.2f}%) breached safety cap (-$330.00 / 3.30%). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
+                    if RISK_LIMITS_ENABLED and floating_profit <= -330.0:
+                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) breached safety cap (-$330.00). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
                         for pos in active_js_positions:
                             pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
                             close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+
                 except Exception as ex_dd:
                     logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
 
