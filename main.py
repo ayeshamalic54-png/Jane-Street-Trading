@@ -1402,26 +1402,27 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 should_close_trail = False
                 trail_close_reason = ""
 
-                # Tier 1 (Micro Peak Lock: +$35.00 Peak -> Locks +$25.00 Cash Profit):
-                if peak_floating_profit >= 35.0 and peak_floating_profit < 100.0:
-                    tier1_floor = 25.0
+                # Tier 1 (Quick Baseline Lock: +$60.00 Peak -> Locks +$45.00 Cash Profit | $15 Noise Buffer):
+                if peak_floating_profit >= 60.0 and peak_floating_profit < 150.0:
+                    tier1_floor = 45.0
                     if floating_profit <= tier1_floor:
                         should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock +$25.00 USD cash profit!"
+                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock +$45.00 USD cash profit!"
 
-                # Tier 2 (User Directive Rule: +$100.00 Peak -> Locks +$75.00 Cash Profit):
-                elif peak_floating_profit >= 100.0 and peak_floating_profit < 150.0:
-                    tier2_floor = 75.0
+                # Tier 2 (Balanced Expansion Lock: +$150.00 Peak -> Locks +$120.00 Cash Profit | $30 Noise Buffer):
+                elif peak_floating_profit >= 150.0 and peak_floating_profit < 250.0:
+                    tier2_floor = 120.0
                     if floating_profit <= tier2_floor:
                         should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 2 - USER RULE] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier2_floor:.2f}). Auto-closing to lock +$75.00 USD cash profit!"
+                        trail_close_reason = f"[PROFIT GUARD TIER 2] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier2_floor:.2f}). Auto-closing to lock +$120.00 USD cash profit!"
 
-                # Tier 3 (High Profit Dynamic Peak Lock: +$150.00+ Peak -> Locks 91% Peak Cash Profit):
-                elif peak_floating_profit >= 150.0:
-                    tier3_floor = max(125.0, peak_floating_profit * 0.91)
+                # Tier 3 (Mega Trend Runner Lock: +$250.00+ Peak -> Locks +$200.00 Cash Profit | $50 Noise Buffer):
+                elif peak_floating_profit >= 250.0:
+                    tier3_floor = max(200.0, peak_floating_profit * 0.80)
                     if floating_profit <= tier3_floor:
                         should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 3] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier3_floor:.2f}). Auto-closing to lock 91% (${tier3_floor:.2f}) cash profit!"
+                        trail_close_reason = f"[PROFIT GUARD TIER 3] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier3_floor:.2f}). Auto-closing to lock 80% (${tier3_floor:.2f}) mega runner cash profit!"
+
 
                 if should_close_trail and not exit_triggered:
                     exit_triggered = True
@@ -3110,7 +3111,8 @@ def main():
 
 
                 f"| Exit Engine: Step 1 Breakeven Guard (DISABLED 🔴), Step 2 Mean Reversion (70% Cash @ Z=0.00), Step 3 Runner Sync Exit "
-                f"| Profit Guard: Multi-Tier Equity Trailing ENABLED 🟢 (Tier 1: +$35->$25 | Tier 2: +$100->$75 | Tier 3: +$150->91%) | Guards: News 📰, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
+                f"| Profit Guard: Multi-Tier Equity Trailing ENABLED 🟢 (Option B: Tier 1: +$60->$45 | Tier 2: +$150->$120 | Tier 3: +$250->$200) | Guards: News 📰, Friday Close 🌅 | Vel: {active_pair_velocity:.3f} | Status: {status_str}"
+
 
             )
 
