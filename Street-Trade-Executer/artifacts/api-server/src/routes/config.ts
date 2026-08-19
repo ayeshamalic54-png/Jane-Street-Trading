@@ -38,6 +38,12 @@ router.get("/config", async (req, res) => {
       initialBalance: Number(state?.initialBalance ?? 100000.00),
       haltDrawdownLimit: Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.83),
       maxDrawdownLimit: Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30),
+      sessionGuardEnabled: Boolean((state as any)?.session_guard_enabled ?? false),
+      sessionStartHour: Number((state as any)?.session_start_hour ?? 12.5),
+      sessionEndHour: Number((state as any)?.session_end_hour ?? 2.0),
+      session_guard_enabled: Boolean((state as any)?.session_guard_enabled ?? false),
+      session_start_hour: Number((state as any)?.session_start_hour ?? 12.5),
+      session_end_hour: Number((state as any)?.session_end_hour ?? 2.0),
     });
   } catch (err) {
     console.error("Failed to get config", err);

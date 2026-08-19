@@ -773,6 +773,25 @@ export default function Dashboard() {
                   </select>
                 </div>
               </div>
+
+              <div className="mt-3 flex justify-end">
+                <button
+                  onClick={async () => {
+                    await fetch('/api/toggle-session-guard', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ enabled: isSessEnabled, start_hour: sessStart, end_hour: sessEnd })
+                    });
+                    toast({
+                      title: "Session Guard Settings Saved",
+                      description: `Status: ${isSessEnabled ? "ENABLED 🟢" : "DISABLED 🔴"} | Window Saved to DB`
+                    });
+                  }}
+                  className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-md shadow-md transition-all flex items-center gap-1.5"
+                >
+                  💾 Save Session Window Settings
+                </button>
+              </div>
             </Card>
           );
         })()}
