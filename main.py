@@ -2357,7 +2357,12 @@ def main():
             if has_positions and active_js_positions:
                 try:
                     from risk_safeguards import evaluate_hedge_effectiveness
-                    evaluate_hedge_effectiveness(active_js_positions)
+                    should_hedge_close, hedge_close_reason = evaluate_hedge_effectiveness(active_js_positions)
+                    if should_hedge_close:
+                        logger.warning(f"🚨 [HEDGE DIVERGENCE AUTO-EXIT] {hedge_close_reason}. AUTO-CLOSING ALL TRADES TO PREVENT LOSS!")
+                        for pos in active_js_positions:
+                            pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+                            close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
                 except Exception as ex_hm:
                     logger.error(f"Error in hedge effectiveness monitoring: {ex_hm}")
 

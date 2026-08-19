@@ -605,11 +605,16 @@ def evaluate_hedge_effectiveness(active_js_positions, beta_val=None):
     )
 
     if is_ineffective:
-        _HEDGE_DIVERGENCE_COUNTERS[pair_key] = _HEDGE_DIVERGENCE_COUNTERS.get(pair_key, 0) + 1
+        count = _HEDGE_DIVERGENCE_COUNTERS.get(pair_key, 0) + 1
+        _HEDGE_DIVERGENCE_COUNTERS[pair_key] = count
         logger.warning(log_msg)
+        if count >= 3:
+            return True, f"HEDGE DIVERGENCE PROTECTION | {status_str} persisted for {count} consecutive cycles"
     else:
         _HEDGE_DIVERGENCE_COUNTERS[pair_key] = 0
         logger.info(log_msg)
+
+    return False, ""
 
 
 
