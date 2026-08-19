@@ -19,22 +19,26 @@ def is_retcode_success(res):
     return False
 
 def send_order(symbol, order_type, price, volume, sl, tp, comment):
-    """Submits order to MT5. Automatically handles FOK vs IOC vs RETURN filling modes."""
+    """Submits order to MT5. Automatically handles FOK vs IOC vs RETURN filling modes and live price updates."""
     # Ensure symbol is active and selected in MT5 Market Watch
     mt5.symbol_select(symbol, True)
     
-    # If price is 0.0 or outdated, re-fetch live tick
-    if price is None or price <= 0:
-        tick = mt5.symbol_info_tick(symbol)
-        if tick:
-            price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+    # Dynamically detect broker's exact supported filling mode for this symbol
+    info = mt5.symbol_info(symbol)
+    filling_modes = []
+    if info and hasattr(info, "filling_mode"):
+        fm = info.filling_mode
+        # Bitmask check: Bit 0 (1)=FOK, Bit 1 (2)=IOC, Bit 2 (4)=RETURN
+        if fm & 1:
+            filling_modes.append(mt5.ORDER_FILLING_FOK)
+        if fm & 2:
+            filling_modes.append(mt5.ORDER_FILLING_IOC)
+        if fm & 4:
+            filling_modes.append(mt5.ORDER_FILLING_RETURN)
+            
+    if not filling_modes:
+        filling_modes = [mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]
 
-    filling_modes = [
-        mt5.ORDER_FILLING_FOK,
-        mt5.ORDER_FILLING_IOC,
-        mt5.ORDER_FILLING_RETURN
-    ]
-    
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
@@ -43,7 +47,7 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
         "price": price,
         "sl": sl,
         "tp": tp,
-        "deviation": 10,
+        "deviation": 20,
         "magic": MAGIC_NUMBER,
         "comment": comment,
         "type_time": mt5.ORDER_TIME_GTC,
@@ -51,6 +55,13 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
     
     result = None
     for mode in filling_modes:
+        # Re-fetch ultra-fresh tick price before sending to eliminate retcode 10021 (No prices)
+        tick = mt5.symbol_info_tick(symbol)
+        if tick:
+            fresh_p = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+            if fresh_p > 0:
+                request["price"] = fresh_p
+
         request["type_filling"] = mode
         result = mt5.order_send(request)
         
