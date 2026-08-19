@@ -66,6 +66,9 @@ router.post("/config", async (req, res) => {
     const haltLimit = bodyObj.haltDrawdownLimit !== undefined ? Number(bodyObj.haltDrawdownLimit) : (bodyObj.halt_drawdown_limit !== undefined ? Number(bodyObj.halt_drawdown_limit) : Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.83));
     const maxLimit = bodyObj.maxDrawdownLimit !== undefined ? Number(bodyObj.maxDrawdownLimit) : (bodyObj.max_drawdown_limit !== undefined ? Number(bodyObj.max_drawdown_limit) : Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30));
 
+    const sessEnabled = bodyObj.session_guard_enabled !== undefined ? Boolean(bodyObj.session_guard_enabled) : (bodyObj.sessionGuardEnabled !== undefined ? Boolean(bodyObj.sessionGuardEnabled) : Boolean((state as any)?.session_guard_enabled ?? (state as any)?.sessionGuardEnabled ?? false));
+    const sessStart = bodyObj.session_start_hour !== undefined ? Number(bodyObj.session_start_hour) : (bodyObj.sessionStartHour !== undefined ? Number(bodyObj.sessionStartHour) : Number((state as any)?.session_start_hour ?? (state as any)?.sessionStartHour ?? 12.5));
+    const sessEnd = bodyObj.session_end_hour !== undefined ? Number(bodyObj.session_end_hour) : (bodyObj.sessionEndHour !== undefined ? Number(bodyObj.sessionEndHour) : Number((state as any)?.session_end_hour ?? (state as any)?.sessionEndHour ?? 2.0));
 
     const pairToSave = activePair || state?.activePair || "EURUSD/GBPUSD";
     const parts = pairToSave.split("/");
@@ -87,8 +90,8 @@ router.post("/config", async (req, res) => {
     const defLots = defaultLots ?? 0.01;
 
     await db.execute(
-      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit)
-          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxDailyTrades ?? 3}, 'BOT OFFLINE', NOW(), ${(initialBalance ?? 100000).toString()}, ${(initialBalance ?? 100000).toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}
+      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit, session_guard_enabled, session_start_hour, session_end_hour)
+          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxDailyTrades ?? 3}, 'BOT OFFLINE', NOW(), ${(initialBalance ?? 100000).toString()}, ${(initialBalance ?? 100000).toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}
           WHERE NOT EXISTS (SELECT 1 FROM bot_state)`
     );
 
@@ -113,6 +116,9 @@ router.post("/config", async (req, res) => {
               max_trades   = ${maxDailyTrades ?? 3},
               halt_drawdown_limit = ${haltLimit.toString()},
               max_drawdown_limit = ${maxLimit.toString()},
+              session_guard_enabled = ${sessEnabled},
+              session_start_hour    = ${sessStart},
+              session_end_hour      = ${sessEnd},
               updated_at   = NOW()
           WHERE id = (SELECT MIN(id) FROM bot_state)`
     );
@@ -146,6 +152,12 @@ router.post("/config", async (req, res) => {
       initialBalance: Number(updated?.initialBalance ?? initialBalance ?? 100000),
       haltDrawdownLimit: haltLimit,
       maxDrawdownLimit: maxLimit,
+      sessionGuardEnabled: sessEnabled,
+      sessionStartHour: sessStart,
+      sessionEndHour: sessEnd,
+      session_guard_enabled: sessEnabled,
+      session_start_hour: sessStart,
+      session_end_hour: sessEnd,
     });
   } catch (err) {
     console.error("Failed to update config", err);

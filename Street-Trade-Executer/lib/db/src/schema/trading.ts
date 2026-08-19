@@ -64,6 +64,9 @@ export const botStateTable = pgTable("bot_state", {
   defaultLots: numeric("default_lots", { precision: 5, scale: 2 }).default("0.01"),
   haltDrawdownLimit: numeric("halt_drawdown_limit", { precision: 5, scale: 2 }).default("0.78"),
   maxDrawdownLimit: numeric("max_drawdown_limit", { precision: 5, scale: 2 }).default("3.30"),
+  sessionGuardEnabled: boolean("session_guard_enabled").default(false),
+  sessionStartHour: numeric("session_start_hour", { precision: 5, scale: 2 }).default("12.50"),
+  sessionEndHour: numeric("session_end_hour", { precision: 5, scale: 2 }).default("2.00"),
   lastHeartbeat: timestamp("last_heartbeat"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
