@@ -2740,12 +2740,16 @@ def main():
             elif risk_safeguards.SESSION_GUARD_ENABLED and not is_session_ok and candidate_signals:
                 for c in candidate_signals:
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
-                    logger.info(f"⏰ [SESSION GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f}), but current time ({curr_utc_s}) is outside allowed trading window ({window_utc_s}). New entries BLOCKED.")
+                    logger.info(f"⏰ [SESSION GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f}), but current time ({curr_utc_s}) is OUTSIDE allowed trading window ({window_utc_s}). New entries BLOCKED.")
             elif not AUTO_EXECUTE and candidate_signals:
                 for c in candidate_signals:
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
                     logger.info(f"📢 [SIGNAL DETECTED - SIGNALS ONLY MODE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f}), but Auto-Execution is toggled OFF on Dashboard. Trade placement SKIPPED.")
             elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and is_session_ok and candidate_signals:
+                if risk_safeguards.SESSION_GUARD_ENABLED:
+                    for c in candidate_signals:
+                        pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
+                        logger.info(f"⏰ [SESSION GUARD ACTIVE 🟢] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f}). Current time ({curr_utc_s}) is INSIDE allowed trading window ({window_utc_s}). Trade execution PROCEEDING!")
 
                 # Select candidate signals based on Z-score deviation and valid spread (win_rate filter disabled)
                 qualifying_candidates = []
@@ -3212,9 +3216,14 @@ def main():
                 pass
 
             auto_exec_str = "ENABLED 🟢" if AUTO_EXECUTE else "DISABLED 🔴 (SIGNALS ONLY MODE)"
+            if risk_safeguards.SESSION_GUARD_ENABLED:
+                sess_log_str = f"ENABLED 🟢 (WINDOW OPEN: {curr_utc_s} in {window_utc_s})" if is_session_ok else f"ENABLED 🔴 (WINDOW CLOSED: {curr_utc_s} outside {window_utc_s})"
+            else:
+                sess_log_str = "DISABLED 🔴 (Trading 24/7)"
+
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
-                f"| Auto-Exec: {auto_exec_str} | Dynamic ATR Target: ENABLED 🟢 | Turning Point Inflection: ENABLED 🟢 "
+                f"| Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: ENABLED 🟢 | Turning Point Inflection: ENABLED 🟢 "
             )
 
             eff_dd_log = max(daily_loss_p, peak_dd_p)
