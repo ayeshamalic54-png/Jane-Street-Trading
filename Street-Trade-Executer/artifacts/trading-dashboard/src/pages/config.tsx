@@ -217,6 +217,12 @@ export default function Config() {
       maxDailyTrades: 3,
       haltDrawdownLimit: 0.80,
       maxDrawdownLimit: 3.30,
+      sessionGuardEnabled: false,
+      sessionStartHour: 12.5,
+      sessionEndHour: 2.0,
+      session_guard_enabled: false,
+      session_start_hour: 12.5,
+      session_end_hour: 2.0,
     },
     values: config
       ? {
