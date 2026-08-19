@@ -169,4 +169,30 @@ router.post("/toggle-risk-limits", async (req, res) => {
   }
 });
 
+router.post("/toggle-session-guard", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const enabled = body.enabled !== undefined ? Boolean(body.enabled) : false;
+    const startHour = body.start_hour !== undefined ? Number(body.start_hour) : (body.startHour !== undefined ? Number(body.startHour) : 12.5);
+    const endHour = body.end_hour !== undefined ? Number(body.end_hour) : (body.endHour !== undefined ? Number(body.endHour) : 2.0);
+
+    await db.execute(
+      sql`ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+          ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+          ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
+          UPDATE bot_state
+          SET session_guard_enabled = ${enabled},
+              session_start_hour    = ${startHour},
+              session_end_hour      = ${endHour},
+              updated_at            = NOW()
+          WHERE id = (SELECT MIN(id) FROM bot_state)`
+    );
+
+    return res.json({ status: "success", enabled, start_hour: startHour, end_hour: endHour });
+  } catch (err) {
+    console.error("Failed to toggle session guard", err);
+    return res.status(500).json({ error: "Failed to toggle session guard" });
+  }
+});
+
 export default router;

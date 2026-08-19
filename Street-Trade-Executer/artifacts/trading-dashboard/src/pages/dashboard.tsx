@@ -341,6 +341,7 @@ export default function Dashboard() {
 
   const { data: wsData, wsConnected } = useLiveDashboard();
   const [pnlHistory, setPnlHistory] = useState<{ t: number; pnl: number; eq: number }[]>([]);
+  const [sessionGuardOverride, setSessionGuardOverride] = useState<{ enabled?: boolean; start?: number; end?: number }>({});
 
   useEffect(() => {
     if (!wsData) return;
@@ -685,9 +686,9 @@ export default function Dashboard() {
 
         {/* Session Time Guard (PKT Trading Window) Card */}
         {(() => {
-          const isSessEnabled = (dashboard as any)?.session_guard_enabled ?? false;
-          const sessStart = (dashboard as any)?.session_start_hour ?? 12.5;
-          const sessEnd = (dashboard as any)?.session_end_hour ?? 2.0;
+          const isSessEnabled = sessionGuardOverride.enabled ?? ((dashboard as any)?.session_guard_enabled ?? false);
+          const sessStart = sessionGuardOverride.start ?? ((dashboard as any)?.session_start_hour ?? 12.5);
+          const sessEnd = sessionGuardOverride.end ?? ((dashboard as any)?.session_end_hour ?? 2.0);
           
           return (
             <Card className="bg-zinc-900 border border-blue-500/40 rounded-md p-4 transition-all">
@@ -714,6 +715,7 @@ export default function Dashboard() {
                     value={isSessEnabled ? "true" : "false"}
                     onChange={async (e) => {
                       const val = e.target.value === "true";
+                      setSessionGuardOverride(prev => ({ ...prev, enabled: val }));
                       await fetch('/api/toggle-session-guard', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -733,6 +735,7 @@ export default function Dashboard() {
                     value={sessStart.toString()}
                     onChange={async (e) => {
                       const val = parseFloat(e.target.value);
+                      setSessionGuardOverride(prev => ({ ...prev, start: val }));
                       await fetch('/api/toggle-session-guard', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -754,6 +757,7 @@ export default function Dashboard() {
                     value={sessEnd.toString()}
                     onChange={async (e) => {
                       const val = parseFloat(e.target.value);
+                      setSessionGuardOverride(prev => ({ ...prev, end: val }));
                       await fetch('/api/toggle-session-guard', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
