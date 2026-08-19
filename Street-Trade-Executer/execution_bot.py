@@ -548,17 +548,8 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
         
     pos = positions[0]
 
-    # ── STRICT BLUE GUARDIAN 140s (2m 20s) HOLD RULE GUARD ──
-    # Prevents closing any position before 140 seconds have elapsed to avoid prop firm account breach
-    pos_time = getattr(pos, "time", 0)
-    if pos_time > 0:
-        import time as pytime
-        tick_pos = mt5.symbol_info_tick(symbol)
-        now_time = tick_pos.time if (tick_pos and tick_pos.time > 0) else int(pytime.time())
-        elapsed = abs(now_time - pos_time)
-        if elapsed < 140.0:
-            logger.warning(f"[BLUE GUARDIAN HOLD GUARD] Deferring close of ticket {ticket} ({symbol}) — held for only {elapsed:.1f}s (< 140s / 2m 20s rule). Position kept open.")
-            return False
+    # ── HOLD GUARD DISABLED PER USER DIRECTIVE FOR INSTANT MANUAL/BOT CLOSES ──
+    # Positions can close instantly at any time without 140s delay
     
     tick = mt5.symbol_info_tick(symbol)
     if tick is None:
