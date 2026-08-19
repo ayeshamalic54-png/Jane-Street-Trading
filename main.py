@@ -1288,25 +1288,31 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
 
 
-        # Option B Multi-Tier Trailing Profit Lock (Triple Tier Profit Protection for entire basket)
-        if current_peak >= 250.0:
-            tier3_floor = max(200.0, current_peak * 0.80)
+        # Option B Multi-Tier Trailing Profit Lock (4-Tier Profit Protection for entire basket)
+        if current_peak >= 185.0:
+            tier4_floor = 155.0
+            if total_basket_pnl <= tier4_floor:
+                exit_triggered = True
+                exit_reason = f"PROFIT_LOCK_TIER4 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier4_floor:.2f})"
+                logger.info(f"💰 [PROFIT LOCK TIER 4 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier4_floor:.2f}). Auto-closing entire basket to bank +$155.00 USD mega runner profit!")
+        elif current_peak >= 142.0:
+            tier3_floor = 120.0
             if total_basket_pnl <= tier3_floor:
                 exit_triggered = True
                 exit_reason = f"PROFIT_LOCK_TIER3 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier3_floor:.2f})"
-                logger.info(f"💰 [PROFIT LOCK TIER 3 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier3_floor:.2f}). Auto-closing entire basket to bank 80% mega runner profit!")
-        elif current_peak >= 150.0:
-            tier2_floor = 120.0
+                logger.info(f"💰 [PROFIT LOCK TIER 3 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier3_floor:.2f}). Auto-closing entire basket to bank +$120.00 USD runner profit!")
+        elif current_peak >= 99.0:
+            tier2_floor = 80.0
             if total_basket_pnl <= tier2_floor:
                 exit_triggered = True
                 exit_reason = f"PROFIT_LOCK_TIER2 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier2_floor:.2f})"
-                logger.info(f"💰 [PROFIT LOCK TIER 2 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier2_floor:.2f}). Auto-closing entire basket to bank +$120.00 USD cash profit!")
-        elif current_peak >= 60.0:
-            tier1_floor = 45.0
+                logger.info(f"💰 [PROFIT LOCK TIER 2 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier2_floor:.2f}). Auto-closing entire basket to bank +$80.00 USD cash profit!")
+        elif current_peak >= 67.0:
+            tier1_floor = 53.0
             if total_basket_pnl <= tier1_floor:
                 exit_triggered = True
                 exit_reason = f"PROFIT_LOCK_TIER1 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier1_floor:.2f})"
-                logger.info(f"💰 [PROFIT LOCK TIER 1 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing entire basket to bank +$45.00 USD cash profit!")
+                logger.info(f"💰 [PROFIT LOCK TIER 1 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing entire basket to bank +$53.00 USD cash profit!")
 
 
         # ── STEP 3: Z = ±2.40 RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
@@ -2044,7 +2050,7 @@ def main():
 
                         logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | Breakeven Guard ($0.00 Entry SL): DISABLED 🔴 | Adverse Regime Exit: DISABLED ❌ | SMC: DISABLED ❌")
 
-                        logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Option B: Tier 1: +$60->$45 | Tier 2: +$150->$120 | Tier 3: +$250->$200) | Friday Close Guard: ENABLED 🌅")
+                        logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Option B: Tier 1: +$67->$53 | Tier 2: +$99->$80 | Tier 3: +$142->$120 | Tier 4: +$185->$155) | Friday Close Guard: ENABLED 🌅")
 
 
 
