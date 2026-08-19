@@ -103,9 +103,12 @@ router.get("/dashboard", async (req, res) => {
       stocksEnabled: botState?.stocksEnabled ?? true,
       halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? (botState as any)?.halt_drawdown_limit ?? 0.83),
       max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? (botState as any)?.max_drawdown_limit ?? 3.30),
-      session_guard_enabled: Boolean((botState as any)?.session_guard_enabled ?? false),
-      session_start_hour: Number((botState as any)?.session_start_hour ?? 12.5),
-      session_end_hour: Number((botState as any)?.session_end_hour ?? 2.0),
+      sessionGuardEnabled: Boolean(botState?.sessionGuardEnabled ?? (botState as any)?.session_guard_enabled ?? false),
+      sessionStartHour: Number(botState?.sessionStartHour ?? (botState as any)?.session_start_hour ?? 12.5),
+      sessionEndHour: Number(botState?.sessionEndHour ?? (botState as any)?.session_end_hour ?? 2.0),
+      session_guard_enabled: Boolean(botState?.sessionGuardEnabled ?? (botState as any)?.session_guard_enabled ?? false),
+      session_start_hour: Number(botState?.sessionStartHour ?? (botState as any)?.session_start_hour ?? 12.5),
+      session_end_hour: Number(botState?.sessionEndHour ?? (botState as any)?.session_end_hour ?? 2.0),
     });
 
   } catch (err) {

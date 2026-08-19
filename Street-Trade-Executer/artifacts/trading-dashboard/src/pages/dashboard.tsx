@@ -686,9 +686,9 @@ export default function Dashboard() {
 
         {/* Session Time Guard (PKT Trading Window) Card */}
         {(() => {
-          const isSessEnabled = sessionGuardOverride.enabled ?? ((dashboard as any)?.session_guard_enabled ?? false);
-          const sessStart = sessionGuardOverride.start ?? ((dashboard as any)?.session_start_hour ?? 12.5);
-          const sessEnd = sessionGuardOverride.end ?? ((dashboard as any)?.session_end_hour ?? 2.0);
+          const isSessEnabled = sessionGuardOverride.enabled ?? ((dashboard as any)?.sessionGuardEnabled ?? (dashboard as any)?.session_guard_enabled ?? false);
+          const sessStart = sessionGuardOverride.start ?? ((dashboard as any)?.sessionStartHour ?? (dashboard as any)?.session_start_hour ?? 12.5);
+          const sessEnd = sessionGuardOverride.end ?? ((dashboard as any)?.sessionEndHour ?? (dashboard as any)?.session_end_hour ?? 2.0);
           
           return (
             <Card className="bg-zinc-900 border border-blue-500/40 rounded-md p-4 transition-all">
