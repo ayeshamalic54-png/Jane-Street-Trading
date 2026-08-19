@@ -201,10 +201,15 @@ def check_drawdown_limit(current_equity):
 
 
         
-    daily_loss = start_equity - current_equity
-    daily_loss_percent = (daily_loss / start_equity) * 100.0 if start_equity > 0 else 0.0
+    # Calculate daily loss/drawdown strictly relative to Start of Day Equity ($10,000 baseline)
+    if current_equity < start_equity:
+        daily_loss = start_equity - current_equity
+        daily_loss_percent = (daily_loss / start_equity) * 100.0 if start_equity > 0 else 0.0
+    else:
+        daily_loss = 0.0
+        daily_loss_percent = 0.0
 
-    # Track worst peak drawdown hit today
+    # Track worst peak drawdown hit today BELOW start of day equity
     if daily_loss_percent > _PEAK_DAILY_DRAWDOWN_PCT:
         _PEAK_DAILY_DRAWDOWN_PCT = daily_loss_percent
 

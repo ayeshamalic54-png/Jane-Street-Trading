@@ -749,7 +749,7 @@ export default function Dashboard() {
           {(() => {
             const netGainUsd = equity - (initialBalance || 10000.0);
             const netGainPct = initialBalance > 0 ? (netGainUsd / initialBalance) * 100 : 0;
-            const isNetGain = netGainUsd > 0.001 || netGainPct > 0.001;
+            const isNetGain = netGainUsd >= -0.001;
 
             return (
               <Card className={cn("bg-zinc-900 border-zinc-800 border-t-2 transition-all rounded-md overflow-hidden", 
@@ -759,7 +759,7 @@ export default function Dashboard() {
               )}>
                 <CardHeader className="pb-1">
                   <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono flex items-center justify-between">
-                    <span>{isNetGain ? "Daily Gain" : "Daily Drawdown"}</span>
+                    <span>{isNetGain ? "Daily Net Gain" : "Daily Drawdown"}</span>
                     <span className="text-[9px] text-zinc-500 font-mono">
                       Halt: <span className="text-amber-500">{Number((dashboard as any)?.halt_drawdown_limit ?? (dashboard as any)?.haltDrawdownLimit ?? 0.83).toFixed(2)}%</span> · Limit: <span className="text-red-500">{Number((dashboard as any)?.max_drawdown_limit ?? (dashboard as any)?.maxDrawdownLimit ?? 3.3).toFixed(1)}%</span>
                     </span>
@@ -768,16 +768,20 @@ export default function Dashboard() {
                 <CardContent className="space-y-2 pb-3">
                   <div>
                     <div className={cn("text-xl font-mono font-bold leading-tight", isNetGain ? "text-emerald-400" : "text-amber-400")}>
-                      {isNetGain ? `+${Math.abs(netGainPct).toFixed(2)}%` : `${drawdownPercent.toFixed(2)}%`}
+                      {isNetGain ? `+${Math.abs(netGainPct).toFixed(2)}%` : `-${Math.abs(netGainPct).toFixed(2)}%`}
                     </div>
                     {isNetGain ? (
                       <div className="text-xs font-mono text-emerald-400/90 font-semibold mt-0.5">
-                        (+${netGainUsd.toFixed(2)} USD)
+                        (+${Math.abs(netGainUsd).toFixed(2)} USD)
                       </div>
-                    ) : null}
-                    {drawdownPercent > 0.001 && (
+                    ) : (
+                      <div className="text-xs font-mono text-amber-400/90 font-semibold mt-0.5">
+                        (-${Math.abs(netGainUsd).toFixed(2)} USD)
+                      </div>
+                    )}
+                    {!isNetGain && (
                       <div className="text-[10px] font-mono text-zinc-400 mt-1">
-                        Peak DD Hit Today: <span className="text-amber-400 font-semibold">-{drawdownPercent.toFixed(2)}%</span>
+                        Below Start Equity (${(initialBalance || 10000.0).toFixed(2)}) | Current DD: <span className="text-amber-400 font-semibold">-{Math.abs(netGainPct).toFixed(2)}%</span>
                       </div>
                     )}
                   </div>

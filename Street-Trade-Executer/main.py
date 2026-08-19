@@ -3188,7 +3188,11 @@ def main():
             )
 
             eff_dd_log = max(daily_loss_p, peak_dd_p)
-            if eff_dd_log >= risk_safeguards.MAX_DAILY_LOSS_PERCENT:
+            if daily_start_equity and current_equity >= daily_start_equity:
+                net_gain_usd = current_equity - daily_start_equity
+                net_gain_pct = (net_gain_usd / daily_start_equity) * 100.0 if daily_start_equity > 0 else 0.0
+                logger.info(f"🛡️ [LIMIT ENFORCE CHECK] Daily Net Gain: +${net_gain_usd:.2f} USD (+{net_gain_pct:.2f}%) | Baseline Start: ${daily_start_equity:.2f} | Status: LIMIT ENFORCE {'ENABLED 🟢' if RISK_LIMITS_ENABLED else 'DISABLED 🔴'}")
+            elif eff_dd_log >= risk_safeguards.MAX_DAILY_LOSS_PERCENT:
                 if RISK_LIMITS_ENABLED:
                     logger.warning(f"🚨 [LIMIT ENFORCE BREACHED] Peak Daily Drawdown: {eff_dd_log:.2f}% (Halt Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}%). STRICT LIMIT ENFORCE ACTIVE & ALL NEW TRADES BLOCKED!")
                 else:
