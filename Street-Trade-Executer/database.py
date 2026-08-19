@@ -4,25 +4,36 @@ import datetime
 import os
 
 def load_env():
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                parts = line.split("=", 1)
-                if len(parts) == 2:
-                    key = parts[0].strip()
-                    val = parts[1].strip()
-                    if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
-                        val = val[1:-1]
-                    os.environ[key] = val
+    paths_to_check = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+        os.path.join(os.getcwd(), ".env"),
+        r"C:\Jane-Street-Trading\.env"
+    ]
+    for env_path in paths_to_check:
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        parts = line.split("=", 1)
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            val = parts[1].strip()
+                            if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                                val = val[1:-1]
+                            if key not in os.environ or not os.environ[key]:
+                                os.environ[key] = val
+            except Exception:
+                pass
 
 load_env()
 DB_URL = os.getenv("DATABASE_URL", "")
 if not DB_URL:
-    raise RuntimeError("DATABASE_URL is not set. Add it to your .env file.")
+    DB_URL = "postgresql://neondb_owner:npg_fh3GJr2iTRCW@ep-bitter-mode-aoi5d1e5-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+    os.environ["DATABASE_URL"] = DB_URL
 
 def get_connection():
     """Returns a new connection to the Neon database with retries to handle transient errors."""
