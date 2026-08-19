@@ -56,6 +56,14 @@ export interface WsDashboardData {
   overallDrawdown?: number;
   maxEquityPeak?: number;
   mt5Login?: number;
+  halt_drawdown_limit?: number;
+  max_drawdown_limit?: number;
+  sessionGuardEnabled?: boolean;
+  sessionStartHour?: number;
+  sessionEndHour?: number;
+  session_guard_enabled?: boolean;
+  session_start_hour?: number;
+  session_end_hour?: number;
 }
 
 export function useLiveDashboard() {
