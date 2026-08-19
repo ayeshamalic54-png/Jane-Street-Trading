@@ -683,6 +683,96 @@ export default function Dashboard() {
           );
         })()}
 
+        {/* Session Time Guard (PKT Trading Window) Card */}
+        {(() => {
+          const isSessEnabled = (dashboard as any)?.session_guard_enabled ?? false;
+          const sessStart = (dashboard as any)?.session_start_hour ?? 12.5;
+          const sessEnd = (dashboard as any)?.session_end_hour ?? 2.0;
+          
+          return (
+            <Card className="bg-zinc-900 border border-blue-500/40 rounded-md p-4 transition-all">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">⏰</span>
+                  <div>
+                    <div className="font-bold text-sm text-zinc-100">Session Time Guard (Pakistani Time PKT Trading Window)</div>
+                    <div className="text-xs text-zinc-400">Restrict new trade entries strictly to high-liquidity session hours (PKT). Active trailing stops remain active 24/7.</div>
+                  </div>
+                </div>
+                <span className={cn(
+                  "px-2.5 py-1 rounded text-xs font-bold border",
+                  isSessEnabled ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}>
+                  {isSessEnabled ? "🟢 SESSION GUARD ACTIVE" : "🔴 SESSION GUARD DISABLED (24/7)"}
+                </span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-blue-400 uppercase block mb-1">Session Guard Toggle</label>
+                  <select 
+                    value={isSessEnabled ? "true" : "false"}
+                    onChange={async (e) => {
+                      const val = e.target.value === "true";
+                      await fetch('/api/toggle-session-guard', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ enabled: val, start_hour: sessStart, end_hour: sessEnd })
+                      });
+                    }}
+                    className="w-full bg-zinc-950 border border-blue-500/30 rounded p-2 text-xs font-bold text-zinc-100 focus:outline-none"
+                  >
+                    <option value="false">DISABLED 🔴 (Trade 24/7)</option>
+                    <option value="true">ENABLED 🟢 (Restrict to Session Window)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-emerald-400 uppercase block mb-1">Start Time (PKT)</label>
+                  <select 
+                    value={sessStart.toString()}
+                    onChange={async (e) => {
+                      const val = parseFloat(e.target.value);
+                      await fetch('/api/toggle-session-guard', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ enabled: isSessEnabled, start_hour: val, end_hour: sessEnd })
+                      });
+                    }}
+                    className="w-full bg-zinc-950 border border-emerald-500/30 rounded p-2 text-xs font-bold text-zinc-100 focus:outline-none"
+                  >
+                    <option value="12.5">12:30 PM PKT (London Open)</option>
+                    <option value="17">05:00 PM PKT (London + NY Overlap)</option>
+                    <option value="18">06:00 PM PKT (NY Open)</option>
+                    <option value="5">05:00 AM PKT (Asian Session)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-rose-400 uppercase block mb-1">End Time (PKT)</label>
+                  <select 
+                    value={sessEnd.toString()}
+                    onChange={async (e) => {
+                      const val = parseFloat(e.target.value);
+                      await fetch('/api/toggle-session-guard', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ enabled: isSessEnabled, start_hour: sessStart, end_hour: val })
+                      });
+                    }}
+                    className="w-full bg-zinc-950 border border-rose-500/30 rounded p-2 text-xs font-bold text-zinc-100 focus:outline-none"
+                  >
+                    <option value="2">02:00 AM PKT (Close Before Rollover)</option>
+                    <option value="21">09:00 PM PKT (London Close)</option>
+                    <option value="3">03:00 AM PKT (NY Close)</option>
+                    <option value="16">04:00 PM PKT (Mid-Day)</option>
+                  </select>
+                </div>
+              </div>
+            </Card>
+          );
+        })()}
+
 
         {/* Global Market Operating Hours Cards */}
         <MarketHoursCards />
