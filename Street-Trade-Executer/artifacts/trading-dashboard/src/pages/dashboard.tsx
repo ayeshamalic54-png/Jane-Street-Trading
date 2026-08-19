@@ -623,13 +623,14 @@ export default function Dashboard() {
         {(() => {
           const isTrailActiveText = systemStatus && (systemStatus.includes("Trail Active") || systemStatus.includes("TRAILING"));
           const peakP = Math.max(floatingProfit, (dashboard as any)?.peak_floating_profit ?? (dashboard as any)?.peakPnL ?? 0);
-          const isTier3 = peakP >= 250.0 || (isTrailActiveText && systemStatus.includes("Tier 3"));
-          const isTier2 = peakP >= 150.0 || (isTrailActiveText && systemStatus.includes("Tier 2"));
-          const isTier1 = peakP >= 60.0 || floatingProfit >= 60.0 || isTrailActiveText;
+          const isTier4 = peakP >= 185.0 || (isTrailActiveText && systemStatus.includes("Tier 4"));
+          const isTier3 = peakP >= 142.0 || (isTrailActiveText && systemStatus.includes("Tier 3"));
+          const isTier2 = peakP >= 99.0 || (isTrailActiveText && systemStatus.includes("Tier 2"));
+          const isTier1 = peakP >= 67.0 || floatingProfit >= 67.0 || (isTrailActiveText && systemStatus.includes("Tier 1"));
           return (
             <Card className={cn(
               "bg-zinc-900 border transition-all rounded-md p-4",
-              isTier3 || isTier2
+              isTier4 || isTier3 || isTier2
                 ? "border-emerald-500/60 bg-emerald-950/20 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.15)]"
                 : isTier1
                 ? "border-blue-500/60 bg-blue-950/20 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
@@ -641,12 +642,12 @@ export default function Dashboard() {
                   <span className="text-xl">🛡️</span>
                   <div>
                     <div className="font-bold text-sm text-zinc-100">Multi-Tier Equity Profit Lock Guard (Option B - Balanced Buffer)</div>
-                    <div className="text-xs text-zinc-400">Tier 1 (+$60 Peak locks +$45.00) | Tier 2 (+$150 Peak locks +$120.00) | Tier 3 (+$250+ Peak locks 80%)</div>
+                    <div className="text-xs text-zinc-400">Tier 1 (+$67 Peak locks +$53.00) | Tier 2 (+$99 Peak locks +$80.00) | Tier 3 (+$142 Peak locks +$120.00) | Tier 4 (+$185+ Peak locks +$155.00)</div>
                   </div>
                 </div>
                 <span className={cn(
                   "px-2.5 py-1 rounded text-xs font-bold border",
-                  isTier3
+                  isTier4 || isTier3
                     ? "bg-emerald-500/30 text-emerald-300 border-emerald-500 animate-pulse shadow-[0_0_12px_rgba(52,211,153,0.4)]"
                     : isTier2
                     ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse"
@@ -654,24 +655,28 @@ export default function Dashboard() {
                     ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}>
-                  {isTier3
-                    ? "🟢 TIER 3 MEGA RUNNER TRAILING ACTIVE (80% LOCK)"
+                  {isTier4
+                    ? "🟢 TIER 4 MEGA RUNNER TRAILING ACTIVE (+$155.00 LOCK)"
+                    : isTier3
+                    ? "🟢 TIER 3 RUNNER TRAILING ACTIVE (+$120.00 LOCK)"
                     : isTier2
-                    ? "🟢 TIER 2 TRAILING ACTIVE (+$120.00 LOCK)"
+                    ? "🟢 TIER 2 BALANCED TRAILING ACTIVE (+$80.00 LOCK)"
                     : isTier1
-                    ? "🔵 TIER 1 BASELINE TRAILING ACTIVE (+$45.00 LOCK)"
+                    ? "🔵 TIER 1 BASELINE TRAILING ACTIVE (+$53.00 LOCK)"
                     : "⚪ TRAILING STOP INACTIVE"}
                 </span>
               </div>
               <div className="mt-3 p-2.5 rounded bg-zinc-950/60 border border-zinc-800 text-xs text-zinc-300">
-                {isTier3 ? (
-                  <span>🛡️ <strong>TIER 3 MEGA RUNNER LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 250.0).toFixed(2)}</strong> | Locked Floor (80%): <strong>+${(Math.max(floatingProfit, 250.0) * 0.80).toFixed(2)}</strong> — Trailing stop active locking 80% of peak earnings ($50.00 noise buffer)!</span>
+                {isTier4 ? (
+                  <span>🛡️ <strong>TIER 4 MEGA RUNNER LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 185.0).toFixed(2)}</strong> | Locked Floor: <strong>+$155.00</strong> — Trailing stop active locking +$155.00 USD cash profit!</span>
+                ) : isTier3 ? (
+                  <span>🛡️ <strong>TIER 3 ADVANCED PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 142.0).toFixed(2)}</strong> | Locked Floor: <strong>+$120.00</strong> — Trailing stop active locking +$120.00 USD cash profit!</span>
                 ) : isTier2 ? (
-                  <span>🛡️ <strong>TIER 2 BALANCED PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 150.0).toFixed(2)}</strong> | Locked Floor: <strong>+$120.00</strong> — Trailing stop active! Giving $30.00 noise room to push towards Tier 3 ($250+)!</span>
+                  <span>🛡️ <strong>TIER 2 BALANCED PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 99.0).toFixed(2)}</strong> | Locked Floor: <strong>+$80.00</strong> — Trailing stop active locking +$80.00 USD cash profit!</span>
                 ) : isTier1 ? (
-                  <span>🛡️ <strong>TIER 1 BASELINE LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 60.0).toFixed(2)}</strong> | Safety Floor: <strong>+$45.00</strong> — Trailing stop active! If market reverses from $60–$149, bot auto-closes at +$45.00+ cash!</span>
+                  <span>🛡️ <strong>TIER 1 BASELINE LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 67.0).toFixed(2)}</strong> | Safety Floor: <strong>+$53.00</strong> — Trailing stop active! If profit drops to +$53.00 USD, bot auto-closes instantly!</span>
                 ) : (
-                  <span>⚪ <strong>Option B Active:</strong> Tier 1 (+$60 Peak locks +$45) | Tier 2 (+$150 Peak locks +$120) | Tier 3 (+$250+ Peak locks 80%) (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
+                  <span>⚪ <strong>Option B Active:</strong> Tier 1 (+$67 Peak locks +$53) | Tier 2 (+$99 Peak locks +$80) | Tier 3 (+$142 Peak locks +$120) | Tier 4 (+$185 Peak locks +$155) (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
                 )}
               </div>
             </Card>
