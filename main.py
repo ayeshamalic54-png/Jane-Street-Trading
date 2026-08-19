@@ -1755,7 +1755,7 @@ def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float,
         return qty_a, qty_b
         
     free_margin = float(acc.margin_free)
-    margin_limit = free_margin * 0.45  # Limit to 45% of free margin to guarantee equal lot sizes across all 3 parts
+    margin_limit = free_margin * 0.35  # Strict 35% cap on free margin per basket to guarantee 80% prop firm margin rule safety
     
     # Resolving order types for margin calculation
     action_a = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
@@ -2834,7 +2834,7 @@ def main():
 
 
                             
-                        if DEFAULT_LOTS > 0.005:
+                        if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
                             disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                             mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                             lots_a = DEFAULT_LOTS * mult
@@ -2899,7 +2899,7 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            if DEFAULT_LOTS > 0.005:
+                            if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
                                 disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                                 mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                                 lots_a = DEFAULT_LOTS * mult
@@ -2998,7 +2998,7 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            if DEFAULT_LOTS > 0.005:
+                            if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
                                 disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                                 mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                                 lots_a = DEFAULT_LOTS * mult
