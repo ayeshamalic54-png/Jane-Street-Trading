@@ -251,6 +251,7 @@ def update_live_toggles_from_db():
     Allows instant toggle updates from Dashboard without restarting the bot.
     """
     global FOREX_ENABLED, METALS_ENABLED, INDICES_ENABLED, STOCKS_ENABLED, CRYPTO_ENABLED, AUTO_EXECUTE, RISK_LIMITS_ENABLED, Z_ENTRY_THRESHOLD, SL_PIPS, TP_PIPS
+    global KNIFE_PROTECTION_ENABLED, OBI_ENABLED, VOLATILITY_FILTER_ENABLED
     try:
         import risk_safeguards
         cfg = fetch_db_config()
@@ -264,6 +265,9 @@ def update_live_toggles_from_db():
             INDICES_ENABLED = cfg[8]
             RISK_LIMITS_ENABLED = cfg[9]
             Z_ENTRY_THRESHOLD = cfg[10]
+            KNIFE_PROTECTION_ENABLED = bool(cfg[13])
+            OBI_ENABLED = bool(cfg[14])
+            VOLATILITY_FILTER_ENABLED = bool(cfg[15])
             STOCKS_ENABLED = cfg[16]
             if len(cfg) > 19:
                 risk_safeguards.SESSION_GUARD_ENABLED = cfg[19]
