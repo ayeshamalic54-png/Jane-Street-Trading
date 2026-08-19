@@ -23,6 +23,13 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
     # Ensure symbol is active and selected in MT5 Market Watch
     mt5.symbol_select(symbol, True)
     
+    # Always refresh live market tick price to prevent 10021 (No prices / Off quotes)
+    tick = mt5.symbol_info_tick(symbol)
+    if tick:
+        live_p = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+        if live_p > 0:
+            price = live_p
+            
     # Dynamically detect broker's exact supported filling mode for this symbol
     info = mt5.symbol_info(symbol)
     filling_modes = []
