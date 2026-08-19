@@ -2942,8 +2942,13 @@ def main():
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
                                     is_long_b = (order_type_b == mt5.ORDER_TYPE_BUY)
-                                    h_ok, _ = execute_three_part_hedge_trade(S_B_resolved, is_long_b, price_b, qty_b, signal_id=signal_id)
-                                    if not h_ok:
+                                    res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
+                                    h_ok = is_retcode_success(res_hedge)
+                                    if h_ok:
+                                        ticket_b = res_hedge.order
+                                        filled_b = getattr(res_hedge, 'volume', qty_b)
+                                        log_trade_entry(ticket_b, S_B_resolved, "BUY" if is_long_b else "SELL", filled_b, price_b, datetime.datetime.now(), "JaneStreet HEDGE", signal_id)
+                                    else:
                                         logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
                                         close_all_positions(S_A_resolved)
 
@@ -3037,8 +3042,13 @@ def main():
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
                                     is_long_b = (order_type_b == mt5.ORDER_TYPE_BUY)
-                                    h_ok, _ = execute_three_part_hedge_trade(S_B_resolved, is_long_b, price_b, qty_b, signal_id=signal_id)
-                                    if not h_ok:
+                                    res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
+                                    h_ok = is_retcode_success(res_hedge)
+                                    if h_ok:
+                                        ticket_b = res_hedge.order
+                                        filled_b = getattr(res_hedge, 'volume', qty_b)
+                                        log_trade_entry(ticket_b, S_B_resolved, "BUY" if is_long_b else "SELL", filled_b, price_b, datetime.datetime.now(), "JaneStreet HEDGE", signal_id)
+                                    else:
                                         logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
                                         close_all_positions(S_A_resolved)
                     invalidate_trades_cache()
