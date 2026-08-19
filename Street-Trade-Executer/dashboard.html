@@ -1249,6 +1249,42 @@
                         ddBadge.textContent = `🟢 RISK OK (HALT: ${currentHalt.toFixed(2)}% · LIMIT: ${currentMax.toFixed(2)}%)`;
                         ddBody.innerHTML = `✨ <strong>Daily Drawdown Status:</strong> Current Drawdown is <strong>${ddVal.toFixed(2)}%</strong> (Below ${currentHalt.toFixed(2)}% Halt Threshold). Halt: ${currentHalt.toFixed(2)}% · Limit: ${currentMax.toFixed(2)}%.`;
                     }
+                // Update Session Guard Status Card
+                const sessCard = document.getElementById('session-guard-card');
+                const sessBadge = document.getElementById('session-card-badge');
+                const sessBody = document.getElementById('session-card-body');
+                const sessToggle = document.getElementById('session-toggle-select');
+                const sessStart = document.getElementById('session-start-select');
+                const sessEnd = document.getElementById('session-end-select');
+
+                if (sessCard && sessBadge && sessBody && data.session_guard_enabled !== undefined) {
+                    const isSessOn = Boolean(data.session_guard_enabled);
+                    const startH = Number(data.session_start_hour ?? 12.5);
+                    const endH = Number(data.session_end_hour ?? 2.0);
+
+                    if (sessToggle && document.activeElement !== sessToggle) {
+                        sessToggle.value = isSessOn ? 'true' : 'false';
+                    }
+                    if (sessStart && document.activeElement !== sessStart) {
+                        sessStart.value = startH.toString();
+                    }
+                    if (sessEnd && document.activeElement !== sessEnd) {
+                        sessEnd.value = endH.toString();
+                    }
+
+                    if (isSessOn) {
+                        sessCard.style.border = '1px solid rgba(16, 185, 129, 0.6)';
+                        sessCard.style.background = 'rgba(16, 185, 129, 0.12)';
+                        sessBadge.className = 'market-badge badge-open';
+                        sessBadge.textContent = '🟢 SESSION GUARD ACTIVE';
+                        sessBody.innerHTML = `✨ <strong>Session Guard Status:</strong> Active (Restricting entries to allowed PKT window).`;
+                    } else {
+                        sessCard.style.border = '1px solid rgba(59, 130, 246, 0.4)';
+                        sessCard.style.background = 'rgba(15, 23, 42, 0.75)';
+                        sessBadge.className = 'market-badge badge-closed';
+                        sessBadge.textContent = '🔴 SESSION GUARD DISABLED (24/7)';
+                        sessBody.innerHTML = `✨ <strong>Session Guard Status:</strong> Disabled (Trading freely 24/7).`;
+                    }
                 }
 
 
