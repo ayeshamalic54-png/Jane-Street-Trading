@@ -1410,39 +1410,48 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 should_close_trail = False
                 trail_close_reason = ""
 
-                # Tier 1 (Quick Baseline Lock: +$60.00 Peak -> Locks +$45.00 Cash Profit | $15 Noise Buffer):
-                if peak_floating_profit >= 60.0 and peak_floating_profit < 150.0:
-                    tier1_floor = 45.0
+                # Tier 1 (Baseline Lock: +$67.00 Peak -> Locks +$53.00 Cash Profit):
+                if peak_floating_profit >= 67.0 and peak_floating_profit < 99.0:
+                    tier1_floor = 53.0
                     if floating_profit <= tier1_floor:
                         should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock +$45.00 USD cash profit!"
+                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $53.00). Auto-closing to lock +$53.00 USD cash profit!"
 
-                # Tier 2 (Balanced Expansion Lock: +$150.00 Peak -> Locks +$120.00 Cash Profit | $30 Noise Buffer):
-                elif peak_floating_profit >= 150.0 and peak_floating_profit < 250.0:
-                    tier2_floor = 120.0
+                # Tier 2 (Balanced Expansion Lock: +$99.00 Peak -> Locks +$80.00 Cash Profit):
+                elif peak_floating_profit >= 99.0 and peak_floating_profit < 142.0:
+                    tier2_floor = 80.0
                     if floating_profit <= tier2_floor:
                         should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 2] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier2_floor:.2f}). Auto-closing to lock +$120.00 USD cash profit!"
+                        trail_close_reason = f"[PROFIT GUARD TIER 2] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $80.00). Auto-closing to lock +$80.00 USD cash profit!"
 
-                # Tier 3 (Mega Trend Runner Lock: +$250.00+ Peak -> Locks +$200.00 Cash Profit | $50 Noise Buffer):
-                elif peak_floating_profit >= 250.0:
-                    tier3_floor = max(200.0, peak_floating_profit * 0.80)
+                # Tier 3 (Advanced Runner Lock: +$142.00 Peak -> Locks +$120.00 Cash Profit):
+                elif peak_floating_profit >= 142.0 and peak_floating_profit < 185.0:
+                    tier3_floor = 120.0
                     if floating_profit <= tier3_floor:
                         should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 3] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier3_floor:.2f}). Auto-closing to lock 80% (${tier3_floor:.2f}) mega runner cash profit!"
+                        trail_close_reason = f"[PROFIT GUARD TIER 3] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $120.00). Auto-closing to lock +$120.00 USD cash profit!"
+
+                # Tier 4 (Mega Runner Lock: +$185.00+ Peak -> Locks +$155.00 Cash Profit):
+                elif peak_floating_profit >= 185.0:
+                    tier4_floor = 155.0
+                    if floating_profit <= tier4_floor:
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 4] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $155.00). Auto-closing to lock +$155.00 USD mega runner cash profit!"
 
 
                 if should_close_trail and not exit_triggered:
                     exit_triggered = True
                     exit_reason = trail_close_reason
                     logger.info(f"💰 [TRAILING PROFIT LOCK EXECUTED] Triggered by {trail_close_reason}! Closing all basket positions.")
-                elif peak_floating_profit >= 60.0 and (int(time.time()) % 15 == 0):
-                    if peak_floating_profit >= 250.0:
-                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 3] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +${(peak_floating_profit * 0.80):.2f} (80% Lock, $50.00 Noise Buffer)")
-                    elif peak_floating_profit >= 150.0:
-                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 2] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$120.00 USD ($30.00 Noise Buffer)")
-                    elif peak_floating_profit >= 60.0:
-                        logger.info(f"🔵 [TRAILING STOP ACTIVE - TIER 1] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$45.00 USD ($15.00 Noise Buffer)")
+                elif peak_floating_profit >= 67.0 and (int(time.time()) % 15 == 0):
+                    if peak_floating_profit >= 185.0:
+                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 4] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$155.00 USD")
+                    elif peak_floating_profit >= 142.0:
+                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 3] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$120.00 USD")
+                    elif peak_floating_profit >= 99.0:
+                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 2] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$80.00 USD")
+                    elif peak_floating_profit >= 67.0:
+                        logger.info(f"🔵 [TRAILING STOP ACTIVE - TIER 1] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$53.00 USD")
 
 
                 # Stepped Milestone Trailing SL for open MT5 Leg A positions (Shifting SL into Profit Zone)
@@ -3101,11 +3110,14 @@ def main():
                 status_str = f"HALTED (News: {msg})"
             elif low_correlation_warning:
                 status_str = "RUNNING (Warning: Low Correlation)"
-            elif has_positions and (peak_floating_profit >= 100.0 or floating_profit >= 100.0):
-                trail_floor_val = max(91.0, peak_floating_profit * 0.91)
-                status_str = f"RUNNING (Trail Active Tier 2: Peak ${peak_floating_profit:.2f} | Floor ${trail_floor_val:.2f})"
-            elif has_positions and (peak_floating_profit >= 75.0 or floating_profit >= 75.0):
-                status_str = f"RUNNING (Trail Active Tier 1: Peak ${peak_floating_profit:.2f} | Floor $69.00)"
+            elif has_positions and (peak_floating_profit >= 185.0 or floating_profit >= 185.0):
+                status_str = f"RUNNING (Trail Active Tier 4: Peak ${peak_floating_profit:.2f} | Floor $155.00)"
+            elif has_positions and (peak_floating_profit >= 142.0 or floating_profit >= 142.0):
+                status_str = f"RUNNING (Trail Active Tier 3: Peak ${peak_floating_profit:.2f} | Floor $120.00)"
+            elif has_positions and (peak_floating_profit >= 99.0 or floating_profit >= 99.0):
+                status_str = f"RUNNING (Trail Active Tier 2: Peak ${peak_floating_profit:.2f} | Floor $80.00)"
+            elif has_positions and (peak_floating_profit >= 67.0 or floating_profit >= 67.0):
+                status_str = f"RUNNING (Trail Active Tier 1: Peak ${peak_floating_profit:.2f} | Floor $53.00)"
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"
             
