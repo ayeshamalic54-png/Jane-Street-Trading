@@ -2720,6 +2720,10 @@ def main():
             if active_pairs_cnt >= MAX_CONCURRENT_TRADES or len(active_symbols_set) > 0:
                 if candidate_signals:
                     logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] An active trade is currently open on MT5 ({len(active_symbols_set)} active symbols). New entries BLOCKED until the active trade closes.")
+            elif not AUTO_EXECUTE and candidate_signals:
+                for c in candidate_signals:
+                    pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
+                    logger.info(f"📢 [SIGNAL DETECTED - SIGNALS ONLY MODE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f}), but Auto-Execution is toggled OFF on Dashboard. Trade placement SKIPPED.")
             elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and candidate_signals:
 
                 # Select candidate signals based on Z-score deviation and valid spread (win_rate filter disabled)
@@ -3186,9 +3190,10 @@ def main():
             except Exception:
                 pass
 
+            auto_exec_str = "ENABLED 🟢" if AUTO_EXECUTE else "DISABLED 🔴 (SIGNALS ONLY MODE)"
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
-                f"| Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 ({sw_str}) | Turning Point Inflection: ENABLED 🟢 "
+                f"| Auto-Exec: {auto_exec_str} | Dynamic ATR Target: ENABLED 🟢 | Turning Point Inflection: ENABLED 🟢 "
             )
 
             eff_dd_log = max(daily_loss_p, peak_dd_p)
