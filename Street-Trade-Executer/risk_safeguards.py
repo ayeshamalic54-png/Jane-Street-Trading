@@ -20,6 +20,41 @@ RISK_PERCENT = 1.0
 # Maximum spread allowed in pips
 MAX_SPREAD_PIPS = 2.0
 
+SESSION_GUARD_ENABLED = False
+SESSION_START_HOUR = 12.5  # 12:30 PM PKT (London Open)
+SESSION_END_HOUR = 2.0     # 02:00 AM PKT (Before Rollover Close)
+
+def is_session_time_allowed(start_hour=12.5, end_hour=2.0, current_dt=None):
+    """
+    Checks if current Pakistani Time (PKT = UTC+5) falls within allowed trading session window.
+    Supports 12:30 PM PKT (12.5) and overnight wrapping (e.g. 17.0 (5 PM PKT) to 2.0 (2 AM PKT)).
+    Returns (is_allowed: bool, curr_pkt_str: str, allowed_window_str: str).
+    """
+    if current_dt is None:
+        # Calculate current Pakistani Time (PKT = UTC + 5 hours)
+        current_dt = datetime.datetime.utcnow() + datetime.timedelta(hours=5)
+        
+    curr_hour = current_dt.hour
+    curr_minute = current_dt.minute
+    curr_val = curr_hour + (curr_minute / 60.0)
+    
+    if start_hour <= end_hour:
+        is_allowed = (start_hour <= curr_val <= end_hour)
+    else:
+        # Overnight wrap (e.g. 17.0 (5:00 PM PKT) to 2.0 (2:00 AM PKT))
+        is_allowed = (curr_val >= start_hour or curr_val <= end_hour)
+        
+    def _format_time_str(h_val):
+        h_int = int(h_val)
+        m_int = int(round((h_val - h_int) * 60))
+        ampm = "AM" if h_int < 12 else "PM"
+        display_h = h_int if (1 <= h_int <= 12) else (h_int - 12 if h_int > 12 else 12)
+        return f"{display_h:02d}:{m_int:02d} {ampm}"
+
+    curr_str = current_dt.strftime("%I:%M %p PKT")
+    window_str = f"{_format_time_str(start_hour)} - {_format_time_str(end_hour)} PKT"
+    return is_allowed, curr_str, window_str
+
 _cached_start_equity = None
 _cached_start_equity_date = None
 

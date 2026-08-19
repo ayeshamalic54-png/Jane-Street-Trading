@@ -883,6 +883,62 @@
             <button onclick="saveDrawdownLimits()" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">
                 💾 Save Drawdown Limits
             </button>
+    </div>
+
+    <!-- SESSION TIME GUARD (ALLOWED TRADING HOURS WINDOW - PKT TIME) CARD -->
+    <div id="session-guard-card" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 14px; padding: 18px; backdrop-filter: blur(12px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.4s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 22px;">⏰</span>
+                <div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="session-card-title">Session Time Guard (Pakistani Time PKT Trading Window)</div>
+                    <div style="font-size: 11px; color: var(--text-muted);" id="session-card-subtitle">Restrict new trade entries strictly to high-liquidity session hours (PKT). Active trailing stops remain active 24/7.</div>
+                </div>
+            </div>
+            <span id="session-card-badge" class="market-badge badge-open">🟢 WINDOW OPEN</span>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 12px; background: rgba(0, 0, 0, 0.3); padding: 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08);">
+            <div>
+                <label style="font-size: 11px; font-weight: 700; color: #60a5fa; text-transform: uppercase; display: block; margin-bottom: 5px;">
+                    🛡️ Session Guard Toggle
+                </label>
+                <select id="session-toggle-select" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(96, 165, 250, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 13px;">
+                    <option value="false">DISABLED 🔴 (Trade 24/7)</option>
+                    <option value="true">ENABLED 🟢 (Restrict to Session Window)</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-size: 11px; font-weight: 700; color: #34d399; text-transform: uppercase; display: block; margin-bottom: 5px;">
+                    🛫 Start Time (PKT)
+                </label>
+                <select id="session-start-select" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(52, 211, 153, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 13px;">
+                    <option value="12.5">12:30 PM PKT (London Open)</option>
+                    <option value="17.0">05:00 PM PKT (London + NY Overlap)</option>
+                    <option value="18.0">06:00 PM PKT (NY Open)</option>
+                    <option value="5.0">05:00 AM PKT (Asian Session)</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-size: 11px; font-weight: 700; color: #f87171; text-transform: uppercase; display: block; margin-bottom: 5px;">
+                    🛬 End Time (PKT)
+                </label>
+                <select id="session-end-select" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(248, 113, 113, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 13px;">
+                    <option value="2.0">02:00 AM PKT (Close Before Rollover)</option>
+                    <option value="21.0">09:00 PM PKT (London Close)</option>
+                    <option value="3.0">03:00 AM PKT (NY Close)</option>
+                    <option value="16.0">04:00 PM PKT (Mid-Day)</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+            <div id="session-card-body" style="font-size: 12px; color: #e2e8f0; flex: 1;">
+                ✨ <strong>Session Guard Status:</strong> Disabled (Trading freely 24/7).
+            </div>
+            <button onclick="saveSessionGuardSettings()" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">
+                💾 Save Session Window
+            </button>
         </div>
     </div>
 
@@ -1402,6 +1458,24 @@
                 alert(`✅ Drawdown limits saved successfully!\nHalt Limit: ${haltPct.toFixed(2)}%\nMax Limit: ${maxPct.toFixed(2)}%`);
             } catch (ex) {
                 alert(`Drawdown limits saved locally: Halt ${haltPct.toFixed(2)}%, Max ${maxPct.toFixed(2)}%`);
+            }
+        }
+
+        async function saveSessionGuardSettings() {
+            const enabled = document.getElementById('session-toggle-select').value === 'true';
+            const startHour = parseFloat(document.getElementById('session-start-select').value) || 12.5;
+            const endHour = parseFloat(document.getElementById('session-end-select').value) || 2.0;
+            
+            try {
+                const res = await fetch('/api/toggle-session-guard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: enabled, start_hour: startHour, end_hour: endHour })
+                });
+                const statusText = enabled ? 'ENABLED 🟢' : 'DISABLED 🔴';
+                alert(`✅ Session Time Guard (PKT) saved successfully!\nStatus: ${statusText}\nWindow: ${document.getElementById('session-start-select').selectedOptions[0].text} to ${document.getElementById('session-end-select').selectedOptions[0].text}`);
+            } catch (ex) {
+                alert(`Session Guard settings updated locally.`);
             }
         }
 

@@ -437,6 +437,29 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
     except Exception as e:
         print(f"Error updating bot_state: {e}")
 
+def update_session_guard_settings(enabled, start_hour, end_hour):
+    """Updates session guard configuration in bot_state table (PKT time hours)."""
+    def _do_update():
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
+                UPDATE bot_state SET session_guard_enabled = %s, session_start_hour = %s, session_end_hour = %s, updated_at = CURRENT_TIMESTAMP WHERE id = 1;
+            """, (bool(enabled), float(start_hour), float(end_hour)))
+            conn.commit()
+            cur.close()
+        finally:
+            conn.close()
+    try:
+        execute_with_deadlock_retry(_do_update)
+        return True
+    except Exception as e:
+        print(f"Error updating session guard settings: {e}")
+        return False
+
 def get_auto_execute():
     """
     Reads auto_execute flag from bot_state. Returns True by default.

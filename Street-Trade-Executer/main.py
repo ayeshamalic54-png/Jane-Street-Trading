@@ -106,6 +106,11 @@ def load_config():
                         conn_mig = get_connection()
                         cur_mig = conn_mig.cursor()
                         cur_mig.execute("UPDATE bot_state SET active_pair = 'US30/NAS100' WHERE active_pair LIKE '%NDX100%'")
+                        cur_mig.execute("""
+                            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+                            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.0;
+                            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 21.0;
+                        """)
                         conn_mig.commit()
                         cur_mig.close()
                         conn_mig.close()
@@ -142,7 +147,8 @@ def fetch_db_config():
                crypto_enabled, metals_enabled, forex_enabled, indices_enabled,
                risk_limits_enabled, z_entry_threshold, default_lots, max_trades,
                knife_protection_enabled, obi_enabled, volatility_filter_enabled,
-               stocks_enabled, halt_drawdown_limit, max_drawdown_limit
+               stocks_enabled, halt_drawdown_limit, max_drawdown_limit,
+               session_guard_enabled, session_start_hour, session_end_hour
         FROM bot_state
         WHERE id = 1
     """
@@ -198,8 +204,10 @@ def fetch_db_config():
                 bool(row[15] if row[15] is not None else True),
                 s_on,
                 float(row[17]) if len(row) > 17 and row[17] is not None else 0.83,
-
-                float(row[18]) if len(row) > 18 and row[18] is not None else 3.30
+                float(row[18]) if len(row) > 18 and row[18] is not None else 3.30,
+                bool(row[19] if len(row) > 19 and row[19] is not None else False),
+                float(row[20]) if len(row) > 20 and row[20] is not None else 12.0,
+                float(row[21]) if len(row) > 21 and row[21] is not None else 21.0
             )
         else:
             cur.close()
@@ -222,6 +230,7 @@ def update_live_toggles_from_db():
     """
     global FOREX_ENABLED, METALS_ENABLED, INDICES_ENABLED, STOCKS_ENABLED, CRYPTO_ENABLED, AUTO_EXECUTE, RISK_LIMITS_ENABLED, Z_ENTRY_THRESHOLD, SL_PIPS, TP_PIPS
     try:
+        import risk_safeguards
         cfg = fetch_db_config()
         if cfg:
             SL_PIPS = cfg[1]
@@ -234,6 +243,10 @@ def update_live_toggles_from_db():
             RISK_LIMITS_ENABLED = cfg[9]
             Z_ENTRY_THRESHOLD = cfg[10]
             STOCKS_ENABLED = cfg[16]
+            if len(cfg) > 19:
+                risk_safeguards.SESSION_GUARD_ENABLED = cfg[19]
+                risk_safeguards.SESSION_START_HOUR = cfg[20]
+                risk_safeguards.SESSION_END_HOUR = cfg[21]
     except Exception as e:
         logger.warning(f"Error in update_live_toggles_from_db: {e}")
 
@@ -2717,14 +2730,22 @@ def main():
             is_trade_limit_ok = (not RISK_LIMITS_ENABLED) or is_demo or (trades_today < MAX_DAILY_TRADES)
             active_pairs_cnt, active_pairs_set, active_symbols_set = get_active_pairs_and_symbols()
             
+            from risk_safeguards import is_session_time_allowed
+            import risk_safeguards
+            is_session_ok, curr_utc_s, window_utc_s = is_session_time_allowed(risk_safeguards.SESSION_START_HOUR, risk_safeguards.SESSION_END_HOUR)
+
             if active_pairs_cnt >= MAX_CONCURRENT_TRADES or len(active_symbols_set) > 0:
                 if candidate_signals:
                     logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] An active trade is currently open on MT5 ({len(active_symbols_set)} active symbols). New entries BLOCKED until the active trade closes.")
+            elif risk_safeguards.SESSION_GUARD_ENABLED and not is_session_ok and candidate_signals:
+                for c in candidate_signals:
+                    pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
+                    logger.info(f"⏰ [SESSION GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f}), but current time ({curr_utc_s}) is outside allowed trading window ({window_utc_s}). New entries BLOCKED.")
             elif not AUTO_EXECUTE and candidate_signals:
                 for c in candidate_signals:
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
                     logger.info(f"📢 [SIGNAL DETECTED - SIGNALS ONLY MODE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f}), but Auto-Execution is toggled OFF on Dashboard. Trade placement SKIPPED.")
-            elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and candidate_signals:
+            elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and is_session_ok and candidate_signals:
 
                 # Select candidate signals based on Z-score deviation and valid spread (win_rate filter disabled)
                 qualifying_candidates = []
