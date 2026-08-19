@@ -1958,13 +1958,17 @@ def main():
 
     db_cfg = fetch_db_config()
     if db_cfg:
-        new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg
+        new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg[:19]
         SL_PIPS = new_sl
         TP_PIPS = new_tp
         import risk_safeguards
         risk_safeguards.HALT_DAILY_DRAWDOWN_PCT = float(new_halt) if new_halt is not None else 0.80
         risk_safeguards.MAX_DAILY_LOSS_PERCENT = float(new_halt) if new_halt is not None else 0.80
         risk_safeguards.MAX_DAILY_DRAWDOWN_PCT = float(new_max_dd) if new_max_dd is not None else 3.30
+        if len(db_cfg) > 19:
+            risk_safeguards.SESSION_GUARD_ENABLED = bool(db_cfg[19])
+            risk_safeguards.SESSION_START_HOUR = float(db_cfg[20])
+            risk_safeguards.SESSION_END_HOUR = float(db_cfg[21])
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
@@ -2065,7 +2069,7 @@ def main():
             if db_config_counter % 5 == 0:
                 db_cfg = fetch_db_config()
                 if db_cfg:
-                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg
+                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg[:19]
                     parts = new_pair.split("/")
                     if len(parts) == 2 and parts[0] != parts[1]:
                         if GLOBAL_CONFIG["SYMBOL_A"] != parts[0] or GLOBAL_CONFIG["SYMBOL_B"] != parts[1]:
