@@ -93,6 +93,20 @@ DASHBOARD_API_URL = os.environ.get("DASHBOARD_API_URL", "http://localhost:80/api
 
 def load_config():
     global GLOBAL_CONFIG
+    try:
+        conn_mig = get_connection()
+        cur_mig = conn_mig.cursor()
+        cur_mig.execute("""
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
+        """)
+        conn_mig.commit()
+        cur_mig.close()
+        conn_mig.close()
+    except Exception as ex_m:
+        pass
+
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -106,11 +120,6 @@ def load_config():
                         conn_mig = get_connection()
                         cur_mig = conn_mig.cursor()
                         cur_mig.execute("UPDATE bot_state SET active_pair = 'US30/NAS100' WHERE active_pair LIKE '%NDX100%'")
-                        cur_mig.execute("""
-                            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
-                            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.0;
-                            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 21.0;
-                        """)
                         conn_mig.commit()
                         cur_mig.close()
                         conn_mig.close()
@@ -211,8 +220,20 @@ def fetch_db_config():
             )
         else:
             cur.close()
-            conn.close()
     except Exception as e:
+        try:
+            conn_fix = get_connection()
+            cur_fix = conn_fix.cursor()
+            cur_fix.execute("""
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
+            """)
+            conn_fix.commit()
+            cur_fix.close()
+            conn_fix.close()
+        except Exception:
+            pass
         logger.warning(f"Could not fetch DB config directly: {e}")
     finally:
         if conn:
