@@ -2155,6 +2155,10 @@ def main():
             # Calculate daily drawdown using the correct equity (only if equity > 0.0)
             if current_equity > 0.0:
                 is_limit_breached, daily_loss_p, peak_dd_p = check_drawdown_limit(current_equity)
+                if daily_start_equity and current_equity >= daily_start_equity:
+                    is_limit_breached = False
+                    daily_loss_p = 0.0
+                    peak_dd_p = 0.0
             else:
                 is_limit_breached, daily_loss_p, peak_dd_p = False, 0.0, 0.0
 
