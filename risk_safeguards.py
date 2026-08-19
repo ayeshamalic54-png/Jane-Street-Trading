@@ -210,7 +210,9 @@ def check_drawdown_limit(current_equity):
         daily_loss_percent = 0.0
 
     # Track worst peak drawdown hit today BELOW start of day equity
-    if daily_loss_percent > _PEAK_DAILY_DRAWDOWN_PCT:
+    if current_equity >= start_equity:
+        _PEAK_DAILY_DRAWDOWN_PCT = 0.0
+    elif daily_loss_percent > _PEAK_DAILY_DRAWDOWN_PCT:
         _PEAK_DAILY_DRAWDOWN_PCT = daily_loss_percent
 
     _cached_last_login = current_login

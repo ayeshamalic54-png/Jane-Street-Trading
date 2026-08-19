@@ -641,7 +641,7 @@ def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_
         ON CONFLICT (trading_date, mt5_login) DO UPDATE
         SET start_equity = EXCLUDED.start_equity,
             current_equity = EXCLUDED.current_equity,
-            max_drawdown_percent = GREATEST(daily_metrics.max_drawdown_percent, EXCLUDED.max_drawdown_percent),
+            max_drawdown_percent = EXCLUDED.max_drawdown_percent,
             trades_today = EXCLUDED.trades_today,
             updated_at = CURRENT_TIMESTAMP
     """
