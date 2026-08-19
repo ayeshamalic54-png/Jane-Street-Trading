@@ -277,6 +277,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ScannedAsset"
+        sessionGuardEnabled:
+          type: boolean
+        sessionStartHour:
+          type: number
+        sessionEndHour:
+          type: number
+        session_guard_enabled:
+          type: boolean
+        session_start_hour:
+          type: number
+        session_end_hour:
+          type: number
       required:
         - systemStatus
         - currentPair
@@ -501,6 +513,18 @@ components:
           type: boolean
         riskLimitsEnabled:
           type: boolean
+        sessionGuardEnabled:
+          type: boolean
+        sessionStartHour:
+          type: number
+        sessionEndHour:
+          type: number
+        session_guard_enabled:
+          type: boolean
+        session_start_hour:
+          type: number
+        session_end_hour:
+          type: number
       required:
         - activePair
         - symbolA
@@ -538,6 +562,18 @@ components:
           type: boolean
         metalsEnabled:
           type: boolean
+        sessionGuardEnabled:
+          type: boolean
+        sessionStartHour:
+          type: number
+        sessionEndHour:
+          type: number
+        session_guard_enabled:
+          type: boolean
+        session_start_hour:
+          type: number
+        session_end_hour:
+          type: number
         forexEnabled:
           type: boolean
         indicesEnabled:

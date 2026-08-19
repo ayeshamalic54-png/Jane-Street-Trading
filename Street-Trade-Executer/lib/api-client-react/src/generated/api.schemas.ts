@@ -81,6 +81,12 @@ export interface DashboardData {
   overallDrawdown?: number;
   maxEquityPeak?: number;
   mt5Login?: number;
+  sessionGuardEnabled?: boolean;
+  sessionStartHour?: number;
+  sessionEndHour?: number;
+  session_guard_enabled?: boolean;
+  session_start_hour?: number;
+  session_end_hour?: number;
 }
 
 export type SignalTradesItem = {
@@ -150,6 +156,12 @@ export interface BotConfig {
   defaultLots?: number;
   haltDrawdownLimit?: number;
   maxDrawdownLimit?: number;
+  sessionGuardEnabled?: boolean;
+  sessionStartHour?: number;
+  sessionEndHour?: number;
+  session_guard_enabled?: boolean;
+  session_start_hour?: number;
+  session_end_hour?: number;
 }
 
 export interface BotConfigInput {
