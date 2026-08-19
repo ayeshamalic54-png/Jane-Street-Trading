@@ -1746,30 +1746,23 @@ def calculate_bridge_lots(lots_a: float, price_a: float, price_b: float, contrac
 
 def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, cat_a: str, cat_b: str) -> float:
     """
-    Calculates Volatility-Adjusted Cointegration Bridge Lot Size for Leg B.
-    Injects 14-period ATR feeds and nominal contract values into the locked entry Beta equation to eliminate structural under-hedging while preserving 100% statistical edge.
+    Calculates Pure Beta-Neutral Cointegration Lot Size for Leg B: Lots_B = Lots_A * |beta|.
+    Strictly preserves statistical beta neutrality without over-sizing or over-dragging.
     """
     from risk_safeguards import round_volume
     try:
-        tick_a_h = mt5.symbol_info_tick(symbol_a)
-        tick_b_h = mt5.symbol_info_tick(symbol_b)
-        p_a_h = float(tick_a_h.ask if tick_a_h else 1.0) if tick_a_h else (mt5.symbol_info(symbol_a).ask if mt5.symbol_info(symbol_a) else 1.0)
-        p_b_h = float(tick_b_h.bid if tick_b_h else 1.0) if tick_b_h else (mt5.symbol_info(symbol_b).bid if mt5.symbol_info(symbol_b) else 1.0)
-        
-        info_a = mt5.symbol_info(symbol_a)
+        beta_val = abs(float(beta)) if beta else 1.0
+        raw_lots_b = float(qty_a) * beta_val
+        lots_b = round_volume(symbol_b, raw_lots_b)
         info_b = mt5.symbol_info(symbol_b)
-        
-        c_size_a = float(info_a.trade_contract_size) if (info_a and getattr(info_a, 'trade_contract_size', 0) > 0) else 100000.0
-        c_size_b = float(info_b.trade_contract_size) if (info_b and getattr(info_b, 'trade_contract_size', 0) > 0) else 100000.0
-        
-        # Fetch 14-period ATR for Volatility Normalization Ratio
-        atr_a = get_atr(symbol_a, mt5.TIMEFRAME_M15, count=30)
-        atr_b = get_atr(symbol_b, mt5.TIMEFRAME_M15, count=30)
-        
-        return calculate_bridge_lots(qty_a, p_a_h, p_b_h, c_size_a, c_size_b, beta, atr_a, atr_b, symbol_b=symbol_b, symbol_a=symbol_a)
+        min_vol_b = info_b.volume_min if info_b else 0.01
+        if lots_b < min_vol_b:
+            lots_b = min_vol_b
+        logger.info(f"📊 [PURE BETA-NEUTRAL HEDGE] Symbol A ({symbol_a}): {qty_a:.2f} lots | Beta: {beta_val:.4f} -> Symbol B ({symbol_b}) Lot Size: {lots_b:.2f} lots")
+        return lots_b
     except Exception as e:
         logger.error(f"Error in get_hedge_quantity: {e}")
-        return round_volume(symbol_b, qty_a * abs(beta))
+        return round_volume(symbol_b, float(qty_a) * abs(float(beta) if beta else 1.0))
 
 
 
@@ -2357,12 +2350,7 @@ def main():
             if has_positions and active_js_positions:
                 try:
                     from risk_safeguards import evaluate_hedge_effectiveness
-                    should_hedge_close, hedge_close_reason = evaluate_hedge_effectiveness(active_js_positions)
-                    if should_hedge_close:
-                        logger.warning(f"🚨 [HEDGE DIVERGENCE AUTO-EXIT] {hedge_close_reason}. AUTO-CLOSING ALL TRADES TO PREVENT LOSS!")
-                        for pos in active_js_positions:
-                            pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
-                            close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+                    evaluate_hedge_effectiveness(active_js_positions)
                 except Exception as ex_hm:
                     logger.error(f"Error in hedge effectiveness monitoring: {ex_hm}")
 
