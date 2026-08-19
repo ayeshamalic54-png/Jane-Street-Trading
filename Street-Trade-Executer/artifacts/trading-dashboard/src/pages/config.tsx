@@ -37,6 +37,12 @@ const configSchema = z.object({
   maxDailyTrades: z.coerce.number().min(1).max(1000),
   haltDrawdownLimit: z.coerce.number().min(0.1).max(10.0).optional().default(0.78),
   maxDrawdownLimit: z.coerce.number().min(0.5).max(20.0).optional().default(3.30),
+  sessionGuardEnabled: z.boolean().optional().default(false),
+  sessionStartHour: z.coerce.number().optional().default(12.5),
+  sessionEndHour: z.coerce.number().optional().default(2.0),
+  session_guard_enabled: z.boolean().optional().default(false),
+  session_start_hour: z.coerce.number().optional().default(12.5),
+  session_end_hour: z.coerce.number().optional().default(2.0),
 });
 type ConfigFormValues = z.infer<typeof configSchema>;
 
@@ -233,6 +239,12 @@ export default function Config() {
           maxDailyTrades: config.maxDailyTrades,
           haltDrawdownLimit: (config as any).haltDrawdownLimit ?? (config as any).halt_drawdown_limit ?? 0.80,
           maxDrawdownLimit: (config as any).maxDrawdownLimit ?? (config as any).max_drawdown_limit ?? 3.30,
+          sessionGuardEnabled: Boolean((config as any).sessionGuardEnabled ?? (config as any).session_guard_enabled ?? false),
+          sessionStartHour: Number((config as any).sessionStartHour ?? (config as any).session_start_hour ?? 12.5),
+          sessionEndHour: Number((config as any).sessionEndHour ?? (config as any).session_end_hour ?? 2.0),
+          session_guard_enabled: Boolean((config as any).sessionGuardEnabled ?? (config as any).session_guard_enabled ?? false),
+          session_start_hour: Number((config as any).sessionStartHour ?? (config as any).session_start_hour ?? 12.5),
+          session_end_hour: Number((config as any).sessionEndHour ?? (config as any).session_end_hour ?? 2.0),
         }
       : undefined,
   });
@@ -447,123 +459,114 @@ export default function Config() {
                   />
 
                   {/* Session Time Guard (PKT Window) Card in Config */}
-                  {(() => {
-                    const isSessOn = Boolean((config as any)?.session_guard_enabled ?? (config as any)?.sessionGuardEnabled ?? false);
-                    const startH = Number((config as any)?.session_start_hour ?? (config as any)?.sessionStartHour ?? 12.5);
-                    const endH = Number((config as any)?.session_end_hour ?? (config as any)?.sessionEndHour ?? 2.0);
+                  <FormField
+                    control={form.control}
+                    name="sessionGuardEnabled"
+                    render={({ field }) => {
+                      const isSessOn = Boolean(field.value);
+                      const startH = Number(form.watch("sessionStartHour") ?? 12.5);
+                      const endH = Number(form.watch("sessionEndHour") ?? 2.0);
 
-                    return (
-                      <div className={cn(
-                        "p-4 rounded-sm border space-y-3 my-2",
-                        isSessOn ? "bg-blue-500/10 border-blue-500/40" : "bg-zinc-900/50 border-zinc-800"
-                      )}>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
-                              <span>⏰</span> Session Time Guard (Pakistani Time PKT Trading Window)
+                      return (
+                        <FormItem className="my-2">
+                          <div className={cn(
+                            "p-4 rounded-sm border space-y-3",
+                            isSessOn ? "bg-blue-500/10 border-blue-500/40" : "bg-zinc-900/50 border-zinc-800"
+                          )}>
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <FormLabel className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+                                  <span>⏰</span> Session Time Guard (Pakistani Time PKT Trading Window)
+                                </FormLabel>
+                                <FormDescription className="text-[11px] text-muted-foreground mt-0.5">
+                                  Restrict new trade entries strictly to high-liquidity session hours (PKT). Active trailing stops remain active 24/7.
+                                </FormDescription>
+                              </div>
+                              <Badge className={isSessOn ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "bg-zinc-800 text-zinc-400"}>
+                                {isSessOn ? "🟢 ENABLED" : "🔴 DISABLED (24/7)"}
+                              </Badge>
                             </div>
-                            <div className="text-[11px] text-muted-foreground mt-0.5">
-                              Restrict new trade entries strictly to high-liquidity session hours (PKT). Active trailing stops remain active 24/7.
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-border/50">
+                              <div>
+                                <label className="text-[10px] font-bold text-blue-400 uppercase block mb-1">Session Guard Toggle</label>
+                                <select 
+                                  value={isSessOn ? "true" : "false"}
+                                  onChange={async (e) => {
+                                    const val = e.target.value === "true";
+                                    form.setValue("sessionGuardEnabled", val, { shouldDirty: true, shouldTouch: true });
+                                    form.setValue("session_guard_enabled", val, { shouldDirty: true, shouldTouch: true });
+                                    await fetch('/api/toggle-session-guard', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ enabled: val, start_hour: startH, end_hour: endH })
+                                    });
+                                    queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() });
+                                    queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
+                                  }}
+                                  className="w-full bg-background border border-input rounded p-2 text-xs font-bold text-foreground focus:outline-none"
+                                >
+                                  <option value="false">DISABLED 🔴 (Trade 24/7)</option>
+                                  <option value="true">ENABLED 🟢 (Restrict to Session Window)</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] font-bold text-emerald-400 uppercase block mb-1">Start Time (PKT)</label>
+                                <select 
+                                  value={startH.toString()}
+                                  onChange={async (e) => {
+                                    const val = parseFloat(e.target.value);
+                                    form.setValue("sessionStartHour", val, { shouldDirty: true, shouldTouch: true });
+                                    form.setValue("session_start_hour", val, { shouldDirty: true, shouldTouch: true });
+                                    await fetch('/api/toggle-session-guard', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ enabled: isSessOn, start_hour: val, end_hour: endH })
+                                    });
+                                    queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() });
+                                    queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
+                                  }}
+                                  className="w-full bg-background border border-input rounded p-2 text-xs font-bold text-foreground focus:outline-none"
+                                >
+                                  <option value="12.5">12:30 PM PKT (London Open)</option>
+                                  <option value="17">05:00 PM PKT (London + NY Overlap)</option>
+                                  <option value="18">06:00 PM PKT (NY Open)</option>
+                                  <option value="5">05:00 AM PKT (Asian Session)</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] font-bold text-rose-400 uppercase block mb-1">End Time (PKT)</label>
+                                <select 
+                                  value={endH.toString()}
+                                  onChange={async (e) => {
+                                    const val = parseFloat(e.target.value);
+                                    form.setValue("sessionEndHour", val, { shouldDirty: true, shouldTouch: true });
+                                    form.setValue("session_end_hour", val, { shouldDirty: true, shouldTouch: true });
+                                    await fetch('/api/toggle-session-guard', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ enabled: isSessOn, start_hour: startH, end_hour: val })
+                                    });
+                                    queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() });
+                                    queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
+                                  }}
+                                  className="w-full bg-background border border-input rounded p-2 text-xs font-bold text-foreground focus:outline-none"
+                                >
+                                  <option value="2">02:00 AM PKT (Close Before Rollover)</option>
+                                  <option value="21">09:00 PM PKT (London Close)</option>
+                                  <option value="3">03:00 AM PKT (NY Close)</option>
+                                  <option value="16">04:00 PM PKT (Mid-Day)</option>
+                                </select>
+                              </div>
                             </div>
                           </div>
-                          <Badge className={isSessOn ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40" : "bg-zinc-800 text-zinc-400"}>
-                            {isSessOn ? "🟢 ENABLED" : "🔴 DISABLED (24/7)"}
-                          </Badge>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-border/50">
-                          <div>
-                            <label className="text-[10px] font-bold text-blue-400 uppercase block mb-1">Session Guard Toggle</label>
-                            <select 
-                              value={isSessOn ? "true" : "false"}
-                              onChange={async (e) => {
-                                const val = e.target.value === "true";
-                                await fetch('/api/toggle-session-guard', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ enabled: val, start_hour: startH, end_hour: endH })
-                                });
-                                queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() });
-                                queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
-                                toast({ title: "Session Guard Updated", description: `Status: ${val ? "ENABLED 🟢" : "DISABLED 🔴"}` });
-                              }}
-                              className="w-full bg-background border border-input rounded p-2 text-xs font-bold text-foreground focus:outline-none"
-                            >
-                              <option value="false">DISABLED 🔴 (Trade 24/7)</option>
-                              <option value="true">ENABLED 🟢 (Restrict to Session Window)</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="text-[10px] font-bold text-emerald-400 uppercase block mb-1">Start Time (PKT)</label>
-                            <select 
-                              value={startH.toString()}
-                              onChange={async (e) => {
-                                const val = parseFloat(e.target.value);
-                                await fetch('/api/toggle-session-guard', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ enabled: isSessOn, start_hour: val, end_hour: endH })
-                                });
-                                queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() });
-                                queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
-                                toast({ title: "Start Time Updated", description: `Start: ${val === 12.5 ? "12:30 PM" : val + ":00"} PKT` });
-                              }}
-                              className="w-full bg-background border border-input rounded p-2 text-xs font-bold text-foreground focus:outline-none"
-                            >
-                              <option value="12.5">12:30 PM PKT (London Open)</option>
-                              <option value="17">05:00 PM PKT (London + NY Overlap)</option>
-                              <option value="18">06:00 PM PKT (NY Open)</option>
-                              <option value="5">05:00 AM PKT (Asian Session)</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="text-[10px] font-bold text-rose-400 uppercase block mb-1">End Time (PKT)</label>
-                            <select 
-                              value={endH.toString()}
-                              onChange={async (e) => {
-                                const val = parseFloat(e.target.value);
-                                await fetch('/api/toggle-session-guard', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ enabled: isSessOn, start_hour: startH, end_hour: val })
-                                });
-                                queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() });
-                                queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
-                                toast({ title: "End Time Updated", description: `End: ${val === 2.0 ? "02:00 AM" : val + ":00"} PKT` });
-                              }}
-                              className="w-full bg-background border border-input rounded p-2 text-xs font-bold text-foreground focus:outline-none"
-                            >
-                              <option value="2">02:00 AM PKT (Close Before Rollover)</option>
-                              <option value="21">09:00 PM PKT (London Close)</option>
-                              <option value="3">03:00 AM PKT (NY Close)</option>
-                              <option value="16">04:00 PM PKT (Mid-Day)</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-end pt-1">
-                          <Button
-                            type="button"
-                            onClick={async () => {
-                              await fetch('/api/toggle-session-guard', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ enabled: isSessOn, start_hour: startH, end_hour: endH })
-                              });
-                              queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() });
-                              queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
-                              toast({ title: "Session Window Saved to Database", description: `Status: ${isSessOn ? "ENABLED 🟢" : "DISABLED 🔴"}` });
-                            }}
-                            className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold"
-                          >
-                            💾 SAVE SESSION WINDOW SETTINGS
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
+                  />
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField

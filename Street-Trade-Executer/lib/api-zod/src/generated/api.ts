@@ -221,7 +221,13 @@ export const UpdateConfigBody = zod.object({
   "obiEnabled": zod.boolean().optional(),
   "volatilityFilterEnabled": zod.boolean().optional(),
   "haltDrawdownLimit": zod.number().optional(),
-  "maxDrawdownLimit": zod.number().optional()
+  "maxDrawdownLimit": zod.number().optional(),
+  "sessionGuardEnabled": zod.boolean().optional(),
+  "sessionStartHour": zod.number().optional(),
+  "sessionEndHour": zod.number().optional(),
+  "session_guard_enabled": zod.boolean().optional(),
+  "session_start_hour": zod.number().optional(),
+  "session_end_hour": zod.number().optional()
 })
 
 export const UpdateConfigResponse = zod.object({
