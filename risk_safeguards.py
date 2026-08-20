@@ -20,6 +20,9 @@ RISK_PERCENT = 1.0
 # Maximum spread allowed in pips
 MAX_SPREAD_PIPS = 2.0
 
+# Maximum Beta ratio allowed to prevent high-beta hedge over-weighting drag
+MAX_BETA_CAP = 1.65
+
 SESSION_GUARD_ENABLED = False
 SESSION_START_HOUR = 12.5  # 12:30 PM PKT (London Open)
 SESSION_END_HOUR = 2.0     # 02:00 AM PKT (Before Rollover Close)
@@ -605,16 +608,11 @@ def evaluate_hedge_effectiveness(active_js_positions, beta_val=None):
     )
 
     if is_ineffective:
-        count = _HEDGE_DIVERGENCE_COUNTERS.get(pair_key, 0) + 1
-        _HEDGE_DIVERGENCE_COUNTERS[pair_key] = count
+        _HEDGE_DIVERGENCE_COUNTERS[pair_key] = _HEDGE_DIVERGENCE_COUNTERS.get(pair_key, 0) + 1
         logger.warning(log_msg)
-        if count >= 3:
-            return True, f"HEDGE DIVERGENCE PROTECTION | {status_str} persisted for {count} consecutive cycles"
     else:
         _HEDGE_DIVERGENCE_COUNTERS[pair_key] = 0
         logger.info(log_msg)
-
-    return False, ""
 
 
 
