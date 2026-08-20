@@ -2763,16 +2763,16 @@ def main():
             elif risk_safeguards.SESSION_GUARD_ENABLED and not is_session_ok and candidate_signals:
                 for c in candidate_signals:
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
-                    logger.info(f"⏰ [SESSION GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f}), but current time ({curr_utc_s}) is OUTSIDE allowed trading window ({window_utc_s}). New entries BLOCKED.")
+                    logger.info(f"⏰ [SESSION GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but current time ({curr_utc_s}) is OUTSIDE allowed trading window ({window_utc_s}). New entries BLOCKED.")
             elif not AUTO_EXECUTE and candidate_signals:
                 for c in candidate_signals:
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
-                    logger.info(f"📢 [SIGNAL DETECTED - SIGNALS ONLY MODE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f}), but Auto-Execution is toggled OFF on Dashboard. Trade placement SKIPPED.")
+                    logger.info(f"📢 [SIGNAL DETECTED - SIGNALS ONLY MODE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but Auto-Execution is toggled OFF on Dashboard. Trade placement SKIPPED.")
             elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and is_session_ok and candidate_signals:
                 if risk_safeguards.SESSION_GUARD_ENABLED:
                     for c in candidate_signals:
                         pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
-                        logger.info(f"⏰ [SESSION GUARD ACTIVE 🟢] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f}). Current time ({curr_utc_s}) is INSIDE allowed trading window ({window_utc_s}). Trade execution PROCEEDING!")
+                        logger.info(f"⏰ [SESSION GUARD ACTIVE 🟢] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}). Current time ({curr_utc_s}) is INSIDE allowed trading window ({window_utc_s}). Trade execution PROCEEDING!")
 
                 # Select candidate signals based on Z-score deviation, valid spread, and MAX_BETA_CAP guard
                 from risk_safeguards import MAX_BETA_CAP
