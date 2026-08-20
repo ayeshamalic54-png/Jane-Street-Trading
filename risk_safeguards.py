@@ -20,7 +20,8 @@ RISK_PERCENT = 1.0
 # Maximum spread allowed in pips
 MAX_SPREAD_PIPS = 2.0
 
-# Maximum Beta ratio allowed to prevent high-beta hedge over-weighting drag
+# Beta ratio boundaries allowed to guarantee hedge ratio equilibrium
+MIN_BETA_CAP = 0.50
 MAX_BETA_CAP = 1.65
 
 SESSION_GUARD_ENABLED = True
