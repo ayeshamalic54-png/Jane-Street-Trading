@@ -23,7 +23,7 @@ MAX_SPREAD_PIPS = 2.0
 # Maximum Beta ratio allowed to prevent high-beta hedge over-weighting drag
 MAX_BETA_CAP = 1.65
 
-SESSION_GUARD_ENABLED = False
+SESSION_GUARD_ENABLED = True
 SESSION_START_HOUR = 12.5  # 12:30 PM PKT (London Open)
 SESSION_END_HOUR = 2.0     # 02:00 AM PKT (Before Rollover Close)
 
