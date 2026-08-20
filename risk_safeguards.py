@@ -268,7 +268,9 @@ def check_drawdown_limit(current_equity):
     
     effective_drawdown = max(daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT)
     if effective_drawdown >= MAX_DAILY_LOSS_PERCENT:
-        logger.info(f"Daily drawdown limit reached: {effective_drawdown:.2f}% (Halt Limit: {MAX_DAILY_LOSS_PERCENT}% | Max Limit: {MAX_DAILY_DRAWDOWN_PCT}%)")
+        halt_usd = (start_equity * MAX_DAILY_LOSS_PERCENT / 100.0) if start_equity > 0 else 0.0
+        max_usd = (start_equity * MAX_DAILY_DRAWDOWN_PCT / 100.0) if start_equity > 0 else 0.0
+        logger.info(f"🛡️ [DAILY DRAWDOWN LIMIT REACHED 🔴] Peak Drawdown Hit: {effective_drawdown:.2f}% (-${daily_loss:.2f} USD) | Halt Drawdown Limit: {MAX_DAILY_LOSS_PERCENT:.2f}% (-${halt_usd:.2f} USD) | Max Drawdown Cap: {MAX_DAILY_DRAWDOWN_PCT:.2f}% (-${max_usd:.2f} USD). Trading HALTED.")
         return True, daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT
         
     return False, daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT
