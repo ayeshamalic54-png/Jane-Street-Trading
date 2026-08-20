@@ -287,6 +287,24 @@ def initialize_database():
             conn.commit()
             print("Added atr_multiplier column to bot_state table.")
 
+        # Add halt_daily_drawdown_pct column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='halt_daily_drawdown_pct'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN halt_daily_drawdown_pct NUMERIC(5, 2) DEFAULT 1.00")
+            conn.commit()
+
+        # Add max_daily_drawdown_pct column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='max_daily_drawdown_pct'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN max_daily_drawdown_pct NUMERIC(5, 2) DEFAULT 3.30")
+            conn.commit()
+
 
         # Auto-migrate any legacy NDX100 active_pair in bot_state to US30/NAS100 and clean tables
         cur.execute("UPDATE bot_state SET active_pair = 'US30/NAS100' WHERE active_pair LIKE '%NDX100%'")

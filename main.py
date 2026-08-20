@@ -213,7 +213,7 @@ def fetch_db_config():
                 bool(row[14] if row[14] is not None else True),
                 bool(row[15] if row[15] is not None else True),
                 s_on,
-                float(row[17]) if len(row) > 17 and row[17] is not None else 0.83,
+                float(row[17]) if len(row) > 17 and row[17] is not None else 1.00,
                 float(row[18]) if len(row) > 18 and row[18] is not None else 3.30,
                 bool(row[19] if len(row) > 19 and row[19] is not None else False),
                 float(row[20]) if len(row) > 20 and row[20] is not None else 12.0,
@@ -1960,8 +1960,8 @@ def main():
         SL_PIPS = new_sl
         TP_PIPS = new_tp
         import risk_safeguards
-        risk_safeguards.HALT_DAILY_DRAWDOWN_PCT = float(new_halt) if new_halt is not None else 0.80
-        risk_safeguards.MAX_DAILY_LOSS_PERCENT = float(new_halt) if new_halt is not None else 0.80
+        risk_safeguards.HALT_DAILY_DRAWDOWN_PCT = float(new_halt) if new_halt is not None else 1.00
+        risk_safeguards.MAX_DAILY_LOSS_PERCENT = float(new_halt) if new_halt is not None else 1.00
         risk_safeguards.MAX_DAILY_DRAWDOWN_PCT = float(new_max_dd) if new_max_dd is not None else 3.30
         if len(db_cfg) > 19:
             risk_safeguards.SESSION_GUARD_ENABLED = bool(db_cfg[19])
