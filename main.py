@@ -2904,11 +2904,10 @@ def main():
                         pt_a = info_pip_a.point if info_pip_a else 0.0001
                         pip_sz_a = (pt_a * 10.0) if (info_pip_a and info_pip_a.digits in (3, 5)) else pt_a
 
-                        # Set MT5 order TP to 0.0 so MT5 broker NEVER closes trades prematurely!
-                        # All exits are controlled 100% strictly by Python 3-step exit pipeline!
-                        tp1_val = 0.0
-                        tp2_val = 0.0
-                        tp3_val = 0.0
+                        # Real quantitative target price levels for TP1, TP2, TP3
+                        tp1_val = entry_a + (tp_dist * 0.5) if is_long else entry_a - (tp_dist * 0.5)
+                        tp2_val = entry_a + tp_dist if is_long else entry_a - tp_dist
+                        tp3_val = entry_a + (tp_dist * 1.5) if is_long else entry_a - (tp_dist * 1.5)
 
 
                             
@@ -2998,8 +2997,7 @@ def main():
                             
                             exec_a_ok, filled_a_total = execute_three_part_trade(
                                 S_A_resolved, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, actual_lots_a,
-                                best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 2.0),
-
+                                tp1_val, tp2_val, tp3_val,
                                 signal_id=signal_id
                             )
                             if not exec_a_ok:
@@ -3092,8 +3090,7 @@ def main():
                             
                             exec_a_ok, filled_a_total = execute_three_part_trade(
                                 S_A_resolved, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, actual_lots_a,
-                                best_sig["price_a"] - sl_dist, best_sig["price_a"] - max(tp_dist, sl_dist * 1.5), best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 2.0),
-
+                                tp1_val, tp2_val, tp3_val,
                                 signal_id=signal_id
                             )
                             if not exec_a_ok:
