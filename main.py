@@ -782,15 +782,24 @@ def get_atr(symbol: str, timeframe, count=30) -> float:
 
 def is_friday_market_close_approaching(lead_minutes=45):
     """
-    Returns True ONLY if current UTC time is within lead_minutes (default 45 mins) of Friday Forex market close (21:15 UTC - 22:00 UTC Friday).
-    Auto-closes active trades 45m before Friday close to prevent weekend gap risk.
+    Returns True if current UTC/PKT time is within lead_minutes of Friday Forex market close,
+    OR if current day is Saturday/Sunday (Weekend).
+    Guarantees 100% protection against holding unclosed positions over the weekend.
     """
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    if now_utc.weekday() == 4: # Friday ONLY
-        if now_utc.hour >= 21 and now_utc.minute >= (60 - lead_minutes):
+    wday = now_utc.weekday() # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+    
+    # Saturday (5) or Sunday before 21:00 UTC (6) -> Weekend market is CLOSED!
+    if wday == 5 or (wday == 6 and now_utc.hour < 21):
+        return True
+        
+    # Friday (4) after 20:15 UTC -> Friday Close Approaching!
+    if wday == 4:
+        if now_utc.hour >= 20 and now_utc.minute >= 15:
             return True
-        elif now_utc.hour >= 22:
+        elif now_utc.hour >= 21:
             return True
+            
     return False
 
 
@@ -1234,9 +1243,16 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 leg_a_truly_closed = False
 
             if leg_a_truly_closed:
-                logger.info(f"Cleanup: Leg A is fully closed (MT5 verified) for signal_id {sig_id}. Closing remaining Leg B trades.")
+                logger.info(f"🛡️ [ORPHAN CLEANUP] Leg A is fully closed for signal_id #{sig_id}. Closing remaining Leg B hedge trades on MT5.")
                 for t_b in open_leg_b_trades:
                     close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+            continue
+
+        # 2. Reverse cleanup check: If Leg B has NO open trades left but Leg A still has open trades, close Leg A immediately!
+        if not open_leg_b_trades and open_leg_a_trades:
+            logger.info(f"🛡️ [ORPHAN CLEANUP] Leg B hedge is fully closed for signal_id #{sig_id}. Closing remaining Leg A trades on MT5 to prevent un-hedged floating loss.")
+            for t_a in open_leg_a_trades:
+                close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
             continue
 
         if not open_leg_a_trades:
@@ -3023,13 +3039,8 @@ def main():
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
                                     is_long_b = (order_type_b == mt5.ORDER_TYPE_BUY)
-                                    res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
-                                    h_ok = is_retcode_success(res_hedge)
-                                    if h_ok:
-                                        ticket_b = res_hedge.order
-                                        filled_b = getattr(res_hedge, 'volume', qty_b)
-                                        log_trade_entry(ticket_b, S_B_resolved, "BUY" if is_long_b else "SELL", filled_b, price_b, datetime.datetime.now(), "JaneStreet HEDGE", signal_id)
-                                    else:
+                                    h_ok, filled_b = execute_three_part_hedge_trade(S_B_resolved, is_long_b, price_b, qty_b, sl_price=sl_b, signal_id=signal_id)
+                                    if not h_ok:
                                         logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
                                         close_all_positions(S_A_resolved)
 
@@ -3123,13 +3134,8 @@ def main():
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
                                     is_long_b = (order_type_b == mt5.ORDER_TYPE_BUY)
-                                    res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
-                                    h_ok = is_retcode_success(res_hedge)
-                                    if h_ok:
-                                        ticket_b = res_hedge.order
-                                        filled_b = getattr(res_hedge, 'volume', qty_b)
-                                        log_trade_entry(ticket_b, S_B_resolved, "BUY" if is_long_b else "SELL", filled_b, price_b, datetime.datetime.now(), "JaneStreet HEDGE", signal_id)
-                                    else:
+                                    h_ok, filled_b = execute_three_part_hedge_trade(S_B_resolved, is_long_b, price_b, qty_b, sl_price=sl_b, signal_id=signal_id)
+                                    if not h_ok:
                                         logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
                                         close_all_positions(S_A_resolved)
                     invalidate_trades_cache()

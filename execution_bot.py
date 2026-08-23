@@ -197,10 +197,10 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
             
     return success, total_filled_lots
 
-def execute_three_part_hedge_trade(symbol, is_long, entry_price, total_lots, signal_id=None):
+def execute_three_part_hedge_trade(symbol, is_long, entry_price, total_lots, sl_price=0.0, tp_price=0.0, signal_id=None):
     """
     Executes Leg B hedge split into 3 matching hedge orders (JS_HEDGE_TP1, JS_HEDGE_TP2, JS_HEDGE_TP3)
-    for 1:1 order mapping architecture.
+    for 1:1 order mapping architecture with Hard Broker Stop Loss protection on MT5.
     """
     order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
     part_lots = round(total_lots / 3.0, 2)
@@ -212,7 +212,7 @@ def execute_three_part_hedge_trade(symbol, is_long, entry_price, total_lots, sig
     total_filled_lots = 0.0
 
     for part_name in parts:
-        res = send_order(symbol, order_type, entry_price, part_lots, 0.0, 0.0, f"JS_HEDGE_{part_name}")
+        res = send_order(symbol, order_type, entry_price, part_lots, sl_price, tp_price, f"JS_HEDGE_{part_name}")
         if is_retcode_success(res):
             ticket = res.order
             filled_lots = getattr(res, 'volume', part_lots)
