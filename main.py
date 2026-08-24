@@ -980,7 +980,8 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
     import os
     import requests
     
-    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    DEFAULT_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1531099383565783070/USKQReqpW61BIaCRPgYwaOQ65isEXn4X214XEUH2vL_PFqrPThOahTwSpV5cKUgvPHCG"
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL") or DEFAULT_DISCORD_WEBHOOK
     if not webhook_url:
         return
         
@@ -1026,7 +1027,8 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
 def send_discord_general_alert(message_text: str):
     import os
     import requests
-    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    DEFAULT_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1531099383565783070/USKQReqpW61BIaCRPgYwaOQ65isEXn4X214XEUH2vL_PFqrPThOahTwSpV5cKUgvPHCG"
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL") or DEFAULT_DISCORD_WEBHOOK
     if not webhook_url:
         return
     try:
