@@ -1,0 +1,6 @@
+MetaTrader5
+psycopg2-binary
+requests
+numpy
+pandas
+scikit-learn
