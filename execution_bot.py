@@ -199,43 +199,36 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
 
 def execute_three_part_hedge_trade(symbol, is_long, entry_price, total_lots, sl_price=0.0, tp_price=0.0, signal_id=None):
     """
-    Executes Leg B hedge split into 3 matching hedge orders (JS_HEDGE_TP1, JS_HEDGE_TP2, JS_HEDGE_TP3)
-    for 1:1 order mapping architecture with Hard Broker Stop Loss protection on MT5.
+    Executes Leg B hedge as 1 SINGLE HEDGE ORDER on MT5 with Hard Broker Stop Loss protection.
     """
     order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
-    part_lots = round(total_lots / 3.0, 2)
     from risk_safeguards import round_volume
-    part_lots = round_volume(symbol, part_lots)
+    total_lots = round_volume(symbol, total_lots)
     
-    parts = ["TP1", "TP2", "TP3"]
-    success = False
-    total_filled_lots = 0.0
+    res = send_order(symbol, order_type, entry_price, total_lots, sl_price, tp_price, "JaneStreet HEDGE")
+    if is_retcode_success(res):
+        ticket = res.order
+        filled_lots = getattr(res, 'volume', total_lots)
+        if filled_lots <= 0:
+            filled_lots = total_lots
+        filled_lots = round_volume(symbol, filled_lots)
 
-    for part_name in parts:
-        res = send_order(symbol, order_type, entry_price, part_lots, sl_price, tp_price, f"JS_HEDGE_{part_name}")
-        if is_retcode_success(res):
-            ticket = res.order
-            filled_lots = getattr(res, 'volume', part_lots)
-            if filled_lots <= 0:
-                filled_lots = part_lots
-            filled_lots = round_volume(symbol, filled_lots)
-            total_filled_lots += filled_lots
-
-            log_trade_entry(
-                ticket=ticket,
-                symbol=symbol,
-                order_type="BUY" if is_long else "SELL",
-                lots=filled_lots,
-                entry_price=entry_price,
-                entry_time=datetime.datetime.now(),
-                comment=f"JaneStreet HEDGE_{part_name}",
-                signal_id=signal_id
-            )
-            logger.info(f"🟢 [HEDGE ENTRY SUCCESS] Ticket #{ticket} | Symbol: {symbol} | Type: {'BUY' if is_long else 'SELL'} | HEDGE_{part_name} Volume: {filled_lots} Lots")
-            success = True
-        else:
-            err_msg = res.comment if res else "No response"
-            logger.error(f"❌ [HEDGE ENTRY FAILED] HEDGE_{part_name} Order Execution Error: {err_msg}")
+        log_trade_entry(
+            ticket=ticket,
+            symbol=symbol,
+            order_type="BUY" if is_long else "SELL",
+            lots=filled_lots,
+            entry_price=entry_price,
+            entry_time=datetime.datetime.now(),
+            comment="JaneStreet HEDGE",
+            signal_id=signal_id
+        )
+        logger.info(f"🟢 [HEDGE ENTRY SUCCESS] Ticket #{ticket} | Symbol: {symbol} | Type: {'BUY' if is_long else 'SELL'} | HEDGE Volume: {filled_lots} Lots")
+        return True, filled_lots
+    else:
+        err_msg = res.comment if res else "No response"
+        logger.error(f"❌ [HEDGE ENTRY FAILED] Order Execution Error: {err_msg}")
+        return False, 0.0
 
     return success, total_filled_lots
 
