@@ -2662,12 +2662,9 @@ def main():
                 pass_z_buy = (z < -effective_dyn_z) and (z > -z_sl_val)
                 pass_z_sell = (z > effective_dyn_z) and (z < z_sl_val)
                 
-                # Turning Point Inflection Filter: ENABLED 🟢
+                # Turning Point Inflection Filter: TEMPORARILY DISABLED 🔴 (Per user directive for raw Z-score testing)
                 pass_turn_buy = True
                 pass_turn_sell = True
-                if kf_pair and len(kf_pair.z_history) >= 3:
-                    pass_turn_buy = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "BUY_SPREAD")
-                    pass_turn_sell = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "SELL_SPREAD")
 
 
 
