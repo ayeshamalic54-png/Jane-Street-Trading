@@ -1242,31 +1242,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 logger.error(f"[HEDGE GUARD] Error verifying Leg A MT5 state for signal_id {sig_id}: {eg}. Skipping hedge close to be safe.")
                 leg_a_truly_closed = False
 
-        if "GLOBAL_PENDING_HEDGES" not in globals():
-            global GLOBAL_PENDING_HEDGES
-            GLOBAL_PENDING_HEDGES = {}
-
-        is_pending_hedge = (sig_id in GLOBAL_PENDING_HEDGES)
-
-        # ── CONDITIONAL LOSS-TRIGGERED HEDGE CHECK (-$15.00 USD LOSS THRESHOLD) ──
-        if is_pending_hedge and open_leg_a_trades:
-            leg_a_pnl = 0.0
-            for t_a in open_leg_a_trades:
-                pos_info = mt5.positions_get(ticket=t_a["ticket"])
-                if pos_info:
-                    leg_a_pnl += float(pos_info[0].profit)
-
-            if leg_a_pnl <= -15.0:
-                h_info = GLOBAL_PENDING_HEDGES.pop(sig_id, None)
-                if h_info:
-                    from execution_bot import execute_delayed_hedge_order
-                    execute_delayed_hedge_order(
-                        h_info["symbol_b"], h_info["is_long_b"], h_info["price_b"], h_info["qty_b"],
-                        sl_price=h_info["sl_b"], signal_id=sig_id
-                    )
-
         # 1. Strict Basket Sync Guard: If ANY part of Leg A or Leg B was closed by broker/SL/TP, close ALL remaining parts immediately!
-        if len(open_leg_a_trades) < 3 or (not open_leg_b_trades and not is_pending_hedge):
+        if len(open_leg_a_trades) < 3 or not open_leg_b_trades:
             logger.info(f"🛡️ [BASKET SYNC GUARD] Part of trade closed for signal_id #{sig_id}. Auto-closing ALL remaining Leg A & Leg B tickets immediately!")
             for t_a in open_leg_a_trades:
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
@@ -1333,10 +1310,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 total_basket_pnl += float(pos_info[0].profit)
 
         # ── HARD BASKET LOSS CIRCUIT BREAKER ($97.96 USD CAP) ──
-        import risk_safeguards
         acc_info_check = mt5.account_info()
         acc_bal_check = float(acc_info_check.balance) if acc_info_check else 10000.0
-        max_allowed_basket_loss = -(acc_bal_check * (risk_safeguards.HALT_DAILY_DRAWDOWN_PCT / 100.0))
+        max_allowed_basket_loss = -(acc_bal_check * (HALT_DAILY_DRAWDOWN_PCT / 100.0))
         if total_basket_pnl <= max_allowed_basket_loss:
             exit_triggered = True
             exit_reason = f"HARD_BASKET_LOSS_CAP_BREACH (${total_basket_pnl:.2f} <= ${max_allowed_basket_loss:.2f})"
@@ -1363,21 +1339,12 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         tp2_trade = next((t for t in open_leg_a_trades if "TP2" in str(t.get("comment", "")).upper()), None)
         tp3_trade = next((t for t in open_leg_a_trades if "TP3" in str(t.get("comment", "")).upper()), None)
 
-        # ── STEP 1: HYBRID BREAKEVEN GUARD 🛡️ ──
-        z_be_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
-        pnl_be_reached = total_basket_pnl >= 9.0
-        be_already_shifted = GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False)
+        # ── STEP 1: BREAKEVEN GUARD DISABLED 🔴 (PER USER DIRECTIVE: SL NEVER MOVED TO $0.00 ENTRY) ──
+        # Step 1 Breakeven SL shift is disabled. SL is locked in profit via Multi-Tier Trailing System instead.
 
-        if (z_be_reached or pnl_be_reached) and not be_already_shifted and total_basket_pnl > 0.0:
-            GLOBAL_HYBRID_BE_SHIFTED[sig_id] = True
-            trig_name = f"Z-Score {z_score_for_pair:.2f}" if z_be_reached else f"PnL ${total_basket_pnl:.2f} >= $9.00"
-            logger.info(f"🛡️ [STEP 1 BREAKEVEN ACTIVATED] Triggered by {trig_name}! Breakeven Floor Set at $0.00 Net PnL!")
 
-        if GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False):
-            if total_basket_pnl <= 0.0:
-                exit_triggered = True
-                exit_reason = "HYBRID_BREAKEVEN_FLOOR_HIT ($0.00 Net PnL)"
-                logger.info(f"🛡️ [HYBRID BREAKEVEN GUARD EXECUTED] Basket returned to $0.00 Net PnL. Auto-closing entire basket at ZERO LOSS ($0.00)!")
+        # ── STEP 2: MEAN REVERSION SCALE-OUT DISABLED 🔴 (PER USER DIRECTIVE: TRADES RUN AS WHOLE BASKET UNTIL TRAILING STOP OR HARD TP/SL) ──
+        # Step 2 partial scale-out is disabled so trade runs completely without mid-way closures.
 
 
 
@@ -2662,23 +2629,25 @@ def main():
                 pass_z_buy = (z < -effective_dyn_z) and (z > -z_sl_val)
                 pass_z_sell = (z > effective_dyn_z) and (z < z_sl_val)
                 
-                # Turning Point Inflection Filter: TEMPORARILY DISABLED 🔴 (Per user directive for raw Z-score testing)
+                # Turning Point Inflection Filter: ENABLED 🟢
                 pass_turn_buy = True
                 pass_turn_sell = True
+                if kf_pair and len(kf_pair.z_history) >= 3:
+                    pass_turn_buy = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "BUY_SPREAD")
+                    pass_turn_sell = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "SELL_SPREAD")
 
 
 
 
                 
-                # Knife Protection Velocity Filter: FORCE DISABLED 🔴 (Pure raw Z-score entry)
-                pass_vel_buy = True
-                pass_vel_sell = True
+                pass_vel_buy = (z_velocity > -z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
+                pass_vel_sell = (z_velocity < z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
                 
-                # OBI & SMC Filters: FORCE DISABLED 🔴 (Pure raw Z-score testing)
-                pass_obi_buy = True
-                pass_obi_sell = True
-                pass_smc_buy = True
-                pass_smc_sell = True
+                pass_obi_buy = obi_buy_pass if OBI_ENABLED else True
+                pass_obi_sell = obi_sell_pass if OBI_ENABLED else True
+                
+                pass_smc_buy = in_bullish_zone if REQUIRE_SMC_CONFLUENCE else True
+                pass_smc_sell = in_bearish_zone if REQUIRE_SMC_CONFLUENCE else True
                 
                 if pass_z_buy and pass_vel_buy and pass_obi_buy and pass_smc_buy and pass_turn_buy:
                     action = "BUY_SPREAD"
@@ -3167,17 +3136,10 @@ def main():
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
                                     is_long_b = (order_type_b == mt5.ORDER_TYPE_BUY)
-                                    if "GLOBAL_PENDING_HEDGES" not in globals():
-                                        global GLOBAL_PENDING_HEDGES
-                                        GLOBAL_PENDING_HEDGES = {}
-                                    GLOBAL_PENDING_HEDGES[signal_id] = {
-                                        "symbol_b": S_B_resolved,
-                                        "is_long_b": is_long_b,
-                                        "price_b": price_b,
-                                        "qty_b": qty_b,
-                                        "sl_b": sl_b
-                                    }
-                                    logger.info(f"🛡️ [UNHEDGED PROFIT MAXIMIZER] Leg A ({S_A_resolved}) opened 100% UNHEDGED for maximum profit! Leg B ({S_B_resolved}) hedge registered (will activate ONLY if Leg A loss reaches -$15.00 USD)!")
+                                    h_ok, filled_b = execute_three_part_hedge_trade(S_B_resolved, is_long_b, price_b, qty_b, sl_price=sl_b, signal_id=signal_id)
+                                    if not h_ok:
+                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
+                                        close_all_positions(S_A_resolved)
                     invalidate_trades_cache()
 
             # Three-Step Sequential Exit Pipeline
@@ -3300,7 +3262,7 @@ def main():
             else:
                 sess_log_str = "DISABLED 🔴 (Trading 24/7)"
 
-            tp_inflect_log_str = "TEMPORARILY DISABLED 🔴"
+            tp_inflect_log_str = "ENABLED 🟢"
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
                 f"| Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: ENABLED 🟢 | Turning Point Inflection: {tp_inflect_log_str} "

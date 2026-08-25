@@ -230,12 +230,7 @@ def execute_three_part_hedge_trade(symbol, is_long, entry_price, total_lots, sl_
         logger.error(f"❌ [HEDGE ENTRY FAILED] Order Execution Error: {err_msg}")
         return False, 0.0
 
-def execute_delayed_hedge_order(symbol, is_long, entry_price, total_lots, sl_price=0.0, signal_id=None):
-    """
-    Executes Conditional Loss-Triggered Leg B Hedge on-demand when Leg A floating loss reaches -$15.00 USD.
-    """
-    logger.info(f"🛡️ [CONDITIONAL HEDGE TRIGGERED] Leg A floating loss crossed -$15.00 USD threshold! Executing Leg B ({symbol}) Hedge Order ({total_lots} Lots)!")
-    return execute_three_part_hedge_trade(symbol, is_long, entry_price, total_lots, sl_price=sl_price, signal_id=signal_id)
+    return success, total_filled_lots
 
 def close_all_positions(symbol, comment_filter="JS_"):
     """Closes all active positions matching the magic number and symbol."""
