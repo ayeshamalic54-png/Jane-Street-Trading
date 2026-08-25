@@ -13,7 +13,7 @@ MAX_DAILY_LOSS_PERCENT = 1.00
 
 MAX_FLOATING_LOSS_USD = 330.0
 # Maximum number of trades allowed per day
-MAX_DAILY_TRADES = 3
+MAX_DAILY_TRADES = 30
 # Risk percentage per trade (e.g. 1.0% of account equity = $100 USD on $10k)
 RISK_PERCENT = 1.0
 
