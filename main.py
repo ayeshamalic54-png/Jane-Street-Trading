@@ -1242,8 +1242,31 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 logger.error(f"[HEDGE GUARD] Error verifying Leg A MT5 state for signal_id {sig_id}: {eg}. Skipping hedge close to be safe.")
                 leg_a_truly_closed = False
 
+        if "GLOBAL_PENDING_HEDGES" not in globals():
+            global GLOBAL_PENDING_HEDGES
+            GLOBAL_PENDING_HEDGES = {}
+
+        is_pending_hedge = (sig_id in GLOBAL_PENDING_HEDGES)
+
+        # ── CONDITIONAL LOSS-TRIGGERED HEDGE CHECK (-$15.00 USD LOSS THRESHOLD) ──
+        if is_pending_hedge and open_leg_a_trades:
+            leg_a_pnl = 0.0
+            for t_a in open_leg_a_trades:
+                pos_info = mt5.positions_get(ticket=t_a["ticket"])
+                if pos_info:
+                    leg_a_pnl += float(pos_info[0].profit)
+
+            if leg_a_pnl <= -15.0:
+                h_info = GLOBAL_PENDING_HEDGES.pop(sig_id, None)
+                if h_info:
+                    from execution_bot import execute_delayed_hedge_order
+                    execute_delayed_hedge_order(
+                        h_info["symbol_b"], h_info["is_long_b"], h_info["price_b"], h_info["qty_b"],
+                        sl_price=h_info["sl_b"], signal_id=sig_id
+                    )
+
         # 1. Strict Basket Sync Guard: If ANY part of Leg A or Leg B was closed by broker/SL/TP, close ALL remaining parts immediately!
-        if len(open_leg_a_trades) < 3 or not open_leg_b_trades:
+        if len(open_leg_a_trades) < 3 or (not open_leg_b_trades and not is_pending_hedge):
             logger.info(f"🛡️ [BASKET SYNC GUARD] Part of trade closed for signal_id #{sig_id}. Auto-closing ALL remaining Leg A & Leg B tickets immediately!")
             for t_a in open_leg_a_trades:
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
@@ -3146,10 +3169,17 @@ def main():
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
                                     is_long_b = (order_type_b == mt5.ORDER_TYPE_BUY)
-                                    h_ok, filled_b = execute_three_part_hedge_trade(S_B_resolved, is_long_b, price_b, qty_b, sl_price=sl_b, signal_id=signal_id)
-                                    if not h_ok:
-                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
-                                        close_all_positions(S_A_resolved)
+                                    if "GLOBAL_PENDING_HEDGES" not in globals():
+                                        global GLOBAL_PENDING_HEDGES
+                                        GLOBAL_PENDING_HEDGES = {}
+                                    GLOBAL_PENDING_HEDGES[signal_id] = {
+                                        "symbol_b": S_B_resolved,
+                                        "is_long_b": is_long_b,
+                                        "price_b": price_b,
+                                        "qty_b": qty_b,
+                                        "sl_b": sl_b
+                                    }
+                                    logger.info(f"🛡️ [UNHEDGED PROFIT MAXIMIZER] Leg A ({S_A_resolved}) opened 100% UNHEDGED for maximum profit! Leg B ({S_B_resolved}) hedge registered (will activate ONLY if Leg A loss reaches -$15.00 USD)!")
                     invalidate_trades_cache()
 
             # Three-Step Sequential Exit Pipeline
