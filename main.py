@@ -980,8 +980,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
     import os
     import requests
     
-    DEFAULT_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1531099383565783070/USKQReqpW61BIaCRPgYwaOQ65isEXn4X214XEUH2vL_PFqrPThOahTwSpV5cKUgvPHCG"
-    webhook_url = os.getenv("DISCORD_WEBHOOK_URL") or DEFAULT_DISCORD_WEBHOOK
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
         return
         
@@ -1027,8 +1026,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
 def send_discord_general_alert(message_text: str):
     import os
     import requests
-    DEFAULT_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1531099383565783070/USKQReqpW61BIaCRPgYwaOQ65isEXn4X214XEUH2vL_PFqrPThOahTwSpV5cKUgvPHCG"
-    webhook_url = os.getenv("DISCORD_WEBHOOK_URL") or DEFAULT_DISCORD_WEBHOOK
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
         return
     try:
@@ -1310,6 +1308,15 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             pos_info = mt5.positions_get(ticket=t["ticket"])
             if pos_info:
                 total_basket_pnl += float(pos_info[0].profit)
+
+        # ── HARD BASKET LOSS CIRCUIT BREAKER ($97.96 USD CAP) ──
+        acc_info_check = mt5.account_info()
+        acc_bal_check = float(acc_info_check.balance) if acc_info_check else 10000.0
+        max_allowed_basket_loss = -(acc_bal_check * (HALT_DAILY_DRAWDOWN_PCT / 100.0))
+        if total_basket_pnl <= max_allowed_basket_loss:
+            exit_triggered = True
+            exit_reason = f"HARD_BASKET_LOSS_CAP_BREACH (${total_basket_pnl:.2f} <= ${max_allowed_basket_loss:.2f})"
+            logger.info(f"🚨 [HARD BASKET LOSS CIRCUIT BREAKER] Basket floating loss reached ${total_basket_pnl:.2f} (Limit: ${max_allowed_basket_loss:.2f}). Auto-closing entire basket instantly!")
 
         # ── MASTER PROP FIRM THREE-STEP EXIT ARCHITECTURE ──
 
