@@ -1310,9 +1310,10 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 total_basket_pnl += float(pos_info[0].profit)
 
         # ── HARD BASKET LOSS CIRCUIT BREAKER ($97.96 USD CAP) ──
+        import risk_safeguards
         acc_info_check = mt5.account_info()
         acc_bal_check = float(acc_info_check.balance) if acc_info_check else 10000.0
-        max_allowed_basket_loss = -(acc_bal_check * (HALT_DAILY_DRAWDOWN_PCT / 100.0))
+        max_allowed_basket_loss = -(acc_bal_check * (risk_safeguards.HALT_DAILY_DRAWDOWN_PCT / 100.0))
         if total_basket_pnl <= max_allowed_basket_loss:
             exit_triggered = True
             exit_reason = f"HARD_BASKET_LOSS_CAP_BREACH (${total_basket_pnl:.2f} <= ${max_allowed_basket_loss:.2f})"
