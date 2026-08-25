@@ -1340,12 +1340,21 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         tp2_trade = next((t for t in open_leg_a_trades if "TP2" in str(t.get("comment", "")).upper()), None)
         tp3_trade = next((t for t in open_leg_a_trades if "TP3" in str(t.get("comment", "")).upper()), None)
 
-        # ── STEP 1: BREAKEVEN GUARD DISABLED 🔴 (PER USER DIRECTIVE: SL NEVER MOVED TO $0.00 ENTRY) ──
-        # Step 1 Breakeven SL shift is disabled. SL is locked in profit via Multi-Tier Trailing System instead.
+        # ── STEP 1: HYBRID BREAKEVEN GUARD 🛡️ ──
+        z_be_reached = (is_buy_spread and z_score_for_pair >= 0.0) or (not is_buy_spread and z_score_for_pair <= 0.0)
+        pnl_be_reached = total_basket_pnl >= 9.0
+        be_already_shifted = GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False)
 
+        if (z_be_reached or pnl_be_reached) and not be_already_shifted and total_basket_pnl > 0.0:
+            GLOBAL_HYBRID_BE_SHIFTED[sig_id] = True
+            trig_name = f"Z-Score {z_score_for_pair:.2f}" if z_be_reached else f"PnL ${total_basket_pnl:.2f} >= $9.00"
+            logger.info(f"🛡️ [STEP 1 BREAKEVEN ACTIVATED] Triggered by {trig_name}! Breakeven Floor Set at $0.00 Net PnL!")
 
-        # ── STEP 2: MEAN REVERSION SCALE-OUT DISABLED 🔴 (PER USER DIRECTIVE: TRADES RUN AS WHOLE BASKET UNTIL TRAILING STOP OR HARD TP/SL) ──
-        # Step 2 partial scale-out is disabled so trade runs completely without mid-way closures.
+        if GLOBAL_HYBRID_BE_SHIFTED.get(sig_id, False):
+            if total_basket_pnl <= 0.0:
+                exit_triggered = True
+                exit_reason = "HYBRID_BREAKEVEN_FLOOR_HIT ($0.00 Net PnL)"
+                logger.info(f"🛡️ [HYBRID BREAKEVEN GUARD EXECUTED] Basket returned to $0.00 Net PnL. Auto-closing entire basket at ZERO LOSS ($0.00)!")
 
 
 
