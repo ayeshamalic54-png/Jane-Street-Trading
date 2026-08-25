@@ -2674,11 +2674,11 @@ def main():
                 pass_vel_buy = True
                 pass_vel_sell = True
                 
-                pass_obi_buy = obi_buy_pass if OBI_ENABLED else True
-                pass_obi_sell = obi_sell_pass if OBI_ENABLED else True
-                
-                pass_smc_buy = in_bullish_zone if REQUIRE_SMC_CONFLUENCE else True
-                pass_smc_sell = in_bearish_zone if REQUIRE_SMC_CONFLUENCE else True
+                # OBI & SMC Filters: FORCE DISABLED 🔴 (Pure raw Z-score testing)
+                pass_obi_buy = True
+                pass_obi_sell = True
+                pass_smc_buy = True
+                pass_smc_sell = True
                 
                 if pass_z_buy and pass_vel_buy and pass_obi_buy and pass_smc_buy and pass_turn_buy:
                     action = "BUY_SPREAD"
