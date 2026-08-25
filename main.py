@@ -980,11 +980,8 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
     import os
     import requests
     
-    from database import load_env
-    load_env()
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
-        logger.warning("[DISCORD WEBOOK] DISCORD_WEBHOOK_URL is not configured in environment or .env file.")
         return
         
     try:
@@ -1352,7 +1349,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
 
 
-        # Option B Multi-Tier Trailing Profit Lock (5-Tier Profit Protection for entire basket)
+        # Option B Multi-Tier Trailing Profit Lock (4-Tier Profit Protection for entire basket)
         if current_peak >= 185.0:
             tier4_floor = 155.0
             if total_basket_pnl <= tier4_floor:
@@ -1377,12 +1374,6 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 exit_triggered = True
                 exit_reason = f"PROFIT_LOCK_TIER1 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier1_floor:.2f})"
                 logger.info(f"💰 [PROFIT LOCK TIER 1 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing entire basket to bank +$53.00 USD cash profit!")
-        elif current_peak >= 35.0:
-            tier0_floor = 20.0
-            if total_basket_pnl <= tier0_floor:
-                exit_triggered = True
-                exit_reason = f"PROFIT_LOCK_TIER0 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier0_floor:.2f})"
-                logger.info(f"💰 [PROFIT LOCK TIER 0 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier0_floor:.2f}). Auto-closing entire basket to bank +$20.00 USD cash profit!")
 
 
         # ── STEP 3: Z = ±2.40 RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
