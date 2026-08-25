@@ -1243,9 +1243,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 logger.error(f"[HEDGE GUARD] Error verifying Leg A MT5 state for signal_id {sig_id}: {eg}. Skipping hedge close to be safe.")
                 leg_a_truly_closed = False
 
-        # 1. Strict Basket Sync Guard: If ANY part of Leg A or Leg B was closed by broker/SL/TP, close ALL remaining parts immediately!
-        if len(open_leg_a_trades) < 3 or not open_leg_b_trades:
-            logger.info(f"🛡️ [BASKET SYNC GUARD] Part of trade closed for signal_id #{sig_id}. Auto-closing ALL remaining Leg A & Leg B tickets immediately!")
+        # 1. Strict Basket Sync Guard: If Leg A completely closes or Leg B completely closes, sync-close remaining leg!
+        if (not open_leg_a_trades and open_leg_b_trades) or (open_leg_a_trades and not open_leg_b_trades):
+            logger.info(f"🛡️ [BASKET SYNC GUARD] One leg closed for signal_id #{sig_id}. Auto-closing remaining Leg tickets immediately!")
             for t_a in open_leg_a_trades:
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
             for t_b in open_leg_b_trades:
