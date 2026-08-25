@@ -100,7 +100,7 @@ def load_config():
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
-            UPDATE bot_state SET active_pair = 'EURUSD/GBPUSD', stocks_enabled = FALSE, indices_enabled = FALSE, metals_enabled = FALSE, crypto_enabled = FALSE, forex_enabled = TRUE WHERE id = 1;
+            UPDATE bot_state SET active_pair = 'ALL', stocks_enabled = FALSE, indices_enabled = FALSE, metals_enabled = FALSE, crypto_enabled = FALSE, forex_enabled = TRUE WHERE id = 1;
         """)
         conn_mig.commit()
         cur_mig.close()
