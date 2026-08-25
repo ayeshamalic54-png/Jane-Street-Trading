@@ -2670,8 +2670,9 @@ def main():
 
 
                 
-                pass_vel_buy = (z_velocity > -z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
-                pass_vel_sell = (z_velocity < z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
+                # Knife Protection Velocity Filter: FORCE DISABLED 🔴 (Pure raw Z-score entry)
+                pass_vel_buy = True
+                pass_vel_sell = True
                 
                 pass_obi_buy = obi_buy_pass if OBI_ENABLED else True
                 pass_obi_sell = obi_sell_pass if OBI_ENABLED else True
