@@ -2982,55 +2982,16 @@ def main():
                             
                             qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
-                            # Apply Margin Guard to dynamically scale down lots to fit within available margin
-                            actual_lots_a, qty_b = apply_margin_guard(S_A_resolved, S_B_resolved, actual_lots_a, qty_b, True)
+                            # SINGLE-ASSET DIRECT ORDER EXECUTION (1 Ticket, Zero Hedge Drag)
+                            trade_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
+                            entry_p = best_sig["tick_a"].ask if is_long else best_sig["tick_a"].bid
+                            sl_val = sl_a
+                            tp_val = tp2_val
                             
-                            exec_a_ok, filled_a_total = execute_three_part_trade(
-                                S_A_resolved, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, actual_lots_a,
-                                tp1_val, tp2_val, tp3_val,
-                                signal_id=signal_id
-                            )
-                            if not exec_a_ok:
-                                # Check if MT5 actually filled Leg A positions despite initial response timeout
-                                try:
-                                    live_mt5_pos = mt5.positions_get()
-                                    if live_mt5_pos:
-                                        filled_a_total = sum(
-                                            float(p.volume) for p in live_mt5_pos
-                                            if p.symbol.upper().split('.')[0] == S_A_resolved.upper().split('.')[0]
-                                            and p.magic == MAGIC_NUMBER
-                                        )
-                                        if filled_a_total > 0:
-                                            exec_a_ok = True
-                                            logger.info(f"🛡️ [HEDGE RECOVERY] MT5 verified {filled_a_total:.2f} lots filled for Leg A ({S_A_resolved})! Proceeding with Leg B ({S_B_resolved}) Hedge Order!")
-                                except Exception as ex_recv:
-                                    logger.error(f"Error checking hedge recovery MT5 positions: {ex_recv}")
-
-                            if exec_a_ok:
-                                if filled_a_total > 0:
-                                    qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, filled_a_total, best_sig["beta"], best_cat_a, best_cat_b)
-                                fresh_tick_b = mt5.symbol_info_tick(S_B_resolved) if best_cat_b != "crypto" else None
-                                if fresh_tick_b is None and best_cat_b != "crypto":
-                                    fresh_tick_b = best_sig["tick_b"]
-                                order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(
-                                    best_action, best_sig["beta"], fresh_tick_b if best_cat_b != "crypto" else best_sig["tick_b"]
-                                )
-                                sl_b = price_b + sl_sign_b * sl_dist_b
-                                if best_cat_b == "crypto":
-                                    hedge_params = {"symbol": S_B_resolved, "side": side_b, "type": "MARKET", "quantity": qty_b}
-                                    h_res = send_signed_request("POST", "/fapi/v1/order", hedge_params)
-                                    if h_res and h_res.status_code == 200:
-                                        avg_price_b = float(h_res.json().get("avgPrice") or price_b)
-                                        log_trade_entry(h_res.json()["orderId"], S_B_resolved, side_b, qty_b, avg_price_b, datetime.datetime.now(), "Binance JS_HEDGE", signal_id)
-                                        price_prec = get_symbol_filters(S_B_resolved)["pricePrecision"] if get_symbol_filters(S_B_resolved) else 2
-                                        opp_side_b = "BUY" if side_b == "SELL" else "SELL"
-                                        send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
-                                else:
-                                    is_long_b = (order_type_b == mt5.ORDER_TYPE_BUY)
-                                    h_ok, filled_b = execute_three_part_hedge_trade(S_B_resolved, is_long_b, price_b, qty_b, sl_price=sl_b, signal_id=signal_id)
-                                    if not h_ok:
-                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
-                                        close_all_positions(S_A_resolved)
+                            res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "VWAP_SINGLE")
+                            if res_order and is_retcode_success(res_order.retcode):
+                                log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "VWAP_SINGLE", signal_id)
+                                logger.info(f"🟢 [SINGLE DIRECT ORDER FIRED] Symbol: {S_A_resolved} | Action: {'BUY' if is_long else 'SELL'} | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f}")
 
                     else:
                         if best_cat_a == "crypto":
