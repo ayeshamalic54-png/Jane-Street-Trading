@@ -3168,7 +3168,7 @@ def main():
             else:
                 sess_log_str = "DISABLED 🔴 (Trading 24/7)"
 
-            tp_inflect_log_str = "ENABLED 🟢"
+            tp_inflect_log_str = "DISABLED 🔴 (OFF)"
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
                 f"| Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: ENABLED 🟢 | Turning Point Inflection: {tp_inflect_log_str} "
