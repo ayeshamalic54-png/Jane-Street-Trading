@@ -2705,8 +2705,8 @@ def main():
 
 
                 win_rate = WIN_RATE_CACHE.get(pk, 50.0)
-                update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
                 all_scanned_z_summary.append(f"{pk}: Z={z:.3f}")
+                logger.info(f"📊 [VWAP SCAN] {pk} | Price: {p_a:.5f} | VWAP Z-Score: {z:+.3f} (Entry Limit: ±{Z_ENTRY_THRESHOLD:.2f}) | Turning Point: {'ENABLED 🟢' if pass_turn_buy or pass_turn_sell else 'WAITING ⏳'}")
 
 
                 # Track telemetry for current active pair (case-insensitive & alias resilient)
