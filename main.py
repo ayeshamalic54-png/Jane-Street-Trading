@@ -555,7 +555,7 @@ EXPECTED_BETA_SIGN = {
 
 DEFAULT_LOT_SIZES = {
     "metals": 0.28,
-    "forex": 0.28,
+    "forex": 0.50,
     "indices": 0.10,
     "stocks": 0.10,
     "crypto": 0.01
@@ -571,15 +571,15 @@ LEVERAGE_FACTORS = {
 
 def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Returns exact 1.0% Equity Risk lot sizes ($98.00 USD loss on 35 pips SL):
-    - Metals (Gold/Silver): 0.28 Lots
-    - Forex (EURUSD, GBPUSD, AUDUSD): 0.28 Lots
+    Returns exact 1.0% Equity Risk lot sizes ($100.00 USD loss max):
+    - Metals (Gold/Silver): 0.28 Lots (40 pips SL)
+    - Forex (EURUSD, GBPUSD): 0.50 Lots (20 pips SL) -> +$150 USD Profit on 30 pips TP!
     """
     if category == "metals" or "XAU" in symbol.upper() or "XAG" in symbol.upper():
         return 0.28
     elif category == "forex":
-        return 0.28
-    return DEFAULT_LOT_SIZES.get(category, 0.28)
+        return 0.50
+    return DEFAULT_LOT_SIZES.get(category, 0.50)
 
 
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
@@ -819,41 +819,21 @@ def get_kf_parameters(symbol: str):
 
 def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -> float:
     """
-    Returns SL distance in price units. Uses dashboard-configured sl_pips value.
-    Guarantees that the Stop Loss is at least 1.5 * ATR (from 5-minute candles)
-    to protect against market noise and invalid tight SLs on Gold/Indices.
+    Returns SL distance in price units.
+    - Forex Majors (EURUSD, GBPUSD): 20.0 Pips
+    - Metals (Gold XAUUSD): $4.00 Price Move (40 Pips)
     """
-    pips = sl_pips_override if sl_pips_override else SL_PIPS
     cat = get_symbol_category(symbol)
-    if cat == "crypto":
-        base_sl = float(price * (pips / 100.0))
-    else:
-        base_sl = pips * get_pip_size(symbol)
-        
-    # Safeguard: Enforce minimum SL floors by asset class to prevent premature noise stop-outs
     pip_sz = get_pip_size(symbol)
-    min_floor = 0.0
-    if cat == "forex":
-        min_floor = 35.0 * pip_sz  # Minimum 35 pips for Forex
-    elif cat == "metals":
-        min_floor = 2.50  # Strict Prop Firm 25 pips ($2.50 price move) for Gold/Silver
-    elif cat == "indices" or cat == "stocks":
-        min_floor = price * 0.015  # Minimum 1.5% for stocks/indices
-
-    if base_sl < min_floor:
-        base_sl = min_floor
-
-    try:
-        atr = get_atr(symbol, mt5.TIMEFRAME_M5, count=30)
-        if atr is not None and atr > 0:
-            min_sl = max(atr * 2.0, min_floor)
-            if base_sl < min_sl:
-                logger.info(f"SL of {base_sl:.5f} is too tight for {symbol} (noise boundary: {min_sl:.5f}). Automatically adjusted to safe boundary: {min_sl:.5f}")
-                return min_sl
-    except Exception as e:
-        logger.warning(f"Failed to calculate ATR safeguard for {symbol}: {e}")
-        
-    return base_sl
+    
+    if cat == "metals" or "XAU" in symbol.upper() or "XAG" in symbol.upper():
+        return 4.00  # $4.00 price move (40 pips) for Gold
+    elif cat == "forex":
+        return 20.0 * pip_sz  # 20.0 pips for Forex Majors
+    elif cat == "crypto":
+        return float(price * 0.015)
+    else:
+        return 35.0 * pip_sz
 
 def sync_mt5_open_positions_with_db():
     """
@@ -964,14 +944,21 @@ def sync_mt5_open_positions_with_db():
 
 def get_tp_distance(symbol: str, price: float, tp_pips_override: float = None) -> float:
     """
-    Returns TP distance in price units. Uses dashboard-configured tp_pips value.
+    Returns TP distance in price units.
+    - Forex Majors (EURUSD, GBPUSD): 30.0 Pips
+    - Metals (Gold XAUUSD): $6.00 Price Move (60 Pips)
     """
-    pips = tp_pips_override if tp_pips_override else TP_PIPS
     cat = get_symbol_category(symbol)
-    if cat == "crypto":
-        return float(price * (pips / 100.0))
+    pip_sz = get_pip_size(symbol)
+    
+    if cat == "metals" or "XAU" in symbol.upper() or "XAG" in symbol.upper():
+        return 6.00  # $6.00 price move (60 pips) for Gold
+    elif cat == "forex":
+        return 30.0 * pip_sz  # 30.0 pips for Forex Majors
+    elif cat == "crypto":
+        return float(price * 0.025)
     else:
-        return pips * get_pip_size(symbol)
+        return 50.0 * pip_sz
 
 def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_a, sl_a, tp1, tp2, tp3, lots_a, entry_b, sl_b, lots_b, side_b):
     import os
