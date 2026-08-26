@@ -554,8 +554,8 @@ EXPECTED_BETA_SIGN = {
 }
 
 DEFAULT_LOT_SIZES = {
-    "metals": 0.06,
-    "forex": 1.20,
+    "metals": 0.28,
+    "forex": 0.28,
     "indices": 0.10,
     "stocks": 0.10,
     "crypto": 0.01
@@ -571,15 +571,15 @@ LEVERAGE_FACTORS = {
 
 def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Returns configured lot sizes:
-    - Metals (Gold/Silver): 0.06 Lots
-    - Forex (EURUSD, GBPUSD, AUDUSD): 1.20 Lots
+    Returns exact 1.0% Equity Risk lot sizes ($98.00 USD loss on 35 pips SL):
+    - Metals (Gold/Silver): 0.28 Lots
+    - Forex (EURUSD, GBPUSD, AUDUSD): 0.28 Lots
     """
     if category == "metals" or "XAU" in symbol.upper() or "XAG" in symbol.upper():
-        return 0.06
+        return 0.28
     elif category == "forex":
-        return 1.20
-    return DEFAULT_LOT_SIZES.get(category, 0.06)
+        return 0.28
+    return DEFAULT_LOT_SIZES.get(category, 0.28)
 
 
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
