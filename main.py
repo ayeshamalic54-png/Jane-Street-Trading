@@ -267,9 +267,9 @@ def update_live_toggles_from_db():
             INDICES_ENABLED = cfg[8]
             RISK_LIMITS_ENABLED = cfg[9]
             Z_ENTRY_THRESHOLD = cfg[10]
-            KNIFE_PROTECTION_ENABLED = bool(cfg[13])
-            OBI_ENABLED = bool(cfg[14])
-            VOLATILITY_FILTER_ENABLED = bool(cfg[15])
+            KNIFE_PROTECTION_ENABLED = False
+            OBI_ENABLED = False
+            VOLATILITY_FILTER_ENABLED = False
             STOCKS_ENABLED = cfg[16]
             if len(cfg) > 19:
                 risk_safeguards.SESSION_GUARD_ENABLED = cfg[19]
