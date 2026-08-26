@@ -983,32 +983,22 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         
     try:
         now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
-        action_emoji = "🟢" if "BUY" in action else "🔴"
+        act_str = "MARKET BUY 🟢" if "BUY" in str(action).upper() else "MARKET SELL 🔴"
         
-        part_lots_a = round(lots_a / 3.0, 2)
         info_a = mt5.symbol_info(symbol_a)
         digits_a = info_a.digits if info_a else 5
-        info_b = mt5.symbol_info(symbol_b)
-        digits_b = info_b.digits if info_b else 5
         
         message = (
-            f"📢 **AWAIS JANE STREET QUANTUM ENGINE SIGNAL** 📢\n\n"
-            f"{action_emoji} **ACTION:** {action} ({symbol_a} / {symbol_b})\n"
+            f"📢 **AWAIS JANE STREET VWAP Z-SCORE SIGNAL** 📢\n\n"
+            f"⚡ **ACTION:** {act_str} ({symbol_a})\n"
             f"⏱ **Time:** {now_str}\n"
-            f"📊 **Z-Score:** {z_score:.3f}\n\n"
-            f"🛡 **LEG A ({symbol_a}) - 3 Parts:**\n"
-            f"  📥 **Entry:** {entry_a:.{digits_a}f}\n"
-            f"  ⛔ **Stop Loss (SL):** {sl_a:.{digits_a}f}\n"
-            f"  🎯 **TP1:** {tp1:.{digits_a}f}\n"
-            f"  🎯 **TP2:** {tp2:.{digits_a}f}\n"
-            f"  🎯 **TP3:** {tp3:.{digits_a}f}\n"
-            f"  📦 **Lots:** 3 parts of {part_lots_a:.2f} (Total {lots_a:.2f})\n\n"
-            f"⚖ **LEG B ({symbol_b}) - Hedge:**\n"
-            f"  📥 **Entry:** {entry_b:.{digits_b}f}\n"
-            f"  ⛔ **Stop Loss (SL):** {sl_b:.{digits_b}f}\n"
-            f"  🎯 **TP:** Dynamic (Spread Reversion)\n"
-            f"  📦 **Lots:** {lots_b:.2f}\n"
-            f"  📥 **Position:** {side_b}\n"
+            f"📊 **VWAP Z-Score:** {z_score:.3f}\n\n"
+            f"🛡 **SINGLE DIRECT ORDER (1 Ticket Only):**\n"
+            f"  📥 **Entry Price:** {entry_a:.{digits_a}f}\n"
+            f"  ⛔ **Stop Loss (SL):** {sl_a:.{digits_a}f} (M15 Swing Level)\n"
+            f"  🎯 **Take Profit (TP):** {tp2:.{digits_a}f} (VWAP Mean Line Z=0)\n"
+            f"  📦 **Lot Size:** {lots_a:.2f} Lots (1.0% Equity Risk Capped)\n"
+            f"  🛡 **Prop Firm Guard:** 80% Free Margin Safe 🟢\n"
         )
         
         payload = {"content": message}
@@ -1016,7 +1006,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         if res.status_code != 204:
             logger.error(f"Failed to send Discord webhook: {res.status_code} - {res.text}")
         else:
-            logger.info("Successfully sent signal notification to Discord webhook.")
+            logger.info("Successfully sent single-asset VWAP signal notification to Discord webhook.")
     except Exception as e:
         logger.error(f"Error sending Discord notification: {e}")
 
