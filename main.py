@@ -554,16 +554,16 @@ EXPECTED_BETA_SIGN = {
 }
 
 DEFAULT_LOT_SIZES = {
-    "metals": 0.01,
-    "forex": 0.05,
-    "indices": 0.01,
+    "metals": 0.06,
+    "forex": 1.20,
+    "indices": 0.10,
     "stocks": 0.10,
     "crypto": 0.01
 }
 
 LEVERAGE_FACTORS = {
     "forex": 1.0,
-    "metals": 0.05,   # Strict Prop Firm safety multiplier for Gold/Silver
+    "metals": 0.05,
     "indices": 0.05,
     "stocks": 0.05,
     "crypto": 0.01
@@ -571,22 +571,15 @@ LEVERAGE_FACTORS = {
 
 def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Calculates exact dynamic lot size based on 1.0% Account Equity Risk ($97.96 USD max loss):
-    Lots = (Equity * 0.01) / (SL_Distance_Price * (Tick_Value / Tick_Size))
-    Guarantees that hitting SL results in EXACTLY 1.0% Equity Loss ($97.96 USD max)!
+    Returns configured lot sizes:
+    - Metals (Gold/Silver): 0.06 Lots
+    - Forex (EURUSD, GBPUSD, AUDUSD): 1.20 Lots
     """
-    try:
-        acc_info = mt5.account_info()
-        if acc_info and acc_info.equity > 0:
-            from risk_safeguards import calculate_lots
-            if sl_dist_price and sl_dist_price > 0:
-                dyn_lots = calculate_lots(symbol, sl_dist_price, acc_info)
-                if dyn_lots and dyn_lots >= 0.01:
-                    return dyn_lots
-    except Exception as e:
-        logger.error(f"Error calculating exact 1% risk lots for {symbol}: {e}")
-        
-    return DEFAULT_LOT_SIZES.get(category, 0.01)
+    if category == "metals" or "XAU" in symbol.upper() or "XAG" in symbol.upper():
+        return 0.06
+    elif category == "forex":
+        return 1.20
+    return DEFAULT_LOT_SIZES.get(category, 0.06)
 
 
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
