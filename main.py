@@ -1215,8 +1215,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
             continue
 
-        # 2. Reverse cleanup check: If Leg B has NO open trades left but Leg A still has open trades, close Leg A immediately!
-        if not open_leg_b_trades and open_leg_a_trades:
+        # 2. Reverse cleanup check: ONLY if Leg B hedge was explicitly placed (2-leg pair trading)
+        if len(leg_b_trades) > 0 and not open_leg_b_trades and open_leg_a_trades:
             logger.info(f"🛡️ [ORPHAN CLEANUP] Leg B hedge is fully closed for signal_id #{sig_id}. Closing remaining Leg A trades on MT5 to prevent un-hedged floating loss.")
             for t_a in open_leg_a_trades:
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
@@ -1224,6 +1224,15 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
         if not open_leg_a_trades:
             continue
+
+        # ── 140-SECOND MINIMUM HOLD GUARD ──
+        from risk_safeguards import MINIMUM_HOLD_ENABLED, MINIMUM_HOLD_TIME_SECONDS
+        if MINIMUM_HOLD_ENABLED and open_leg_a_trades:
+            earliest_entry = min([t["entry_time"] for t in open_leg_a_trades if t.get("entry_time")])
+            if earliest_entry:
+                holding_seconds = (datetime.datetime.now() - earliest_entry).total_seconds()
+                if holding_seconds < MINIMUM_HOLD_TIME_SECONDS:
+                    continue  # Strictly hold trade for at least 140 seconds before strategy exit!
 
         # Dynamically calculate the Z-score and velocity for this specific pair
         z_score_for_pair = 0.0
