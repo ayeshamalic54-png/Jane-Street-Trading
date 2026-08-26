@@ -554,37 +554,41 @@ EXPECTED_BETA_SIGN = {
 }
 
 DEFAULT_LOT_SIZES = {
-    "metals": 1.50,
-    "forex": 1.20,
-    "indices": 0.60,
-    "stocks": 15.00,
-    "crypto": 0.06
+    "metals": 0.01,
+    "forex": 0.05,
+    "indices": 0.01,
+    "stocks": 0.10,
+    "crypto": 0.01
 }
 
 LEVERAGE_FACTORS = {
     "forex": 1.0,
-    "metals": 0.25,   # 4x lower leverage than Forex
-    "indices": 0.25,  # 4x lower leverage than Forex
-    "stocks": 0.10,   # 10x lower leverage than Forex
-    "crypto": 0.01    # 100x lower leverage than Forex
+    "metals": 0.05,   # Strict Prop Firm safety multiplier for Gold/Silver
+    "indices": 0.05,
+    "stocks": 0.05,
+    "crypto": 0.01
 }
 
 def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.00083) -> float:
     """
-    Calculates dynamic lot size based on 1.0% Account Equity Risk:
-    - $10,000 Equity -> 1.20 Total Lots (3 x 0.40 lots)
-    - $12,000 Equity -> 1.44 Total Lots (3 x 0.48 lots)
+    Calculates dynamic lot size based on 1.0% Account Equity Risk ($97.96 USD max loss):
+    - Metals (XAUUSD / XAGUSD): Capped strictly at 0.01 - 0.02 Lots MAX!
+    - Forex Majors: Capped at 0.05 - 0.10 Lots MAX!
     """
     try:
         acc_info = mt5.account_info()
         if acc_info and acc_info.equity > 0:
             from risk_safeguards import calculate_lots
             dyn_lots = calculate_lots(symbol, sl_dist_price, acc_info)
-            if dyn_lots and dyn_lots >= 0.03:
-                return dyn_lots
+            if category == "metals" or "XAU" in symbol.upper() or "XAG" in symbol.upper():
+                return min(0.02, max(0.01, dyn_lots))
+            elif category == "forex":
+                return min(0.10, max(0.01, dyn_lots))
+            elif dyn_lots and dyn_lots >= 0.01:
+                return min(0.05, dyn_lots)
     except Exception:
         pass
-    return DEFAULT_LOT_SIZES.get(category, 1.20)
+    return DEFAULT_LOT_SIZES.get(category, 0.01)
 
 
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
@@ -841,7 +845,7 @@ def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -
     if cat == "forex":
         min_floor = 35.0 * pip_sz  # Minimum 35 pips for Forex
     elif cat == "metals":
-        min_floor = 25.0  # Minimum $25.00 price move for Gold/Silver
+        min_floor = 2.50  # Strict Prop Firm 25 pips ($2.50 price move) for Gold/Silver
     elif cat == "indices" or cat == "stocks":
         min_floor = price * 0.015  # Minimum 1.5% for stocks/indices
 
