@@ -84,9 +84,10 @@ KF_CACHE = {}
 LAST_KF_UPDATE_BAR = {}
 WIN_RATE_CACHE = {}
 
-KNIFE_PROTECTION_ENABLED = True
-OBI_ENABLED = True
-VOLATILITY_FILTER_ENABLED = True
+KNIFE_PROTECTION_ENABLED = False
+OBI_ENABLED = False
+VOLATILITY_FILTER_ENABLED = False
+REQUIRE_SMC_CONFLUENCE = False
 
 # Dashboard API base URL — update to your Replit URL when deployed
 DASHBOARD_API_URL = os.environ.get("DASHBOARD_API_URL", "http://localhost:80/api")
