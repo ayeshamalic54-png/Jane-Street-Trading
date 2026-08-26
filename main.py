@@ -2639,24 +2639,7 @@ def main():
                 elif pass_z_sell and pass_vel_sell and pass_obi_sell and pass_smc_sell and pass_turn_sell:
                     action = "SELL_SPREAD"
 
-                # Protection 3: Pre-Entry Direction Confirmation
-                if action != "NONE":
-                    from execution_bot import check_pre_entry_direction_confirmation
-                    is_confirmed, pre_reason = check_pre_entry_direction_confirmation(action, z, z_velocity, pair_str=f"{s_a_resolved}/{s_b_resolved}")
-                    if not is_confirmed:
-
-                        logger.info(pre_reason)
-                        action = "NONE"
-
-                # Validate beta sign and magnitude to prevent same-side hedge order anomalies
-
-                if action != "NONE":
-                    expected_sign = EXPECTED_BETA_SIGN.get(pk, 1)
-                    beta_sign = 1 if beta >= 0 else -1
-                    if beta_sign != expected_sign:
-                        logger.warning(f"Correlation anomaly for {pk}: estimated beta {beta:.4f} has wrong sign (expected {expected_sign}). Skipping signal.")
-                        action = "NONE"
-                    # Min beta (<0.20) filter DISABLED per user directive to ensure pure baseline trade execution
+                # Pre-entry direction & Beta sign checks bypassed for pure Single-Asset VWAP Z-Score execution
 
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
