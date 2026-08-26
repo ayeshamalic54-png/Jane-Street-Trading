@@ -1242,13 +1242,17 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 logger.error(f"[HEDGE GUARD] Error verifying Leg A MT5 state for signal_id {sig_id}: {eg}. Skipping hedge close to be safe.")
                 leg_a_truly_closed = False
 
-        # 1. Strict Basket Sync Guard: If ANY part of Leg A or Leg B was closed by broker/SL/TP, close ALL remaining parts immediately!
-        if len(open_leg_a_trades) < 3 or not open_leg_b_trades:
-            logger.info(f"🛡️ [BASKET SYNC GUARD] Part of trade closed for signal_id #{sig_id}. Auto-closing ALL remaining Leg A & Leg B tickets immediately!")
+            if leg_a_truly_closed:
+                logger.info(f"🛡️ [ORPHAN CLEANUP] Leg A is fully closed for signal_id #{sig_id}. Closing remaining Leg B hedge trades on MT5.")
+                for t_b in open_leg_b_trades:
+                    close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+            continue
+
+        # 2. Reverse cleanup check: If Leg B has NO open trades left but Leg A still has open trades, close Leg A immediately!
+        if not open_leg_b_trades and open_leg_a_trades:
+            logger.info(f"🛡️ [ORPHAN CLEANUP] Leg B hedge is fully closed for signal_id #{sig_id}. Closing remaining Leg A trades on MT5 to prevent un-hedged floating loss.")
             for t_a in open_leg_a_trades:
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
-            for t_b in open_leg_b_trades:
-                close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
             continue
 
         if not open_leg_a_trades:
@@ -1308,15 +1312,6 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             pos_info = mt5.positions_get(ticket=t["ticket"])
             if pos_info:
                 total_basket_pnl += float(pos_info[0].profit)
-
-        # ── HARD BASKET LOSS CIRCUIT BREAKER ($97.96 USD CAP) ──
-        acc_info_check = mt5.account_info()
-        acc_bal_check = float(acc_info_check.balance) if acc_info_check else 10000.0
-        max_allowed_basket_loss = -(acc_bal_check * (HALT_DAILY_DRAWDOWN_PCT / 100.0))
-        if total_basket_pnl <= max_allowed_basket_loss:
-            exit_triggered = True
-            exit_reason = f"HARD_BASKET_LOSS_CAP_BREACH (${total_basket_pnl:.2f} <= ${max_allowed_basket_loss:.2f})"
-            logger.info(f"🚨 [HARD BASKET LOSS CIRCUIT BREAKER] Basket floating loss reached ${total_basket_pnl:.2f} (Limit: ${max_allowed_basket_loss:.2f}). Auto-closing entire basket instantly!")
 
         # ── MASTER PROP FIRM THREE-STEP EXIT ARCHITECTURE ──
 
