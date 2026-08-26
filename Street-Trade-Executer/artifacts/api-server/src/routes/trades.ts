@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { tradesTable } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { GetTradesQueryParams } from "@workspace/api-zod";
 
 const router = Router();
@@ -12,13 +12,12 @@ router.get("/trades", async (req, res) => {
     const limit = parsed.success ? (parsed.data.limit ?? 50) : 50;
     const status = parsed.success ? (parsed.data.status ?? "ALL") : "ALL";
 
-    const rows = await db
-      .select()
-      .from(tradesTable)
-      .orderBy(desc(tradesTable.entryTime))
-      .limit(limit);
+    const query = db.select().from(tradesTable);
+    const rows = status === "ALL"
+      ? await query.orderBy(desc(tradesTable.entryTime)).limit(limit)
+      : await query.where(eq(tradesTable.status, status)).orderBy(desc(tradesTable.entryTime)).limit(limit);
 
-    const filtered = status === "ALL" ? rows : rows.filter((r) => r.status === status);
+    const filtered = rows;
 
     res.json(
       filtered.map((t) => ({
