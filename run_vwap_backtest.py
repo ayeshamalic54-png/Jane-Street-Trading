@@ -9,7 +9,7 @@ from vwap_strategy_engine import (
     evaluate_single_asset_vwap_signal
 )
 
-def run_authentic_simulation(symbol, bars=2500, category="forex", z_threshold=2.0):
+def run_authentic_simulation(symbol, bars=2500, category="forex", z_threshold=2.00):
     print(f"=== AUTHENTIC BACKTEST: {symbol} (M15) ===")
     random.seed(hash(symbol) % 10000)
     
@@ -103,7 +103,7 @@ def run_authentic_simulation(symbol, bars=2500, category="forex", z_threshold=2.
                 trades.append(active_trade)
                 active_trade = None
 
-        # Check Signal Entry (200 EMA + VWAP Z-Score Reversal Crossover)
+        # Check Signal Entry
         if active_trade is None:
             sig, tp_val, sl_val, reason = evaluate_single_asset_vwap_signal(sub_df, z_threshold=z_threshold, category=category)
             if sig in ["BUY", "SELL"] and tp_val is not None and sl_val is not None:
@@ -127,7 +127,7 @@ def run_authentic_simulation(symbol, bars=2500, category="forex", z_threshold=2.
 
     total_t = len(trades)
     if total_t == 0:
-        print("No trades generated.")
+        print(f"No trades generated for {symbol}.")
         return
 
     wins = [t for t in trades if t['profit'] > 0]
@@ -149,12 +149,12 @@ def run_authentic_simulation(symbol, bars=2500, category="forex", z_threshold=2.
 if __name__ == "__main__":
     print("=== SINGLE-ASSET VWAP Z-SCORE QUANTITATIVE BACKTEST ===")
     symbols_to_test = [
-        ("EURUSD", "forex", 2.0),
-        ("GBPUSD", "forex", 2.2),
-        ("AUDUSD", "forex", 2.0),
-        ("USDJPY", "forex", 2.0),
-        ("USDCHF", "forex", 2.0),
-        ("XAUUSD", "metals", 2.5)
+        ("EURUSD", "forex", 2.00),
+        ("GBPUSD", "forex", 2.00),
+        ("AUDUSD", "forex", 2.00),
+        ("USDJPY", "forex", 2.00),
+        ("USDCHF", "forex", 2.00),
+        ("XAUUSD", "metals", 2.00)
     ]
     for sym, cat, z_t in symbols_to_test:
         run_authentic_simulation(sym, bars=2500, category=cat, z_threshold=z_t)
