@@ -208,7 +208,7 @@ def fetch_db_config():
                 bool(row[7] if row[7] is not None else True),
                 bool(row[8] if row[8] is not None else True),
                 bool(row[9] if row[9] is not None else True),
-                float(row[10] or 2.0),
+                float(row[10]) if row[10] is not None else 0.60,
                 float(row[11]) if row[11] is not None else 0.01,
                 int(row[12] or 3),
                 bool(row[13] if row[13] is not None else True),
@@ -218,8 +218,8 @@ def fetch_db_config():
                 float(row[17]) if len(row) > 17 and row[17] is not None else 1.00,
                 float(row[18]) if len(row) > 18 and row[18] is not None else 3.30,
                 bool(row[19] if len(row) > 19 and row[19] is not None else False),
-                float(row[20]) if len(row) > 20 and row[20] is not None else 12.0,
-                float(row[21]) if len(row) > 21 and row[21] is not None else 21.0
+                float(row[20]) if len(row) > 20 and row[20] is not None else 12.5,
+                float(row[21]) if len(row) > 21 and row[21] is not None else 2.0
             )
         else:
             cur.close()
@@ -2977,7 +2977,9 @@ def main():
                             res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "VWAP_SINGLE")
                             if res_order and is_retcode_success(res_order.retcode):
                                 log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "VWAP_SINGLE", signal_id)
-                                logger.info(f"🟢 [SINGLE DIRECT ORDER FIRED] Symbol: {S_A_resolved} | Action: {'BUY' if is_long else 'SELL'} | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f}")
+                                logger.info("================================================================================")
+                                logger.info(f"🟢 [TRADE STARTED] Symbol: {S_A_resolved} | Action: {'BUY' if is_long else 'SELL'} | Volume: {actual_lots_a:.2f} Lots | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
+                                logger.info("================================================================================")
 
                     else:
                         if best_cat_a == "crypto":

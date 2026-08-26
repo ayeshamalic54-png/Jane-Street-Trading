@@ -690,7 +690,9 @@ def log_trade_exit(ticket, close_price, profit, close_time):
         pnl_emoji = "🟢" if pnl_val >= 0 else "🔴"
         pnl_sign = "+" if pnl_val >= 0 else ""
         
-        print(f"🏁 [TRADE EXIT LOGGED] Ticket #{ticket} ({symbol_str}) | Close Price: {close_price} | PnL: {pnl_sign}${pnl_val:.2f} USD {pnl_emoji}")
+        print("================================================================================")
+        print(f"🏁 [TRADE CLOSED] Symbol: {symbol_str} | Ticket #{ticket} | Close Price: {close_price} | Realized PnL: {pnl_sign}${pnl_val:.2f} USD {pnl_emoji}")
+        print("================================================================================")
         
         # Send Discord exit notification
         disc_msg = (
