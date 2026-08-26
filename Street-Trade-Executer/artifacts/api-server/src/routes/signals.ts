@@ -43,8 +43,8 @@ router.get("/signals", async (req, res) => {
           zScore: Number(s.zScore),
           obi: Number(s.obi),
           action: s.action,
-          totalLots: totalLots > 0 ? totalLots : undefined,
-          totalProfit: totalProfit !== null ? totalProfit : undefined,
+          totalLots: totalLots > 0 ? totalLots : 0.28,
+          totalProfit: totalProfit !== null ? totalProfit : 0.0,
           trades: tradesForSignal.map((t) => ({
             ticket: Number(t.ticket),
             symbol: t.symbol,
