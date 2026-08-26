@@ -2967,12 +2967,7 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
-                                disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
-                                mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
-                                lots_a = DEFAULT_LOTS * mult
-                            else:
-                                lots_a = get_blue_guardian_lots(S_A, best_cat_a)
+                            actual_lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a)
                             # Apply 3-part safeguard scaling correction
                             info_a_check = mt5.symbol_info(S_A_resolved)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
