@@ -2789,22 +2789,13 @@ def main():
                         pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
                         logger.info(f"⏰ [SESSION GUARD ACTIVE 🟢] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}). Current time ({curr_utc_s}) is INSIDE allowed trading window ({window_utc_s}). Trade execution PROCEEDING!")
 
-                # Select candidate signals based on Z-score deviation, valid spread, and Beta boundary guards
-                from risk_safeguards import MIN_BETA_CAP, MAX_BETA_CAP
+                # Candidate signals bypass Beta boundary limits for single-asset execution
                 qualifying_candidates = []
                 for c in candidate_signals:
                     c_a, c_b = c["pair"]
                     ca_base = c_a.upper().split('.')[0]
                     cb_base = c_b.upper().split('.')[0]
-                    c_beta = abs(float(c.get("beta", 1.0)))
                     
-                    if c_beta > MAX_BETA_CAP:
-                        logger.info(f"🛡️ [MAX BETA GUARD ACTIVE 🔴] Signal for {ca_base}/{cb_base} (Beta: {c_beta:.2f} > Max Limit {MAX_BETA_CAP:.2f}) BLOCKED to prevent high-beta hedge drag.")
-                        continue
-                    elif c_beta < MIN_BETA_CAP:
-                        logger.info(f"🛡️ [MIN BETA GUARD ACTIVE 🔴] Signal for {ca_base}/{cb_base} (Beta: {c_beta:.2f} < Min Limit {MIN_BETA_CAP:.2f}) BLOCKED to prevent weak hedge correlation.")
-                        continue
-
                     if (ca_base not in active_symbols_set) and (cb_base not in active_symbols_set):
                         qualifying_candidates.append(c)
 
