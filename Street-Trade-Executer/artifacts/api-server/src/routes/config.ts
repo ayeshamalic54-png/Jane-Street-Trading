@@ -71,8 +71,9 @@ router.post("/config", async (req, res) => {
     const sessEnd = bodyObj.session_end_hour !== undefined ? Number(bodyObj.session_end_hour) : (bodyObj.sessionEndHour !== undefined ? Number(bodyObj.sessionEndHour) : Number((state as any)?.session_end_hour ?? (state as any)?.sessionEndHour ?? 2.0));
 
     const pairToSave = activePair || state?.activePair || "EURUSD/GBPUSD";
+    let parts: string[] = ["EURUSD", "GBPUSD"];
     if (pairToSave !== "ALL") {
-      const parts = pairToSave.split("/");
+      parts = pairToSave.split("/");
       if (parts.length !== 2 || !parts[0] || !parts[1]) {
         return res.status(400).json({ error: "activePair must be SYMBOL_A/SYMBOL_B or ALL" });
       }
