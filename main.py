@@ -1024,29 +1024,9 @@ def send_discord_general_alert(message_text: str):
 
 def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
     """
-    Returns True if a trade for this symbol pair was closed in the last 30 minutes.
-    This acts as a restart-proof database-backed cooldown safeguard.
+    30-minute cooldown disabled for testing mode so Z=0.60 signals fire immediately!
     """
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        # Look for trades closed in the last 30 minutes
-        thirty_mins_ago = datetime.datetime.now() - datetime.timedelta(minutes=30)
-        cur.execute(
-            """
-            SELECT COUNT(*) FROM trades 
-            WHERE (symbol = %s OR symbol = %s) 
-              AND (entry_time >= %s OR close_time >= %s)
-            """,
-            (symbol_a, symbol_b, thirty_mins_ago, thirty_mins_ago)
-        )
-        count = cur.fetchone()[0]
-        cur.close()
-        conn.close()
-        return count > 0
-    except Exception as e:
-        logger.error(f"Error checking db cooldown: {e}")
-        return False
+    return False
 
 def get_strategy_parameters(symbol: str):
     """
