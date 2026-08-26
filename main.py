@@ -2419,6 +2419,12 @@ def main():
                     logger.error(f"Error evaluating adverse regime exit: {ex_adv}")
 
 
+            # Auto-import & sync all active MT5 open positions with database
+            try:
+                sync_mt5_open_positions_with_db()
+            except Exception as e_sync:
+                logger.error(f"Error calling sync_mt5_open_positions_with_db: {e_sync}")
+
             # Sync open trades live prices and profit/loss in DB
             try:
                 conn = get_connection()
