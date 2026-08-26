@@ -664,11 +664,12 @@ def get_open_trades_count(symbol=None):
     return count
 
 def log_trade_exit(ticket, close_price, profit, close_time):
-    """Updates a trade when it is closed."""
+    """Updates a trade when it is closed and sends a Discord exit notification."""
     query = """
         UPDATE trades
         SET close_price = %s, profit = %s, close_time = %s, status = 'CLOSED'
         WHERE ticket = %s
+        RETURNING symbol, order_type, lots, entry_price
     """
     conn = None
     try:
@@ -677,8 +678,30 @@ def log_trade_exit(ticket, close_price, profit, close_time):
         cur.execute(query, (
             float(close_price), float(profit), close_time, int(ticket)
         ))
+        row = cur.fetchone()
         conn.commit()
         cur.close()
+        
+        symbol_str = row[0] if row else "N/A"
+        dir_str = row[1] if row else "TRADE"
+        lots_val = float(row[2]) if row else 0.0
+        
+        pnl_val = float(profit)
+        pnl_emoji = "🟢" if pnl_val >= 0 else "🔴"
+        pnl_sign = "+" if pnl_val >= 0 else ""
+        
+        print(f"🏁 [TRADE EXIT LOGGED] Ticket #{ticket} ({symbol_str}) | Close Price: {close_price} | PnL: {pnl_sign}${pnl_val:.2f} USD {pnl_emoji}")
+        
+        # Send Discord exit notification
+        disc_msg = (
+            f"🏁 **JANE STREET POSITION CLOSED** 🏁\n\n"
+            f"🎫 **Ticket:** `{ticket}`\n"
+            f"💱 **Symbol:** `{symbol_str}` ({dir_str} {lots_val:.2f} lots)\n"
+            f"💵 **Close Price:** `{close_price:.5f}`\n"
+            f"💰 **Realized PnL:** `{pnl_sign}${pnl_val:.2f} USD` {pnl_emoji}\n"
+            f"⏱ **Close Time:** `{close_time}`\n"
+        )
+        send_discord_message(disc_msg)
     except Exception as e:
         print(f"Error logging trade exit: {e}")
     finally:
