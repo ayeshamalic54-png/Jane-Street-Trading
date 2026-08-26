@@ -92,12 +92,12 @@ def calculate_prop_firm_lot_size(symbol: str, account_equity: float, free_margin
     final_lots = max(0.01, round(final_lots, 2))
     return final_lots
 
-def evaluate_single_asset_vwap_signal(df: pd.DataFrame, z_threshold: float = 2.60, category: str = "forex"):
+def evaluate_single_asset_vwap_signal(df: pd.DataFrame, z_threshold: float = 0.60, category: str = "forex"):
     """
-    Single-Asset VWAP Z-Score Reversal Execution Logic:
-    - BUY: Price > 200 EMA (Bullish Trend), Z-Score <= -2.60 then curls UP across -2.60.
+    Single-Asset VWAP Z-Score Reversal Execution Logic (TESTING MODE Z=0.60):
+    - BUY: Price > 200 EMA (Bullish Trend), Z-Score <= -0.60 then curls UP across -0.60.
       TP = VWAP Line (Z = 0.0), SL = Nearest M15 Swing Low - Buffer.
-    - SELL: Price < 200 EMA (Bearish Trend), Z-Score >= +2.60 then curls DOWN across +2.60.
+    - SELL: Price < 200 EMA (Bearish Trend), Z-Score >= +0.60 then curls DOWN across +0.60.
       TP = VWAP Line (Z = 0.0), SL = Nearest M15 Swing High + Buffer.
     """
     if df is None or len(df) < 200 or 'vwap_zscore' not in df.columns or 'ema_200' not in df.columns:
