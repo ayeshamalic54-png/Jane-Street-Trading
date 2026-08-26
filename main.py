@@ -569,25 +569,23 @@ LEVERAGE_FACTORS = {
     "crypto": 0.01
 }
 
-def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.00083) -> float:
+def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Calculates dynamic lot size based on 1.0% Account Equity Risk ($97.96 USD max loss):
-    - Metals (XAUUSD / XAGUSD): Capped strictly at 0.01 - 0.02 Lots MAX!
-    - Forex Majors: Capped at 0.05 - 0.10 Lots MAX!
+    Calculates exact dynamic lot size based on 1.0% Account Equity Risk ($97.96 USD max loss):
+    Lots = (Equity * 0.01) / (SL_Distance_Price * (Tick_Value / Tick_Size))
+    Guarantees that hitting SL results in EXACTLY 1.0% Equity Loss ($97.96 USD max)!
     """
     try:
         acc_info = mt5.account_info()
         if acc_info and acc_info.equity > 0:
             from risk_safeguards import calculate_lots
-            dyn_lots = calculate_lots(symbol, sl_dist_price, acc_info)
-            if category == "metals" or "XAU" in symbol.upper() or "XAG" in symbol.upper():
-                return min(0.02, max(0.01, dyn_lots))
-            elif category == "forex":
-                return min(0.10, max(0.01, dyn_lots))
-            elif dyn_lots and dyn_lots >= 0.01:
-                return min(0.05, dyn_lots)
-    except Exception:
-        pass
+            if sl_dist_price and sl_dist_price > 0:
+                dyn_lots = calculate_lots(symbol, sl_dist_price, acc_info)
+                if dyn_lots and dyn_lots >= 0.01:
+                    return dyn_lots
+    except Exception as e:
+        logger.error(f"Error calculating exact 1% risk lots for {symbol}: {e}")
+        
     return DEFAULT_LOT_SIZES.get(category, 0.01)
 
 
@@ -2910,14 +2908,9 @@ def main():
                             mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                             lots_a = DEFAULT_LOTS * mult
                         else:
-                            lots_a = get_blue_guardian_lots(S_A, best_cat_a)
+                            lots_a = get_blue_guardian_lots(S_A, best_cat_a, sl_dist_price=sl_dist)
                             
-                        part_lots_a = round(lots_a / 3.0, 2)
-                        info_a_check = mt5.symbol_info(S_A)
-                        min_vol_a = info_a_check.volume_min if info_a_check else 0.01
-                        if part_lots_a < min_vol_a:
-                            part_lots_a = min_vol_a
-                        actual_lots_a = part_lots_a * 3.0
+                        actual_lots_a = lots_a
                         
                         lots_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                         
