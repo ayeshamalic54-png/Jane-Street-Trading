@@ -395,9 +395,9 @@ def is_spread_valid(symbol):
         price = (tick.bid + tick.ask) / 2.0
         max_spread = (price * 0.001) / pip_size
     elif any(x in s for x in ["XAU", "XPT", "XPD", "PLAT", "PALL"]):
-        max_spread = 5.0  # standard threshold for major precious metals
+        max_spread = 60.0  # Prop firm spread threshold for Gold ($0.60 spread)
     elif "XAG" in s:
-        max_spread = 10.0
+        max_spread = 80.0
     elif any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"]):
         max_spread = 30.0
     elif any(x in s for x in ["US500", "US30", "NAS100", "GER30", "UK100", "SPX", "DJI", "NDX", "USTEC"]):
