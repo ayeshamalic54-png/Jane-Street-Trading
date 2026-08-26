@@ -1,0 +1,108 @@
+{
+  "timestamp": "2026-07-31T05:40:30.218537",
+  "tables": {
+    "bot_state": {
+      "columns": [
+        "id",
+        "active_pair",
+        "system_status",
+        "equity",
+        "drawdown_percent",
+        "floating_profit",
+        "z_score",
+        "hedge_ratio",
+        "obi_a",
+        "obi_b",
+        "trades_today",
+        "sl_pips",
+        "smc_enabled",
+        "auto_execute",
+        "last_heartbeat",
+        "updated_at",
+        "crypto_enabled",
+        "metals_enabled",
+        "forex_enabled",
+        "indices_enabled",
+        "risk_limits_enabled",
+        "z_entry_threshold",
+        "tp_pips",
+        "default_lots",
+        "crypto_equity",
+        "mt5_equity",
+        "max_trades",
+        "admin_username",
+        "admin_password",
+        "initial_balance",
+        "overall_drawdown",
+        "max_equity_peak",
+        "mt5_login",
+        "knife_protection_enabled",
+        "obi_enabled",
+        "volatility_filter_enabled",
+        "user_password"
+      ],
+      "count": 1,
+      "data": [
+        {
+          "id": 1,
+          "active_pair": "EURUSD/GBPUSD",
+          "system_status": "RUNNING (Active)",
+          "equity": "5029.37",
+          "drawdown_percent": "-0.59",
+          "floating_profit": "0.00",
+          "z_score": "-0.2429",
+          "hedge_ratio": "0.7925",
+          "obi_a": "-0.0815",
+          "obi_b": "-0.0627",
+          "trades_today": 0,
+          "sl_pips": "30.0",
+          "smc_enabled": false,
+          "auto_execute": true,
+          "last_heartbeat": "2026-07-31T00:40:19.505409",
+          "updated_at": "2026-07-31T00:40:19.505409",
+          "crypto_enabled": false,
+          "metals_enabled": true,
+          "forex_enabled": true,
+          "indices_enabled": false,
+          "risk_limits_enabled": false,
+          "z_entry_threshold": "1.00",
+          "tp_pips": "30.0",
+          "default_lots": "0.000",
+          "crypto_equity": "0.00",
+          "mt5_equity": "0.00",
+          "max_trades": 30,
+          "admin_username": "wasee",
+          "admin_password": "AWais1122@",
+          "initial_balance": "5000.00",
+          "overall_drawdown": "0.00",
+          "max_equity_peak": "5184.38",
+          "mt5_login": 5053167592,
+          "knife_protection_enabled": true,
+          "obi_enabled": true,
+          "volatility_filter_enabled": true,
+          "user_password": "user1122"
+        }
+      ]
+    },
+    "scanned_pairs": {
+      "columns": [],
+      "count": 0,
+      "data": []
+    },
+    "daily_metrics": {
+      "columns": [],
+      "count": 0,
+      "data": []
+    },
+    "trades": {
+      "columns": [],
+      "count": 0,
+      "data": []
+    },
+    "signals": {
+      "columns": [],
+      "count": 0,
+      "data": []
+    }
+  }
+}

@@ -1,0 +1,14 @@
+Win + R press karein 
+→
+→ Type karein: sysdm.cpl 
+→
+→ Enter.
+Advanced tab 
+→
+→ Performance Settings 
+→
+→ Advanced tab 
+→
+→ Change... par click karein.
+Box ko CHECK (Tick) kar dein: Automatically manage paging file size for all drives ☑️.
+OK aur Apply click karein.

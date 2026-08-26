@@ -1,0 +1,43 @@
+# Git ignore file for Jane Street Trading System
+
+# Credentials & environment variables
+.env
+.env.*
+api key.txt
+
+# Python cache and virtual environment
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Node dependencies and builds
+node_modules/
+dist/
+build/
+.pnpm-store/
+.pnpm-debug.log
+
+# Workspace specific builds
+Street-Trade-Executer/node_modules/
+Street-Trade-Executer/dist/
+Street-Trade-Executer/artifacts/api-server/dist/
+Street-Trade-Executer/artifacts/trading-dashboard/dist/
+Street-Trade-Executer/artifacts/mockup-sandbox/dist/
+
+# System logs and temporary files
+.system_generated/
+*.log
+tmp/
+temp/
+C:\Users\wasee\.gemini\antigravity\brain\
+*.zip
+*.bat_persist
+*.tmp
+
+# IDEs and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,7 @@
+Account Credentials
+Your trading account login credentials can be found below:
+Account Size:	$10,000.00
+Login:	530316
+Password:	pPq0^0@aGk
+Server:	BlueGuardian-Server
+Platform:	MetaTrader 5
