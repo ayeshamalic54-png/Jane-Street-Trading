@@ -2567,7 +2567,11 @@ def main():
                 elif cat_a == "metals":
                     z_vel_lim = 0.02   # Tightened from 0.08
                 else:
-                    z_vel_lim = 0.01   # Tightened from 0.05
+                    z_vel_lim = 0.01
+
+                df_a = get_rates_df(s_a_resolved, mt5.TIMEFRAME_M15, count=220)
+                if df_a is not None and not df_a.empty:
+                    df_a = calculate_zscore_and_ema(df_a)
 
                 action = "NONE"
                 vid_sig, vid_tp, vid_sl, vid_sl_dist, vid_reason = evaluate_video_strategy_signal(df_a, z_threshold=Z_ENTRY_THRESHOLD, category=cat_a)
