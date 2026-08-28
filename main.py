@@ -1011,9 +1011,51 @@ def send_discord_general_alert(message_text: str):
 
 def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
     """
-    30-minute cooldown disabled for testing mode so Z=0.60 signals fire immediately!
+    10-minute cooldown guard between trades on the same asset.
+    Prevents instant re-entry right after a trade closes!
     """
-    return False
+    pair_key = f"{symbol_a.upper().split('.')[0]}/{symbol_b.upper().split('.')[0]}"
+    expiry = GLOBAL_PAIR_COOLDOWNS.get(pair_key, 0)
+    if time.time() < expiry:
+        return True
+        
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        ten_mins_ago = datetime.datetime.now() - datetime.timedelta(minutes=10)
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM trades 
+            WHERE (symbol = %s OR symbol = %s) 
+              AND (entry_time >= %s OR close_time >= %s)
+            """,
+            (symbol_a, symbol_b, ten_mins_ago, ten_mins_ago)
+        )
+        count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return count > 0
+    except Exception:
+        return False
+
+def check_200_ema_trend(symbol: str, price: float) -> str:
+    """
+    Calculates 200 EMA on M15 timeframe for the symbol (Video 1 Confirmation).
+    - Returns 'BULLISH' if Price > 200 EMA (Only BUY trades allowed!)
+    - Returns 'BEARISH' if Price < 200 EMA (Only SELL trades allowed!)
+    """
+    try:
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 220)
+        if rates is not None and len(rates) >= 200:
+            df_m15 = pd.DataFrame(rates)
+            ema_200 = df_m15['close'].ewm(span=200, adjust=False).mean().iloc[-1]
+            if price > ema_200:
+                return "BULLISH"
+            elif price < ema_200:
+                return "BEARISH"
+    except Exception as e:
+        logger.warning(f"Error calculating 200 EMA trend for {symbol}: {e}")
+    return "NEUTRAL"
 
 def get_strategy_parameters(symbol: str):
     """
@@ -1341,12 +1383,8 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
 
 
-            if is_sl_breached:
-                exit_triggered = True
-                exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f})"
-            elif z_step3_jackpot and total_basket_pnl > 0.0:
-                exit_triggered = True
-                exit_reason = f"THREE_STEP_EXIT_JACKPOT (Step 3 Jackpot Z={z_score_for_pair:.2f}, Basket PnL=${total_basket_pnl:.2f})"
+            # Code Z-SL disabled so trade runs cleanly to MetaTrader 5 Hard SL / Hard TP
+            is_sl_breached = False
 
 
 
@@ -2337,62 +2375,8 @@ def main():
                 except Exception as ex_hm:
                     logger.error(f"Error in hedge effectiveness monitoring: {ex_hm}")
 
-            # ── Protection 5: LOGIC-BASED AUTOMATIC ADVERSE-REGIME EXIT (Evaluated after 140s hold) ──
-            if has_positions and active_js_positions:
-                try:
-                    from risk_safeguards import check_adverse_regime_exit
-
-                    conn_time = get_connection()
-                    cur_time = conn_time.cursor()
-                    cur_time.execute("SELECT entry_time, order_type FROM trades WHERE status = 'OPEN' ORDER BY entry_time ASC LIMIT 1")
-                    time_row = cur_time.fetchone()
-                    cur_time.close()
-                    conn_time.close()
-                    
-                    if time_row and time_row[0]:
-                        first_entry_time = time_row[0]
-                        dir_str = str(time_row[1]).upper()
-                        kf_active = get_kf_for_pair(S_A_resolved, S_B_resolved)
-                        current_z_val = kf_active.z_history[-1] if kf_active.z_history else 0.0
-                        current_v_val = kf_active.get_velocity(k=3)
-                        
-                        if isinstance(first_entry_time, (int, float)):
-                            t_age = time.time() - first_entry_time
-                        elif isinstance(first_entry_time, datetime.datetime):
-                            now_utc = datetime.datetime.now(datetime.timezone.utc)
-                            if first_entry_time.tzinfo is None:
-                                first_entry_time = first_entry_time.replace(tzinfo=datetime.timezone.utc)
-                            t_age = (now_utc - first_entry_time).total_seconds()
-                        else:
-                            t_age = 0.0
-
-                        should_adv_close, adv_reason = check_adverse_regime_exit(current_pair_context, dir_str, current_z_val, current_v_val, t_age)
-                        if should_adv_close:
-                            logger.warning(f"[PAIR-SPECIFIC ADVERSE EXIT] {adv_reason}. AUTO-CLOSING ALL 4 TICKETS (3 TP LEGS + 1 HEDGE LEG) FOR PAIR {current_pair_context} ONLY!")
-                            
-                            # Query DB for open tickets belonging strictly to this pair (3 TP tickets + 1 Hedge ticket)
-                            conn_pair_tkts = get_connection()
-                            cur_pair_tkts = conn_pair_tkts.cursor()
-                            cur_pair_tkts.execute("SELECT ticket, symbol, order_type FROM trades WHERE status = 'OPEN' AND (UPPER(SPLIT_PART(symbol, '.', 1)) = %s OR UPPER(SPLIT_PART(symbol, '.', 1)) = %s)", (S_A_resolved.upper().split('.')[0], S_B_resolved.upper().split('.')[0]))
-                            pair_db_rows = cur_pair_tkts.fetchall()
-                            cur_pair_tkts.close()
-                            conn_pair_tkts.close()
-                            
-                            target_tickets = {row[0] for row in pair_db_rows}
-                            pair_syms = {S_A_resolved.upper().split('.')[0], S_B_resolved.upper().split('.')[0]}
-                            
-                            for pos in active_js_positions:
-                                pos_base = pos.symbol.upper().split('.')[0]
-                                pos_tkt = int(pos.ticket)
-                                # Close ONLY the 4 tickets belonging to this specific pair (3 TP + 1 Hedge)
-                                if pos_tkt in target_tickets or pos_base in pair_syms:
-                                    pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
-                                    logger.info(f"Closing adverse exit ticket {pos.ticket} ({pos.symbol} {pos.volume} lots)...")
-                                    close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
-
-
-                except Exception as ex_adv:
-                    logger.error(f"Error evaluating adverse regime exit: {ex_adv}")
+            # ── Protection 5: LOGIC-BASED ADVERSE EXIT DISABLED (Orders run cleanly to MT5 Hard SL / Hard TP) ──
+            pass
 
 
             # Auto-import & sync all active MT5 open positions with database
@@ -2586,33 +2570,28 @@ def main():
                     z_vel_lim = 0.01   # Tightened from 0.05
 
                 action = "NONE"
-                # Evaluate active protections based strictly on Dashboard Toggles (at all Z-thresholds)
                 effective_dyn_z = Z_ENTRY_THRESHOLD
                 _, _, z_sl_val, _ = get_strategy_parameters(s_a_resolved)
                 
-                pass_z_buy = (z < -effective_dyn_z) and (z > -z_sl_val)
-                pass_z_sell = (z > effective_dyn_z) and (z < z_sl_val)
+                # ── VIDEO 1 CONFIRMATIONS: 200 EMA TREND + Z-SCORE REVERSAL CROSSOVER ──
+                trend_regime = check_200_ema_trend(s_a_resolved, p_a)
                 
-                # Turning Point Inflection Filter: DISABLED FOR TESTING 🔴
-                pass_turn_buy = True
-                pass_turn_sell = True
+                zh_hist = list(kf_pair.z_history) if kf_pair and hasattr(kf_pair, 'z_history') else []
+                if len(zh_hist) >= 2:
+                    prev_z_val = zh_hist[-2]
+                    curr_z_val = zh_hist[-1]
+                    z_reversal_buy = (prev_z_val <= -effective_dyn_z) and (curr_z_val > prev_z_val)
+                    z_reversal_sell = (prev_z_val >= effective_dyn_z) and (curr_z_val < prev_z_val)
+                else:
+                    z_reversal_buy = (z <= -effective_dyn_z)
+                    z_reversal_sell = (z >= effective_dyn_z)
 
+                pass_z_buy = (trend_regime == "BULLISH") and z_reversal_buy and (z > -z_sl_val)
+                pass_z_sell = (trend_regime == "BEARISH") and z_reversal_sell and (z < z_sl_val)
 
-
-
-                
-                pass_vel_buy = (z_velocity > -z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
-                pass_vel_sell = (z_velocity < z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
-                
-                pass_obi_buy = obi_buy_pass if OBI_ENABLED else True
-                pass_obi_sell = obi_sell_pass if OBI_ENABLED else True
-                
-                pass_smc_buy = in_bullish_zone if REQUIRE_SMC_CONFLUENCE else True
-                pass_smc_sell = in_bearish_zone if REQUIRE_SMC_CONFLUENCE else True
-                
-                if pass_z_buy and pass_vel_buy and pass_obi_buy and pass_smc_buy and pass_turn_buy:
+                if pass_z_buy:
                     action = "BUY_SPREAD"
-                elif pass_z_sell and pass_vel_sell and pass_obi_sell and pass_smc_sell and pass_turn_sell:
+                elif pass_z_sell:
                     action = "SELL_SPREAD"
 
                 # Pre-entry direction & Beta sign checks bypassed for pure Single-Asset VWAP Z-Score execution
