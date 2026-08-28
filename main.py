@@ -2874,7 +2874,8 @@ def main():
                             if res_order and is_retcode_success(res_order.retcode):
                                 log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "VWAP_SINGLE", signal_id)
                                 logger.info("================================================================================")
-                                logger.info(f"🟢 [TRADE STARTED] Symbol: {S_A_resolved} | Action: {'BUY' if is_long else 'SELL'} | Volume: {actual_lots_a:.2f} Lots | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
+                                logger.info(f"🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
+                                logger.info(f"🟢 Symbol: {S_A_resolved} | Action: {'BUY' if is_long else 'SELL'} | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
                                 logger.info("================================================================================")
 
                     else:
@@ -2924,7 +2925,10 @@ def main():
                             res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "VWAP_SINGLE")
                             if res_order and is_retcode_success(res_order.retcode):
                                 log_trade_entry(res_order.order, S_A_resolved, "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "VWAP_SINGLE", signal_id)
-                                logger.info(f"🟢 [SINGLE DIRECT ORDER FIRED] Symbol: {S_A_resolved} | Action: SELL | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f}")
+                                logger.info("================================================================================")
+                                logger.info(f"🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
+                                logger.info(f"🔴 Symbol: {S_A_resolved} | Action: SELL | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
+                                logger.info("================================================================================")
                     invalidate_trades_cache()
 
             # Three-Step Sequential Exit Pipeline
