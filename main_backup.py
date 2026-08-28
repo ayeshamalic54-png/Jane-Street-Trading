@@ -21,7 +21,7 @@ import joblib
 from math_models import KalmanFilterRegression, calculate_obi, test_cointegration, is_turning_point_confirmed
 from data_ingestion import initialize_mt5, check_and_subscribe_symbol, get_live_ticks, get_market_book, shutdown_mt5, get_rates_df, resolve_broker_symbol
 from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT, get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES
-from video_strategy_engine import calculate_zscore_and_ema, evaluate_video_strategy_signal
+from vwap_strategy_engine import calculate_vwap_and_zscore, calculate_ema_filter, calculate_prop_firm_lot_size, evaluate_single_asset_vwap_signal
 
 
 from execution_bot import execute_three_part_trade, execute_three_part_hedge_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl
@@ -2570,11 +2570,28 @@ def main():
                     z_vel_lim = 0.01   # Tightened from 0.05
 
                 action = "NONE"
-                vid_sig, vid_tp, vid_sl, vid_sl_dist, vid_reason = evaluate_video_strategy_signal(df_a, z_threshold=Z_ENTRY_THRESHOLD, category=cat_a)
+                effective_dyn_z = Z_ENTRY_THRESHOLD
+                _, _, z_sl_val, _ = get_strategy_parameters(s_a_resolved)
                 
-                if vid_sig == "BUY":
+                # ── VIDEO 1 CONFIRMATIONS: 200 EMA TREND + Z-SCORE REVERSAL CROSSOVER ──
+                trend_regime = check_200_ema_trend(s_a_resolved, p_a)
+                
+                zh_hist = list(kf_pair.z_history) if kf_pair and hasattr(kf_pair, 'z_history') else []
+                if len(zh_hist) >= 2:
+                    prev_z_val = zh_hist[-2]
+                    curr_z_val = zh_hist[-1]
+                    z_reversal_buy = (prev_z_val <= -effective_dyn_z) and (curr_z_val > prev_z_val)
+                    z_reversal_sell = (prev_z_val >= effective_dyn_z) and (curr_z_val < prev_z_val)
+                else:
+                    z_reversal_buy = (z <= -effective_dyn_z)
+                    z_reversal_sell = (z >= effective_dyn_z)
+
+                pass_z_buy = (trend_regime == "BULLISH") and z_reversal_buy and (z > -z_sl_val)
+                pass_z_sell = (trend_regime == "BEARISH") and z_reversal_sell and (z < z_sl_val)
+
+                if pass_z_buy:
                     action = "BUY_SPREAD"
-                elif vid_sig == "SELL":
+                elif pass_z_sell:
                     action = "SELL_SPREAD"
 
                 # Pre-entry direction & Beta sign checks bypassed for pure Single-Asset VWAP Z-Score execution
