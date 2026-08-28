@@ -2617,9 +2617,8 @@ def main():
                         logger.info(f"🔄 [ENTRY SKIPPED LOG] Signal threshold crossed for {pk} (Z={z:.3f} vs Entry Limit {Z_ENTRY_THRESHOLD:.2f}), but entry deferred due to: {'; '.join(reasons)}")
 
 
-                win_rate = WIN_RATE_CACHE.get(pk, 50.0)
-                all_scanned_z_summary.append(f"{pk}: Z={z:.3f}")
-                logger.info(f"📊 [VWAP SCAN] {pk} | Price: {p_a:.5f} | VWAP Z-Score: {z:+.3f} (Entry Limit: ±{Z_ENTRY_THRESHOLD:.2f}) | Turning Point: DISABLED 🔴 (OFF)")
+                ema_reg = check_200_ema_trend(s_a_resolved, p_a)
+                logger.info(f"📊 [VIDEO STRATEGY SCAN] {pk} | Price: {p_a:.5f} | Z-Score: {z:+.3f} (Entry Limit: ±{Z_ENTRY_THRESHOLD:.2f}) | 200 EMA Trend: {ema_reg} | Status: Scanning M15 Reversal 🟢")
 
 
                 # Track telemetry for current active pair (case-insensitive & alias resilient)
