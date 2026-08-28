@@ -2587,34 +2587,7 @@ def main():
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
                 base_z_triggered = (z < -Z_ENTRY_THRESHOLD) or (z > Z_ENTRY_THRESHOLD)
                 if base_z_triggered and action == "NONE":
-                    reasons = []
-                    if z < -Z_ENTRY_THRESHOLD:
-                        if not pass_turn_buy:
-                            zh_str = [round(x, 2) for x in list(kf_pair.z_history)[-3:]] if kf_pair and hasattr(kf_pair, 'z_history') else []
-                            reasons.append(f"Turning Point Inflection filter waiting for Z-score reversal momentum (Z-History: {zh_str})")
-                        if VOLATILITY_FILTER_ENABLED and not (z < -dynamic_z_entry):
-                            reasons.append(f"Z-score {z:.3f} not below dynamic threshold {-dynamic_z_entry:.3f} (volatility protection)")
-                        if KNIFE_PROTECTION_ENABLED and not (z_velocity > -z_vel_lim):
-                            reasons.append(f"Z-velocity {z_velocity:.3f} too fast (falling knife protection, limit: {-z_vel_lim})")
-                        if OBI_ENABLED and not obi_buy_pass:
-                            reasons.append(f"Adverse OBI pressure {net_obi:.3f} < -0.20 (sell wall)")
-                        if REQUIRE_SMC_CONFLUENCE and not in_bullish_zone:
-                            reasons.append("Price not in Bullish SMC Zone (Order Block/FVG)")
-                    else:
-                        if not pass_turn_sell:
-                            zh_str = [round(x, 2) for x in list(kf_pair.z_history)[-3:]] if kf_pair and hasattr(kf_pair, 'z_history') else []
-                            reasons.append(f"Turning Point Inflection filter waiting for Z-score reversal momentum (Z-History: {zh_str})")
-                        if VOLATILITY_FILTER_ENABLED and not (z > dynamic_z_entry):
-                            reasons.append(f"Z-score {z:.3f} not above dynamic threshold {dynamic_z_entry:.3f} (volatility protection)")
-                        if KNIFE_PROTECTION_ENABLED and not (z_velocity < z_vel_lim):
-                            reasons.append(f"Z-velocity {z_velocity:.3f} too fast (rising knife protection, limit: {z_vel_lim})")
-                        if OBI_ENABLED and not obi_sell_pass:
-                            reasons.append(f"Adverse OBI pressure {net_obi:.3f} > 0.20 (buy wall)")
-                        if REQUIRE_SMC_CONFLUENCE and not in_bearish_zone:
-                            reasons.append("Price not in Bearish SMC Zone (Order Block/FVG)")
-                    
-                    if reasons:
-                        logger.info(f"🔄 [ENTRY SKIPPED LOG] Signal threshold crossed for {pk} (Z={z:.3f} vs Entry Limit {Z_ENTRY_THRESHOLD:.2f}), but entry deferred due to: {'; '.join(reasons)}")
+                    logger.info(f"🔄 [ENTRY SKIPPED LOG] Z-Threshold crossed for {pk} (Z={z:.3f} vs Limit ±{Z_ENTRY_THRESHOLD:.2f}), but entry deferred: {vid_reason}")
 
 
                 logger.info(f"📊 [VIDEO STRATEGY SCAN] {pk} | {vid_reason} | Target Plan: 1:2.5 RRR 🟢")
