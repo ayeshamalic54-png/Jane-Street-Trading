@@ -2617,8 +2617,7 @@ def main():
                         logger.info(f"🔄 [ENTRY SKIPPED LOG] Signal threshold crossed for {pk} (Z={z:.3f} vs Entry Limit {Z_ENTRY_THRESHOLD:.2f}), but entry deferred due to: {'; '.join(reasons)}")
 
 
-                ema_reg = check_200_ema_trend(s_a_resolved, p_a)
-                logger.info(f"📊 [VIDEO STRATEGY SCAN] {pk} | Price: {p_a:.5f} | Z-Score: {z:+.3f} (Entry Limit: ±{Z_ENTRY_THRESHOLD:.2f}) | 200 EMA Trend: {ema_reg} | Status: Scanning M15 Reversal 🟢")
+                logger.info(f"📊 [VIDEO STRATEGY SCAN] {pk} | {vid_reason} | Target Plan: 1:2.5 RRR 🟢")
 
 
                 # Track telemetry for current active pair (case-insensitive & alias resilient)
