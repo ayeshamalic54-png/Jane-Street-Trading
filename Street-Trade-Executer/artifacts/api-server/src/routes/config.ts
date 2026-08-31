@@ -79,32 +79,37 @@ router.post("/config", async (req, res) => {
       }
     }
 
-    const autoExec = autoExecute ?? true;
-    const cryptoExec = cryptoEnabled ?? true;
-    const metalsExec = metalsEnabled ?? true;
-    const forexExec = forexEnabled ?? true;
-    const indicesExec = indicesEnabled;
-    const stocksExec = stocksEnabled;
-    const riskLimits = riskLimitsEnabled ?? true;
-    const knifeExec = knifeProtectionEnabled ?? true;
-    const obiExec = obiEnabled ?? true;
-    const volExec = volatilityFilterEnabled ?? true;
-    const zEntry = zEntryThreshold ?? 2.0;
-    const defLots = defaultLots ?? 0.01;
+    const autoExec = autoExecute !== undefined ? Boolean(autoExecute) : (state?.autoExecute ?? true);
+    const cryptoExec = cryptoEnabled !== undefined ? Boolean(cryptoEnabled) : (state?.cryptoEnabled ?? true);
+    const metalsExec = metalsEnabled !== undefined ? Boolean(metalsEnabled) : (state?.metalsEnabled ?? true);
+    const forexExec = forexEnabled !== undefined ? Boolean(forexEnabled) : (state?.forexEnabled ?? true);
+    const indicesExec = indicesEnabled !== undefined ? Boolean(indicesEnabled) : (state?.indicesEnabled ?? true);
+    const stocksExec = stocksEnabled !== undefined ? Boolean(stocksEnabled) : ((state as any)?.stocks_enabled ?? true);
+    const riskLimits = riskLimitsEnabled !== undefined ? Boolean(riskLimitsEnabled) : (state?.riskLimitsEnabled ?? true);
+    const knifeExec = knifeProtectionEnabled !== undefined ? Boolean(knifeProtectionEnabled) : (state?.knifeProtectionEnabled ?? true);
+    const obiExec = obiEnabled !== undefined ? Boolean(obiEnabled) : (state?.obiEnabled ?? true);
+    const volExec = volatilityFilterEnabled !== undefined ? Boolean(volatilityFilterEnabled) : (state?.volatilityFilterEnabled ?? true);
+    const zEntry = zEntryThreshold !== undefined ? Number(zEntryThreshold) : Number(state?.zEntryThreshold ?? 2.0);
+    const defLots = defaultLots !== undefined ? Number(defaultLots) : Number(state?.defaultLots ?? 0.01);
+    const slVal = slPips !== undefined ? Number(slPips) : Number(state?.slPips ?? 10);
+    const tpVal = tpPips !== undefined ? Number(tpPips) : Number(state?.tpPips ?? 20);
+    const smcVal = smcEnabled !== undefined ? Boolean(smcEnabled) : (state?.smcEnabled ?? true);
+    const maxTradesVal = maxDailyTrades !== undefined ? Number(maxDailyTrades) : Number(state?.maxTrades ?? 3);
+    const initBalVal = initialBalance !== undefined ? Number(initialBalance) : Number(state?.initialBalance ?? 100000);
 
     await db.execute(
       sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit, session_guard_enabled, session_start_hour, session_end_hour)
-          SELECT 1, ${activePair}, ${(slPips ?? 10).toString()}, ${(tpPips ?? 20).toString()}, ${zEntry.toString()}, ${smcEnabled ?? true}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxDailyTrades ?? 3}, 'BOT OFFLINE', NOW(), ${(initialBalance ?? 100000).toString()}, ${(initialBalance ?? 100000).toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}
+          SELECT 1, ${pairToSave}, ${slVal.toString()}, ${tpVal.toString()}, ${zEntry.toString()}, ${smcVal}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxTradesVal}, 'BOT OFFLINE', NOW(), ${initBalVal.toString()}, ${initBalVal.toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}
           WHERE NOT EXISTS (SELECT 1 FROM bot_state)`
     );
 
     await db.execute(
       sql`UPDATE bot_state
-          SET active_pair  = ${activePair},
-              sl_pips      = ${(slPips ?? 10).toString()},
-              tp_pips      = ${(tpPips ?? 20).toString()},
+          SET active_pair  = ${pairToSave},
+              sl_pips      = ${slVal.toString()},
+              tp_pips      = ${tpVal.toString()},
               z_entry_threshold = ${zEntry.toString()},
-              smc_enabled  = ${smcEnabled ?? true},
+              smc_enabled  = ${smcVal},
               auto_execute = ${autoExec},
               crypto_enabled = ${cryptoExec},
               metals_enabled = ${metalsExec},
@@ -116,7 +121,7 @@ router.post("/config", async (req, res) => {
               obi_enabled = ${obiExec},
               volatility_filter_enabled = ${volExec},
               default_lots = ${defLots.toString()},
-              max_trades   = ${maxDailyTrades ?? 3},
+              max_trades   = ${maxTradesVal},
               halt_drawdown_limit = ${haltLimit.toString()},
               max_drawdown_limit = ${maxLimit.toString()},
               session_guard_enabled = ${sessEnabled},
