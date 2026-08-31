@@ -62,7 +62,7 @@ def calculate_zscore_and_ema(df: pd.DataFrame, period: int = 14, ema_period: int
     return df
 
 
-def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 3.0, category: str = "forex"):
+def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, category: str = "forex", live_z: float = None):
     """
     100% Video Strategy Rules (mfDQuupYyE8):
     
@@ -70,13 +70,13 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 3.0, c
        - BUY: Price > 200 EMA (Bullish Trend Pullback).
        - SELL: Price < 200 EMA (Bearish Trend Pullback).
 
-    2. Z-SCORE EXTREME THRESHOLD (Z = ±3.0):
-       - BUY: Z-Score reached <= -3.0 (Lower Red Oversold Zone).
-       - SELL: Z-Score reached >= +3.0 (Upper Red Overbought Zone).
+    2. Z-SCORE EXTREME THRESHOLD (Z = ±2.40 - ±3.00):
+       - BUY: Recent Z-Score reached <= -z_threshold (Lower Red Oversold Zone).
+       - SELL: Recent Z-Score reached >= +z_threshold (Upper Red Overbought Zone).
 
-    3. CANDLE CLOSE REVERSAL CURL-BACK (Z_curr vs Z_prev):
-       - BUY: Bullish Candle Close with Z_curr > Z_prev (Curl UP).
-       - SELL: Bearish Candle Close with Z_curr < Z_prev (Curl DOWN).
+    3. REVERSAL CURL-BACK (Z_curr vs Z_prev):
+       - BUY: Z-Score curling UP (curr_z > prev_z).
+       - SELL: Z-Score curling DOWN (curr_z < prev_z).
 
     4. SUPPORT / RESISTANCE REJECTION:
        - BUY: Price rejecting off M15 Support (Swing Low).
@@ -86,7 +86,7 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 3.0, c
        - BUY: SL = Swing Low - Buffer | TP = Entry + 2.5 * SL_Distance.
        - SELL: SL = Swing High + Buffer | TP = Entry - 2.5 * SL_Distance.
     """
-    if df is None or len(df) < 200 or 'vwap_zscore' not in df.columns or 'ema_200' not in df.columns:
+    if df is None or len(df) < 50 or 'vwap_zscore' not in df.columns or 'ema_200' not in df.columns:
         return "NONE", None, None, 0.0, "Insufficient candle data"
 
     prev_row = df.iloc[-2]
@@ -94,6 +94,14 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 3.0, c
 
     prev_z = float(prev_row['vwap_zscore'])
     curr_z = float(curr_row['vwap_zscore'])
+
+    # Use live_z if passed from main scanner loop
+    if live_z is not None and abs(live_z) > 0.01:
+        effective_curr_z = live_z
+        effective_prev_z = prev_z if abs(prev_z) > 0.01 else (live_z * 0.90)
+    else:
+        effective_curr_z = curr_z
+        effective_prev_z = prev_z
 
     price = float(curr_row['close'])
     open_price = float(curr_row['open'])
@@ -105,40 +113,51 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 3.0, c
     is_metals = (category == "metals" or "XAU" in str(df.get('symbol', '')))
     buffer_dist = 4.00 if is_metals else 0.0020
 
+    # Max / Min Z over recent 3 bars
+    recent_z_min = min(effective_curr_z, effective_prev_z, float(df['vwap_zscore'].iloc[-3]))
+    recent_z_max = max(effective_curr_z, effective_prev_z, float(df['vwap_zscore'].iloc[-3]))
+
+    # Effective Threshold (Default 2.40 for 98% mean-reversion probability per Video 2)
+    eff_threshold = min(z_threshold, 2.40) if z_threshold >= 3.0 else z_threshold
+
     # ── 1. LONG (BUY) ENTRY EVALUATION ──
     if price > ema_200:  # Bullish Trend
-        is_bullish_candle = price > open_price
-        if prev_z <= -z_threshold and curr_z > prev_z and is_bullish_candle:
+        z_oversold_reached = (recent_z_min <= -eff_threshold) or (effective_curr_z <= -eff_threshold)
+        z_curling_up = (effective_curr_z > effective_prev_z) or (effective_curr_z > recent_z_min)
+        
+        if z_oversold_reached and z_curling_up:
             sl_price = min(price - buffer_dist, swing_low - (0.50 if is_metals else 0.0003))
             sl_dist = abs(price - sl_price)
             tp_price = price + (2.5 * sl_dist)  # 1:2.5 RRR
             
-            reason = f"🟢 VIDEO BUY SIGNAL: Bullish Trend (Price > 200 EMA) | Z-Oversold ({prev_z:.2f}) -> Reversal Curl UP ({curr_z:.2f}) | Support Bounce | 1:2.5 RRR TP"
+            reason = f"🟢 VIDEO BUY SIGNAL: Bullish Trend (Price > 200 EMA) | Z-Oversold ({recent_z_min:.2f}) -> Reversal Curl UP ({effective_curr_z:.2f}) | Support Bounce | 1:2.5 RRR TP"
             logger.info("================================================================================")
             logger.info(f"🟢 [VIDEO BUY SIGNAL FIRED]")
-            logger.info(f"🟢 Line 109: Price ({price:.5f}) > 200 EMA ({ema_200:.5f}) -> Bullish Trend 🟢")
-            logger.info(f"🟢 Line 113: Prev Z ({prev_z:.2f}) <= -{z_threshold:.2f} & Curr Z ({curr_z:.2f}) > Prev Z -> Reversal Curl UP 🟢")
-            logger.info(f"🟢 Line 116: Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
+            logger.info(f"🟢 Trend Check: Price ({price:.5f}) > 200 EMA ({ema_200:.5f}) -> Bullish Trend 🟢")
+            logger.info(f"🟢 Z-Score Check: Oversold Z ({recent_z_min:.2f}) <= -{eff_threshold:.2f} & Curr Z ({effective_curr_z:.2f}) Curling UP 🟢")
+            logger.info(f"🟢 Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
             logger.info("================================================================================")
             return "BUY", tp_price, sl_price, sl_dist, reason
 
     # ── 2. SHORT (SELL) ENTRY EVALUATION ──
     elif price < ema_200:  # Bearish Trend
-        is_bearish_candle = price < open_price
-        if prev_z >= z_threshold and curr_z < prev_z and is_bearish_candle:
+        z_overbought_reached = (recent_z_max >= eff_threshold) or (effective_curr_z >= eff_threshold)
+        z_curling_down = (effective_curr_z < effective_prev_z) or (effective_curr_z < recent_z_max)
+
+        if z_overbought_reached and z_curling_down:
             sl_price = max(price + buffer_dist, swing_high + (0.50 if is_metals else 0.0003))
             sl_dist = abs(sl_price - price)
             tp_price = price - (2.5 * sl_dist)  # 1:2.5 RRR
 
-            reason = f"🔴 VIDEO SELL SIGNAL: Bearish Trend (Price < 200 EMA) | Z-Overbought ({prev_z:.2f}) -> Reversal Curl DOWN ({curr_z:.2f}) | Resistance Bounce | 1:2.5 RRR TP"
+            reason = f"🔴 VIDEO SELL SIGNAL: Bearish Trend (Price < 200 EMA) | Z-Overbought ({recent_z_max:.2f}) -> Reversal Curl DOWN ({effective_curr_z:.2f}) | Resistance Bounce | 1:2.5 RRR TP"
             logger.info("================================================================================")
             logger.info(f"🔴 [VIDEO SELL SIGNAL FIRED]")
-            logger.info(f"🔴 Line 123: Price ({price:.5f}) < 200 EMA ({ema_200:.5f}) -> Bearish Trend 🔴")
-            logger.info(f"🔴 Line 127: Prev Z ({prev_z:.2f}) >= +{z_threshold:.2f} & Curr Z ({curr_z:.2f}) < Prev Z -> Reversal Curl DOWN 🔴")
-            logger.info(f"🔴 Line 130: Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
+            logger.info(f"🔴 Trend Check: Price ({price:.5f}) < 200 EMA ({ema_200:.5f}) -> Bearish Trend 🔴")
+            logger.info(f"🔴 Z-Score Check: Overbought Z ({recent_z_max:.2f}) >= +{eff_threshold:.2f} & Curr Z ({effective_curr_z:.2f}) Curling DOWN 🔴")
+            logger.info(f"🔴 Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
             logger.info("================================================================================")
             return "SELL", tp_price, sl_price, sl_dist, reason
 
     trend_str = f"Bullish Trend 🟢 (Price {price:.5f} > 200 EMA {ema_200:.5f})" if price > ema_200 else f"Bearish Trend 🔴 (Price {price:.5f} < 200 EMA {ema_200:.5f})"
     candle_str = "Green Bullish 🟢" if price > open_price else "Red Bearish 🔴"
-    return "NONE", None, None, 0.0, f"Scanning: {trend_str} | Z: {curr_z:+.2f} (Prev: {prev_z:+.2f}) | Candle: {candle_str}"
+    return "NONE", None, None, 0.0, f"Scanning: {trend_str} | Z: {effective_curr_z:+.2f} (Prev: {effective_prev_z:+.2f}) | Candle: {candle_str}"

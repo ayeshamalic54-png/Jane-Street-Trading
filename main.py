@@ -2574,7 +2574,7 @@ def main():
                     df_a = calculate_zscore_and_ema(df_a)
 
                 action = "NONE"
-                vid_sig, vid_tp, vid_sl, vid_sl_dist, vid_reason = evaluate_video_strategy_signal(df_a, z_threshold=Z_ENTRY_THRESHOLD, category=cat_a)
+                vid_sig, vid_tp, vid_sl, vid_sl_dist, vid_reason = evaluate_video_strategy_signal(df_a, z_threshold=Z_ENTRY_THRESHOLD, category=cat_a, live_z=z)
                 
                 if vid_sig == "BUY":
                     action = "BUY_SPREAD"
