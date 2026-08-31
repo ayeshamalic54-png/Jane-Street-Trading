@@ -120,33 +120,43 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
     # Effective Threshold (Default 2.40 for 98% mean-reversion probability per Video 2)
     eff_threshold = min(z_threshold, 2.40) if z_threshold >= 3.0 else z_threshold
 
-    # ── 1. LONG (BUY) ENTRY EVALUATION (TEMPORARY TEST EXECUTION MODE) ──
-    if effective_curr_z <= -eff_threshold:
-        sl_price = min(price - buffer_dist, swing_low - (0.50 if is_metals else 0.0003))
-        sl_dist = abs(price - sl_price)
-        tp_price = price + (2.5 * sl_dist)  # 1:2.5 RRR
+    # ── 1. LONG (BUY) ENTRY EVALUATION ──
+    if price > ema_200:  # Bullish Trend
+        z_oversold_reached = (recent_z_min <= -eff_threshold) or (effective_curr_z <= -eff_threshold)
+        z_curling_up = (effective_curr_z > effective_prev_z) or (effective_curr_z > recent_z_min)
         
-        reason = f"🟢 TEST MODE BUY FIRED: Z-Oversold ({effective_curr_z:.2f} <= -{eff_threshold:.2f}) | 1:2.5 RRR TP"
-        logger.info("================================================================================")
-        logger.info(f"🧪 [TEMPORARY TEST BUY SIGNAL FIRED] 🚀")
-        logger.info(f"🟢 Z-Score Check: Z ({effective_curr_z:.2f}) <= -{eff_threshold:.2f} 🟢")
-        logger.info(f"🟢 Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
-        logger.info("================================================================================")
-        return "BUY", tp_price, sl_price, sl_dist, reason
+        if z_oversold_reached and z_curling_up:
+            sl_price = min(price - buffer_dist, swing_low - (0.50 if is_metals else 0.0003))
+            sl_dist = abs(price - sl_price)
+            tp_price = price + (2.5 * sl_dist)  # 1:2.5 RRR
+            
+            reason = f"🟢 PROBABILITY Z-CORE BUY: Bullish Trend (Price > 200 EMA) | Z-Oversold ({recent_z_min:.2f}) -> Reversal Curl UP ({effective_curr_z:.2f}) | Support Bounce | 1:2.5 RRR TP"
+            logger.info("================================================================================")
+            logger.info(f"🟢 [PROBABILITY Z-CORE BUY SIGNAL EXECUTED] 🚀")
+            logger.info(f"🟢 Trend Check: Price ({price:.5f}) > 200 EMA ({ema_200:.5f}) -> Bullish Trend 🟢")
+            logger.info(f"🟢 Z-Score Check: Oversold Z ({recent_z_min:.2f}) <= -{eff_threshold:.2f} & Curr Z ({effective_curr_z:.2f}) Curling UP 🟢")
+            logger.info(f"🟢 Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
+            logger.info("================================================================================")
+            return "BUY", tp_price, sl_price, sl_dist, reason
 
-    # ── 2. SHORT (SELL) ENTRY EVALUATION (TEMPORARY TEST EXECUTION MODE) ──
-    elif effective_curr_z >= eff_threshold:
-        sl_price = max(price + buffer_dist, swing_high + (0.50 if is_metals else 0.0003))
-        sl_dist = abs(sl_price - price)
-        tp_price = price - (2.5 * sl_dist)  # 1:2.5 RRR
+    # ── 2. SHORT (SELL) ENTRY EVALUATION ──
+    elif price < ema_200:  # Bearish Trend
+        z_overbought_reached = (recent_z_max >= eff_threshold) or (effective_curr_z >= eff_threshold)
+        z_curling_down = (effective_curr_z < effective_prev_z) or (effective_curr_z < recent_z_max)
 
-        reason = f"🔴 TEST MODE SELL FIRED: Z-Overbought ({effective_curr_z:.2f} >= +{eff_threshold:.2f}) | 1:2.5 RRR TP"
-        logger.info("================================================================================")
-        logger.info(f"🧪 [TEMPORARY TEST SELL SIGNAL FIRED] 🚀")
-        logger.info(f"🔴 Z-Score Check: Z ({effective_curr_z:.2f}) >= +{eff_threshold:.2f} 🔴")
-        logger.info(f"🔴 Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
-        logger.info("================================================================================")
-        return "SELL", tp_price, sl_price, sl_dist, reason
+        if z_overbought_reached and z_curling_down:
+            sl_price = max(price + buffer_dist, swing_high + (0.50 if is_metals else 0.0003))
+            sl_dist = abs(sl_price - price)
+            tp_price = price - (2.5 * sl_dist)  # 1:2.5 RRR
+
+            reason = f"🔴 PROBABILITY Z-CORE SELL: Bearish Trend (Price < 200 EMA) | Z-Overbought ({recent_z_max:.2f}) -> Reversal Curl DOWN ({effective_curr_z:.2f}) | Resistance Bounce | 1:2.5 RRR TP"
+            logger.info("================================================================================")
+            logger.info(f"🔴 [PROBABILITY Z-CORE SELL SIGNAL EXECUTED] 🚀")
+            logger.info(f"🔴 Trend Check: Price ({price:.5f}) < 200 EMA ({ema_200:.5f}) -> Bearish Trend 🔴")
+            logger.info(f"🔴 Z-Score Check: Overbought Z ({recent_z_max:.2f}) >= +{eff_threshold:.2f} & Curr Z ({effective_curr_z:.2f}) Curling DOWN 🔴")
+            logger.info(f"🔴 Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
+            logger.info("================================================================================")
+            return "SELL", tp_price, sl_price, sl_dist, reason
 
     trend_str = f"Bullish Trend 🟢 (Price {price:.5f} > 200 EMA {ema_200:.5f})" if price > ema_200 else f"Bearish Trend 🔴 (Price {price:.5f} < 200 EMA {ema_200:.5f})"
     candle_str = "Green Bullish 🟢" if price > open_price else "Red Bearish 🔴"
