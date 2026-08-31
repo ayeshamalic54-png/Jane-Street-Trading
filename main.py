@@ -57,15 +57,24 @@ except ImportError:
     def close_binance_partial(*a, **k): pass
     def get_symbol_filters(*a, **k): return {}
 
-# Setup Logging
+# Setup Logging (Console + FileHandler)
 logger = logging.getLogger("SMC_Forex_Bot")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    
+    # Console Stream Handler
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     ch.setFormatter(formatter)
     logger.addHandler(ch)
+    
+    # File Handler (trading_system.log)
+    log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trading_system.log")
+    fh = logging.FileHandler(log_file_path, encoding='utf-8')
+    fh.setLevel(logging.INFO)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
 
 # ==============================================================================
 # GLOBAL STATE & PERSISTENCE
