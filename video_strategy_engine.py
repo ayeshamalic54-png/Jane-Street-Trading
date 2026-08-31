@@ -130,9 +130,9 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
             sl_dist = abs(price - sl_price)
             tp_price = price + (2.5 * sl_dist)  # 1:2.5 RRR
             
-            reason = f"🟢 VIDEO BUY SIGNAL: Bullish Trend (Price > 200 EMA) | Z-Oversold ({recent_z_min:.2f}) -> Reversal Curl UP ({effective_curr_z:.2f}) | Support Bounce | 1:2.5 RRR TP"
+            reason = f"🟢 PROBABILITY Z-CORE BUY: Bullish Trend (Price > 200 EMA) | Z-Oversold ({recent_z_min:.2f}) -> Reversal Curl UP ({effective_curr_z:.2f}) | Support Bounce | 1:2.5 RRR TP"
             logger.info("================================================================================")
-            logger.info(f"🟢 [VIDEO BUY SIGNAL FIRED]")
+            logger.info(f"🟢 [PROBABILITY Z-CORE BUY SIGNAL EXECUTED] 🚀")
             logger.info(f"🟢 Trend Check: Price ({price:.5f}) > 200 EMA ({ema_200:.5f}) -> Bullish Trend 🟢")
             logger.info(f"🟢 Z-Score Check: Oversold Z ({recent_z_min:.2f}) <= -{eff_threshold:.2f} & Curr Z ({effective_curr_z:.2f}) Curling UP 🟢")
             logger.info(f"🟢 Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
@@ -149,9 +149,9 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
             sl_dist = abs(sl_price - price)
             tp_price = price - (2.5 * sl_dist)  # 1:2.5 RRR
 
-            reason = f"🔴 VIDEO SELL SIGNAL: Bearish Trend (Price < 200 EMA) | Z-Overbought ({recent_z_max:.2f}) -> Reversal Curl DOWN ({effective_curr_z:.2f}) | Resistance Bounce | 1:2.5 RRR TP"
+            reason = f"🔴 PROBABILITY Z-CORE SELL: Bearish Trend (Price < 200 EMA) | Z-Overbought ({recent_z_max:.2f}) -> Reversal Curl DOWN ({effective_curr_z:.2f}) | Resistance Bounce | 1:2.5 RRR TP"
             logger.info("================================================================================")
-            logger.info(f"🔴 [VIDEO SELL SIGNAL FIRED]")
+            logger.info(f"🔴 [PROBABILITY Z-CORE SELL SIGNAL EXECUTED] 🚀")
             logger.info(f"🔴 Trend Check: Price ({price:.5f}) < 200 EMA ({ema_200:.5f}) -> Bearish Trend 🔴")
             logger.info(f"🔴 Z-Score Check: Overbought Z ({recent_z_max:.2f}) >= +{eff_threshold:.2f} & Curr Z ({effective_curr_z:.2f}) Curling DOWN 🔴")
             logger.info(f"🔴 Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")

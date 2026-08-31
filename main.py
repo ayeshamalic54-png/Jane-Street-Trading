@@ -2590,7 +2590,7 @@ def main():
                     logger.info(f"🔄 [ENTRY SKIPPED LOG] Z-Threshold crossed for {pk} (Z={z:.3f} vs Limit ±{Z_ENTRY_THRESHOLD:.2f}), but entry deferred: {vid_reason}")
 
 
-                logger.info(f"📊 [VIDEO STRATEGY SCAN] {pk} | {vid_reason} | Target Plan: 1:2.5 RRR 🟢")
+                logger.info(f"📊 [PROBABILITY Z-CORE SCAN] {pk} | {vid_reason} | Target Plan: 1:2.5 RRR 🟢")
                 win_rate = WIN_RATE_CACHE.get(pk, 50.0)
                 try:
                     update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
