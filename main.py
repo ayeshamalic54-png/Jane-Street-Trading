@@ -2591,6 +2591,7 @@ def main():
 
 
                 logger.info(f"📊 [VIDEO STRATEGY SCAN] {pk} | {vid_reason} | Target Plan: 1:2.5 RRR 🟢")
+                win_rate = WIN_RATE_CACHE.get(pk, 50.0)
                 try:
                     update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
                 except Exception:
