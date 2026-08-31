@@ -2591,6 +2591,10 @@ def main():
 
 
                 logger.info(f"📊 [VIDEO STRATEGY SCAN] {pk} | {vid_reason} | Target Plan: 1:2.5 RRR 🟢")
+                try:
+                    update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
+                except Exception:
+                    pass
 
 
                 # Track telemetry for current active pair (case-insensitive & alias resilient)
