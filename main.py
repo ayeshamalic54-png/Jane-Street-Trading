@@ -7,6 +7,7 @@ except ImportError:
 
 import os
 from database import load_env
+# Forex App Engine - Production Ready (Z_ENTRY_THRESHOLD = 3.00, Risk Limits Enforced, Discord Signals Enabled)
 load_env()
 
 import MetaTrader5 as mt5
