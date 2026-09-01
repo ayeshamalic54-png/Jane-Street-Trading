@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: jsstreet
+    runtime: node
+    rootDir: Street-Trade-Executer
+    buildCommand: pnpm install && pnpm build
+    startCommand: pnpm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      - key: DATABASE_URL
+        sync: false
+      - key: DISCORD_WEBHOOK_URL
+        sync: false

@@ -4,6 +4,7 @@
   "license": "MIT",
   "scripts": {
     "build": "pnpm -r --if-present run build",
+    "start": "cd artifacts/api-server && node ./dist/index.mjs",
     "typecheck:libs": "echo ok",
     "typecheck": "echo 'Typecheck skipped for build'"
   },
