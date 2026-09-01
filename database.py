@@ -576,6 +576,17 @@ def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, 
         row = cur.fetchone()
         conn.commit()
         cur.close()
+
+        # Send Discord Signal notification
+        disc_msg = (
+            f"📊 **JANE STREET SIGNAL DETECTED** 📊\n\n"
+            f"💱 **Pair:** `{symbol_a}/{symbol_b}` ({action})\n"
+            f"📈 **Z-Score:** `{z_score:+.3f}`\n"
+            f"💵 **Prices:** `{symbol_a}`: `{price_a:.5f}` | `{symbol_b}`: `{price_b:.5f}`\n"
+            f"⏱ **Time:** `{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
+        )
+        send_discord_message(disc_msg)
+
         if row:
             return row[0]
     except Exception as e:

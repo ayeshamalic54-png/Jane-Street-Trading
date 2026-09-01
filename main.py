@@ -213,8 +213,8 @@ def fetch_db_config():
                 bool(row[3] if row[3] is not None else True),
                 bool(row[4] if row[4] is not None else True),
                 False, # Hardcoded crypto_enabled to False
-                bool(row[6] if row[6] is not None else True),
-                bool(row[7] if row[7] is not None else True),
+                False, # Hardcoded metals_enabled to False for dedicated Forex App
+                True,  # Hardcoded forex_enabled to True for dedicated Forex App
                 bool(row[8] if row[8] is not None else True),
                 bool(row[9] if row[9] is not None else True),
                 float(row[10]) if row[10] is not None else 0.60,
@@ -2594,7 +2594,7 @@ def main():
 
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
-                base_z_triggered = (z < -Z_ENTRY_THRESHOLD) or (z > Z_ENTRY_THRESHOLD)
+                base_z_triggered = (abs(z) >= 2.20)
                 if base_z_triggered and action == "NONE":
                     logger.info(f"🔄 [ENTRY SKIPPED LOG] Z-Threshold crossed for {pk} (Z={z:.3f} vs Limit ±{Z_ENTRY_THRESHOLD:.2f}), but entry deferred: {vid_reason}")
 
