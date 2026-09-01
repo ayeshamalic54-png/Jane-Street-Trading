@@ -214,8 +214,8 @@ def fetch_db_config():
                 bool(row[3] if row[3] is not None else True),
                 bool(row[4] if row[4] is not None else True),
                 False, # Hardcoded crypto_enabled to False
-                False, # Hardcoded metals_enabled to False for dedicated Forex App
-                True,  # Hardcoded forex_enabled to True for dedicated Forex App
+                bool(row[6] if row[6] is not None else False), # Dynamic metals_enabled from DB
+                bool(row[7] if row[7] is not None else True),  # Dynamic forex_enabled from DB
                 bool(row[8] if row[8] is not None else True),
                 bool(row[9] if row[9] is not None else True),
                 float(row[10]) if row[10] is not None else 0.60,
@@ -3067,9 +3067,11 @@ def main():
                 sess_log_str = "DISABLED 🔴 (Trading 24/7)"
 
             tp_inflect_log_str = "DISABLED 🔴 (OFF)"
+            metals_log_str = "ENABLED 🟢" if METALS_ENABLED else "DISABLED 🔴"
+            forex_log_str = "ENABLED 🟢" if FOREX_ENABLED else "DISABLED 🔴"
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Live Z: {active_pair_z_score:.3f} (Entry: ±{Z_ENTRY_THRESHOLD:.2f}) | Kalman Beta: {active_pair_beta:.4f} 🟢 "
-                f"| Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: ENABLED 🟢 | Turning Point Inflection: {tp_inflect_log_str} "
+                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: ENABLED 🟢 "
             )
 
             eff_dd_log = max(daily_loss_p, peak_dd_p)
