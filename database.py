@@ -606,7 +606,7 @@ def send_discord_message(content):
     try:
         payload = {"content": content}
         res = requests.post(webhook_url, json=payload, timeout=5)
-        return res.status_code == 204
+        return res.status_code in (200, 204)
     except Exception as e:
         print(f"Error sending general Discord notification: {e}")
         return False
