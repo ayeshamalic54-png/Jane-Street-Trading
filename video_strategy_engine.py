@@ -117,8 +117,8 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
     recent_z_min = min(effective_curr_z, effective_prev_z, float(df['vwap_zscore'].iloc[-3]))
     recent_z_max = max(effective_curr_z, effective_prev_z, float(df['vwap_zscore'].iloc[-3]))
 
-    # Effective Threshold (Default 2.40 for 98% mean-reversion probability per Video 2)
-    eff_threshold = min(z_threshold, 2.40) if z_threshold >= 3.0 else z_threshold
+    # Effective Threshold
+    eff_threshold = float(z_threshold)
 
     # ── 1. LONG (BUY) ENTRY EVALUATION ──
     if price > ema_200:  # Bullish Trend

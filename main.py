@@ -459,7 +459,7 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                 pass
 
 
-Z_ENTRY_THRESHOLD = 2.20
+Z_ENTRY_THRESHOLD = 3.00
 ML_MODEL = None
 DEFAULT_LOTS = 0.01
 Z_EXIT_MEAN = 0.0
