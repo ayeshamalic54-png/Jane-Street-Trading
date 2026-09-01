@@ -257,13 +257,16 @@ def fetch_db_config():
     return None
 
 
+PREV_TOGGLE_STATE = {}
+
 def update_live_toggles_from_db():
     """
     Refreshes global asset class toggles and settings directly from DB on every 2s loop cycle.
     Allows instant toggle updates from Dashboard without restarting the bot.
+    Logs instant VPS console alerts whenever any toggle is switched.
     """
     global FOREX_ENABLED, METALS_ENABLED, INDICES_ENABLED, STOCKS_ENABLED, CRYPTO_ENABLED, AUTO_EXECUTE, RISK_LIMITS_ENABLED, Z_ENTRY_THRESHOLD, SL_PIPS, TP_PIPS
-    global KNIFE_PROTECTION_ENABLED, OBI_ENABLED, VOLATILITY_FILTER_ENABLED
+    global KNIFE_PROTECTION_ENABLED, OBI_ENABLED, VOLATILITY_FILTER_ENABLED, PREV_TOGGLE_STATE
     try:
         import risk_safeguards
         cfg = fetch_db_config()
@@ -285,6 +288,23 @@ def update_live_toggles_from_db():
                 risk_safeguards.SESSION_GUARD_ENABLED = cfg[19]
                 risk_safeguards.SESSION_START_HOUR = cfg[20]
                 risk_safeguards.SESSION_END_HOUR = cfg[21]
+
+            curr_state = {
+                "forex": FOREX_ENABLED,
+                "metals": METALS_ENABLED,
+                "auto_exec": AUTO_EXECUTE,
+                "risk_limits": RISK_LIMITS_ENABLED
+            }
+
+            if PREV_TOGGLE_STATE and curr_state != PREV_TOGGLE_STATE:
+                changes = []
+                for k, v in curr_state.items():
+                    if PREV_TOGGLE_STATE.get(k) != v:
+                        status_str = "ENABLED 🟢" if v else "DISABLED 🔴"
+                        changes.append(f"{k.upper()}: {status_str}")
+                logger.info(f"🔄 [DASHBOARD TOGGLE CHANGE DETECTED ⚡] " + " | ".join(changes))
+
+            PREV_TOGGLE_STATE = curr_state.copy()
     except Exception as e:
         logger.warning(f"Error in update_live_toggles_from_db: {e}")
 
