@@ -849,21 +849,21 @@ def get_kf_parameters(symbol: str):
 
 def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -> float:
     """
-    Returns SL distance in price units.
-    - Forex Majors (EURUSD, GBPUSD): 20.0 Pips
-    - Metals (Gold XAUUSD): $4.00 Price Move (40 Pips)
+    Returns SL distance in price units matching exactly $97.00 USD max risk (1.0% Risk Cap).
+    - Forex (EURUSD, GBPUSD 0.50 Lots): 19.4 Pips ($97.00 Risk Max)
+    - Metals (Gold XAUUSD 0.28 Lots): $3.46 Price Move ($97.00 Risk Max)
     """
     cat = get_symbol_category(symbol)
     pip_sz = get_pip_size(symbol)
     
     if cat == "metals" or "XAU" in symbol.upper() or "XAG" in symbol.upper():
-        return 4.00  # $4.00 price move (40 pips) for Gold
+        return 3.46  # $3.46 price move = $97.00 USD risk on 0.28 Gold Lots
     elif cat == "forex":
-        return 20.0 * pip_sz  # 20.0 pips for Forex Majors
+        return 19.4 * pip_sz  # 19.4 Pips = $97.00 USD risk on 0.50 Forex Lots
     elif cat == "crypto":
         return float(price * 0.015)
     else:
-        return 35.0 * pip_sz
+        return 20.0 * pip_sz
 
 def sync_mt5_open_positions_with_db():
     """
