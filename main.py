@@ -994,7 +994,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
     import os
     import requests
     
-    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/1544341635763150898/2FnqnDLWft4exCAm_cE87EzQNTr-f9SmyvAbZjUDjLpp867dbkxL00wIcJK9no-eFqq7")
     if not webhook_url:
         return
         
@@ -1006,16 +1006,16 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         digits_a = info_a.digits if info_a else 5
         
         message = (
-            f"📢 **AWAIS JANE STREET VWAP Z-SCORE SIGNAL** 📢\n\n"
+            f"📢 **PROBABILITY Z-CORE SIGNAL (VIDEO 2 ENGINE)** 📢\n\n"
             f"⚡ **ACTION:** {act_str} ({symbol_a})\n"
             f"⏱ **Time:** {now_str}\n"
-            f"📊 **VWAP Z-Score:** {z_score:.3f}\n\n"
-            f"🛡 **SINGLE DIRECT ORDER (1 Ticket Only):**\n"
+            f"📊 **Z-Score Extreme:** {z_score:.3f}\n\n"
+            f"🛡 **EXECUTED ORDER DETAILS:**\n"
             f"  📥 **Entry Price:** {entry_a:.{digits_a}f}\n"
-            f"  ⛔ **Stop Loss (SL):** {sl_a:.{digits_a}f} (M15 Swing Level)\n"
-            f"  🎯 **Take Profit (TP):** {tp2:.{digits_a}f} (VWAP Mean Line Z=0)\n"
+            f"  ⛔ **Stop Loss (SL):** {sl_a:.{digits_a}f} ($97.00 USD Risk Cap)\n"
+            f"  🎯 **Take Profit (TP):** {tp2:.{digits_a}f} (1:2.5 RRR)\n"
             f"  📦 **Lot Size:** {lots_a:.2f} Lots (1.0% Equity Risk Capped)\n"
-            f"  🛡 **Prop Firm Guard:** 80% Free Margin Safe 🟢\n"
+            f"  🛡 **Prop Firm Guard:** 140s Minimum Hold Active 🟢\n"
         )
         
         payload = {"content": message}
@@ -1023,14 +1023,14 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         if res.status_code != 204:
             logger.error(f"Failed to send Discord webhook: {res.status_code} - {res.text}")
         else:
-            logger.info("Successfully sent single-asset VWAP signal notification to Discord webhook.")
+            logger.info("Successfully sent Video 2 signal notification to Discord webhook.")
     except Exception as e:
         logger.error(f"Error sending Discord notification: {e}")
 
 def send_discord_general_alert(message_text: str):
     import os
     import requests
-    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "https://discord.com/api/webhooks/1544341635763150898/2FnqnDLWft4exCAm_cE87EzQNTr-f9SmyvAbZjUDjLpp867dbkxL00wIcJK9no-eFqq7")
     if not webhook_url:
         return
     try:
