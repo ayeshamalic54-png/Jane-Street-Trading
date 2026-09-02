@@ -1011,7 +1011,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         tp_pips = abs(tp2 - entry_a) / pip_sz
         
         message = (
-            f"🚀 **NEW TRADE OPENED** 🚀\n\n"
+            f"📢 **WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE** 📢\n\n"
             f"⚡ **Action:** {act_str} ({symbol_a})\n"
             f"📦 **Lot Size:** {lots_a:.2f} Lots\n"
             f"📥 **Entry Price:** {entry_a:.{digits_a}f}\n"
