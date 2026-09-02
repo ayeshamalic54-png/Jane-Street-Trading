@@ -965,6 +965,7 @@ def sync_mt5_open_positions_with_db():
 
             log_trade_exit(ticket, close_price, profit, close_time)
             logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) marked closed. Exit: {close_price:.5f} | Profit: ${profit:.2f}")
+            send_discord_trade_closed_notification(symbol, order_type, lots, entry_price, close_price, profit)
 
         conn.commit()
         cur.close()
@@ -1002,20 +1003,22 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
         act_str = "MARKET BUY 🟢" if "BUY" in str(action).upper() else "MARKET SELL 🔴"
         
-        info_a = mt5.symbol_info(symbol_a)
+        info_a = mt5.symbol_info(symbol_a) if mt5.initialize() else None
         digits_a = info_a.digits if info_a else 5
         
+        pip_sz = 0.01 if ("XAU" in symbol_a.upper() or "JPY" in symbol_a.upper()) else 0.0001
+        sl_pips = abs(entry_a - sl_a) / pip_sz
+        tp_pips = abs(tp2 - entry_a) / pip_sz
+        
         message = (
-            f"📢 **PROBABILITY Z-CORE SIGNAL (VIDEO 2 ENGINE)** 📢\n\n"
-            f"⚡ **ACTION:** {act_str} ({symbol_a})\n"
+            f"🚀 **NEW TRADE OPENED** 🚀\n\n"
+            f"⚡ **Action:** {act_str} ({symbol_a})\n"
+            f"📦 **Lot Size:** {lots_a:.2f} Lots\n"
+            f"📥 **Entry Price:** {entry_a:.{digits_a}f}\n"
+            f"⛔ **Stop Loss (SL):** {sl_a:.{digits_a}f} ({sl_pips:.1f} Pips | $97.00 Risk Cap)\n"
+            f"🎯 **Take Profit (TP):** {tp2:.{digits_a}f} ({tp_pips:.1f} Pips Target)\n"
             f"⏱ **Time:** {now_str}\n"
-            f"📊 **Z-Score Extreme:** {z_score:.3f}\n\n"
-            f"🛡 **EXECUTED ORDER DETAILS:**\n"
-            f"  📥 **Entry Price:** {entry_a:.{digits_a}f}\n"
-            f"  ⛔ **Stop Loss (SL):** {sl_a:.{digits_a}f} ($97.00 USD Risk Cap)\n"
-            f"  🎯 **Take Profit (TP):** {tp2:.{digits_a}f} (1:2.5 RRR)\n"
-            f"  📦 **Lot Size:** {lots_a:.2f} Lots (1.0% Equity Risk Capped)\n"
-            f"  🛡 **Prop Firm Guard:** 140s Minimum Hold Active 🟢\n"
+            f"🛡 **Prop Firm Guard:** 140s Minimum Hold Active 🟢\n"
         )
         
         payload = {"content": message}
@@ -1023,9 +1026,45 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         if res.status_code != 204:
             logger.error(f"Failed to send Discord webhook: {res.status_code} - {res.text}")
         else:
-            logger.info("Successfully sent Video 2 signal notification to Discord webhook.")
+            logger.info("Successfully sent Trade Open notification to Discord webhook.")
     except Exception as e:
-        logger.error(f"Error sending Discord notification: {e}")
+        logger.error(f"Error sending Discord open notification: {e}")
+
+def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price, close_price, profit, exit_reason="Target / SL Hit"):
+    import os
+    import requests
+    
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        return
+        
+    try:
+        now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
+        pnl_icon = "🟢 PROFIT" if profit >= 0 else "🔴 LOSS"
+        pnl_sign = "+" if profit >= 0 else ""
+        
+        info = mt5.symbol_info(symbol) if mt5.initialize() else None
+        digits = info.digits if info else 5
+        
+        message = (
+            f"🏁 **TRADE CLOSED** 🏁\n\n"
+            f"📊 **Asset:** {symbol} ({order_type})\n"
+            f"📦 **Lot Size:** {lots:.2f} Lots\n"
+            f"📥 **Entry Price:** {entry_price:.{digits}f}\n"
+            f"📤 **Exit Price:** {close_price:.{digits}f}\n"
+            f"💵 **Realized PnL:** {pnl_icon} **{pnl_sign}${profit:.2f} USD**\n"
+            f"📝 **Exit Reason:** {exit_reason}\n"
+            f"⏱ **Time:** {now_str}\n"
+        )
+        
+        payload = {"content": message}
+        res = requests.post(webhook_url, json=payload, timeout=5)
+        if res.status_code != 204:
+            logger.error(f"Failed to send Discord webhook: {res.status_code} - {res.text}")
+        else:
+            logger.info(f"Successfully sent Trade Closed notification for {symbol} to Discord webhook.")
+    except Exception as e:
+        logger.error(f"Error sending Discord close notification: {e}")
 
 def send_discord_general_alert(message_text: str):
     import os
