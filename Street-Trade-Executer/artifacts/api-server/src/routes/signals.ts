@@ -31,8 +31,19 @@ router.get("/signals", async (req, res) => {
           ? tradesForSignal.reduce((sum, t) => sum + Number(t.profit ?? 0), 0)
           : null;
 
-        const isMetals = ["XAU", "XAG", "XPT", "XPD"].some(x => (s.symbolA ?? "").toUpperCase().includes(x));
-        const defaultCatLots = isMetals ? 0.28 : 0.51;
+        const symA = (s.symbolA ?? "").toUpperCase();
+        let defaultCatLots = 0.51; // default forex
+        if (["XAU", "XAG", "XPT", "XPD", "GOLD", "SILVER"].some(x => symA.includes(x))) {
+          defaultCatLots = 0.28; // Metals
+        } else if (["US500", "US30", "NAS100", "GER30", "UK100", "USTEC"].some(x => symA.includes(x))) {
+          defaultCatLots = 0.60; // Indices
+        } else if (["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"].some(x => symA.includes(x))) {
+          defaultCatLots = 0.10; // Stocks
+        } else if (symA.includes("BTC") || symA.includes("ETH") || symA.includes("SOL") || symA.includes("USDT")) {
+          defaultCatLots = 0.01; // Crypto
+        } else {
+          defaultCatLots = 0.51; // Forex
+        }
 
         return {
           id: s.id,
