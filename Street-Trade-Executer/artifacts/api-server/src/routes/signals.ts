@@ -18,13 +18,21 @@ router.get("/signals", async (req, res) => {
       .limit(limit);
 
     const signalIds = rows.map((s) => s.id);
-    const trades = signalIds.length > 0
-      ? await db.select().from(tradesTable).where(inArray(tradesTable.signalId, signalIds))
-      : [];
+    const trades = await db.select().from(tradesTable);
 
     res.json(
       rows.map((s) => {
-        const tradesForSignal = trades.filter((t) => t.signalId === s.id);
+        const symBaseA = (s.symbolA ?? "").toUpperCase().split('.')[0];
+        const tradesForSignal = trades.filter((t) => {
+          if (t.signalId === s.id) return true;
+          const tSymBase = (t.symbol ?? "").toUpperCase().split('.')[0];
+          if (tSymBase === symBaseA && t.entryTime && s.timestamp) {
+            const sigTime = new Date(s.timestamp).getTime();
+            const tradeTime = new Date(t.entryTime).getTime();
+            if (Math.abs(sigTime - tradeTime) <= 600000) return true; // within 10 minutes
+          }
+          return false;
+        });
         const totalLots = tradesForSignal.reduce((sum, t) => sum + Number(t.lots), 0);
         const hasProfitVal = tradesForSignal.some(t => t.profit != null);
         const totalProfit = hasProfitVal 
