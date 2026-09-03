@@ -912,7 +912,14 @@ def sync_mt5_open_positions_with_db():
                 continue
 
             if ticket in active_tickets:
-                # Ticket is still active in MT5 — no action needed
+                # Ticket is active in MT5 — update live floating PnL in DB for signals sidebar
+                pos = next((p for p in positions if p.ticket == ticket), None)
+                if pos:
+                    try:
+                        cur.execute("UPDATE trades SET profit = %s WHERE ticket = %s", (float(pos.profit), ticket))
+                        conn.commit()
+                    except Exception:
+                        pass
                 continue
 
 
