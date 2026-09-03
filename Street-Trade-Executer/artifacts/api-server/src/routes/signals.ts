@@ -31,6 +31,9 @@ router.get("/signals", async (req, res) => {
           ? tradesForSignal.reduce((sum, t) => sum + Number(t.profit ?? 0), 0)
           : null;
 
+        const isMetals = ["XAU", "XAG", "XPT", "XPD"].some(x => (s.symbolA ?? "").toUpperCase().includes(x));
+        const defaultCatLots = isMetals ? 0.28 : 0.51;
+
         return {
           id: s.id,
           timestamp: s.timestamp?.toISOString() ?? new Date().toISOString(),
@@ -43,7 +46,7 @@ router.get("/signals", async (req, res) => {
           zScore: Number(s.zScore),
           obi: Number(s.obi),
           action: s.action,
-          totalLots: totalLots > 0 ? totalLots : 0.28,
+          totalLots: totalLots > 0 ? totalLots : defaultCatLots,
           totalProfit: totalProfit !== null ? totalProfit : 0.0,
           trades: tradesForSignal.map((t) => ({
             ticket: Number(t.ticket),

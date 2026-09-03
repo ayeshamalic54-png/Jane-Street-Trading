@@ -46,9 +46,9 @@ export default function Signals() {
       };
       defaultLots = defaultLots * (leverageFactors[category] ?? 1.0);
     } else {
-      if (category === "metals") defaultLots = 0.15;
+      if (category === "metals") defaultLots = 0.28;
       else if (category === "indices") defaultLots = 0.60;
-      else defaultLots = 1.20; // forex
+      else defaultLots = 0.51; // forex
     }
 
     const partLotsA = defaultLots / 3.0;
@@ -226,9 +226,9 @@ export default function Signals() {
       };
       defaultLots = defaultLots * (leverageFactors[category] ?? 1.0);
     } else {
-      if (category === "metals") defaultLots = 0.15;
+      if (category === "metals") defaultLots = 0.28;
       else if (category === "indices") defaultLots = 0.60;
-      else defaultLots = 1.20; // forex
+      else defaultLots = 0.51; // forex
     }
 
     const partLotsA = (defaultLots / 3.0).toFixed(2);
