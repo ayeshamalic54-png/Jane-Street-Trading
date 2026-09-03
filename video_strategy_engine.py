@@ -123,18 +123,18 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
     # ── 1. LONG (BUY) ENTRY EVALUATION ──
     if price > ema_200:  # Bullish Trend
         z_oversold_reached = (recent_z_min <= -eff_threshold) or (effective_curr_z <= -eff_threshold)
-        z_curling_up = (effective_curr_z > effective_prev_z) or (effective_curr_z > recent_z_min)
+        z_curling_up = (effective_curr_z > effective_prev_z) or (effective_curr_z > recent_z_min) or (price >= open_price) or (effective_curr_z <= -eff_threshold)
         
         if z_oversold_reached and z_curling_up:
             sl_price = min(price - buffer_dist, swing_low - (0.50 if is_metals else 0.0003))
             sl_dist = abs(price - sl_price)
             tp_price = price + (2.5 * sl_dist)  # 1:2.5 RRR
             
-            reason = f"🟢 PROBABILITY Z-CORE BUY: Bullish Trend (Price > 200 EMA) | Z-Oversold ({recent_z_min:.2f}) -> Reversal Curl UP ({effective_curr_z:.2f}) | Support Bounce | 1:2.5 RRR TP"
+            reason = f"🟢 PROBABILITY Z-CORE BUY: Bullish Trend (Price > 200 EMA) | Z-Oversold ({effective_curr_z:.2f}) <= -{eff_threshold:.2f} | Support Bounce | 1:2.5 RRR TP"
             logger.info("================================================================================")
             logger.info(f"🟢 [PROBABILITY Z-CORE BUY SIGNAL EXECUTED] 🚀")
             logger.info(f"🟢 Trend Check: Price ({price:.5f}) > 200 EMA ({ema_200:.5f}) -> Bullish Trend 🟢")
-            logger.info(f"🟢 Z-Score Check: Oversold Z ({recent_z_min:.2f}) <= -{eff_threshold:.2f} & Curr Z ({effective_curr_z:.2f}) Curling UP 🟢")
+            logger.info(f"🟢 Z-Score Check: Oversold Z ({effective_curr_z:.2f}) <= -{eff_threshold:.2f} 🟢")
             logger.info(f"🟢 Target RRR Plan: 1:2.5 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
             logger.info("================================================================================")
             return "BUY", tp_price, sl_price, sl_dist, reason
@@ -142,7 +142,7 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
     # ── 2. SHORT (SELL) ENTRY EVALUATION ──
     elif price < ema_200:  # Bearish Trend
         z_overbought_reached = (recent_z_max >= eff_threshold) or (effective_curr_z >= eff_threshold)
-        z_curling_down = (effective_curr_z < effective_prev_z) or (effective_curr_z < recent_z_max)
+        z_curling_down = (effective_curr_z < effective_prev_z) or (effective_curr_z < recent_z_max) or (price <= open_price) or (effective_curr_z >= eff_threshold)
 
         if z_overbought_reached and z_curling_down:
             sl_price = max(price + buffer_dist, swing_high + (0.50 if is_metals else 0.0003))
