@@ -945,6 +945,13 @@ def sync_mt5_open_positions_with_db():
 
             # Ticket is truly closed (or partially netted out). Look up exit details.
             history = mt5.history_deals_get(position=ticket)
+            if not history:
+                from_date = datetime.datetime.now() - datetime.timedelta(days=3)
+                to_date = datetime.datetime.now() + datetime.timedelta(days=1)
+                history = mt5.history_deals_get(from_date, to_date)
+                if history:
+                    history = [d for d in history if d.symbol.upper().split('.')[0] == sym_base]
+
             close_price = float(entry_price)
             profit = 0.0
             close_time = datetime.datetime.now()
@@ -953,7 +960,7 @@ def sync_mt5_open_positions_with_db():
             if history:
                 exit_deals = [d for d in history if d.entry == mt5.DEAL_ENTRY_OUT]
                 if exit_deals:
-                    deal = exit_deals[0]
+                    deal = exit_deals[-1]
                     close_price = float(deal.price)
                     profit = sum(
                         d.profit + d.commission + d.swap
@@ -962,17 +969,18 @@ def sync_mt5_open_positions_with_db():
                     close_time = datetime.datetime.fromtimestamp(deal.time)
                     found_exit = True
 
-            if not found_exit and active_vol_for_symbol <= 0.0:
-                # No history and no active position for symbol — safe to mark closed
-                pass
-            elif not found_exit:
-                # No exit deal found but symbol still partially active — be conservative, skip
-                logger.warning(f"[MT5 SYNC] Ticket {ticket} ({symbol}) not in active tickets but no exit deal found and symbol still active. Skipping to avoid false closure.")
-                continue
+            if not found_exit:
+                tick = mt5.symbol_info_tick(symbol)
+                if tick:
+                    close_price = tick.bid if order_type == "BUY" else tick.ask
+                    pip_sz = get_pip_size(symbol)
+                    pips = (close_price - entry_price) / pip_sz if order_type == "BUY" else (entry_price - close_price) / pip_sz
+                    mult = 10.0 if ("XAU" in symbol.upper() or "XAG" in symbol.upper()) else 10.0
+                    profit = pips * mult * float(lots)
 
             log_trade_exit(ticket, close_price, profit, close_time)
-            logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) marked closed. Exit: {close_price:.5f} | Profit: ${profit:.2f}")
-            send_discord_trade_closed_notification(symbol, order_type, lots, entry_price, close_price, profit)
+            logger.info(f"🏁 [MT5 SYNC CLOSE] Ticket #{ticket} ({symbol}) closed. Exit: {close_price:.5f} | PnL: ${profit:.2f}")
+            send_discord_trade_closed_notification(symbol, order_type, lots, entry_price, close_price, profit, exit_reason="Trade Closed (MT5 / Manual Exit)")
 
         conn.commit()
         cur.close()
