@@ -124,19 +124,18 @@ export default function Signals() {
   const getSignalDetails = (sig: any) => {
     const entry = Number(sig.priceA);
     const entryB = Number(sig.priceB);
-    const slPips = config?.slPips ?? 10;
-    const tpPips = config?.tpPips ?? 20;
     
     const s = sig.symbolA.toUpperCase();
-    const isCrypto = s.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB", "AVAX", "XRP", "ADA", "DOGE", "MATIC"].some(x => s.includes(x));
+    const isMetals = ["XAU", "XAG", "GOLD", "SILVER"].some(x => s.includes(x));
+    const isCrypto = s.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(x => s.includes(x));
     
-    const slDist = isCrypto ? slPips * (entry * 0.001) : slPips * getPipSize(sig.symbolA);
-    const tpDist = isCrypto ? tpPips * (entry * 0.001) : tpPips * getPipSize(sig.symbolA);
+    const slDist = isMetals ? 3.46 : (isCrypto ? entry * 0.02 : 0.0019);
+    const tpDist = 2.5 * slDist; // 1:2.5 RRR Target
     const pricePrecision = isCrypto ? 2 : (getPipSize(sig.symbolA) <= 0.0001 ? 5 : getPipSize(sig.symbolA) <= 0.01 ? 3 : 2);
 
     const sB = sig.symbolB.toUpperCase();
-    const isCryptoB = sB.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB", "AVAX", "XRP", "ADA", "DOGE", "MATIC"].some(x => sB.includes(x));
-    const slDistB = isCryptoB ? slPips * (entryB * 0.001) : slPips * getPipSize(sig.symbolB);
+    const isCryptoB = sB.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(x => sB.includes(x));
+    const slDistB = isCryptoB ? entryB * 0.02 : 0.0019;
     const pricePrecisionB = isCryptoB ? 2 : (getPipSize(sig.symbolB) <= 0.0001 ? 5 : getPipSize(sig.symbolB) <= 0.01 ? 3 : 2);
 
     const isBuy = sig.action === "BUY_SPREAD";
@@ -146,9 +145,9 @@ export default function Signals() {
       return {
         entry: entry.toFixed(pricePrecision),
         sl: (entry - slDist).toFixed(pricePrecision),
-        tp1: (entry + slDist).toFixed(pricePrecision),
-        tp2: (entry + Math.max(tpDist, slDist * 1.5)).toFixed(pricePrecision),
-        tp3: (entry + Math.max(tpDist * 1.5, slDist * 3.5)).toFixed(pricePrecision),
+        tp1: (entry + tpDist).toFixed(pricePrecision),
+        tp2: (entry + tpDist).toFixed(pricePrecision),
+        tp3: (entry + tpDist).toFixed(pricePrecision),
         entryB: entryB.toFixed(pricePrecisionB),
         slB: slB.toFixed(pricePrecisionB),
       };
@@ -156,9 +155,9 @@ export default function Signals() {
       return {
         entry: entry.toFixed(pricePrecision),
         sl: (entry + slDist).toFixed(pricePrecision),
-        tp1: (entry - slDist).toFixed(pricePrecision),
-        tp2: (entry - Math.max(tpDist, slDist * 1.5)).toFixed(pricePrecision),
-        tp3: (entry - Math.max(tpDist * 1.5, slDist * 3.5)).toFixed(pricePrecision),
+        tp1: (entry - tpDist).toFixed(pricePrecision),
+        tp2: (entry - tpDist).toFixed(pricePrecision),
+        tp3: (entry - tpDist).toFixed(pricePrecision),
         entryB: entryB.toFixed(pricePrecisionB),
         slB: slB.toFixed(pricePrecisionB),
       };
@@ -166,19 +165,19 @@ export default function Signals() {
     return { entry: "—", sl: "—", tp1: "—", tp2: "—", tp3: "—", entryB: "—", slB: "—" };
   };
 
-  const getTpPill = (partName: string, tradesList: any[] = []) => {
-    const trade = tradesList.find((t: any) => t.comment && t.comment.includes(partName));
-    if (!trade) {
+  const getTpPill = (tradesList: any[] = []) => {
+    if (!tradesList || tradesList.length === 0) {
       return <Badge variant="outline" className="bg-gray-500/5 text-muted-foreground/40 border-border rounded-sm font-mono text-[9px] px-1 py-0 h-4">N/A</Badge>;
     }
+    const trade = tradesList[0];
     if (trade.status === "OPEN") {
       return <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 rounded-sm font-mono text-[9px] px-1 py-0 h-4">OPEN</Badge>;
     }
     const profit = Number(trade.profit ?? 0);
     if (profit > 0) {
-      return <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/20 rounded-sm font-mono text-[9px] px-1 py-0 h-4">HIT</Badge>;
+      return <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/20 rounded-sm font-mono text-[9px] px-1 py-0 h-4">HIT 🎯</Badge>;
     } else {
-      return <Badge variant="outline" className="bg-red-500/15 text-red-400 border-red-500/20 rounded-sm font-mono text-[9px] px-1 py-0 h-4">SL</Badge>;
+      return <Badge variant="outline" className="bg-red-500/15 text-red-400 border-red-500/20 rounded-sm font-mono text-[9px] px-1 py-0 h-4">SL ⛔</Badge>;
     }
   };
 
@@ -338,22 +337,10 @@ export default function Signals() {
                         <div className="flex items-center justify-center gap-1">
                           <div className="flex flex-col gap-0.5">
                             <span className="text-[8px] text-muted-foreground">TP1</span>
-                            {getTpPill("TP1", tradesList)}
-                          </div>
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-[8px] text-muted-foreground">TP2</span>
-                            {getTpPill("TP2", tradesList)}
+                            <span className="text-[8px] text-muted-foreground">TARGET (1:2.5)</span>
+                            {getTpPill(tradesList)}
                           </div>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[8px] text-muted-foreground">TP3</span>
-                            {getTpPill("TP3", tradesList)}
-                          </div>
-                          {tradesList.some((t: any) => t.comment && t.comment.includes("HEDGE")) && (
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[8px] text-muted-foreground">HEDGE</span>
-                              {getHedgePill(tradesList)}
-                            </div>
-                          )}
                         </div>
                       </TableCell>
                       <TableCell className="font-mono text-right text-sm text-muted-foreground">
