@@ -252,14 +252,15 @@ export default function Signals() {
     const zStr = sig.zScore > 0 ? `+${sig.zScore.toFixed(3)}` : sig.zScore.toFixed(3);
     const actStr = isBuy ? "MARKET BUY 🟢" : "MARKET SELL 🔴";
 
-    const text = `🚀 *WASEE SOFT OPEN POSITION SIGNAL* 🚀\n\n` +
-      `🟢 *ACTION:* ${actStr} (${sig.symbolA})\n` +
-      `⏱ *TIME:* ${timeStr}\n` +
-      `📊 *Z-SCORE ENTRY:* ${zStr} (${zType})\n\n` +
-      `📥 *ENTRY PRICE:* ${details.entry}\n` +
-      `⛔ *STOP LOSS (SL):* ${details.sl} ($97.00 Risk Cap)\n` +
-      `🎯 *TAKE PROFIT (TP):* ${details.tp2} (1:2.5 RRR Target)\n` +
-      `📦 *LOT SIZE:* ${totalLotsA} Lots`;
+    const text = `📢 *WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE* 📢\n` +
+      `🚀 *[ NEW OPEN POSITION ]* 🚀\n\n` +
+      `🟢 *ACTION:* \`${actStr}\` (${sig.symbolA})\n` +
+      `⏱ *TIME:* \`${timeStr}\` \n` +
+      `📊 *Z-SCORE ENTRY:* \`${zStr}\` *(${zType})*\n\n` +
+      `📥 *ENTRY PRICE:* \`${details.entry}\` \n` +
+      `⛔ *STOP LOSS (SL):* \`${details.sl}\` *($97.00 Risk Cap)*\n` +
+      `🎯 *TAKE PROFIT (TP):* \`${details.tp2}\` *(1:2.5 RRR Target)*\n` +
+      `📦 *LOT SIZE:* \`${totalLotsA} Lots\``;
 
     navigator.clipboard.writeText(text).then(() => {
       toast({

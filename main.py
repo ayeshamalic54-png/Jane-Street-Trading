@@ -1028,13 +1028,14 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         z_str = f"{z_score:+.3f}"
         
         message = (
-            f"🚀 **WASEE SOFT OPEN POSITION SIGNAL** 🚀\n\n"
-            f"🟢 **ACTION:** {act_str} ({symbol_a})\n"
-            f"⏱ **TIME:** {now_str}\n"
-            f"📊 **Z-SCORE ENTRY:** `{z_str}` ({z_type})\n\n"
+            f"📢 **WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE** 📢\n"
+            f"🚀 **[ NEW OPEN POSITION ]** 🚀\n\n"
+            f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
+            f"⏱ **TIME:** `{now_str}`\n"
+            f"📊 **Z-SCORE ENTRY:** `{z_str}` *({z_type})*\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
-            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` ({sl_pips:.1f} Pips | $97.00 Risk Cap)\n"
-            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` ({tp_pips:.1f} Pips | 1:2.5 RRR Target)\n"
+            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | $97.00 Risk Cap)*\n"
+            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({tp_pips:.1f} Pips | 1:2.5 RRR Target)*\n"
             f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
         
@@ -1064,14 +1065,15 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         digits = info.digits if info else 5
         
         message = (
-            f"🏁 **WASEE SOFT POSITION CLOSED** 🏁\n\n"
-            f"📊 **ASSET:** {symbol} ({order_type})\n"
+            f"📢 **WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE** 📢\n"
+            f"🏁 **[ POSITION CLOSED ]** 🏁\n\n"
+            f"📊 **ASSET:** `{symbol}` ({order_type})\n"
             f"📦 **LOT SIZE:** `{lots:.2f} Lots`\n"
             f"📥 **ENTRY PRICE:** `{entry_price:.{digits}f}`\n"
             f"📤 **EXIT PRICE:** `{close_price:.{digits}f}`\n"
             f"💵 **REALIZED PNL:** {pnl_icon} **{pnl_sign}${profit:.2f} USD**\n"
-            f"📝 **EXIT REASON:** {exit_reason} 🎯\n"
-            f"⏱ **TIME:** {now_str}\n"
+            f"📝 **EXIT REASON:** `{exit_reason}` 🎯\n"
+            f"⏱ **TIME:** `{now_str}`\n"
         )
         
         payload = {"content": message}
