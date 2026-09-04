@@ -301,10 +301,8 @@ export default function Signals() {
                   <TableHead className="font-mono text-xs">PAIR A / B</TableHead>
                   <TableHead className="font-mono text-xs text-right font-medium">ENTRY</TableHead>
                   <TableHead className="font-mono text-xs text-right text-red-400 font-medium">SL</TableHead>
-                  <TableHead className="font-mono text-xs text-right text-green-400 font-medium">TP1</TableHead>
-                  <TableHead className="font-mono text-xs text-right text-green-400 font-medium">TP2</TableHead>
-                  <TableHead className="font-mono text-xs text-right text-green-400 font-medium">TP3</TableHead>
-                  <TableHead className="font-mono text-xs text-center">TARGETS</TableHead>
+                  <TableHead className="font-mono text-xs text-right text-green-400 font-medium">TP (1:2.5)</TableHead>
+                  <TableHead className="font-mono text-xs text-center">STATUS</TableHead>
                   <TableHead className="font-mono text-xs text-right">LOTS</TableHead>
                   <TableHead className="font-mono text-xs text-right">P&L</TableHead>
                   <TableHead className="font-mono text-xs text-right">Z-SCORE</TableHead>
@@ -330,15 +328,10 @@ export default function Signals() {
                       </TableCell>
                       <TableCell className="font-mono text-right text-sm">{details.entry}</TableCell>
                       <TableCell className="font-mono text-right text-sm text-red-400">{details.sl}</TableCell>
-                      <TableCell className="font-mono text-right text-sm text-green-400">{details.tp1}</TableCell>
-                      <TableCell className="font-mono text-right text-sm text-green-400/80">{details.tp2}</TableCell>
-                      <TableCell className="font-mono text-right text-sm text-green-400/60">{details.tp3}</TableCell>
+                      <TableCell className="font-mono text-right text-sm text-green-400">{details.tp2}</TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-[8px] text-muted-foreground">TP1</span>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[8px] text-muted-foreground">TARGET (1:2.5)</span>
                             {getTpPill(tradesList)}
                           </div>
                         </div>
