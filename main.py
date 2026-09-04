@@ -3168,7 +3168,11 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt:
-        pass
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Stopping bot gracefully...")
     finally:
-        shutdown_mt5()
+        try:
+            shutdown_mt5()
+        except Exception:
+            pass
+        os._exit(0)
