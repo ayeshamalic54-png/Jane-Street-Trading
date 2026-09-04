@@ -1028,7 +1028,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         z_str = f"{z_score:+.3f}"
         
         message = (
-            f"📢 **WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE** 📢\n\n"
+            f"🚀 **WASEE SOFT OPEN POSITION SIGNAL** 🚀\n\n"
             f"🟢 **ACTION:** {act_str} ({symbol_a})\n"
             f"⏱ **TIME:** {now_str}\n"
             f"📊 **Z-SCORE ENTRY:** `{z_str}` ({z_type})\n\n"
@@ -1064,7 +1064,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         digits = info.digits if info else 5
         
         message = (
-            f"🏁 **WASEE SOFT TRADE CLOSED** 🏁\n\n"
+            f"🏁 **WASEE SOFT POSITION CLOSED** 🏁\n\n"
             f"📊 **ASSET:** {symbol} ({order_type})\n"
             f"📦 **LOT SIZE:** `{lots:.2f} Lots`\n"
             f"📥 **ENTRY PRICE:** `{entry_price:.{digits}f}`\n"

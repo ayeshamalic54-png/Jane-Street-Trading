@@ -252,7 +252,7 @@ export default function Signals() {
     const zStr = sig.zScore > 0 ? `+${sig.zScore.toFixed(3)}` : sig.zScore.toFixed(3);
     const actStr = isBuy ? "MARKET BUY 🟢" : "MARKET SELL 🔴";
 
-    const text = `📢 *WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE* 📢\n\n` +
+    const text = `🚀 *WASEE SOFT OPEN POSITION SIGNAL* 🚀\n\n` +
       `🟢 *ACTION:* ${actStr} (${sig.symbolA})\n` +
       `⏱ *TIME:* ${timeStr}\n` +
       `📊 *Z-SCORE ENTRY:* ${zStr} (${zType})\n\n` +
