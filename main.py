@@ -1024,16 +1024,18 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         pip_sz = 0.01 if ("XAU" in symbol_a.upper() or "JPY" in symbol_a.upper()) else 0.0001
         sl_pips = abs(entry_a - sl_a) / pip_sz
         tp_pips = abs(tp2 - entry_a) / pip_sz
+        z_type = "Oversold Trigger" if z_score < 0 else "Overbought Trigger"
+        z_str = f"{z_score:+.3f}"
         
         message = (
             f"📢 **WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE** 📢\n\n"
-            f"⚡ **Action:** {act_str} ({symbol_a})\n"
-            f"📦 **Lot Size:** {lots_a:.2f} Lots\n"
-            f"📥 **Entry Price:** {entry_a:.{digits_a}f}\n"
-            f"⛔ **Stop Loss (SL):** {sl_a:.{digits_a}f} ({sl_pips:.1f} Pips | $97.00 Risk Cap)\n"
-            f"🎯 **Take Profit (TP):** {tp2:.{digits_a}f} ({tp_pips:.1f} Pips Target)\n"
-            f"⏱ **Time:** {now_str}\n"
-            f"🛡 **Prop Firm Guard:** 140s Minimum Hold Active 🟢\n"
+            f"🟢 **ACTION:** {act_str} ({symbol_a})\n"
+            f"⏱ **TIME:** {now_str}\n"
+            f"📊 **Z-SCORE ENTRY:** `{z_str}` ({z_type})\n\n"
+            f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
+            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` ({sl_pips:.1f} Pips | $97.00 Risk Cap)\n"
+            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` ({tp_pips:.1f} Pips | 1:2.5 RRR Target)\n"
+            f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
         
         payload = {"content": message}
@@ -1062,14 +1064,14 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         digits = info.digits if info else 5
         
         message = (
-            f"🏁 **TRADE CLOSED** 🏁\n\n"
-            f"📊 **Asset:** {symbol} ({order_type})\n"
-            f"📦 **Lot Size:** {lots:.2f} Lots\n"
-            f"📥 **Entry Price:** {entry_price:.{digits}f}\n"
-            f"📤 **Exit Price:** {close_price:.{digits}f}\n"
-            f"💵 **Realized PnL:** {pnl_icon} **{pnl_sign}${profit:.2f} USD**\n"
-            f"📝 **Exit Reason:** {exit_reason}\n"
-            f"⏱ **Time:** {now_str}\n"
+            f"🏁 **WASEE SOFT TRADE CLOSED** 🏁\n\n"
+            f"📊 **ASSET:** {symbol} ({order_type})\n"
+            f"📦 **LOT SIZE:** `{lots:.2f} Lots`\n"
+            f"📥 **ENTRY PRICE:** `{entry_price:.{digits}f}`\n"
+            f"📤 **EXIT PRICE:** `{close_price:.{digits}f}`\n"
+            f"💵 **REALIZED PNL:** {pnl_icon} **{pnl_sign}${profit:.2f} USD**\n"
+            f"📝 **EXIT REASON:** {exit_reason} 🎯\n"
+            f"⏱ **TIME:** {now_str}\n"
         )
         
         payload = {"content": message}

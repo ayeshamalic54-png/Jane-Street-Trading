@@ -248,23 +248,18 @@ export default function Signals() {
 
     const lotsB = Math.max(0.01, Math.abs(defaultLots * betaVal)).toFixed(2);
 
-    const text = `📢 *AWAIS JANE STREET QUANTUM ENGINE SIGNAL* 📢\n\n` +
-      `${actionEmoji} *ACTION:* ${sig.action} (${sig.symbolA} / ${sig.symbolB})\n` +
-      `⏱ *Time:* ${timeStr}\n` +
-      `📊 *Z-Score:* ${sig.zScore.toFixed(3)}\n\n` +
-      `🛡 *LEG A (${sig.symbolA}) - 3 Parts:*\n` +
-      `  📥 *Entry:* ${details.entry}\n` +
-      `  ⛔ *Stop Loss (SL):* ${details.sl}\n` +
-      `  🎯 *TP1:* ${details.tp1}\n` +
-      `  🎯 *TP2:* ${details.tp2}\n` +
-      `  🎯 *TP3:* ${details.tp3}\n` +
-      `  📦 *Lots:* 3 parts of ${partLotsA} (Total ${totalLotsA})\n\n` +
-      `⚖ *LEG B (${sig.symbolB}) - Hedge:*\n` +
-      `  📥 *Entry:* ${details.entryB}\n` +
-      `  ⛔ *Stop Loss (SL):* ${details.slB}\n` +
-      `  🎯 *TP:* Dynamic (Spread Reversion)\n` +
-      `  📦 *Lots:* ${lotsB}\n` +
-      `  📥 *Position:* ${legBDirection}`;
+    const zType = sig.zScore < 0 ? "Oversold Trigger" : "Overbought Trigger";
+    const zStr = sig.zScore > 0 ? `+${sig.zScore.toFixed(3)}` : sig.zScore.toFixed(3);
+    const actStr = isBuy ? "MARKET BUY 🟢" : "MARKET SELL 🔴";
+
+    const text = `📢 *WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE* 📢\n\n` +
+      `🟢 *ACTION:* ${actStr} (${sig.symbolA})\n` +
+      `⏱ *TIME:* ${timeStr}\n` +
+      `📊 *Z-SCORE ENTRY:* ${zStr} (${zType})\n\n` +
+      `📥 *ENTRY PRICE:* ${details.entry}\n` +
+      `⛔ *STOP LOSS (SL):* ${details.sl} ($97.00 Risk Cap)\n` +
+      `🎯 *TAKE PROFIT (TP):* ${details.tp2} (1:2.5 RRR Target)\n` +
+      `📦 *LOT SIZE:* ${totalLotsA} Lots`;
 
     navigator.clipboard.writeText(text).then(() => {
       toast({

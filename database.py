@@ -577,16 +577,6 @@ def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, 
         conn.commit()
         cur.close()
 
-        # Send Discord Signal notification
-        disc_msg = (
-            f"📊 **JANE STREET SIGNAL DETECTED** 📊\n\n"
-            f"💱 **Pair:** `{symbol_a}/{symbol_b}` ({action})\n"
-            f"📈 **Z-Score:** `{z_score:+.3f}`\n"
-            f"💵 **Prices:** `{symbol_a}`: `{price_a:.5f}` | `{symbol_b}`: `{price_b:.5f}`\n"
-            f"⏱ **Time:** `{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n"
-        )
-        send_discord_message(disc_msg)
-
         if row:
             return row[0]
     except Exception as e:
@@ -612,7 +602,7 @@ def send_discord_message(content):
         return False
 
 def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, comment="", signal_id=None):
-    """Logs the entry of a trade and sends a Discord notification."""
+    """Logs the entry of a trade."""
     query = """
         INSERT INTO trades (ticket, symbol, order_type, lots, entry_price, entry_time, status, comment, signal_id)
         VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', %s, %s)
@@ -636,16 +626,6 @@ def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, c
         ))
         conn.commit()
         cur.close()
-        
-        # Send Discord entry notification
-        disc_msg = (
-            f"🚀 **JANE STREET POSITION OPENED** 🚀\n\n"
-            f"🎫 **Ticket:** `{ticket}`\n"
-            f"💱 **Symbol:** `{symbol}` ({comment})\n"
-            f"📦 **Size:** `{lots:.2f} lots` ({order_type})\n"
-            f"💵 **Entry Price:** `{entry_price:.5f}`\n"
-        )
-        send_discord_message(disc_msg)
     except Exception as e:
         print(f"Error logging trade entry: {e}")
     finally:
