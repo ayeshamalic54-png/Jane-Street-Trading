@@ -129,13 +129,13 @@ export default function Signals() {
     const isMetals = ["XAU", "XAG", "GOLD", "SILVER"].some(x => s.includes(x));
     const isCrypto = s.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(x => s.includes(x));
     
-    const slDist = isMetals ? 3.46 : (isCrypto ? entry * 0.02 : 0.0019);
-    const tpDist = 2.5 * slDist; // 1:2.5 RRR Target
+    const slDist = isMetals ? 3.46 : (isCrypto ? entry * 0.015 : 0.00194);
+    const tpDist = isMetals ? 8.65 : (isCrypto ? entry * 0.0375 : 0.00485); // 1:2.5 RRR Target
     const pricePrecision = isCrypto ? 2 : (getPipSize(sig.symbolA) <= 0.0001 ? 5 : getPipSize(sig.symbolA) <= 0.01 ? 3 : 2);
 
     const sB = sig.symbolB.toUpperCase();
     const isCryptoB = sB.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(x => sB.includes(x));
-    const slDistB = isCryptoB ? entryB * 0.02 : 0.0019;
+    const slDistB = isCryptoB ? entryB * 0.015 : 0.00194;
     const pricePrecisionB = isCryptoB ? 2 : (getPipSize(sig.symbolB) <= 0.0001 ? 5 : getPipSize(sig.symbolB) <= 0.01 ? 3 : 2);
 
     const isBuy = sig.action === "BUY_SPREAD";
