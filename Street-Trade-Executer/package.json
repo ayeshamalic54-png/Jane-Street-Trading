@@ -9,6 +9,9 @@
     "typecheck": "echo 'Typecheck skipped for build'"
   },
   "private": true,
+  "engines": {
+    "node": ">=20.0.0 <24.0.0"
+  },
   "devDependencies": {
     "prettier": "^3.8.3",
     "typescript": "~5.9.3"
