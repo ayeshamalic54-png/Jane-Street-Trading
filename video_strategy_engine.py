@@ -123,7 +123,8 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
     # ── 1. LONG (BUY) ENTRY EVALUATION ──
     if price > ema_200:  # Bullish Trend
         z_oversold_reached = (recent_z_min <= -eff_threshold) or (effective_curr_z <= -eff_threshold)
-        z_curling_up = (effective_curr_z > effective_prev_z) or (effective_curr_z > recent_z_min) or (price >= open_price) or (effective_curr_z <= -eff_threshold)
+        # Require actual upward Z curl OR green candle (price >= open_price)
+        z_curling_up = ((effective_curr_z > effective_prev_z) or (effective_curr_z > recent_z_min) or (price >= open_price)) and (price >= open_price or effective_curr_z > effective_prev_z)
         
         if z_oversold_reached and z_curling_up:
             sl_dist = 3.46 if is_metals else 0.0019
@@ -142,7 +143,8 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
     # ── 2. SHORT (SELL) ENTRY EVALUATION ──
     elif price < ema_200:  # Bearish Trend
         z_overbought_reached = (recent_z_max >= eff_threshold) or (effective_curr_z >= eff_threshold)
-        z_curling_down = (effective_curr_z < effective_prev_z) or (effective_curr_z < recent_z_max) or (price <= open_price) or (effective_curr_z >= eff_threshold)
+        # Require actual downward Z curl OR red candle (price <= open_price)
+        z_curling_down = ((effective_curr_z < effective_prev_z) or (effective_curr_z < recent_z_max) or (price <= open_price)) and (price <= open_price or effective_curr_z < effective_prev_z)
 
         if z_overbought_reached and z_curling_down:
             sl_dist = 3.46 if is_metals else 0.0019
