@@ -112,7 +112,6 @@ def load_config():
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
-            UPDATE bot_state SET active_pair = 'ALL', stocks_enabled = FALSE, indices_enabled = FALSE, metals_enabled = TRUE, crypto_enabled = FALSE, forex_enabled = TRUE WHERE id = 1;
         """)
         conn_mig.commit()
         cur_mig.close()
@@ -138,16 +137,9 @@ def load_config():
                         conn_mig.close()
                     except Exception:
                         pass
-                parts = active_pair.split('/')
-                if len(parts) == 2 and parts[0].strip() != parts[1].strip():
-                    GLOBAL_CONFIG["SYMBOL_A"] = parts[0].strip()
-                    GLOBAL_CONFIG["SYMBOL_B"] = parts[1].strip()
-                    logger.info(f"Loaded config: Leg A={GLOBAL_CONFIG['SYMBOL_A']} | Leg B={GLOBAL_CONFIG['SYMBOL_B']}")
-                else:
-                    logger.warning(f"shared_config.json has identical or invalid symbols — defaulting to EURUSD/GBPUSD")
-                    GLOBAL_CONFIG["SYMBOL_A"] = "EURUSD"
-                    GLOBAL_CONFIG["SYMBOL_B"] = "GBPUSD"
-                    save_config("EURUSD/GBPUSD")
+                GLOBAL_CONFIG["SYMBOL_A"] = active_pair.split("/")[0] if "/" in active_pair else "EURUSD"
+                GLOBAL_CONFIG["SYMBOL_B"] = active_pair.split("/")[1] if "/" in active_pair else "GBPUSD"
+                save_config(active_pair)
         except Exception as e:
             logger.error(f"Error loading config: {e}")
 
@@ -191,7 +183,7 @@ def fetch_db_config():
             # If current active_pair belongs to a disabled category, pick first pair from an enabled category
             cat_a = get_symbol_category(raw_active.split('/')[0]) if '/' in raw_active else "forex"
             active_pair = raw_active
-            if (cat_a == "forex" and not f_on) or (cat_a == "metals" and not m_on) or (cat_a == "indices" and not i_on) or (cat_a == "stocks" and not s_on) or (cat_a == "crypto" and not c_on) or (f_on and cat_a != "forex"):
+            if (cat_a == "forex" and not f_on) or (cat_a == "metals" and not m_on) or (cat_a == "indices" and not i_on) or (cat_a == "stocks" and not s_on) or (cat_a == "crypto" and not c_on):
                 if f_on:
                     active_pair = "EURUSD/GBPUSD"
                 elif m_on:
