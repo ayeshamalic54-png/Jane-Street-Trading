@@ -126,9 +126,9 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
         z_curling_up = (effective_curr_z > effective_prev_z) or (effective_curr_z > recent_z_min) or (price >= open_price) or (effective_curr_z <= -eff_threshold)
         
         if z_oversold_reached and z_curling_up:
-            sl_price = min(price - buffer_dist, swing_low - (0.50 if is_metals else 0.0003))
-            sl_dist = abs(price - sl_price)
-            tp_price = price + (2.5 * sl_dist)  # 1:2.5 RRR
+            sl_dist = 3.46 if is_metals else 0.0019
+            sl_price = price - sl_dist
+            tp_price = price + (2.5 * sl_dist)  # 1:2.5 RRR Target
             
             reason = f"🟢 PROBABILITY Z-CORE BUY: Bullish Trend (Price > 200 EMA) | Z-Oversold ({effective_curr_z:.2f}) <= -{eff_threshold:.2f} | Support Bounce | 1:2.5 RRR TP"
             logger.info("================================================================================")
@@ -145,9 +145,9 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
         z_curling_down = (effective_curr_z < effective_prev_z) or (effective_curr_z < recent_z_max) or (price <= open_price) or (effective_curr_z >= eff_threshold)
 
         if z_overbought_reached and z_curling_down:
-            sl_price = max(price + buffer_dist, swing_high + (0.50 if is_metals else 0.0003))
-            sl_dist = abs(sl_price - price)
-            tp_price = price - (2.5 * sl_dist)  # 1:2.5 RRR
+            sl_dist = 3.46 if is_metals else 0.0019
+            sl_price = price + sl_dist
+            tp_price = price - (2.5 * sl_dist)  # 1:2.5 RRR Target
 
             reason = f"🔴 PROBABILITY Z-CORE SELL: Bearish Trend (Price < 200 EMA) | Z-Overbought ({recent_z_max:.2f}) -> Reversal Curl DOWN ({effective_curr_z:.2f}) | Resistance Bounce | 1:2.5 RRR TP"
             logger.info("================================================================================")
