@@ -23,6 +23,7 @@ from math_models import KalmanFilterRegression, calculate_obi, test_cointegratio
 from data_ingestion import initialize_mt5, check_and_subscribe_symbol, get_live_ticks, get_market_book, shutdown_mt5, get_rates_df, resolve_broker_symbol
 from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT, get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES
 from video_strategy_engine import calculate_zscore_and_ema, evaluate_video_strategy_signal
+from smc_strategy_engine import evaluate_smc_strategy_signal
 
 
 from execution_bot import execute_three_part_trade, execute_three_part_hedge_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl
@@ -2643,16 +2644,24 @@ def main():
                     z_vel_lim = 0.01
 
                 df_a = get_rates_df(s_a_resolved, mt5.TIMEFRAME_M15, count=220)
+                df_m5 = get_rates_df(s_a_resolved, mt5.TIMEFRAME_M5, count=100)
                 if df_a is not None and not df_a.empty:
                     df_a = calculate_zscore_and_ema(df_a)
 
                 action = "NONE"
-                vid_sig, vid_tp, vid_sl, vid_sl_dist, vid_reason = evaluate_video_strategy_signal(df_a, z_threshold=Z_ENTRY_THRESHOLD, category=cat_a, live_z=z)
-                
-                if vid_sig == "BUY":
-                    action = "BUY_SPREAD"
-                elif vid_sig == "SELL":
-                    action = "SELL_SPREAD"
+                if SMC_ENABLED:
+                    smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a, df_m5, category=cat_a)
+                    vid_reason = smc_reason
+                    if smc_sig == "BUY":
+                        action = "BUY_SPREAD"
+                    elif smc_sig == "SELL":
+                        action = "SELL_SPREAD"
+                else:
+                    vid_sig, vid_tp, vid_sl, vid_sl_dist, vid_reason = evaluate_video_strategy_signal(df_a, z_threshold=Z_ENTRY_THRESHOLD, category=cat_a, live_z=z)
+                    if vid_sig == "BUY":
+                        action = "BUY_SPREAD"
+                    elif vid_sig == "SELL":
+                        action = "SELL_SPREAD"
 
                 # Pre-entry direction & Beta sign checks bypassed for pure Single-Asset VWAP Z-Score execution
 
