@@ -2731,7 +2731,10 @@ def main():
                                 "tick_a": tick_a_scan,
                                 "tick_b": tick_b_scan,
                                 "price_a": p_a,
-                                "price_b": p_b
+                                "price_b": p_b,
+                                "smc_sl": smc_sl if 'smc_sl' in locals() else None,
+                                "smc_tp": smc_tp if 'smc_tp' in locals() else None,
+                                "smc_sl_dist": smc_sl_dist if 'smc_sl_dist' in locals() else None
                             })
                         else:
                             logger.info(f"⚠️ [SPREAD CHECK FAILED] Spread for {s_a_resolved} exceeded threshold. Entry SKIPPED.")
@@ -2848,9 +2851,16 @@ def main():
                         best_action
                     )
                     
-                    sl_dist = get_sl_distance(S_A, best_sig["price_a"], SL_PIPS)
+                    if best_sig.get("smc_sl_dist") and float(best_sig["smc_sl_dist"]) > 0:
+                        sl_dist = float(best_sig["smc_sl_dist"])
+                    else:
+                        sl_dist = get_sl_distance(S_A, best_sig["price_a"], SL_PIPS)
                     sl_dist_b = get_sl_distance(S_B, best_sig["price_b"], SL_PIPS)
-                    tp_dist = get_tp_distance(S_A, best_sig["price_a"], TP_PIPS)
+                    
+                    if best_sig.get("smc_tp") and best_sig["smc_tp"] is not None:
+                        tp_dist = abs(float(best_sig["smc_tp"]) - float(best_sig["price_a"]))
+                    else:
+                        tp_dist = get_tp_distance(S_A, best_sig["price_a"], TP_PIPS)
                     
                     COOLDOWN_DIRECTIONS[current_pair_context] = best_action
                     is_long = (best_action == "BUY_SPREAD")
