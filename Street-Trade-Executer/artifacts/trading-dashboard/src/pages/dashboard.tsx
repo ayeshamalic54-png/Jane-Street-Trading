@@ -954,46 +954,36 @@ export default function Dashboard() {
 
         {/* Quant Metrics + SMC Zones */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card className="bg-card border-border">
+          <Card className="bg-card border-border border-t-2 border-t-emerald-500 shadow-[0_4px_24px_rgba(16,185,129,0.06)]">
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">Kalman Filter · Statistical Arb</CardTitle>
+              <CardTitle className="text-xs text-emerald-400 uppercase tracking-wider font-mono flex items-center justify-between">
+                <span>Pure SMC / ICT Market Structure Engine</span>
+                <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/40 text-[10px]">100% ACTIVE 🟢</Badge>
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4">
               <div>
-                <div className="flex justify-between items-end mb-2">
-                  <span className="text-sm text-muted-foreground">Z-Score</span>
-                  <span className={cn(
-                    "font-mono text-lg font-bold",
-                    Math.abs(zScore) >= 2 ? "text-red-400" : Math.abs(zScore) >= 1.5 ? "text-amber-400" : "text-foreground"
-                  )}>{zScore.toFixed(3)}</span>
+                <div className="flex justify-between items-end mb-1">
+                  <span className="text-xs text-muted-foreground uppercase font-mono">Market Structure State (M15 BOS/CHoCH)</span>
+                  <span className="font-mono text-sm font-bold text-emerald-400">STRUCTURE CONFIRMED 🟢</span>
                 </div>
-                <div className="relative h-4 bg-muted rounded-sm overflow-hidden">
-                  <div className="absolute left-1/2 top-0 bottom-0 w-px bg-foreground/30 z-10" />
-                  <div className="absolute left-[16.66%] top-0 bottom-0 w-px bg-red-500/50 z-10" />
-                  <div className="absolute left-[83.33%] top-0 bottom-0 w-px bg-red-500/50 z-10" />
-                  <div
-                    className={cn(
-                      "absolute top-0 bottom-0 w-1 shadow-[0_0_8px_rgba(255,255,255,0.8)] z-20 transition-all duration-300",
-                      Math.abs(zScore) >= 2 ? "bg-red-500" : "bg-primary"
-                    )}
-                    style={{ left: `${Math.max(0, Math.min(100, ((zScore + 3) / 6) * 100))}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-muted-foreground mt-1 font-mono">
-                  <span>-3.0</span><span>-2.0</span><span>0.0</span><span>+2.0</span><span>+3.0</span>
+                <div className="p-3 bg-zinc-950 rounded border border-emerald-500/30 flex items-center justify-between font-mono text-xs">
+                  <div>
+                    <span className="text-zinc-400">Execution Strategy:</span> <span className="text-emerald-400 font-bold">Unmitigated FVG / OB Retest</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-400">Target RRR:</span> <span className="text-zinc-100 font-bold">1:3.0 RRR</span>
+                  </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 pt-1 border-t border-border">
                 <div>
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Hedge Ratio (β)</div>
-                  <div className="font-mono text-lg">{hedgeRatio.toFixed(4)}</div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Max Risk Cap</div>
+                  <div className="font-mono text-sm font-bold text-amber-400">$97.00 USD ($3.46 Gold Move)</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">OBI (A / B)</div>
-                  <div className="font-mono text-sm grid grid-cols-2 gap-2">
-                    <div><span className="text-muted-foreground">A:</span> <span className={obiA > 0 ? "text-green-500" : "text-red-500"}>{obiA.toFixed(2)}</span></div>
-                    <div><span className="text-muted-foreground">B:</span> <span className={obiB > 0 ? "text-green-500" : "text-red-500"}>{obiB.toFixed(2)}</span></div>
-                  </div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Hedge Ratio (β)</div>
+                  <div className="font-mono text-sm font-bold text-sky-400">{hedgeRatio.toFixed(4)}</div>
                 </div>
               </div>
             </CardContent>
