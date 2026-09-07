@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 import logging
@@ -5,7 +6,7 @@ from smc_indicators import detect_smc_zones, detect_market_structure, is_price_i
 
 logger = logging.getLogger("SMC_Strategy_Engine")
 
-def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = None, category: str = "forex"):
+def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = None, category: str = "forex", bypass_filters: bool = False):
     """
     Pure SMC/ICT Strategy Engine:
     
@@ -42,19 +43,22 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
 
     is_metals = (category == "metals" or "XAU" in str(df_m15.get('symbol', '')))
 
+    # Check temporary test mode flag
+    test_mode = bypass_filters or (os.getenv("TEMP_TEST_MODE", "False").lower() in ("true", "1", "yes"))
+
     # ── 1. LONG (BUY) ENTRY EVALUATION ──
-    if structure == 'BULLISH':
+    if structure == 'BULLISH' or (test_mode and structure != 'BEARISH'):
         in_bull_ob = is_price_in_zones(price, zones['bullish_ob'])
         in_bull_fvg = is_price_in_zones(price, zones['bullish_fvg'])
         in_bull_brk = is_price_in_zones(price, zones['bullish_breaker'])
         in_bull_ifvg = is_price_in_zones(price, zones['bullish_ifvg'])
 
-        if (in_bull_ob or in_bull_fvg or in_bull_brk or in_bull_ifvg) and (price >= open_price):
+        if test_mode or ((in_bull_ob or in_bull_fvg or in_bull_brk or in_bull_ifvg) and (price >= open_price)):
             sl_dist = 3.46 if is_metals else 0.00194
             sl_price = price - sl_dist
             tp_price = price + (3.0 * sl_dist)  # 1:3.0 RRR Target
 
-            zone_type = "Order Block" if in_bull_ob else ("FVG" if in_bull_fvg else "Breaker/iFVG")
+            zone_type = "TEST_BYPASS" if test_mode else ("Order Block" if in_bull_ob else ("FVG" if in_bull_fvg else "Breaker/iFVG"))
             reason = f"🟢 SMC STRUCTURE BUY: Bullish BOS/CHoCH | Retest in {zone_type} Zone | 1:3.0 RRR TP"
             logger.info("================================================================================")
             logger.info(f"🟢 [PURE SMC BUY SIGNAL EXECUTED] 🚀")
@@ -65,18 +69,18 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
             return "BUY", tp_price, sl_price, sl_dist, reason
 
     # ── 2. SHORT (SELL) ENTRY EVALUATION ──
-    elif structure == 'BEARISH':
+    elif structure == 'BEARISH' or (test_mode and structure == 'BEARISH'):
         in_bear_ob = is_price_in_zones(price, zones['bearish_ob'])
         in_bear_fvg = is_price_in_zones(price, zones['bearish_fvg'])
         in_bear_brk = is_price_in_zones(price, zones['bearish_breaker'])
         in_bear_ifvg = is_price_in_zones(price, zones['bearish_ifvg'])
 
-        if (in_bear_ob or in_bear_fvg or in_bear_brk or in_bear_ifvg) and (price <= open_price):
+        if test_mode or ((in_bear_ob or in_bear_fvg or in_bear_brk or in_bear_ifvg) and (price <= open_price)):
             sl_dist = 3.46 if is_metals else 0.00194
             sl_price = price + sl_dist
             tp_price = price - (3.0 * sl_dist)  # 1:3.0 RRR Target
 
-            zone_type = "Order Block" if in_bear_ob else ("FVG" if in_bear_fvg else "Breaker/iFVG")
+            zone_type = "TEST_BYPASS" if test_mode else ("Order Block" if in_bear_ob else ("FVG" if in_bear_fvg else "Breaker/iFVG"))
             reason = f"🔴 SMC STRUCTURE SELL: Bearish BOS/CHoCH | Retest in {zone_type} Zone | 1:3.0 RRR TP"
             logger.info("================================================================================")
             logger.info(f"🔴 [PURE SMC SELL SIGNAL EXECUTED] 🚀")
