@@ -267,7 +267,7 @@ def update_live_toggles_from_db():
         if cfg:
             SL_PIPS = cfg[1]
             TP_PIPS = cfg[2]
-            SMC_ENABLED = bool(cfg[3]) if (len(cfg) > 3 and cfg[3] is not None) else True
+            SMC_ENABLED = True
             AUTO_EXECUTE = cfg[4]
             CRYPTO_ENABLED = False
             METALS_ENABLED = cfg[6]
@@ -2650,19 +2650,12 @@ def main():
                     df_a = calculate_zscore_and_ema(df_a)
 
                 action = "NONE"
-                if SMC_ENABLED:
-                    smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a, df_m5, category=cat_a)
-                    vid_reason = smc_reason
-                    if smc_sig == "BUY":
-                        action = "BUY_SPREAD"
-                    elif smc_sig == "SELL":
-                        action = "SELL_SPREAD"
-                else:
-                    vid_sig, vid_tp, vid_sl, vid_sl_dist, vid_reason = evaluate_video_strategy_signal(df_a, z_threshold=Z_ENTRY_THRESHOLD, category=cat_a, live_z=z)
-                    if vid_sig == "BUY":
-                        action = "BUY_SPREAD"
-                    elif vid_sig == "SELL":
-                        action = "SELL_SPREAD"
+                smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a, df_m5, category=cat_a)
+                vid_reason = smc_reason
+                if smc_sig == "BUY":
+                    action = "BUY_SPREAD"
+                elif smc_sig == "SELL":
+                    action = "SELL_SPREAD"
 
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
