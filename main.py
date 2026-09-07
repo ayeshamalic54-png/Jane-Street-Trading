@@ -100,6 +100,7 @@ KNIFE_PROTECTION_ENABLED = False
 OBI_ENABLED = False
 VOLATILITY_FILTER_ENABLED = False
 REQUIRE_SMC_CONFLUENCE = False
+SMC_ENABLED = True
 
 # Dashboard API base URL — update to your Replit URL when deployed
 DASHBOARD_API_URL = os.environ.get("DASHBOARD_API_URL", "http://localhost:80/api")
@@ -259,13 +260,14 @@ def update_live_toggles_from_db():
     Logs instant VPS console alerts whenever any toggle is switched.
     """
     global FOREX_ENABLED, METALS_ENABLED, INDICES_ENABLED, STOCKS_ENABLED, CRYPTO_ENABLED, AUTO_EXECUTE, RISK_LIMITS_ENABLED, Z_ENTRY_THRESHOLD, SL_PIPS, TP_PIPS
-    global KNIFE_PROTECTION_ENABLED, OBI_ENABLED, VOLATILITY_FILTER_ENABLED, PREV_TOGGLE_STATE
+    global KNIFE_PROTECTION_ENABLED, OBI_ENABLED, VOLATILITY_FILTER_ENABLED, PREV_TOGGLE_STATE, SMC_ENABLED
     try:
         import risk_safeguards
         cfg = fetch_db_config()
         if cfg:
             SL_PIPS = cfg[1]
             TP_PIPS = cfg[2]
+            SMC_ENABLED = bool(cfg[3]) if (len(cfg) > 3 and cfg[3] is not None) else True
             AUTO_EXECUTE = cfg[4]
             CRYPTO_ENABLED = False
             METALS_ENABLED = cfg[6]
