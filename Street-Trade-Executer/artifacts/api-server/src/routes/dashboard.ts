@@ -29,7 +29,7 @@ router.get("/dashboard", async (req, res) => {
     const botState = botStateRows[0];
     const isOnline =
       botState?.lastHeartbeat != null &&
-      Date.now() - new Date(botState.lastHeartbeat).getTime() < 30_000;
+      Date.now() - new Date(botState.lastHeartbeat).getTime() < 60_000;
 
     const openPositions = openDbTrades.map((t) => ({
       ticket: Number(t.ticket),

@@ -1926,7 +1926,7 @@ def main():
                 conn.close()
             except Exception:
                 pass
-            time.sleep(10)
+            time.sleep(3)
 
     import threading
     h_thread = threading.Thread(target=heartbeat_worker, daemon=True)
