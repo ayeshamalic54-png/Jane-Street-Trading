@@ -2642,7 +2642,7 @@ def main():
                     df_a = calculate_zscore_and_ema(df_a)
 
                 action = "NONE"
-                smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a, df_m5, category=cat_a)
+                smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a, df_m5, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED)
                 vid_reason = smc_reason
                 if smc_sig == "BUY":
                     action = "BUY_SPREAD"
