@@ -2701,23 +2701,34 @@ def main():
 
                 if action != "NONE" and (has_any_active_trade or is_duplicate_open):
                     logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but 1 active trade is already open on MT5. Entry BLOCKED.")
-                elif action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved):
-                    cand_cat_a = get_symbol_category(s_a_resolved)
-                    cand_cat_b = get_symbol_category(s_b_resolved)
-                    if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)):
-                        candidate_signals.append({
-                            "pair": (s_a, s_b),
-                            "action": action,
-                            "win_rate": win_rate,
-                            "z_score": z,
-                            "z_velocity": z_velocity,
-                            "beta": beta,
-                            "net_obi": net_obi,
-                            "tick_a": tick_a_scan,
-                            "tick_b": tick_b_scan,
-                            "price_a": p_a,
-                            "price_b": p_b
-                        })
+                elif action != "NONE":
+                    in_cd = is_pair_in_cooldown(s_a_resolved, s_b_resolved)
+                    if (cooldown_dir == action or in_cd) and not has_any_active_trade:
+                        logger.info(f"⚡ [COOLDOWN BYPASS] Signal {action} generated for {s_a_resolved}/{s_b_resolved}. Bypassing post-trade cooldown since 0 active trades on MT5.")
+                        in_cd = False
+                        cooldown_dir = None
+
+                    if cooldown_dir == action or in_cd:
+                        logger.info(f"⏳ [COOLDOWN ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but cooldown is active (dir={cooldown_dir}, db_cd={in_cd}). Entry BLOCKED.")
+                    else:
+                        cand_cat_a = get_symbol_category(s_a_resolved)
+                        cand_cat_b = get_symbol_category(s_b_resolved)
+                        if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)):
+                            candidate_signals.append({
+                                "pair": (s_a, s_b),
+                                "action": action,
+                                "win_rate": win_rate,
+                                "z_score": z,
+                                "z_velocity": z_velocity,
+                                "beta": beta,
+                                "net_obi": net_obi,
+                                "tick_a": tick_a_scan,
+                                "tick_b": tick_b_scan,
+                                "price_a": p_a,
+                                "price_b": p_b
+                            })
+                        else:
+                            logger.info(f"⚠️ [SPREAD CHECK FAILED] Spread for {s_a_resolved} exceeded threshold. Entry SKIPPED.")
 
             # ── 3. MANAGE ACTIVE POSITION EXITS ──
             kf_active = get_kf_for_pair(S_A_resolved, S_B_resolved)
