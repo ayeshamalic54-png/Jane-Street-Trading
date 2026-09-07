@@ -2078,19 +2078,8 @@ def main():
                     SL_PIPS = new_sl
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
-                        logger.info(f"🚀 [ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry: {new_z_entry} | Kalman Beta: {active_pair_beta:.4f} (Dynamic Hedge Ratio) 🟢")
-
-                        logger.info(f"🎯 [TARGET EXITS SYSTEM] Z=±2.40 Jackpot Target Exit (ENABLED 🟢) | Option B Multi-Tier Trailing Stop (ENABLED 🟢) | Step 2 Mid-Way Scale-Out (DISABLED 🔴)")
-
-
-
-                        logger.info(f"🛑 [DISABLED FILTERS] Pre-Entry Direction: DISABLED ❌ | Min Beta (<0.20): DISABLED ❌ | Option 1 Z<=0.50 Exit: DISABLED ❌ | Breakeven Guard ($0.00 Entry SL): DISABLED 🔴 | Adverse Regime Exit: DISABLED ❌ | SMC: DISABLED ❌")
-
+                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] SL Distance: $3.46 Gold | 1:3.0 RRR TP Target | Engine: Pure SMC/ICT Active 🟢")
                         logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Option B: Tier 1: +$67->$53 | Tier 2: +$99->$80 | Tier 3: +$142->$120 | Tier 4: +$185->$155) | Friday Close Guard: ENABLED 🌅")
-
-
-
-
 
 
 
@@ -2118,7 +2107,6 @@ def main():
                         logger.info(f"[CONFIG UPDATE] Risk Limits updated: {RISK_LIMITS_ENABLED} -> {new_risk_limits}")
                         RISK_LIMITS_ENABLED = new_risk_limits
                     if Z_ENTRY_THRESHOLD != new_z_entry:
-                        logger.info(f"[CONFIG UPDATE] Z-Entry Threshold updated: {Z_ENTRY_THRESHOLD} -> {new_z_entry}")
                         Z_ENTRY_THRESHOLD = new_z_entry
                     if KNIFE_PROTECTION_ENABLED != new_knife:
                         logger.info(f"[CONFIG UPDATE] Knife Protection updated: {KNIFE_PROTECTION_ENABLED} -> {new_knife}")
