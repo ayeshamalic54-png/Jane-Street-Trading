@@ -67,7 +67,7 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         if not is_ema_bullish:
             return "NONE", None, None, 0.0, f"Scanning BUY | Protection 1 Fail: Price ({price:.2f}) < 200 EMA ({ema_200:.2f})"
         if not in_bull_zone:
-            return "NONE", None, None, 0.0, f"Scanning BUY | Protection 3 Fail: No active ICT Bullish OB/FVG zone retest"
+            return "NONE", None, None, 0.0, f"Scanning BUY | Protection 3 Fail: No active ICT Bullish OB / FVG / Breaker zone retest"
         if price < open_price:
             return "NONE", None, None, 0.0, f"Scanning BUY | Protection 4 Fail: Waiting for Green Bullish Candle 🟢"
 
@@ -75,14 +75,14 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         sl_price = price - sl_dist
         tp_price = price + (3.0 * sl_dist)  # 1:3.0 RRR Target
 
-        zone_type = "Order Block" if in_bull_ob else ("FVG" if in_bull_fvg else "Breaker/iFVG")
-        reason = f"🟢 4-PROTECTION SMC BUY: 200 EMA + Bullish BOS/CHoCH + {zone_type} Zone + Green Candle | 1:3.0 RRR"
+        zone_type = "ICT Order Block (OB)" if in_bull_ob else ("ICT Fair Value Gap (FVG)" if in_bull_fvg else ("ICT Breaker Block" if in_bull_brk else "ICT Inversion FVG (iFVG)"))
+        reason = f"🟢 4-PROTECTION BUY: 200 EMA + Bullish BOS/CHoCH + {zone_type} + Green Candle | 1:3.0 RRR"
         logger.info("================================================================================")
-        logger.info(f"🟢 [4-PROTECTION SMC BUY SIGNAL EXECUTED] 🚀")
+        logger.info(f"🟢 [4-PROTECTION ICT BUY SIGNAL EXECUTED] 🚀")
         logger.info(f"🟢 Protection 1 (200 EMA): Price {price:.2f} > 200 EMA {ema_200:.2f} 🟢")
         logger.info(f"🟢 Protection 2 (Structure): M15 Bullish BOS/CHoCH 🟢")
-        logger.info(f"🟢 Protection 3 (ICT Zone): Active {zone_type} Zone Retest 🟢")
-        logger.info(f"🟢 Protection 4 (Candle): Green Bullish Candle Confirmed 🟢")
+        logger.info(f"🟢 Protection 3 (ICT Zone): Retesting active {zone_type} 🟢")
+        logger.info(f"🟢 Protection 4 (Candle): Green Bullish Rejection Confirmed 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
@@ -91,7 +91,7 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         if not is_ema_bearish:
             return "NONE", None, None, 0.0, f"Scanning SELL | Protection 1 Fail: Price ({price:.2f}) > 200 EMA ({ema_200:.2f})"
         if not in_bear_zone:
-            return "NONE", None, None, 0.0, f"Scanning SELL | Protection 3 Fail: No active ICT Bearish OB/FVG zone retest"
+            return "NONE", None, None, 0.0, f"Scanning SELL | Protection 3 Fail: No active ICT Bearish OB / FVG / Breaker zone retest"
         if price > open_price:
             return "NONE", None, None, 0.0, f"Scanning SELL | Protection 4 Fail: Waiting for Red Bearish Candle 🔴"
 
@@ -99,14 +99,14 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         sl_price = price + sl_dist
         tp_price = price - (3.0 * sl_dist)  # 1:3.0 RRR Target
 
-        zone_type = "Order Block" if in_bear_ob else ("FVG" if in_bear_fvg else "Breaker/iFVG")
-        reason = f"🔴 4-PROTECTION SMC SELL: 200 EMA + Bearish BOS/CHoCH + {zone_type} Zone + Red Candle | 1:3.0 RRR"
+        zone_type = "ICT Order Block (OB)" if in_bear_ob else ("ICT Fair Value Gap (FVG)" if in_bear_fvg else ("ICT Breaker Block" if in_bear_brk else "ICT Inversion FVG (iFVG)"))
+        reason = f"🔴 4-PROTECTION SELL: 200 EMA + Bearish BOS/CHoCH + {zone_type} + Red Candle | 1:3.0 RRR"
         logger.info("================================================================================")
-        logger.info(f"🔴 [4-PROTECTION SMC SELL SIGNAL EXECUTED] 🚀")
+        logger.info(f"🔴 [4-PROTECTION ICT SELL SIGNAL EXECUTED] 🚀")
         logger.info(f"🔴 Protection 1 (200 EMA): Price {price:.2f} < 200 EMA {ema_200:.2f} 🔴")
         logger.info(f"🔴 Protection 2 (Structure): M15 Bearish BOS/CHoCH 🔴")
-        logger.info(f"🔴 Protection 3 (ICT Zone): Active {zone_type} Zone Retest 🔴")
-        logger.info(f"🔴 Protection 4 (Candle): Red Bearish Candle Confirmed 🔴")
+        logger.info(f"🔴 Protection 3 (ICT Zone): Retesting active {zone_type} 🔴")
+        logger.info(f"🔴 Protection 4 (Candle): Red Bearish Rejection Confirmed 🔴")
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
