@@ -60,20 +60,24 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
 
     is_metals = (category == "metals" or "XAU" in str(df_m15.get('symbol', '')))
 
-    # ── 1. LONG (BUY) ENTRY EVALUATION (OPTIMAL CONFLUENCE) ──
-    if structure == 'BULLISH' or is_ema_bullish:
-        if structure == 'BEARISH':
-            p1_str = "PASS 🟢" if is_ema_bullish else "FAIL 🔴"
-            return "NONE", None, None, 0.0, f"Scanning BUY | P1(200 EMA): {p1_str} | P2(Structure): FAIL 🔴 (BEARISH) | P3(ICT Zone): WAITING ⏳ | P4(Candle): WAITING ⏳"
-        if not in_bull_zone:
-            p1_str = "PASS 🟢" if is_ema_bullish else "FAIL 🔴"
-            p2_str = "PASS 🟢 (BULLISH)" if (structure == 'BULLISH') else "WAITING ⏳"
-            return "NONE", None, None, 0.0, f"Scanning BUY | P1(200 EMA): {p1_str} | P2(Structure): {p2_str} | P3(ICT Zone): FAIL 🔴 (No OB/FVG Retest) | P4(Candle): WAITING ⏳"
-        if price < open_price:
-            p1_str = "PASS 🟢" if is_ema_bullish else "FAIL 🔴"
-            p2_str = "PASS 🟢 (BULLISH)" if (structure == 'BULLISH') else "WAITING ⏳"
-            return "NONE", None, None, 0.0, f"Scanning BUY | P1(200 EMA): {p1_str} | P2(Structure): {p2_str} | P3(ICT Zone): PASS 🟢 | P4(Candle): FAIL 🔴 (Waiting for Green Candle)"
+    # Protection 1: 200 EMA Macro Trend
+    p1_buy_pass = (price >= ema_200)
+    p1_sell_pass = (price <= ema_200)
 
+    # Protection 2: M15 Market Structure (BOS / CHoCH)
+    p2_buy_pass = (structure == 'BULLISH')
+    p2_sell_pass = (structure == 'BEARISH')
+
+    # Protection 3: ICT Liquidity Zone Retest (OB / FVG / Breaker / iFVG)
+    p3_buy_pass = in_bull_zone
+    p3_sell_pass = in_bear_zone
+
+    # Protection 4: Rejection Candle Confirmation
+    p4_buy_pass = (price >= open_price)
+    p4_sell_pass = (price <= open_price)
+
+    # ── 1. BUY SIGNAL EVALUATION (ALL 4 MUST PASS 🟢) ──
+    if p1_buy_pass and p2_buy_pass and p3_buy_pass and p4_buy_pass:
         # Dynamic ICT Order Block / FVG Zone-based SL & TP
         active_bull_zones = zones['bullish_ob'] + zones['bullish_fvg'] + zones['bullish_breaker'] + zones['bullish_ifvg']
         z_low, z_high = get_active_zone_bounds(price, active_bull_zones)
@@ -101,20 +105,8 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
-    # ── 2. SHORT (SELL) ENTRY EVALUATION (OPTIMAL CONFLUENCE) ──
-    elif structure == 'BEARISH' or is_ema_bearish:
-        if structure == 'BULLISH':
-            p1_str = "PASS 🔴" if is_ema_bearish else "FAIL 🟢"
-            return "NONE", None, None, 0.0, f"Scanning SELL | P1(200 EMA): {p1_str} | P2(Structure): FAIL 🟢 (BULLISH) | P3(ICT Zone): WAITING ⏳ | P4(Candle): WAITING ⏳"
-        if not in_bear_zone:
-            p1_str = "PASS 🔴" if is_ema_bearish else "FAIL 🟢"
-            p2_str = "PASS 🔴 (BEARISH)" if (structure == 'BEARISH') else "WAITING ⏳"
-            return "NONE", None, None, 0.0, f"Scanning SELL | P1(200 EMA): {p1_str} | P2(Structure): {p2_str} | P3(ICT Zone): FAIL 🔴 (No OB/FVG Retest) | P4(Candle): WAITING ⏳"
-        if price > open_price:
-            p1_str = "PASS 🔴" if is_ema_bearish else "FAIL 🟢"
-            p2_str = "PASS 🔴 (BEARISH)" if (structure == 'BEARISH') else "WAITING ⏳"
-            return "NONE", None, None, 0.0, f"Scanning SELL | P1(200 EMA): {p1_str} | P2(Structure): {p2_str} | P3(ICT Zone): PASS 🔴 | P4(Candle): FAIL 🟢 (Waiting for Red Candle)"
-
+    # ── 2. SELL SIGNAL EVALUATION (ALL 4 MUST PASS 🔴) ──
+    if p1_sell_pass and p2_sell_pass and p3_sell_pass and p4_sell_pass:
         # Dynamic ICT Order Block / FVG Zone-based SL & TP
         active_bear_zones = zones['bearish_ob'] + zones['bearish_fvg'] + zones['bearish_breaker'] + zones['bearish_ifvg']
         z_low, z_high = get_active_zone_bounds(price, active_bear_zones)
@@ -142,5 +134,20 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
-    candle_str = "Green Bullish 🟢" if price >= open_price else "Red Bearish 🔴"
-    return "NONE", None, None, 0.0, f"Scanning SMC Structure: {structure} | Price: {price:.5f} | Candle: {candle_str}"
+    # ── 3. SCAN LOGIC & STATUS DISPLAY ──
+    if p1_buy_pass or p2_buy_pass:
+        p1_s = "PASS 🟢" if p1_buy_pass else "FAIL 🔴 (Price < 200 EMA)"
+        p2_s = "PASS 🟢 (BULLISH)" if p2_buy_pass else "FAIL 🔴 (Structure BEARISH)"
+        p3_s = "PASS 🟢" if p3_buy_pass else "FAIL 🔴 (No OB/FVG Retest)"
+        p4_s = "PASS 🟢" if p4_buy_pass else "FAIL 🔴 (Waiting Green Candle)"
+        scan_msg = f"Scanning BUY | P1(200 EMA): {p1_s} | P2(Structure): {p2_s} | P3(ICT Zone): {p3_s} | P4(Candle): {p4_s}"
+    elif p1_sell_pass or p2_sell_pass:
+        p1_s = "PASS 🔴" if p1_sell_pass else "FAIL 🟢 (Price > 200 EMA)"
+        p2_s = "PASS 🔴 (BEARISH)" if p2_sell_pass else "FAIL 🟢 (Structure BULLISH)"
+        p3_s = "PASS 🔴" if p3_sell_pass else "FAIL 🟢 (No OB/FVG Retest)"
+        p4_s = "PASS 🔴" if p4_sell_pass else "FAIL 🟢 (Waiting Red Candle)"
+        scan_msg = f"Scanning SELL | P1(200 EMA): {p1_s} | P2(Structure): {p2_s} | P3(ICT Zone): {p3_s} | P4(Candle): {p4_s}"
+    else:
+        scan_msg = f"Scanning SMC Structure: {structure} | Price: {price:.2f} | 200 EMA: {ema_200:.2f}"
+
+    return "NONE", None, None, 0.0, scan_msg
