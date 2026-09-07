@@ -6,25 +6,24 @@ from smc_indicators import detect_smc_zones, detect_market_structure, is_price_i
 
 logger = logging.getLogger("SMC_Strategy_Engine")
 
+def get_active_zone_bounds(price: float, zone_list: list):
+    """Returns (z_low, z_high) of the active ICT OB/FVG zone price is currently retesting."""
+    if not zone_list:
+        return None, None
+    for (z_low, z_high) in zone_list:
+        if z_low <= price <= z_high:
+            return z_low, z_high
+    return None, None
+
 def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = None, category: str = "forex", bypass_filters: bool = False):
     """
     Pure SMC/ICT Strategy Engine:
     
-    1. MARKET STRUCTURE (BOS/CHoCH):
-       - BUY: M15 Structure is BULLISH (Higher Highs / Higher Lows).
-       - SELL: M15 Structure is BEARISH (Lower Highs / Lower Lows).
-
-    2. UNMITIGATED LIQUIDITY ZONE RETEST:
-       - BUY: Price is retesting an active Bullish Order Block (OB), FVG, or iFVG zone.
-       - SELL: Price is retesting an active Bearish Order Block (OB), FVG, or iFVG zone.
-
-    3. CANDLE ACTION CONFIRMATION:
-       - BUY: Candle is Bullish (Close >= Open).
-       - SELL: Candle is Bearish (Close <= Open).
-
-    4. RISK-TO-REWARD RATIO (1:3.0 RRR):
-       - Gold (XAUUSD): SL = $3.46 Cap ($97 Risk) | TP = 3.0 * SL_Distance ($10.38 Gold move).
-       - Forex: SL = 19.4 pips | TP = 58.2 pips (1:3.0 RRR Target).
+    1. 200 EMA MACRO TREND
+    2. MARKET STRUCTURE (BOS/CHoCH)
+    3. DYNAMIC ICT LIQUIDITY ZONE RETEST (OB / FVG / Breaker)
+    4. CANDLE ACTION CONFIRMATION (Rejection Candle)
+    5. DYNAMIC ZONE-BASED SL & 1:3.0 RRR TP TARGET
     """
     if df_m15 is None or len(df_m15) < 20 or 'close' not in df_m15.columns:
         return "NONE", None, None, 0.0, "Insufficient candle data for SMC"
@@ -42,7 +41,6 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
 
     # 2. Z-Score Oversold / Overbought Zone
     z_val = float(curr_row['vwap_zscore']) if 'vwap_zscore' in curr_row else 0.0
-    prev_z_val = float(eval_df.iloc[-2]['vwap_zscore']) if (len(eval_df) >= 2 and 'vwap_zscore' in eval_df.columns) else z_val
 
     # 3. Market Structure (BOS / CHoCH) & ICT Zones
     structure = detect_market_structure(df_m15)
@@ -71,18 +69,30 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         if price < open_price:
             return "NONE", None, None, 0.0, f"Scanning BUY | Protection 4 Fail: Waiting for Green Bullish Candle 🟢"
 
-        sl_dist = 3.46 if is_metals else 0.00194
+        # Dynamic ICT Order Block / FVG Zone-based SL & TP
+        active_bull_zones = zones['bullish_ob'] + zones['bullish_fvg'] + zones['bullish_breaker'] + zones['bullish_ifvg']
+        z_low, z_high = get_active_zone_bounds(price, active_bull_zones)
+        
+        if z_low is not None:
+            buf = 0.50 if is_metals else 0.00030
+            raw_sl_dist = max(0.0, price - (z_low - buf))
+            max_cap = 3.46 if is_metals else 0.00194
+            min_cap = 1.20 if is_metals else 0.00100
+            sl_dist = max(min_cap, min(raw_sl_dist, max_cap))
+        else:
+            sl_dist = 3.46 if is_metals else 0.00194
+
         sl_price = price - sl_dist
-        tp_price = price + (3.0 * sl_dist)  # 1:3.0 RRR Target
+        tp_price = price + (3.0 * sl_dist)  # Dynamic 1:3.0 RRR Target
 
         zone_type = "ICT Order Block (OB)" if in_bull_ob else ("ICT Fair Value Gap (FVG)" if in_bull_fvg else ("ICT Breaker Block" if in_bull_brk else "ICT Inversion FVG (iFVG)"))
-        reason = f"🟢 4-PROTECTION BUY: 200 EMA + SMC BOS/CHoCH + {zone_type} + Green Candle | 1:3.0 RRR"
+        reason = f"🟢 DYNAMIC ICT BUY: 200 EMA + SMC BOS/CHoCH + {zone_type} Zone Boundary SL ({sl_dist:.2f} pips) | 1:3.0 RRR TP"
         logger.info("================================================================================")
-        logger.info(f"🟢 [4-PROTECTION SMC / ICT BUY SIGNAL EXECUTED] 🚀")
+        logger.info(f"🟢 [DYNAMIC ICT OB/FVG BUY SIGNAL EXECUTED] 🚀")
         logger.info(f"🟢 Protection 1 (200 EMA): Price {price:.2f} >= 200 EMA {ema_200:.2f} 🟢")
         logger.info(f"🟢 Protection 2 (SMC Structure): M15 Bullish BOS/CHoCH 🟢")
-        logger.info(f"🟢 Protection 3 (ICT Liquidity Zone): Retesting active {zone_type} 🟢")
-        logger.info(f"🟢 Protection 4 (Candle Rejection): Green Bullish Candle Confirmed 🟢")
+        logger.info(f"🟢 Protection 3 (ICT Zone): Retesting active {zone_type} (Zone Low: {z_low}) 🟢")
+        logger.info(f"🟢 Protection 4 (Dynamic SL/TP): SL @ {sl_price:.5f} (Below Zone Low) | TP @ {tp_price:.5f} (1:3.0 RRR) 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
@@ -95,18 +105,30 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         if price > open_price:
             return "NONE", None, None, 0.0, f"Scanning SELL | Protection 4 Fail: Waiting for Red Bearish Candle 🔴"
 
-        sl_dist = 3.46 if is_metals else 0.00194
+        # Dynamic ICT Order Block / FVG Zone-based SL & TP
+        active_bear_zones = zones['bearish_ob'] + zones['bearish_fvg'] + zones['bearish_breaker'] + zones['bearish_ifvg']
+        z_low, z_high = get_active_zone_bounds(price, active_bear_zones)
+        
+        if z_high is not None:
+            buf = 0.50 if is_metals else 0.00030
+            raw_sl_dist = max(0.0, (z_high + buf) - price)
+            max_cap = 3.46 if is_metals else 0.00194
+            min_cap = 1.20 if is_metals else 0.00100
+            sl_dist = max(min_cap, min(raw_sl_dist, max_cap))
+        else:
+            sl_dist = 3.46 if is_metals else 0.00194
+
         sl_price = price + sl_dist
-        tp_price = price - (3.0 * sl_dist)  # 1:3.0 RRR Target
+        tp_price = price - (3.0 * sl_dist)  # Dynamic 1:3.0 RRR Target
 
         zone_type = "ICT Order Block (OB)" if in_bear_ob else ("ICT Fair Value Gap (FVG)" if in_bear_fvg else ("ICT Breaker Block" if in_bear_brk else "ICT Inversion FVG (iFVG)"))
-        reason = f"🔴 4-PROTECTION SELL: 200 EMA + SMC BOS/CHoCH + {zone_type} + Red Candle | 1:3.0 RRR"
+        reason = f"🔴 DYNAMIC ICT SELL: 200 EMA + SMC BOS/CHoCH + {zone_type} Zone Boundary SL ({sl_dist:.2f} pips) | 1:3.0 RRR TP"
         logger.info("================================================================================")
-        logger.info(f"🔴 [4-PROTECTION SMC / ICT SELL SIGNAL EXECUTED] 🚀")
+        logger.info(f"🔴 [DYNAMIC ICT OB/FVG SELL SIGNAL EXECUTED] 🚀")
         logger.info(f"🔴 Protection 1 (200 EMA): Price {price:.2f} <= 200 EMA {ema_200:.2f} 🔴")
         logger.info(f"🔴 Protection 2 (SMC Structure): M15 Bearish BOS/CHoCH 🔴")
-        logger.info(f"🔴 Protection 3 (ICT Liquidity Zone): Retesting active {zone_type} 🔴")
-        logger.info(f"🔴 Protection 4 (Candle Rejection): Red Bearish Candle Confirmed 🔴")
+        logger.info(f"🔴 Protection 3 (ICT Zone): Retesting active {zone_type} (Zone High: {z_high}) 🔴")
+        logger.info(f"🔴 Protection 4 (Dynamic SL/TP): SL @ {sl_price:.5f} (Above Zone High) | TP @ {tp_price:.5f} (1:3.0 RRR) 🔴")
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
