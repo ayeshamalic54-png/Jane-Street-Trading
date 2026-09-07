@@ -62,10 +62,10 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
 
     is_metals = (category == "metals" or "XAU" in str(df_m15.get('symbol', '')))
 
-    # ── 1. LONG (BUY) ENTRY EVALUATION (ALL 4 PROTECTIONS REQUIRED) ──
+    # ── 1. LONG (BUY) ENTRY EVALUATION (OPTIMAL CONFLUENCE) ──
     if structure == 'BULLISH' or is_ema_bullish:
-        if not is_ema_bullish:
-            return "NONE", None, None, 0.0, f"Scanning BUY | Protection 1 Fail: Price ({price:.2f}) < 200 EMA ({ema_200:.2f})"
+        if structure == 'BEARISH':
+            return "NONE", None, None, 0.0, f"Scanning BUY | Protection 2 Fail: M15 Structure is BEARISH 🔴"
         if not in_bull_zone:
             return "NONE", None, None, 0.0, f"Scanning BUY | Protection 3 Fail: No active ICT Bullish OB / FVG / Breaker zone retest"
         if price < open_price:
@@ -79,17 +79,17 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         reason = f"🟢 4-PROTECTION BUY: 200 EMA + SMC BOS/CHoCH + {zone_type} + Green Candle | 1:3.0 RRR"
         logger.info("================================================================================")
         logger.info(f"🟢 [4-PROTECTION SMC / ICT BUY SIGNAL EXECUTED] 🚀")
-        logger.info(f"🟢 Protection 1 (200 EMA): Price {price:.2f} > 200 EMA {ema_200:.2f} 🟢")
+        logger.info(f"🟢 Protection 1 (200 EMA): Price {price:.2f} >= 200 EMA {ema_200:.2f} 🟢")
         logger.info(f"🟢 Protection 2 (SMC Structure): M15 Bullish BOS/CHoCH 🟢")
         logger.info(f"🟢 Protection 3 (ICT Liquidity Zone): Retesting active {zone_type} 🟢")
         logger.info(f"🟢 Protection 4 (Candle Rejection): Green Bullish Candle Confirmed 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
-    # ── 2. SHORT (SELL) ENTRY EVALUATION (ALL 4 PROTECTIONS REQUIRED) ──
+    # ── 2. SHORT (SELL) ENTRY EVALUATION (OPTIMAL CONFLUENCE) ──
     elif structure == 'BEARISH' or is_ema_bearish:
-        if not is_ema_bearish:
-            return "NONE", None, None, 0.0, f"Scanning SELL | Protection 1 Fail: Price ({price:.2f}) > 200 EMA ({ema_200:.2f})"
+        if structure == 'BULLISH':
+            return "NONE", None, None, 0.0, f"Scanning SELL | Protection 2 Fail: M15 Structure is BULLISH 🟢"
         if not in_bear_zone:
             return "NONE", None, None, 0.0, f"Scanning SELL | Protection 3 Fail: No active ICT Bearish OB / FVG / Breaker zone retest"
         if price > open_price:
@@ -103,7 +103,7 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         reason = f"🔴 4-PROTECTION SELL: 200 EMA + SMC BOS/CHoCH + {zone_type} + Red Candle | 1:3.0 RRR"
         logger.info("================================================================================")
         logger.info(f"🔴 [4-PROTECTION SMC / ICT SELL SIGNAL EXECUTED] 🚀")
-        logger.info(f"🔴 Protection 1 (200 EMA): Price {price:.2f} < 200 EMA {ema_200:.2f} 🔴")
+        logger.info(f"🔴 Protection 1 (200 EMA): Price {price:.2f} <= 200 EMA {ema_200:.2f} 🔴")
         logger.info(f"🔴 Protection 2 (SMC Structure): M15 Bearish BOS/CHoCH 🔴")
         logger.info(f"🔴 Protection 3 (ICT Liquidity Zone): Retesting active {zone_type} 🔴")
         logger.info(f"🔴 Protection 4 (Candle Rejection): Red Bearish Candle Confirmed 🔴")
