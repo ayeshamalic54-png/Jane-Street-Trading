@@ -98,7 +98,7 @@ def evaluate_video_strategy_signal(df: pd.DataFrame, z_threshold: float = 2.40, 
     # Use live_z if passed from main scanner loop
     if live_z is not None and abs(live_z) > 0.01:
         effective_curr_z = live_z
-        effective_prev_z = prev_z if abs(prev_z) > 0.01 else (live_z * 0.90)
+        effective_prev_z = prev_z if abs(prev_z) > 0.01 else live_z
     else:
         effective_curr_z = curr_z
         effective_prev_z = prev_z

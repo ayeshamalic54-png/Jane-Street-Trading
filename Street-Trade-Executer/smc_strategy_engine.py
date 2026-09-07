@@ -73,9 +73,12 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
     p3_buy_pass = in_bull_zone
     p3_sell_pass = in_bear_zone
 
-    # Protection 4: Rejection Candle Confirmation
-    p4_buy_pass = (price >= open_price)
-    p4_sell_pass = (price <= open_price)
+    # Protection 4: Rejection Candle Confirmation (Closed candle + Active bar)
+    prev_row = eval_df.iloc[-2] if len(eval_df) >= 2 else curr_row
+    prev_close = float(prev_row['close'])
+    prev_open = float(prev_row['open'])
+    p4_buy_pass = (prev_close >= prev_open) and (price >= open_price)
+    p4_sell_pass = (prev_close <= prev_open) and (price <= open_price)
 
     # Protection 5: Order Book Imbalance (OBI Wall Protection)
     p5_buy_pass = (net_obi >= -0.20) if obi_enabled else True

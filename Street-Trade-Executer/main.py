@@ -567,22 +567,36 @@ LEVERAGE_FACTORS = {
     "crypto": 0.01    # 100x lower leverage than Forex
 }
 
-def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.00083) -> float:
+def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Calculates dynamic lot size based on 1.0% Account Equity Risk:
-    - $10,000 Equity -> 1.20 Total Lots (3 x 0.40 lots)
-    - $12,000 Equity -> 1.44 Total Lots (3 x 0.48 lots)
+    Returns dynamic lot size strictly capped at $97.00 Max Risk Cap (Blue Guardian Prop Firm Limit).
+    Prevents any SL breach from exceeding $97.00 USD loss.
     """
-    try:
-        acc_info = mt5.account_info()
-        if acc_info and acc_info.equity > 0:
-            from risk_safeguards import calculate_lots
-            dyn_lots = calculate_lots(symbol, sl_dist_price, acc_info)
-            if dyn_lots and dyn_lots >= 0.03:
-                return dyn_lots
-    except Exception:
-        pass
-    return DEFAULT_LOT_SIZES.get(category, 1.20)
+    RISK_CAP_USD = 97.00
+    sym_upper = symbol.upper()
+    
+    if sl_dist_price > 0.0:
+        if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
+            # 1 Lot Gold (XAUUSD) = 100 oz. $1.00 move = $100 loss per lot.
+            contract_size = 100.0
+            calc_lots = round(RISK_CAP_USD / (sl_dist_price * contract_size), 2)
+            return max(0.01, min(calc_lots, 0.35))
+        elif category == "forex":
+            # 1 Standard Lot Forex = 100,000 units. $0.0001 (1 pip) = $10 loss per lot.
+            contract_size = 100000.0
+            calc_lots = round(RISK_CAP_USD / (sl_dist_price * contract_size), 2)
+            return max(0.01, min(calc_lots, 0.70))
+        elif category == "indices":
+            # 1 Lot Index ~ $1 per point
+            calc_lots = round(RISK_CAP_USD / max(sl_dist_price, 10.0), 2)
+            return max(0.01, min(calc_lots, 0.20))
+            
+    if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
+        return 0.25
+    elif category == "forex":
+        return 0.45
+    return DEFAULT_LOT_SIZES.get(category, 0.25)
+
 
 
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
@@ -2894,19 +2908,11 @@ def main():
 
 
                             
-                        if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
-                            disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
-                            mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
-                            lots_a = DEFAULT_LOTS * mult
-                        else:
-                            lots_a = get_blue_guardian_lots(S_A, best_cat_a)
-                            
-                        part_lots_a = round(lots_a / 3.0, 2)
+                        actual_lots_a = get_blue_guardian_lots(S_A, best_cat_a, sl_dist_price=sl_dist)
                         info_a_check = mt5.symbol_info(S_A)
                         min_vol_a = info_a_check.volume_min if info_a_check else 0.01
-                        if part_lots_a < min_vol_a:
-                            part_lots_a = min_vol_a
-                        actual_lots_a = part_lots_a * 3.0
+                        if actual_lots_a < min_vol_a:
+                            actual_lots_a = min_vol_a
                         
                         lots_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                         
@@ -2959,19 +2965,11 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
-                                disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
-                                mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
-                                lots_a = DEFAULT_LOTS * mult
-                            else:
-                                lots_a = get_blue_guardian_lots(S_A, best_cat_a)
-                            # Apply 3-part safeguard scaling correction
+                            actual_lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
                             info_a_check = mt5.symbol_info(S_A_resolved)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
-                            part_lots_a = round(lots_a / 3.0, 2)
-                            if part_lots_a < min_vol_a:
-                                part_lots_a = min_vol_a
-                            actual_lots_a = part_lots_a * 3.0
+                            if actual_lots_a < min_vol_a:
+                                actual_lots_a = min_vol_a
                             
                             qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
@@ -3058,19 +3056,11 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
-                                disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
-                                mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
-                                lots_a = DEFAULT_LOTS * mult
-                            else:
-                                lots_a = get_blue_guardian_lots(S_A, best_cat_a)
-                            # Apply 3-part safeguard scaling correction
+                            actual_lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
                             info_a_check = mt5.symbol_info(S_A_resolved)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
-                            part_lots_a = round(lots_a / 3.0, 2)
-                            if part_lots_a < min_vol_a:
-                                part_lots_a = min_vol_a
-                            actual_lots_a = part_lots_a * 3.0
+                            if actual_lots_a < min_vol_a:
+                                actual_lots_a = min_vol_a
                             
                             qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
