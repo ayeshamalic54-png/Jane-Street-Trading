@@ -202,21 +202,35 @@ def detect_market_structure(df):
         return 'NEUTRAL'
 
     last_close = closes[-1]
-    recent_high = swing_highs[-1][0]
-    recent_low = swing_lows[-1][0]
+    recent_high = max(sh[0] for sh in swing_highs[-3:])
+    recent_low = min(sl[0] for sl in swing_lows[-3:])
 
-    # BOS / CHoCH Evaluation
+    # 1. Break of Structure (BOS) / CHoCH
     if last_close > recent_high:
         return 'BULLISH'
-    elif last_close < recent_low:
+    if last_close < recent_low:
         return 'BEARISH'
-    else:
-        # Fallback to recent swing direction
-        if len(swing_highs) >= 2 and swing_highs[-1][0] > swing_highs[-2][0]:
-            return 'BULLISH'
-        elif len(swing_lows) >= 2 and swing_lows[-1][0] < swing_lows[-2][0]:
+
+    # 2. Trend direction evaluation based on Swing Highs & Swing Lows
+    has_higher_highs = len(swing_highs) >= 2 and swing_highs[-1][0] > swing_highs[-2][0]
+    has_higher_lows = len(swing_lows) >= 2 and swing_lows[-1][0] > swing_lows[-2][0]
+    
+    has_lower_highs = len(swing_highs) >= 2 and swing_highs[-1][0] < swing_highs[-2][0]
+    has_lower_lows = len(swing_lows) >= 2 and swing_lows[-1][0] < swing_lows[-2][0]
+
+    if has_lower_lows or has_lower_highs:
+        if not (has_higher_highs and has_higher_lows):
             return 'BEARISH'
-        return 'NEUTRAL'
+
+    if has_higher_highs and has_higher_lows:
+        return 'BULLISH'
+
+    # Compare position of peak high in window
+    max_high_idx = max(range(len(highs[-30:])), key=lambda k: highs[-30:][k])
+    if max_high_idx < 15:  # Peak high occurred in earlier half -> Downtrend
+        return 'BEARISH'
+    
+    return 'NEUTRAL'
 
 def detect_asian_range(df):
     """
