@@ -2063,7 +2063,7 @@ def main():
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Dynamic ATR Target: ENABLED 🟢 (1.5x M15 ATR) | Swing Structure Target: ENABLED 🟢 (M15 Swing High/Low) | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Adverse Exit: DISABLED ❌ | Dynamic Velocity Filter: DISABLED ❌ | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Dynamic OB/FVG Zone SL ($1.50-$3.46 Gold / 12-19.4 pips Forex) | 1:3.0 RRR TP Target | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
 
 
 

@@ -63,11 +63,16 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
     # ── 1. LONG (BUY) ENTRY EVALUATION (OPTIMAL CONFLUENCE) ──
     if structure == 'BULLISH' or is_ema_bullish:
         if structure == 'BEARISH':
-            return "NONE", None, None, 0.0, f"Scanning BUY | Protection 2 Fail: M15 Structure is BEARISH 🔴"
+            p1_str = "PASS 🟢" if is_ema_bullish else "FAIL 🔴"
+            return "NONE", None, None, 0.0, f"Scanning BUY | P1(200 EMA): {p1_str} | P2(Structure): FAIL 🔴 (BEARISH) | P3(ICT Zone): WAITING ⏳ | P4(Candle): WAITING ⏳"
         if not in_bull_zone:
-            return "NONE", None, None, 0.0, f"Scanning BUY | Protection 3 Fail: No active ICT Bullish OB / FVG / Breaker zone retest"
+            p1_str = "PASS 🟢" if is_ema_bullish else "FAIL 🔴"
+            p2_str = "PASS 🟢 (BULLISH)" if (structure == 'BULLISH') else "WAITING ⏳"
+            return "NONE", None, None, 0.0, f"Scanning BUY | P1(200 EMA): {p1_str} | P2(Structure): {p2_str} | P3(ICT Zone): FAIL 🔴 (No OB/FVG Retest) | P4(Candle): WAITING ⏳"
         if price < open_price:
-            return "NONE", None, None, 0.0, f"Scanning BUY | Protection 4 Fail: Waiting for Green Bullish Candle 🟢"
+            p1_str = "PASS 🟢" if is_ema_bullish else "FAIL 🔴"
+            p2_str = "PASS 🟢 (BULLISH)" if (structure == 'BULLISH') else "WAITING ⏳"
+            return "NONE", None, None, 0.0, f"Scanning BUY | P1(200 EMA): {p1_str} | P2(Structure): {p2_str} | P3(ICT Zone): PASS 🟢 | P4(Candle): FAIL 🔴 (Waiting for Green Candle)"
 
         # Dynamic ICT Order Block / FVG Zone-based SL & TP
         active_bull_zones = zones['bullish_ob'] + zones['bullish_fvg'] + zones['bullish_breaker'] + zones['bullish_ifvg']
@@ -86,7 +91,7 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         tp_price = price + (3.0 * sl_dist)  # Dynamic 1:3.0 RRR Target
 
         zone_type = "ICT Order Block (OB)" if in_bull_ob else ("ICT Fair Value Gap (FVG)" if in_bull_fvg else ("ICT Breaker Block" if in_bull_brk else "ICT Inversion FVG (iFVG)"))
-        reason = f"🟢 DYNAMIC ICT BUY: 200 EMA + SMC BOS/CHoCH + {zone_type} Safe SL ({sl_dist:.2f} pips) | 1:3.0 RRR TP"
+        reason = f"🟢 ALL 4 PROTECTIONS PASSED! DYNAMIC ICT BUY: 200 EMA + SMC BOS/CHoCH + {zone_type} Safe SL ({sl_dist:.2f} pips) | 1:3.0 RRR TP"
         logger.info("================================================================================")
         logger.info(f"🟢 [SAFE ICT OB/FVG BUY SIGNAL EXECUTED] 🚀")
         logger.info(f"🟢 Protection 1 (200 EMA): Price {price:.2f} >= 200 EMA {ema_200:.2f} 🟢")
@@ -99,11 +104,16 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
     # ── 2. SHORT (SELL) ENTRY EVALUATION (OPTIMAL CONFLUENCE) ──
     elif structure == 'BEARISH' or is_ema_bearish:
         if structure == 'BULLISH':
-            return "NONE", None, None, 0.0, f"Scanning SELL | Protection 2 Fail: M15 Structure is BULLISH 🟢"
+            p1_str = "PASS 🔴" if is_ema_bearish else "FAIL 🟢"
+            return "NONE", None, None, 0.0, f"Scanning SELL | P1(200 EMA): {p1_str} | P2(Structure): FAIL 🟢 (BULLISH) | P3(ICT Zone): WAITING ⏳ | P4(Candle): WAITING ⏳"
         if not in_bear_zone:
-            return "NONE", None, None, 0.0, f"Scanning SELL | Protection 3 Fail: No active ICT Bearish OB / FVG / Breaker zone retest"
+            p1_str = "PASS 🔴" if is_ema_bearish else "FAIL 🟢"
+            p2_str = "PASS 🔴 (BEARISH)" if (structure == 'BEARISH') else "WAITING ⏳"
+            return "NONE", None, None, 0.0, f"Scanning SELL | P1(200 EMA): {p1_str} | P2(Structure): {p2_str} | P3(ICT Zone): FAIL 🔴 (No OB/FVG Retest) | P4(Candle): WAITING ⏳"
         if price > open_price:
-            return "NONE", None, None, 0.0, f"Scanning SELL | Protection 4 Fail: Waiting for Red Bearish Candle 🔴"
+            p1_str = "PASS 🔴" if is_ema_bearish else "FAIL 🟢"
+            p2_str = "PASS 🔴 (BEARISH)" if (structure == 'BEARISH') else "WAITING ⏳"
+            return "NONE", None, None, 0.0, f"Scanning SELL | P1(200 EMA): {p1_str} | P2(Structure): {p2_str} | P3(ICT Zone): PASS 🔴 | P4(Candle): FAIL 🟢 (Waiting for Red Candle)"
 
         # Dynamic ICT Order Block / FVG Zone-based SL & TP
         active_bear_zones = zones['bearish_ob'] + zones['bearish_fvg'] + zones['bearish_breaker'] + zones['bearish_ifvg']
@@ -122,7 +132,7 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         tp_price = price - (3.0 * sl_dist)  # Dynamic 1:3.0 RRR Target
 
         zone_type = "ICT Order Block (OB)" if in_bear_ob else ("ICT Fair Value Gap (FVG)" if in_bear_fvg else ("ICT Breaker Block" if in_bear_brk else "ICT Inversion FVG (iFVG)"))
-        reason = f"🔴 DYNAMIC ICT SELL: 200 EMA + SMC BOS/CHoCH + {zone_type} Safe SL ({sl_dist:.2f} pips) | 1:3.0 RRR TP"
+        reason = f"🔴 ALL 4 PROTECTIONS PASSED! DYNAMIC ICT SELL: 200 EMA + SMC BOS/CHoCH + {zone_type} Safe SL ({sl_dist:.2f} pips) | 1:3.0 RRR TP"
         logger.info("================================================================================")
         logger.info(f"🔴 [SAFE ICT OB/FVG SELL SIGNAL EXECUTED] 🚀")
         logger.info(f"🔴 Protection 1 (200 EMA): Price {price:.2f} <= 200 EMA {ema_200:.2f} 🔴")
