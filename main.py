@@ -2634,7 +2634,6 @@ def main():
                         is_price_in_zones(p_a, SMC_ZONES_CACHE[s_a_resolved].get(k, []))
                         for k in ['bearish_ob', 'bearish_breaker', 'bearish_fvg', 'bearish_ifvg']
                     )
-
                 z_velocity = kf_pair.get_velocity(k=3)
                 dynamic_z_entry = kf_pair.get_dynamic_z_entry(Z_ENTRY_THRESHOLD)
 
@@ -2651,13 +2650,19 @@ def main():
                     df_a = calculate_zscore_and_ema(df_a)
 
                 action = "NONE"
-                # FORCED TEST MODE: Bypassing SMC, Candle, OBI & Drawdown filters
-                test_dir_toggle = "BUY_SPREAD" if (len(df_a) % 2 == 0) else "SELL_SPREAD"
-                action = test_dir_toggle
-                vid_reason = f"⚡ [FORCED TEST MODE ACTIVE] All Filters Bypassed | Force Executing {action}"
-                logger.info(f"⚡ [FORCED TEST MODE ACTIVE] Bypassing SMC, Candle & Drawdown Filters -> Triggering {action}")
-
-                # Pre-entry direction & Beta sign checks bypassed for pure Single-Asset VWAP Z-Score execution
+                if SMC_ENABLED:
+                    smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a, df_m5, category=cat_a)
+                    vid_reason = smc_reason
+                    if smc_sig == "BUY":
+                        action = "BUY_SPREAD"
+                    elif smc_sig == "SELL":
+                        action = "SELL_SPREAD"
+                else:
+                    vid_sig, vid_tp, vid_sl, vid_sl_dist, vid_reason = evaluate_video_strategy_signal(df_a, z_threshold=Z_ENTRY_THRESHOLD, category=cat_a, live_z=z)
+                    if vid_sig == "BUY":
+                        action = "BUY_SPREAD"
+                    elif vid_sig == "SELL":
+                        action = "SELL_SPREAD"
 
 
                 # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
@@ -2666,7 +2671,7 @@ def main():
                     logger.info(f"🔄 [ENTRY SKIPPED LOG] Z-Threshold crossed for {pk} (Z={z:.3f} vs Limit ±{Z_ENTRY_THRESHOLD:.2f}), but entry deferred: {vid_reason}")
 
 
-                logger.info(f"📊 [PROBABILITY Z-CORE SCAN] {pk} | {vid_reason} | Target Plan: 1:2.5 RRR 🟢")
+                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: 1:3.0 RRR 🟢")
                 win_rate = WIN_RATE_CACHE.get(pk, 50.0)
                 try:
                     update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
@@ -2701,22 +2706,25 @@ def main():
                 is_duplicate_open = (base_a_check in active_symbols_set) or (base_b_check in active_symbols_set) or (f"{base_a_check}/{base_b_check}" in active_pairs_set)
                 has_any_active_trade = (active_pairs_cnt > 0) or (len(active_symbols_set) > 0)
 
-                if action != "NONE":
+                if action != "NONE" and (has_any_active_trade or is_duplicate_open):
+                    logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but 1 active trade is already open on MT5. Entry BLOCKED.")
+                elif action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved):
                     cand_cat_a = get_symbol_category(s_a_resolved)
                     cand_cat_b = get_symbol_category(s_b_resolved)
-                    candidate_signals.append({
-                        "pair": (s_a, s_b),
-                        "action": action,
-                        "win_rate": win_rate,
-                        "z_score": z,
-                        "z_velocity": z_velocity,
-                        "beta": beta,
-                        "net_obi": net_obi,
-                        "tick_a": tick_a_scan,
-                        "tick_b": tick_b_scan,
-                        "price_a": p_a,
-                        "price_b": p_b
-                    })
+                    if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)) and (cand_cat_b == "crypto" or is_spread_valid(s_b_resolved)):
+                        candidate_signals.append({
+                            "pair": (s_a, s_b),
+                            "action": action,
+                            "win_rate": win_rate,
+                            "z_score": z,
+                            "z_velocity": z_velocity,
+                            "beta": beta,
+                            "net_obi": net_obi,
+                            "tick_a": tick_a_scan,
+                            "tick_b": tick_b_scan,
+                            "price_a": p_a,
+                            "price_b": p_b
+                        })
 
             # ── 3. MANAGE ACTIVE POSITION EXITS ──
             kf_active = get_kf_for_pair(S_A_resolved, S_B_resolved)
@@ -2737,9 +2745,38 @@ def main():
             import risk_safeguards
             is_session_ok, curr_utc_s, window_utc_s = is_session_time_allowed(risk_safeguards.SESSION_START_HOUR, risk_safeguards.SESSION_END_HOUR)
 
-            if candidate_signals:
-                qualifying_candidates = candidate_signals
-                best_sig = qualifying_candidates[0]
+            if active_pairs_cnt >= MAX_CONCURRENT_TRADES or len(active_symbols_set) > 0:
+                if candidate_signals:
+                    logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] An active trade is currently open on MT5 ({len(active_symbols_set)} active symbols). New entries BLOCKED until the active trade closes.")
+            elif risk_safeguards.SESSION_GUARD_ENABLED and not is_session_ok and candidate_signals:
+                for c in candidate_signals:
+                    pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
+                    logger.info(f"⏰ [SESSION GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but current time ({curr_utc_s}) is OUTSIDE allowed trading window ({window_utc_s}). New entries BLOCKED.")
+            elif not AUTO_EXECUTE and candidate_signals:
+                for c in candidate_signals:
+                    pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
+                    logger.info(f"📢 [SIGNAL DETECTED - SIGNALS ONLY MODE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but Auto-Execution is toggled OFF on Dashboard. Trade placement SKIPPED.")
+            elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and is_session_ok and candidate_signals:
+                if risk_safeguards.SESSION_GUARD_ENABLED:
+                    for c in candidate_signals:
+                        pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
+                        logger.info(f"⏰ [SESSION GUARD ACTIVE 🟢] Signal generated for {pair_str} ({c['action']}). Trade execution PROCEEDING!")
+
+                # Candidate signals bypass Beta boundary limits for single-asset execution
+                qualifying_candidates = []
+                for c in candidate_signals:
+                    c_a, c_b = c["pair"]
+                    ca_base = c_a.upper().split('.')[0]
+                    cb_base = c_b.upper().split('.')[0]
+                    
+                    if (ca_base not in active_symbols_set) and (cb_base not in active_symbols_set):
+                        qualifying_candidates.append(c)
+
+                if not qualifying_candidates:
+                    logger.info("Skipping trade execution: All candidate pairs have active symbols open or failed Beta boundary limits.")
+                    best_sig = None
+                else:
+                    best_sig = qualifying_candidates[0]
                 
                 if best_sig is not None:
                     best_pair = best_sig["pair"]
