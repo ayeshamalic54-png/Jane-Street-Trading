@@ -43,22 +43,22 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
 
     is_metals = (category == "metals" or "XAU" in str(df_m15.get('symbol', '')))
 
-    # Check temporary test mode flag (FORCED TEST MODE ACTIVE)
-    test_mode = True
+    # Production Mode Active (Filter Protections ON)
+    test_mode = False
 
     # ── 1. LONG (BUY) ENTRY EVALUATION ──
-    if structure == 'BULLISH' or (test_mode and structure != 'BEARISH'):
+    if structure == 'BULLISH':
         in_bull_ob = is_price_in_zones(price, zones['bullish_ob'])
         in_bull_fvg = is_price_in_zones(price, zones['bullish_fvg'])
         in_bull_brk = is_price_in_zones(price, zones['bullish_breaker'])
         in_bull_ifvg = is_price_in_zones(price, zones['bullish_ifvg'])
 
-        if test_mode or ((in_bull_ob or in_bull_fvg or in_bull_brk or in_bull_ifvg) and (price >= open_price)):
+        if (in_bull_ob or in_bull_fvg or in_bull_brk or in_bull_ifvg) and (price >= open_price):
             sl_dist = 3.46 if is_metals else 0.00194
             sl_price = price - sl_dist
             tp_price = price + (3.0 * sl_dist)  # 1:3.0 RRR Target
 
-            zone_type = "TEST_BYPASS" if test_mode else ("Order Block" if in_bull_ob else ("FVG" if in_bull_fvg else "Breaker/iFVG"))
+            zone_type = "Order Block" if in_bull_ob else ("FVG" if in_bull_fvg else "Breaker/iFVG")
             reason = f"🟢 SMC STRUCTURE BUY: Bullish BOS/CHoCH | Retest in {zone_type} Zone | 1:3.0 RRR TP"
             logger.info("================================================================================")
             logger.info(f"🟢 [PURE SMC BUY SIGNAL EXECUTED] 🚀")
@@ -67,20 +67,23 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
             logger.info(f"🟢 Target RRR Plan: 1:3.0 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
             logger.info("================================================================================")
             return "BUY", tp_price, sl_price, sl_dist, reason
+        else:
+            skip_reason = "No active Bullish OB/FVG zone retest" if not (in_bull_ob or in_bull_fvg or in_bull_brk or in_bull_ifvg) else "Waiting for Green Bullish Candle 🟢"
+            return "NONE", None, None, 0.0, f"Scanning SMC Bullish Structure | Entry Deferred ({skip_reason}) | Price: {price:.5f}"
 
     # ── 2. SHORT (SELL) ENTRY EVALUATION ──
-    elif structure == 'BEARISH' or (test_mode and structure == 'BEARISH'):
+    elif structure == 'BEARISH':
         in_bear_ob = is_price_in_zones(price, zones['bearish_ob'])
         in_bear_fvg = is_price_in_zones(price, zones['bearish_fvg'])
         in_bear_brk = is_price_in_zones(price, zones['bearish_breaker'])
         in_bear_ifvg = is_price_in_zones(price, zones['bearish_ifvg'])
 
-        if test_mode or ((in_bear_ob or in_bear_fvg or in_bear_brk or in_bear_ifvg) and (price <= open_price)):
+        if (in_bear_ob or in_bear_fvg or in_bear_brk or in_bear_ifvg) and (price <= open_price):
             sl_dist = 3.46 if is_metals else 0.00194
             sl_price = price + sl_dist
             tp_price = price - (3.0 * sl_dist)  # 1:3.0 RRR Target
 
-            zone_type = "TEST_BYPASS" if test_mode else ("Order Block" if in_bear_ob else ("FVG" if in_bear_fvg else "Breaker/iFVG"))
+            zone_type = "Order Block" if in_bear_ob else ("FVG" if in_bear_fvg else "Breaker/iFVG")
             reason = f"🔴 SMC STRUCTURE SELL: Bearish BOS/CHoCH | Retest in {zone_type} Zone | 1:3.0 RRR TP"
             logger.info("================================================================================")
             logger.info(f"🔴 [PURE SMC SELL SIGNAL EXECUTED] 🚀")
@@ -89,6 +92,9 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
             logger.info(f"🔴 Target RRR Plan: 1:3.0 RRR (SL: {sl_price:.5f} | TP: {tp_price:.5f})")
             logger.info("================================================================================")
             return "SELL", tp_price, sl_price, sl_dist, reason
+        else:
+            skip_reason = "No active Bearish OB/FVG zone retest" if not (in_bear_ob or in_bear_fvg or in_bear_brk or in_bear_ifvg) else "Waiting for Red Bearish Candle 🔴"
+            return "NONE", None, None, 0.0, f"Scanning SMC Bearish Structure | Entry Deferred ({skip_reason}) | Price: {price:.5f}"
 
     candle_str = "Green Bullish 🟢" if price >= open_price else "Red Bearish 🔴"
     return "NONE", None, None, 0.0, f"Scanning SMC Structure: {structure} | Price: {price:.5f} | Candle: {candle_str}"
