@@ -1023,7 +1023,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         z_str = f"{z_score:+.3f}"
         
         message = (
-            f"📢 **WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE** 📢\n"
+            f"📢 **WASEE SOFT PURE SMC / ICT STRUCTURE ENGINE** 📢\n"
             f"🚀 **[ NEW OPEN POSITION ]** 🚀\n\n"
             f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
@@ -1060,7 +1060,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         digits = info.digits if info else 5
         
         message = (
-            f"📢 **WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE** 📢\n"
+            f"📢 **WASEE SOFT PURE SMC / ICT STRUCTURE ENGINE** 📢\n"
             f"🏁 **[ POSITION CLOSED ]** 🏁\n\n"
             f"📊 **ASSET:** `{symbol}` ({order_type})\n"
             f"📦 **LOT SIZE:** `{lots:.2f} Lots`\n"
@@ -2911,9 +2911,9 @@ def main():
                             sl_val = sl_a
                             tp_val = tp2_val
                             
-                            res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_PROB_ZCORE")
+                            res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
                             if res_order and is_retcode_success(res_order.retcode):
-                                log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_PROB_ZCORE", signal_id)
+                                log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_SMC_STRUCTURE", signal_id)
                                 logger.info("================================================================================")
                                 logger.info(f"🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
                                 logger.info(f"🟢 Symbol: {S_A_resolved} | Action: {'BUY' if is_long else 'SELL'} | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
@@ -2965,9 +2965,9 @@ def main():
                             sl_val = sl_a
                             tp_val = tp2_val
                             
-                            res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_PROB_ZCORE")
+                            res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
                             if res_order and is_retcode_success(res_order.retcode):
-                                log_trade_entry(res_order.order, S_A_resolved, "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_PROB_ZCORE", signal_id)
+                                log_trade_entry(res_order.order, S_A_resolved, "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_SMC_STRUCTURE", signal_id)
                                 logger.info("================================================================================")
                                 logger.info(f"🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
                                 logger.info(f"🔴 Symbol: {S_A_resolved} | Action: SELL | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
