@@ -74,10 +74,10 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         z_low, z_high = get_active_zone_bounds(price, active_bull_zones)
         
         if z_low is not None:
-            buf = 0.50 if is_metals else 0.00030
+            buf = 0.30 if is_metals else 0.00015
             raw_sl_dist = max(0.0, price - (z_low - buf))
             max_cap = 3.46 if is_metals else 0.00194
-            min_cap = 1.20 if is_metals else 0.00100
+            min_cap = 0.80 if is_metals else 0.00060  # Tight OB SL: $0.80 Gold / 6 pips Forex
             sl_dist = max(min_cap, min(raw_sl_dist, max_cap))
         else:
             sl_dist = 3.46 if is_metals else 0.00194
@@ -86,13 +86,13 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         tp_price = price + (3.0 * sl_dist)  # Dynamic 1:3.0 RRR Target
 
         zone_type = "ICT Order Block (OB)" if in_bull_ob else ("ICT Fair Value Gap (FVG)" if in_bull_fvg else ("ICT Breaker Block" if in_bull_brk else "ICT Inversion FVG (iFVG)"))
-        reason = f"🟢 DYNAMIC ICT BUY: 200 EMA + SMC BOS/CHoCH + {zone_type} Zone Boundary SL ({sl_dist:.2f} pips) | 1:3.0 RRR TP"
+        reason = f"🟢 DYNAMIC ICT BUY: 200 EMA + SMC BOS/CHoCH + {zone_type} Tight SL ({sl_dist:.2f} pips) | 1:3.0 RRR TP"
         logger.info("================================================================================")
-        logger.info(f"🟢 [DYNAMIC ICT OB/FVG BUY SIGNAL EXECUTED] 🚀")
+        logger.info(f"🟢 [TIGHT ICT OB/FVG BUY SIGNAL EXECUTED] 🚀")
         logger.info(f"🟢 Protection 1 (200 EMA): Price {price:.2f} >= 200 EMA {ema_200:.2f} 🟢")
         logger.info(f"🟢 Protection 2 (SMC Structure): M15 Bullish BOS/CHoCH 🟢")
         logger.info(f"🟢 Protection 3 (ICT Zone): Retesting active {zone_type} (Zone Low: {z_low}) 🟢")
-        logger.info(f"🟢 Protection 4 (Dynamic SL/TP): SL @ {sl_price:.5f} (Below Zone Low) | TP @ {tp_price:.5f} (1:3.0 RRR) 🟢")
+        logger.info(f"🟢 Protection 4 (Tight Zone SL/TP): Tight SL @ {sl_price:.5f} ({sl_dist:.2f} pips below OB/FVG) | 1:3.0 RRR TP @ {tp_price:.5f} 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
@@ -110,10 +110,10 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         z_low, z_high = get_active_zone_bounds(price, active_bear_zones)
         
         if z_high is not None:
-            buf = 0.50 if is_metals else 0.00030
+            buf = 0.30 if is_metals else 0.00015
             raw_sl_dist = max(0.0, (z_high + buf) - price)
             max_cap = 3.46 if is_metals else 0.00194
-            min_cap = 1.20 if is_metals else 0.00100
+            min_cap = 0.80 if is_metals else 0.00060  # Tight OB SL: $0.80 Gold / 6 pips Forex
             sl_dist = max(min_cap, min(raw_sl_dist, max_cap))
         else:
             sl_dist = 3.46 if is_metals else 0.00194
@@ -122,13 +122,13 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         tp_price = price - (3.0 * sl_dist)  # Dynamic 1:3.0 RRR Target
 
         zone_type = "ICT Order Block (OB)" if in_bear_ob else ("ICT Fair Value Gap (FVG)" if in_bear_fvg else ("ICT Breaker Block" if in_bear_brk else "ICT Inversion FVG (iFVG)"))
-        reason = f"🔴 DYNAMIC ICT SELL: 200 EMA + SMC BOS/CHoCH + {zone_type} Zone Boundary SL ({sl_dist:.2f} pips) | 1:3.0 RRR TP"
+        reason = f"🔴 DYNAMIC ICT SELL: 200 EMA + SMC BOS/CHoCH + {zone_type} Tight SL ({sl_dist:.2f} pips) | 1:3.0 RRR TP"
         logger.info("================================================================================")
-        logger.info(f"🔴 [DYNAMIC ICT OB/FVG SELL SIGNAL EXECUTED] 🚀")
+        logger.info(f"🔴 [TIGHT ICT OB/FVG SELL SIGNAL EXECUTED] 🚀")
         logger.info(f"🔴 Protection 1 (200 EMA): Price {price:.2f} <= 200 EMA {ema_200:.2f} 🔴")
         logger.info(f"🔴 Protection 2 (SMC Structure): M15 Bearish BOS/CHoCH 🔴")
         logger.info(f"🔴 Protection 3 (ICT Zone): Retesting active {zone_type} (Zone High: {z_high}) 🔴")
-        logger.info(f"🔴 Protection 4 (Dynamic SL/TP): SL @ {sl_price:.5f} (Above Zone High) | TP @ {tp_price:.5f} (1:3.0 RRR) 🔴")
+        logger.info(f"🔴 Protection 4 (Tight Zone SL/TP): Tight SL @ {sl_price:.5f} ({sl_dist:.2f} pips above OB/FVG) | 1:3.0 RRR TP @ {tp_price:.5f} 🔴")
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
