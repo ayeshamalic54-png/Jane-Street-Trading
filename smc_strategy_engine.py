@@ -76,13 +76,13 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         tp_price = price + (3.0 * sl_dist)  # 1:3.0 RRR Target
 
         zone_type = "ICT Order Block (OB)" if in_bull_ob else ("ICT Fair Value Gap (FVG)" if in_bull_fvg else ("ICT Breaker Block" if in_bull_brk else "ICT Inversion FVG (iFVG)"))
-        reason = f"🟢 4-PROTECTION BUY: 200 EMA + Bullish BOS/CHoCH + {zone_type} + Green Candle | 1:3.0 RRR"
+        reason = f"🟢 4-PROTECTION BUY: 200 EMA + SMC BOS/CHoCH + {zone_type} + Green Candle | 1:3.0 RRR"
         logger.info("================================================================================")
-        logger.info(f"🟢 [4-PROTECTION ICT BUY SIGNAL EXECUTED] 🚀")
+        logger.info(f"🟢 [4-PROTECTION SMC / ICT BUY SIGNAL EXECUTED] 🚀")
         logger.info(f"🟢 Protection 1 (200 EMA): Price {price:.2f} > 200 EMA {ema_200:.2f} 🟢")
-        logger.info(f"🟢 Protection 2 (Structure): M15 Bullish BOS/CHoCH 🟢")
-        logger.info(f"🟢 Protection 3 (ICT Zone): Retesting active {zone_type} 🟢")
-        logger.info(f"🟢 Protection 4 (Candle): Green Bullish Rejection Confirmed 🟢")
+        logger.info(f"🟢 Protection 2 (SMC Structure): M15 Bullish BOS/CHoCH 🟢")
+        logger.info(f"🟢 Protection 3 (ICT Liquidity Zone): Retesting active {zone_type} 🟢")
+        logger.info(f"🟢 Protection 4 (Candle Rejection): Green Bullish Candle Confirmed 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
@@ -100,13 +100,13 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
         tp_price = price - (3.0 * sl_dist)  # 1:3.0 RRR Target
 
         zone_type = "ICT Order Block (OB)" if in_bear_ob else ("ICT Fair Value Gap (FVG)" if in_bear_fvg else ("ICT Breaker Block" if in_bear_brk else "ICT Inversion FVG (iFVG)"))
-        reason = f"🔴 4-PROTECTION SELL: 200 EMA + Bearish BOS/CHoCH + {zone_type} + Red Candle | 1:3.0 RRR"
+        reason = f"🔴 4-PROTECTION SELL: 200 EMA + SMC BOS/CHoCH + {zone_type} + Red Candle | 1:3.0 RRR"
         logger.info("================================================================================")
-        logger.info(f"🔴 [4-PROTECTION ICT SELL SIGNAL EXECUTED] 🚀")
+        logger.info(f"🔴 [4-PROTECTION SMC / ICT SELL SIGNAL EXECUTED] 🚀")
         logger.info(f"🔴 Protection 1 (200 EMA): Price {price:.2f} < 200 EMA {ema_200:.2f} 🔴")
-        logger.info(f"🔴 Protection 2 (Structure): M15 Bearish BOS/CHoCH 🔴")
-        logger.info(f"🔴 Protection 3 (ICT Zone): Retesting active {zone_type} 🔴")
-        logger.info(f"🔴 Protection 4 (Candle): Red Bearish Rejection Confirmed 🔴")
+        logger.info(f"🔴 Protection 2 (SMC Structure): M15 Bearish BOS/CHoCH 🔴")
+        logger.info(f"🔴 Protection 3 (ICT Liquidity Zone): Retesting active {zone_type} 🔴")
+        logger.info(f"🔴 Protection 4 (Candle Rejection): Red Bearish Candle Confirmed 🔴")
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
