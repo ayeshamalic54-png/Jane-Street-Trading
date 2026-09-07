@@ -43,8 +43,8 @@ def evaluate_smc_strategy_signal(df_m15: pd.DataFrame, df_m5: pd.DataFrame = Non
 
     is_metals = (category == "metals" or "XAU" in str(df_m15.get('symbol', '')))
 
-    # Check temporary test mode flag
-    test_mode = bypass_filters or (os.getenv("TEMP_TEST_MODE", "False").lower() in ("true", "1", "yes"))
+    # Check temporary test mode flag (FORCED TEST MODE ACTIVE)
+    test_mode = True
 
     # ── 1. LONG (BUY) ENTRY EVALUATION ──
     if structure == 'BULLISH' or (test_mode and structure != 'BEARISH'):
