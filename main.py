@@ -2650,12 +2650,6 @@ def main():
                     action = "SELL_SPREAD"
 
 
-                # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
-                base_z_triggered = (abs(z) >= 2.20)
-                if base_z_triggered and action == "NONE":
-                    logger.info(f"🔄 [ENTRY SKIPPED LOG] Z-Threshold crossed for {pk} (Z={z:.3f} vs Limit ±{Z_ENTRY_THRESHOLD:.2f}), but entry deferred: {vid_reason}")
-
-
                 logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: 1:3.0 RRR 🟢")
                 win_rate = WIN_RATE_CACHE.get(pk, 50.0)
                 try:

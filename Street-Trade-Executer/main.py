@@ -2670,8 +2670,7 @@ def main():
                         if REQUIRE_SMC_CONFLUENCE and not in_bearish_zone:
                             reasons.append("Price not in Bearish SMC Zone (Order Block/FVG)")
                     
-                    if reasons:
-                        logger.info(f"🔄 [ENTRY SKIPPED LOG] Signal threshold crossed for {pk} (Z={z:.3f} vs Entry Limit {Z_ENTRY_THRESHOLD:.2f}), but entry deferred due to: {'; '.join(reasons)}")
+
 
 
                 win_rate = WIN_RATE_CACHE.get(pk, 50.0)
