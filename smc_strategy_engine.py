@@ -112,12 +112,25 @@ def evaluate_smc_strategy_signal(
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
-    # ── 3. SCANNER LOGGING ──
-    step1_s = "BULLISH 🟢" if is_m15_bullish else ("BEARISH 🔴" if is_m15_bearish else "NEUTRAL ⚪")
-    step2_s = "PASS 🟢 (Sell Sweep)" if has_sell_sweep else ("PASS 🔴 (Buy Sweep)" if has_buy_sweep else "FAIL ⚪ (No Sweep)")
-    step3_s = "PASS 🟢 (CHoCH)" if (has_bull_choch or has_bear_choch) else "FAIL ⚪ (No CHoCH)"
-    step4_s = "PASS 🟢 (In FVG)" if (in_bull_fvg or in_bear_fvg) else "FAIL ⚪ (No FVG)"
-    step5_s = "PASS 🟢" if (p5_buy_rejection or p5_sell_rejection) else "FAIL ⚪"
+    # ── 3. SCANNER LOGGING (DIRECTIONALLY MATCHED TO M15 BIAS) ──
+    if is_m15_bullish:
+        step1_s = "BULLISH 🟢"
+        step2_s = "PASS 🟢 (Sell-Side Sweep)" if has_sell_sweep else "FAIL ⚪ (No Sell-Side Sweep)"
+        step3_s = "PASS 🟢 (Bullish CHoCH)" if has_bull_choch else "FAIL ⚪ (No Bullish CHoCH)"
+        step4_s = "PASS 🟢 (In Bullish FVG)" if in_bull_fvg else "FAIL ⚪ (No Bullish FVG)"
+        step5_s = "PASS 🟢 (Green Rejection)" if p5_buy_rejection else "FAIL ⚪ (No Green Rejection)"
+    elif is_m15_bearish:
+        step1_s = "BEARISH 🔴"
+        step2_s = "PASS 🔴 (Buy-Side Sweep)" if has_buy_sweep else "FAIL ⚪ (No Buy-Side Sweep)"
+        step3_s = "PASS 🔴 (Bearish CHoCH)" if has_bear_choch else "FAIL ⚪ (No Bearish CHoCH)"
+        step4_s = "PASS 🔴 (In Bearish FVG)" if in_bear_fvg else "FAIL ⚪ (No Bearish FVG)"
+        step5_s = "PASS 🔴 (Red Rejection)" if p5_sell_rejection else "FAIL ⚪ (No Red Rejection)"
+    else:
+        step1_s = "NEUTRAL ⚪"
+        step2_s = "FAIL ⚪ (M15 Structure Neutral)"
+        step3_s = "FAIL ⚪ (M15 Structure Neutral)"
+        step4_s = "FAIL ⚪ (M15 Structure Neutral)"
+        step5_s = "FAIL ⚪ (M15 Structure Neutral)"
 
     scan_msg = f"Scanning Pure SMC | S1(M15 Bias): {step1_s} | S2(Sweep): {step2_s} | S3(CHoCH): {step3_s} | S4(FVG): {step4_s} | S5(Candle): {step5_s}"
     return "NONE", None, None, 0.0, scan_msg
