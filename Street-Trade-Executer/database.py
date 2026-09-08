@@ -287,9 +287,28 @@ def initialize_database():
             conn.commit()
             print("Added atr_multiplier column to bot_state table.")
 
+        # Add halt_daily_drawdown_pct column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='halt_daily_drawdown_pct'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN halt_daily_drawdown_pct NUMERIC(5, 2) DEFAULT 1.00")
+            conn.commit()
+
+        # Add max_daily_drawdown_pct column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='max_daily_drawdown_pct'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN max_daily_drawdown_pct NUMERIC(5, 2) DEFAULT 3.30")
+            conn.commit()
+
 
         # Auto-migrate any legacy NDX100 active_pair in bot_state to US30/NAS100 and clean tables
         cur.execute("UPDATE bot_state SET active_pair = 'US30/NAS100' WHERE active_pair LIKE '%NDX100%'")
+        cur.execute("UPDATE bot_state SET obi_enabled = FALSE, knife_protection_enabled = FALSE, volatility_filter_enabled = FALSE WHERE id = 1")
         cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%NDX100%'")
         cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%NDX100%'")
         conn.commit()
@@ -558,6 +577,7 @@ def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, 
         row = cur.fetchone()
         conn.commit()
         cur.close()
+
         if row:
             return row[0]
     except Exception as e:
@@ -577,13 +597,13 @@ def send_discord_message(content):
     try:
         payload = {"content": content}
         res = requests.post(webhook_url, json=payload, timeout=5)
-        return res.status_code == 204
+        return res.status_code in (200, 204)
     except Exception as e:
         print(f"Error sending general Discord notification: {e}")
         return False
 
 def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, comment="", signal_id=None):
-    """Logs the entry of a trade and sends a Discord notification."""
+    """Logs the entry of a trade."""
     query = """
         INSERT INTO trades (ticket, symbol, order_type, lots, entry_price, entry_time, status, comment, signal_id)
         VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', %s, %s)
@@ -607,16 +627,6 @@ def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, c
         ))
         conn.commit()
         cur.close()
-        
-        # Send Discord entry notification
-        disc_msg = (
-            f"🚀 **JANE STREET POSITION OPENED** 🚀\n\n"
-            f"🎫 **Ticket:** `{ticket}`\n"
-            f"💱 **Symbol:** `{symbol}` ({comment})\n"
-            f"📦 **Size:** `{lots:.2f} lots` ({order_type})\n"
-            f"💵 **Entry Price:** `{entry_price:.5f}`\n"
-        )
-        send_discord_message(disc_msg)
     except Exception as e:
         print(f"Error logging trade entry: {e}")
     finally:
@@ -646,11 +656,12 @@ def get_open_trades_count(symbol=None):
     return count
 
 def log_trade_exit(ticket, close_price, profit, close_time):
-    """Updates a trade when it is closed."""
+    """Updates a trade when it is closed and sends a Discord exit notification."""
     query = """
         UPDATE trades
         SET close_price = %s, profit = %s, close_time = %s, status = 'CLOSED'
         WHERE ticket = %s
+        RETURNING symbol, order_type, lots, entry_price
     """
     conn = None
     try:
@@ -659,8 +670,32 @@ def log_trade_exit(ticket, close_price, profit, close_time):
         cur.execute(query, (
             float(close_price), float(profit), close_time, int(ticket)
         ))
+        row = cur.fetchone()
         conn.commit()
         cur.close()
+        
+        symbol_str = row[0] if row else "N/A"
+        dir_str = row[1] if row else "TRADE"
+        lots_val = float(row[2]) if row else 0.0
+        
+        pnl_val = float(profit)
+        pnl_emoji = "🟢" if pnl_val >= 0 else "🔴"
+        pnl_sign = "+" if pnl_val >= 0 else ""
+        
+        print("================================================================================")
+        print(f"🏁 [TRADE CLOSED] Symbol: {symbol_str} | Ticket #{ticket} | Close Price: {close_price} | Realized PnL: {pnl_sign}${pnl_val:.2f} USD {pnl_emoji}")
+        print("================================================================================")
+        
+        # Send Discord exit notification
+        disc_msg = (
+            f"🏁 **JANE STREET POSITION CLOSED** 🏁\n\n"
+            f"🎫 **Ticket:** `{ticket}`\n"
+            f"💱 **Symbol:** `{symbol_str}` ({dir_str} {lots_val:.2f} lots)\n"
+            f"💵 **Close Price:** `{close_price:.5f}`\n"
+            f"💰 **Realized PnL:** `{pnl_sign}${pnl_val:.2f} USD` {pnl_emoji}\n"
+            f"⏱ **Close Time:** `{close_time}`\n"
+        )
+        send_discord_message(disc_msg)
     except Exception as e:
         print(f"Error logging trade exit: {e}")
     finally:

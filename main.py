@@ -2232,15 +2232,11 @@ def main():
                         RISK_LIMITS_ENABLED = new_risk_limits
                     if Z_ENTRY_THRESHOLD != new_z_entry:
                         Z_ENTRY_THRESHOLD = new_z_entry
-                    if KNIFE_PROTECTION_ENABLED != new_knife:
-                        logger.info(f"[CONFIG UPDATE] Knife Protection updated: {KNIFE_PROTECTION_ENABLED} -> {new_knife}")
-                        KNIFE_PROTECTION_ENABLED = new_knife
-                    if OBI_ENABLED != new_obi:
-                        logger.info(f"[CONFIG UPDATE] OBI Filter updated: {OBI_ENABLED} -> {new_obi}")
-                        OBI_ENABLED = new_obi
-                    if VOLATILITY_FILTER_ENABLED != new_vol:
-                        logger.info(f"[CONFIG UPDATE] Volatility Filter updated: {VOLATILITY_FILTER_ENABLED} -> {new_vol}")
-                        VOLATILITY_FILTER_ENABLED = new_vol
+                    KNIFE_PROTECTION_ENABLED = False
+                    OBI_ENABLED = False
+                    VOLATILITY_FILTER_ENABLED = False
+                    if db_config_counter == 0:
+                        logger.info("🛡️ [PURE SMC FILTERS] OBI Filter: DISABLED 🔴 | Knife Guard: DISABLED 🔴 | Volatility Filter: DISABLED 🔴 | ML Filter: DISABLED 🔴")
                     if DEFAULT_LOTS != new_def_lots:
                         logger.info(f"[CONFIG UPDATE] Default Lots updated: {DEFAULT_LOTS} -> {new_def_lots}")
                         DEFAULT_LOTS = new_def_lots
