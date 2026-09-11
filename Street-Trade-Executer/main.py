@@ -3138,7 +3138,7 @@ def main():
             metals_log_str = "ENABLED 🟢" if METALS_ENABLED else "DISABLED 🔴"
             forex_log_str = "ENABLED 🟢" if FOREX_ENABLED else "DISABLED 🔴"
             logger.info(
-                f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Engine: Pure SMC/ICT Active 🟢 | Kalman Beta: {active_pair_beta:.4f} 🟢 "
+                f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Engine: Pure SMC/ICT Active 🟢 "
                 f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: ENABLED 🟢 "
             )
 
