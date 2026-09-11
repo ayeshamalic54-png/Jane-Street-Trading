@@ -996,6 +996,58 @@
         </div>
     </div>
     
+    <!-- PURE SMC 5-STEP VISUAL TELEMETRY WIDGET -->
+    <div id="pure-smc-widget" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 14px; padding: 20px; backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,0.25);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 26px;">🏛️</span>
+                <div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 700; color: #ffffff;">Pure Institutional SMC / ICT 5-Step Live Telemetry</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Real-time visual tracking of M15 Bias, Liquidity Sweeps, CHoCH Levels, FVG Zones & Entry Signals</div>
+                </div>
+            </div>
+            <span id="smc-engine-badge" class="market-badge badge-open" style="font-size: 11px; padding: 6px 14px;">🟢 5-STEP SMC ENGINE ACTIVE</span>
+        </div>
+
+        <!-- 5-STEP SEQUENTIAL STATUS CARDS GRID -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+            <!-- STEP 1: M15 BIAS -->
+            <div id="smc-card-s1" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 1: M15 Structure Bias</div>
+                <div id="smc-s1-val" style="font-size: 14px; font-weight: 800; color: #38bdf8;">BEARISH 🔴</div>
+                <div id="smc-s1-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">M15 Structure: LH+LL</div>
+            </div>
+
+            <!-- STEP 2: M5 SWEEP -->
+            <div id="smc-card-s2" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 2: Liquidity Sweep</div>
+                <div id="smc-s2-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s2-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning M5 Sweeps</div>
+            </div>
+
+            <!-- STEP 3: M5 CHOCH -->
+            <div id="smc-card-s3" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 3: M5 CHoCH / BOS</div>
+                <div id="smc-s3-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s3-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning CHoCH Level</div>
+            </div>
+
+            <!-- STEP 4: FVG RETEST -->
+            <div id="smc-card-s4" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 4: 3-Candle FVG Zone</div>
+                <div id="smc-s4-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s4-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning Active FVGs</div>
+            </div>
+
+            <!-- STEP 5: REJECTION ENTRY -->
+            <div id="smc-card-s5" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 5: Candle Rejection</div>
+                <div id="smc-s5-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s5-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning Rejection Close</div>
+            </div>
+        </div>
+    </div>
+
     <!-- SMC Zones -->
     <div class="section-title" id="smc-title">Active SMC Structural Zones</div>
     <div class="zones-container" id="smc-zones-container">
@@ -1049,6 +1101,54 @@
     <!-- Script to fetch API data and switch asset classes -->
     <script>
         const API_URL = 'http://localhost:8081';
+
+        async function fetchSmcTelemetry(activePair) {
+            try {
+                const res = await fetch(`/api/smc_telemetry?pair=${encodeURIComponent(activePair || 'XAUUSD/XAGUSD')}`);
+                if (!res.ok) return;
+                const smc = await res.json();
+                
+                const s1El = document.getElementById('smc-s1-val');
+                const s1Sub = document.getElementById('smc-s1-sub');
+                if (s1El) {
+                    s1El.textContent = smc.m15_bias || "NEUTRAL ⚪";
+                    s1El.style.color = (smc.m15_bias && smc.m15_bias.includes('BULLISH')) ? '#34d399' : ((smc.m15_bias && smc.m15_bias.includes('BEARISH')) ? '#f87171' : '#94a3b8');
+                    s1Sub.textContent = `M15 Structure: ${smc.m15_bias}`;
+                }
+                
+                const s2El = document.getElementById('smc-s2-val');
+                const s2Sub = document.getElementById('smc-s2-sub');
+                if (s2El) {
+                    s2El.textContent = smc.sweep_status || "FAIL ⚪";
+                    s2El.style.color = (smc.sweep_status && smc.sweep_status.includes('PASS')) ? '#34d399' : '#94a3b8';
+                    s2Sub.textContent = smc.sweep_price > 0 ? `Level: $${smc.sweep_price.toFixed(2)}` : 'Scanning M5 Sweeps';
+                }
+                
+                const s3El = document.getElementById('smc-s3-val');
+                const s3Sub = document.getElementById('smc-s3-sub');
+                if (s3El) {
+                    s3El.textContent = smc.choch_status || "FAIL ⚪";
+                    s3El.style.color = (smc.choch_status && smc.choch_status.includes('PASS')) ? '#34d399' : '#94a3b8';
+                    s3Sub.textContent = smc.choch_price > 0 ? `Break Level: $${smc.choch_price.toFixed(2)}` : 'Scanning CHoCH Level';
+                }
+                
+                const s4El = document.getElementById('smc-s4-val');
+                const s4Sub = document.getElementById('smc-s4-sub');
+                if (s4El) {
+                    s4El.textContent = smc.fvg_status || "FAIL ⚪";
+                    s4El.style.color = (smc.fvg_status && smc.fvg_status.includes('PASS')) ? '#34d399' : '#94a3b8';
+                    s4Sub.textContent = (smc.fvg_status && smc.fvg_status.includes('PASS')) ? 'Inside Active FVG Zone' : 'Scanning Active FVGs';
+                }
+                
+                const s5El = document.getElementById('smc-s5-val');
+                const s5Sub = document.getElementById('smc-s5-sub');
+                if (s5El) {
+                    s5El.textContent = smc.rejection_status || "FAIL ⚪";
+                    s5El.style.color = (smc.rejection_status && smc.rejection_status.includes('PASS')) ? '#34d399' : '#94a3b8';
+                    s5Sub.textContent = smc.action !== 'NONE' ? `Entry Action: ${smc.action}` : 'Scanning Rejection Close';
+                }
+            } catch(e) {}
+        }
 
         async function fetchStats() {
             const controller = new AbortController();
@@ -1228,6 +1328,7 @@
                 }
                 
                 updateUsdCalculations();
+                fetchSmcTelemetry(data.active_pair);
 
                 if (ddCard && ddBadge && ddBody) {
                     if (ddVal >= currentHalt) {

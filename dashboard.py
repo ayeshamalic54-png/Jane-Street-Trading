@@ -17,6 +17,18 @@ class SafeHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         # Parse query parameters
         parsed_url = urllib.parse.urlparse(self.path)
+        if parsed_url.path == '/api/smc_telemetry':
+            query_params = urllib.parse.parse_qs(parsed_url.query)
+            pair = query_params.get('pair', ['XAUUSD/XAGUSD'])[0]
+            from database import get_smc_telemetry
+            telemetry = get_smc_telemetry(pair)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(json.dumps(telemetry).encode())
+            return
+
         if parsed_url.path == '/set_active_pair':
             query_params = urllib.parse.parse_qs(parsed_url.query)
             pair = query_params.get('pair', [None])[0]

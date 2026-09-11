@@ -175,6 +175,21 @@ def initialize_database():
             max_equity_peak NUMERIC(15, 2) NOT NULL,
             overall_drawdown NUMERIC(5, 2) DEFAULT 0.00,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ),
+        """
+        """
+        CREATE TABLE IF NOT EXISTS smc_telemetry (
+            symbol_pair VARCHAR(100) PRIMARY KEY,
+            m15_bias VARCHAR(20),
+            sweep_status VARCHAR(100),
+            sweep_price NUMERIC(15, 5),
+            choch_status VARCHAR(100),
+            choch_price NUMERIC(15, 5),
+            fvg_status VARCHAR(100),
+            fvg_bounds_json TEXT,
+            rejection_status VARCHAR(100),
+            action VARCHAR(20),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
     ]
@@ -886,6 +901,82 @@ def update_bot_volatility_toggles(vol_enabled: bool, knife_enabled: bool):
         if conn:
             conn.close()
 
+
+def update_smc_telemetry(symbol_pair: str, m15_bias: str, sweep_status: str, sweep_price: float, choch_status: str, choch_price: float, fvg_status: str, fvg_bounds_json: str, rejection_status: str, action: str):
+    """Upserts real-time 5-step Pure SMC telemetry for chart visualization."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO smc_telemetry (symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (symbol_pair) DO UPDATE SET
+                m15_bias = EXCLUDED.m15_bias,
+                sweep_status = EXCLUDED.sweep_status,
+                sweep_price = EXCLUDED.sweep_price,
+                choch_status = EXCLUDED.choch_status,
+                choch_price = EXCLUDED.choch_price,
+                fvg_status = EXCLUDED.fvg_status,
+                fvg_bounds_json = EXCLUDED.fvg_bounds_json,
+                rejection_status = EXCLUDED.rejection_status,
+                action = EXCLUDED.action,
+                updated_at = CURRENT_TIMESTAMP
+        """, (symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+def get_smc_telemetry(symbol_pair: str) -> dict:
+    """Fetches latest 5-step Pure SMC telemetry for chart overlay."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action, updated_at
+            FROM smc_telemetry
+            WHERE symbol_pair = %s
+        """, (symbol_pair,))
+        row = cur.fetchone()
+        cur.close()
+        if row:
+            return {
+                "symbol_pair": row[0],
+                "m15_bias": row[1] or "NEUTRAL",
+                "sweep_status": row[2] or "FAIL ⚪",
+                "sweep_price": float(row[3] or 0.0),
+                "choch_status": row[4] or "FAIL ⚪",
+                "choch_price": float(row[5] or 0.0),
+                "fvg_status": row[6] or "FAIL ⚪",
+                "fvg_bounds_json": row[7] or "[]",
+                "rejection_status": row[8] or "FAIL ⚪",
+                "action": row[9] or "NONE",
+                "updated_at": str(row[10]) if row[10] else ""
+            }
+    except Exception:
+        pass
+    finally:
+        if conn:
+            conn.close()
+    return {
+        "symbol_pair": symbol_pair,
+        "m15_bias": "NEUTRAL",
+        "sweep_status": "FAIL ⚪",
+        "sweep_price": 0.0,
+        "choch_status": "FAIL ⚪",
+        "choch_price": 0.0,
+        "fvg_status": "FAIL ⚪",
+        "fvg_bounds_json": "[]",
+        "rejection_status": "FAIL ⚪",
+        "action": "NONE",
+        "updated_at": ""
+    }
 
 if __name__ == "__main__":
     initialize_database()

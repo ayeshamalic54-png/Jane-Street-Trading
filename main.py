@@ -2674,6 +2674,18 @@ def main():
 
 
                 logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: 1:3.0 RRR 🟢")
+                try:
+                    from database import update_smc_telemetry
+                    import json
+                    m15_b = "BULLISH 🟢" if "BULLISH" in vid_reason else ("BEARISH 🔴" if "BEARISH" in vid_reason else "NEUTRAL ⚪")
+                    s2_st = "PASS 🟢" if ("S2(Sweep): PASS" in vid_reason or "ALL 5 SMC STEPS PASSED" in vid_reason) else "FAIL ⚪"
+                    s3_st = "PASS 🟢" if ("S3(CHoCH): PASS" in vid_reason or "ALL 5 SMC STEPS PASSED" in vid_reason) else "FAIL ⚪"
+                    s4_st = "PASS 🟢" if ("S4(FVG): PASS" in vid_reason or "ALL 5 SMC STEPS PASSED" in vid_reason) else "FAIL ⚪"
+                    s5_st = "PASS 🟢" if ("S5(Candle): PASS" in vid_reason or "ALL 5 SMC STEPS PASSED" in vid_reason) else "FAIL ⚪"
+                    fvg_json = json.dumps(SMC_ZONES_CACHE.get(s_a_resolved, {})) if s_a_resolved in SMC_ZONES_CACHE else "[]"
+                    update_smc_telemetry(pk, m15_b, s2_st, float(p_a), s3_st, float(p_a), s4_st, fvg_json, s5_st, smc_sig)
+                except Exception:
+                    pass
                 win_rate = WIN_RATE_CACHE.get(pk, 50.0)
                 try:
                     update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
