@@ -1054,9 +1054,9 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
             f"🚀 **[ NEW OPEN POSITION ]** 🚀\n\n"
             f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
-            f"📊 **Z-SCORE ENTRY:** `{z_str}` *({z_type})*\n\n"
+            f"🏛️ **STRATEGY:** `Pure SMC / ICT 5-Step Engine 🟢`\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
-            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | $97.00 Risk Cap)*\n"
+            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | $25.00 Risk Cap)*\n"
             f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({tp_pips:.1f} Pips | 1:2.5 RRR Target)*\n"
             f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
