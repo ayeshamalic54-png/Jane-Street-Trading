@@ -152,12 +152,75 @@ def detect_choch_bos(df_m5, sweep_idx, is_bullish=True):
     return False, 0.0
 
 
+def detect_order_blocks(df):
+    """
+    Detects Order Blocks (OB) and Breaker Blocks:
+    - Bullish OB: Last down candle (close < open) before strong upward displacement breaking structure.
+    - Bearish OB: Last up candle (close > open) before strong downward displacement breaking structure.
+    - Breaker Blocks: Failed OBs swept and broken by price.
+    """
+    if df is None or len(df) < 5:
+        return [], [], [], []
+
+    highs = df['high'].values
+    lows = df['low'].values
+    opens = df['open'].values
+    closes = df['close'].values
+    n = len(df)
+
+    raw_bull_obs = []
+    raw_bear_obs = []
+
+    for i in range(2, n - 1):
+        if closes[i - 1] < opens[i - 1] and closes[i] > highs[i - 2]:
+            ob_low = float(lows[i - 1])
+            ob_high = float(highs[i - 1])
+            raw_bull_obs.append((ob_low, ob_high, i))
+        elif closes[i - 1] > opens[i - 1] and closes[i] < lows[i - 2]:
+            ob_low = float(lows[i - 1])
+            ob_high = float(highs[i - 1])
+            raw_bear_obs.append((ob_low, ob_high, i))
+
+    active_bull_obs = []
+    active_bear_obs = []
+    breaker_bull_obs = []
+    breaker_bear_obs = []
+
+    for low_b, high_b, idx in raw_bull_obs:
+        mitigated = False
+        broken_as_breaker = False
+        for j in range(idx + 1, n):
+            if closes[j] < low_b:
+                mitigated = True
+                broken_as_breaker = True
+                break
+        if not mitigated:
+            active_bull_obs.append((low_b, high_b))
+        elif broken_as_breaker:
+            if closes[-1] >= low_b:
+                breaker_bear_obs.append((low_b, high_b))
+
+    for low_b, high_b, idx in raw_bear_obs:
+        mitigated = False
+        broken_as_breaker = False
+        for j in range(idx + 1, n):
+            if closes[j] > high_b:
+                mitigated = True
+                broken_as_breaker = True
+                break
+        if not mitigated:
+            active_bear_obs.append((low_b, high_b))
+        elif broken_as_breaker:
+            if closes[-1] <= high_b:
+                breaker_bull_obs.append((low_b, high_b))
+
+    return active_bull_obs, active_bear_obs, breaker_bull_obs, breaker_bear_obs
+
+
 def detect_smc_zones(df):
     """
-    Step 4: Fair Value Gaps (3-Candle FVG).
-    - Bullish FVG: low[i] > high[i-2]. Zone = (high[i-2], low[i]).
-    - Bearish FVG: high[i] < low[i-2]. Zone = (high[i], low[i-2]).
-    Returns active (unmitigated) FVGs.
+    Step 4: Fair Value Gaps (3-Candle FVG), Order Blocks (OB), and Breaker Blocks.
+    Returns active unmitigated zones.
     """
     if df is None or len(df) < 5:
         return {
@@ -202,21 +265,24 @@ def detect_smc_zones(df):
         if not mitigated:
             active_bear.append((float(low_b), float(high_b)))
 
+    bull_ob, bear_ob, bull_breaker, bear_breaker = detect_order_blocks(df)
+
     return {
         'bullish_fvg': active_bull,
         'bearish_fvg': active_bear,
-        'bullish_ob': active_bull,
-        'bearish_ob': active_bear,
-        'bullish_breaker': active_bull,
-        'bearish_breaker': active_bear,
+        'bullish_ob': bull_ob,
+        'bearish_ob': bear_ob,
+        'bullish_breaker': bull_breaker,
+        'bearish_breaker': bear_breaker,
         'bullish_ifvg': active_bull,
         'bearish_ifvg': active_bear
     }
 
 
 def is_price_in_zones(price, zones):
-    """Checks if current price is inside any active FVG zone."""
+    """Checks if current price is inside any active zone."""
     for low, high in zones:
         if low <= price <= high:
             return True
     return False
+

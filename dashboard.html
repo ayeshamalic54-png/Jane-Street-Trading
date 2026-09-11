@@ -11,6 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root {
             --bg-color: #080c14;
@@ -1048,6 +1049,28 @@
         </div>
     </div>
 
+    <!-- LIVE PURE SMC INTERACTIVE CANDLESTICK CHART & VISUAL TELEMETRY CANVAS -->
+    <div id="chart-card-wrapper" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 14px; padding: 20px; position: relative; backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,0.25);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 22px;">📊</span>
+                <div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 700; color: #ffffff;">Live Institutional SMC Interactive Price Chart</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Real-time OHLC Candlesticks with Dynamic Sweep, CHoCH, FVG & Order Block Visual Overlays</div>
+                </div>
+            </div>
+            <span id="chart-pair-tag" class="market-badge badge-open" style="font-size: 11px; padding: 5px 12px;">XAUUSD / XAGUSD (M5)</span>
+        </div>
+
+        <!-- TOP-LEFT LIVE HUD SCANNER BANNER -->
+        <div id="smc-hud-banner" style="position: absolute; top: 75px; left: 35px; z-index: 10; background: rgba(15, 23, 42, 0.92); border: 1px solid rgba(59, 130, 246, 0.5); padding: 8px 14px; border-radius: 8px; font-family: monospace; font-size: 12px; font-weight: 700; color: #e2e8f0; pointer-events: none; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+            📊 [PURE SMC SCAN] Loading Live Scan Status...
+        </div>
+
+        <!-- CHART CANVAS CONTAINER -->
+        <div id="smc-candlestick-chart" style="width: 100%; height: 420px; border-radius: 10px; overflow: hidden; background: #0b1120; border: 1px solid rgba(255,255,255,0.05);"></div>
+    </div>
+
     <!-- SMC Zones -->
     <div class="section-title" id="smc-title">Active SMC Structural Zones</div>
     <div class="zones-container" id="smc-zones-container">
@@ -1102,7 +1125,39 @@
     <script>
         const API_URL = 'http://localhost:8081';
 
+        let smcChart = null;
+        let candleSeries = null;
+        let sweepLine = null;
+        let chochLine = null;
+
+        function initSmcChart() {
+            const container = document.getElementById('smc-candlestick-chart');
+            if (!container || smcChart) return;
+            try {
+                if (typeof LightweightCharts !== 'undefined') {
+                    smcChart = LightweightCharts.createChart(container, {
+                        width: container.clientWidth,
+                        height: 420,
+                        layout: { backgroundColor: '#0b1120', textColor: '#94a3b8' },
+                        grid: { vertLines: { color: 'rgba(255, 255, 255, 0.05)' }, horzLines: { color: 'rgba(255, 255, 255, 0.05)' } },
+                        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                        rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
+                        timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)', timeVisible: true }
+                    });
+                    candleSeries = smcChart.addCandlestickSeries({
+                        upColor: '#10b981', downColor: '#ef4444',
+                        borderUpColor: '#10b981', borderDownColor: '#ef4444',
+                        wickUpColor: '#10b981', wickDownColor: '#ef4444'
+                    });
+                    window.addEventListener('resize', () => {
+                        if (smcChart && container) smcChart.applyOptions({ width: container.clientWidth });
+                    });
+                }
+            } catch(e) { console.error('Chart init error:', e); }
+        }
+
         async function fetchSmcTelemetry(activePair) {
+            initSmcChart();
             try {
                 const res = await fetch(`/api/smc_telemetry?pair=${encodeURIComponent(activePair || 'XAUUSD/XAGUSD')}`);
                 if (!res.ok) return;
@@ -1146,6 +1201,45 @@
                     s5El.textContent = smc.rejection_status || "FAIL ⚪";
                     s5El.style.color = (smc.rejection_status && smc.rejection_status.includes('PASS')) ? '#34d399' : '#94a3b8';
                     s5Sub.textContent = smc.action !== 'NONE' ? `Entry Action: ${smc.action}` : 'Scanning Rejection Close';
+                }
+
+                // Update Top-Left Live HUD Overlay Banner on Chart
+                const hudBanner = document.getElementById('smc-hud-banner');
+                if (hudBanner) {
+                    const pairName = smc.symbol_pair || activePair || 'XAUUSD/XAGUSD';
+                    const s1Str = smc.m15_bias || 'NEUTRAL ⚪';
+                    const s2Str = smc.sweep_status || 'FAIL ⚪';
+                    const s3Str = smc.choch_status || 'FAIL ⚪';
+                    const s4Str = smc.fvg_status || 'FAIL ⚪';
+                    const s5Str = smc.rejection_status || 'FAIL ⚪';
+
+                    hudBanner.innerHTML = `📊 <strong>[PURE SMC SCAN] ${pairName}</strong> | S1(Bias): <strong>${s1Str}</strong> | S2(Sweep): <strong>${s2Str}</strong> | S3(CHoCH): <strong>${s3Str}</strong> | S4(FVG): <strong>${s4Str}</strong> | S5(Candle): <strong>${s5Str}</strong>`;
+                }
+
+                // Update Chart Lines for Sweep & CHoCH Levels
+                if (candleSeries && typeof LightweightCharts !== 'undefined') {
+                    if (smc.sweep_price > 0) {
+                        if (sweepLine) candleSeries.removePriceLine(sweepLine);
+                        sweepLine = candleSeries.createPriceLine({
+                            price: smc.sweep_price,
+                            color: '#38bdf8',
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Dashed,
+                            axisLabelVisible: true,
+                            title: 'M5 LIQUIDITY SWEEP LEVEL'
+                        });
+                    }
+                    if (smc.choch_price > 0) {
+                        if (chochLine) candleSeries.removePriceLine(chochLine);
+                        chochLine = candleSeries.createPriceLine({
+                            price: smc.choch_price,
+                            color: '#f59e0b',
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Dashed,
+                            axisLabelVisible: true,
+                            title: 'M5 CHOCH / BOS REVERSAL LEVEL'
+                        });
+                    }
                 }
             } catch(e) {}
         }
