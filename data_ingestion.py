@@ -3,6 +3,7 @@ import pandas as pd
 import logging
 import sys
 import os
+import time
 
 logger = logging.getLogger("SMC_Forex_Bot")
 
@@ -91,11 +92,42 @@ def check_and_subscribe_symbol(symbol):
 def get_rates_df(symbol, timeframe, count=200):
     """Fetches historical price candles and returns them as a pandas DataFrame."""
     resolved = resolve_broker_symbol(symbol)
+    
+    # Ensure symbol is selected in MT5 Market Watch
+    try:
+        mt5.symbol_select(resolved, True)
+        if resolved != symbol:
+            mt5.symbol_select(symbol, True)
+    except Exception:
+        pass
+
     rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
-    if rates is None and resolved != symbol:
+    if (rates is None or len(rates) == 0) and resolved != symbol:
         rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
         
-    if rates is None:
+    if rates is None or len(rates) == 0:
+        time.sleep(0.15)
+        rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
+
+    if rates is None or len(rates) == 0:
+        # Fallback search across all broker symbols for matching base alias (e.g. GOLD, XAUUSD.pro, XAUUSD.m)
+        try:
+            all_symbols = mt5.symbols_get()
+            if all_symbols:
+                target_base = symbol.upper().replace("USD", "").replace("EUR", "")
+                for s_info in all_symbols:
+                    s_name = s_info.name
+                    if symbol.upper() in s_name.upper() or (len(target_base) >= 3 and target_base in s_name.upper()):
+                        mt5.symbol_select(s_name, True)
+                        r_try = mt5.copy_rates_from_pos(s_name, timeframe, 0, count)
+                        if r_try is not None and len(r_try) > 0:
+                            rates = r_try
+                            logger.info(f"Resolved alternative symbol {s_name} for {symbol} candles.")
+                            break
+        except Exception:
+            pass
+
+    if rates is None or len(rates) == 0:
         logger.info(f"Broker does not offer candles for {symbol} (resolved: {resolved}). Skipping pair scan.")
         return None
         
