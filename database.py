@@ -175,8 +175,8 @@ def initialize_database():
             max_equity_peak NUMERIC(15, 2) NOT NULL,
             overall_drawdown NUMERIC(5, 2) DEFAULT 0.00,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ),
-        """
+        )
+        """,
         """
         CREATE TABLE IF NOT EXISTS smc_telemetry (
             symbol_pair VARCHAR(100) PRIMARY KEY,
