@@ -1,0 +1,190 @@
+//@version=5
+indicator("Pure Institutional SMC / ICT 5-Step Engine (1:1 App Sync)", overlay=true, max_boxes_count=100, max_lines_count=100, max_labels_count=100)
+
+// ── 1. INPUT CONFIGURATION ──
+m15_tf      = input.timeframe("15", "M15 Higher Timeframe Bias")
+max_drawings= input.int(25, "Max Active Drawings on Chart", minval=5, maxval=50)
+show_hud    = input.bool(true, "Show 5-Step Telemetry HUD Table")
+show_sweeps = input.bool(true, "Show Liquidity Sweeps")
+show_choch  = input.bool(true, "Show CHoCH / BOS Lines")
+show_fvgs   = input.bool(true, "Show FVG Boxes")
+show_obs    = input.bool(true, "Show Order Blocks (OB)")
+
+// ── 2. M15 MARKET STRUCTURE BIAS ──
+[m15_high, m15_low, m15_close] = request.security(syminfo.tickerid, m15_tf, [high[1], low[1], close[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+var string m15_bias = "NEUTRAL ⚪"
+sh1 = ta.pivothigh(high, 2, 2)
+sl1 = ta.pivotlow(low, 2, 2)
+
+var float last_sh = na
+var float prev_sh = na
+var float last_sl = na
+var float prev_sl = na
+
+if not na(sh1)
+    prev_sh := last_sh
+    last_sh := sh1
+
+if not na(sl1)
+    prev_sl := last_sl
+    last_sl := sl1
+
+if not na(last_sh) and not na(prev_sh) and not na(last_sl) and not na(prev_sl)
+    if last_sh > prev_sh and last_sl > prev_sl
+        m15_bias := "BULLISH 🟢"
+    else if last_sh < prev_sh and last_sl < prev_sl
+        m15_bias := "BEARISH 🔴"
+    else if last_sh > prev_sh
+        m15_bias := "BULLISH 🟢"
+    else if last_sl < prev_sl
+        m15_bias := "BEARISH 🔴"
+
+// ── COLOR CONSTANTS ──
+c_cyan    = color.rgb(0, 229, 255)
+c_magenta = color.rgb(224, 64, 251)
+c_yellow  = color.rgb(255, 234, 0)
+c_orange  = color.rgb(255, 145, 0)
+c_green   = color.rgb(0, 230, 118)
+c_red     = color.rgb(255, 82, 82)
+c_blue    = color.rgb(41, 121, 255)
+c_purple  = color.rgb(101, 31, 255)
+c_white   = color.rgb(255, 255, 255)
+c_black   = color.rgb(0, 0, 0)
+c_gray    = color.rgb(120, 123, 134)
+
+// ── 3. ANCHORED DRAWING ARRAYS (FIFO QUEUES) ──
+var line[]  sweep_lines  = array.new_line()
+var label[] sweep_labels = array.new_label()
+var line[]  choch_lines  = array.new_line()
+var label[] choch_labels = array.new_label()
+var box[]   fvg_boxes    = array.new_box()
+var box[]   ob_boxes     = array.new_box()
+
+add_line(arr, ln) =>
+    array.push(arr, ln)
+    if array.size(arr) > max_drawings
+        line.delete(array.shift(arr))
+
+add_label(arr, lbl) =>
+    array.push(arr, lbl)
+    if array.size(arr) > max_drawings
+        label.delete(array.shift(arr))
+
+add_box(arr, bx) =>
+    array.push(arr, bx)
+    if array.size(arr) > max_drawings
+        box.delete(array.shift(arr))
+
+// ── 4. SWEEP DETECTION ON CURRENT BAR ──
+bool sell_sweep = false
+bool buy_sweep = false
+float sweep_price = na
+
+if not na(last_sl) and low < last_sl and close >= last_sl
+    sell_sweep  := true
+    sweep_price := last_sl
+
+if not na(last_sh) and high > last_sh and close <= last_sh
+    buy_sweep   := true
+    sweep_price := last_sh
+
+if show_sweeps and sell_sweep
+    ln  = line.new(bar_index - 4, sweep_price, bar_index + 2, sweep_price, color=c_cyan, style=line.style_dashed, width=2)
+    lbl = label.new(bar_index, sweep_price, "SELL SWEEP", color=c_cyan, textcolor=c_black, style=label.style_label_up, size=size.small)
+    add_line(sweep_lines, ln)
+    add_label(sweep_labels, lbl)
+
+if show_sweeps and buy_sweep
+    ln  = line.new(bar_index - 4, sweep_price, bar_index + 2, sweep_price, color=c_magenta, style=line.style_dashed, width=2)
+    lbl = label.new(bar_index, sweep_price, "BUY SWEEP", color=c_magenta, textcolor=c_white, style=label.style_label_down, size=size.small)
+    add_line(sweep_lines, ln)
+    add_label(sweep_labels, lbl)
+
+// ── 5. CHOCH / BOS DETECTION ON CURRENT BAR ──
+h5_prev = ta.highest(high, 5)[1]
+l5_prev = ta.lowest(low, 5)[1]
+
+bool bull_choch = sell_sweep and close > h5_prev
+bool bear_choch = buy_sweep and close < l5_prev
+bool choch_pass = bull_choch or bear_choch
+
+if show_choch and bull_choch
+    ln  = line.new(bar_index - 5, h5_prev, bar_index + 2, h5_prev, color=c_yellow, style=line.style_solid, width=2)
+    lbl = label.new(bar_index, h5_prev, "BULLISH CHoCH", color=c_green, textcolor=c_white, style=label.style_label_down, size=size.small)
+    add_line(choch_lines, ln)
+    add_label(choch_labels, lbl)
+
+if show_choch and bear_choch
+    ln  = line.new(bar_index - 5, l5_prev, bar_index + 2, l5_prev, color=c_orange, style=line.style_solid, width=2)
+    lbl = label.new(bar_index, l5_prev, "BEARISH CHoCH", color=c_red, textcolor=c_white, style=label.style_label_up, size=size.small)
+    add_line(choch_lines, ln)
+    add_label(choch_labels, lbl)
+
+// ── 6. FVG & ORDER BLOCK ANCHORED BOXES ──
+is_bull_fvg = low > high[2]
+is_bear_fvg = high < low[2]
+is_bull_ob  = close[1] < open[1] and close > high[2]
+is_bear_ob  = close[1] > open[1] and close < low[2]
+
+if show_fvgs and is_bull_fvg
+    top_fvg = math.max(low, high[2])
+    bot_fvg = math.min(low, high[2])
+    bx = box.new(left=bar_index - 2, top=top_fvg, right=bar_index + 3, bottom=bot_fvg, border_color=c_green, bgcolor=color.new(c_green, 85), text="BULL FVG", text_size=size.tiny, text_color=c_green)
+    add_box(fvg_boxes, bx)
+
+if show_fvgs and is_bear_fvg
+    top_fvg = math.max(low[2], high)
+    bot_fvg = math.min(low[2], high)
+    bx = box.new(left=bar_index - 2, top=top_fvg, right=bar_index + 3, bottom=bot_fvg, border_color=c_red, bgcolor=color.new(c_red, 85), text="BEAR FVG", text_size=size.tiny, text_color=c_red)
+    add_box(fvg_boxes, bx)
+
+if show_obs and is_bull_ob
+    top_ob = math.max(high[1], low[1])
+    bot_ob = math.min(high[1], low[1])
+    bx = box.new(left=bar_index - 1, top=top_ob, right=bar_index + 4, bottom=bot_ob, border_color=c_blue, bgcolor=color.new(c_blue, 80), text="BULL OB", text_size=size.tiny, text_color=c_white)
+    add_box(ob_boxes, bx)
+
+if show_obs and is_bear_ob
+    top_ob = math.max(high[1], low[1])
+    bot_ob = math.min(high[1], low[1])
+    bx = box.new(left=bar_index - 1, top=top_ob, right=bar_index + 4, bottom=bot_ob, border_color=c_purple, bgcolor=color.new(c_purple, 80), text="BEAR OB", text_size=size.tiny, text_color=c_white)
+    add_box(ob_boxes, bx)
+
+// ── 7. CANDLE REJECTION EVALUATION (MATCHING PYTHON APP LOGIC) ──
+bool p5_buy_rejection  = (close[1] >= open[1]) and (close >= open)
+bool p5_sell_rejection = (close[1] <= open[1]) and (close <= open)
+
+string s5_text = "FAIL ⚪"
+color  s5_bg   = c_gray
+
+if m15_bias == "BULLISH 🟢"
+    s5_text := p5_buy_rejection ? "PASS 🟢 (Green Rej)" : "FAIL ⚪ (No Green Rej)"
+    s5_bg   := p5_buy_rejection ? c_green : c_gray
+else if m15_bias == "BEARISH 🔴"
+    s5_text := p5_sell_rejection ? "PASS 🔴 (Red Rej)" : "FAIL ⚪ (No Red Rej)"
+    s5_bg   := p5_sell_rejection ? c_red : c_gray
+
+// ── 8. TELEMETRY HUD TABLE (1:1 SYNC WITH PYTHON APP) ──
+var table hud = table.new(position.top_right, 2, 7, bgcolor=color.new(c_blue, 20), border_color=c_gray, border_width=1)
+if barstate.islast and show_hud
+    table.cell(hud, 0, 0, "PURE SMC 5-STEP HUD", bgcolor=c_blue, text_color=c_white, text_size=size.small)
+    table.cell(hud, 1, 0, "STATUS", bgcolor=color.blue, text_color=color.white, text_size=size.small)
+    
+    table.cell(hud, 0, 1, "S1: M15 Structure", text_color=c_white, text_size=size.small)
+    table.cell(hud, 1, 1, m15_bias, bgcolor=(m15_bias == "BULLISH 🟢" ? c_green : (m15_bias == "BEARISH 🔴" ? c_red : c_gray)), text_color=c_white, text_size=size.small)
+    
+    table.cell(hud, 0, 2, "S2: Liquidity Sweep", text_color=c_white, text_size=size.small)
+    table.cell(hud, 1, 2, sell_sweep ? "PASS 🟢 (Sell-Side)" : (buy_sweep ? "PASS 🔴 (Buy-Side)" : "FAIL ⚪"), bgcolor=(sell_sweep or buy_sweep ? c_green : c_gray), text_color=color.white, text_size=size.small)
+    
+    table.cell(hud, 0, 3, "S3: M5 CHoCH", text_color=color.white, text_size=size.small)
+    table.cell(hud, 1, 3, choch_pass ? "PASS 🟢" : "FAIL ⚪", bgcolor=(choch_pass ? c_green : c_gray), text_color=color.white, text_size=size.small)
+    
+    table.cell(hud, 0, 4, "S4: FVG / OB Zone", text_color=color.white, text_size=size.small)
+    table.cell(hud, 1, 4, (is_bull_fvg or is_bear_fvg or is_bull_ob or is_bear_ob) ? "ACTIVE 🟢" : "FAIL ⚪", bgcolor=((is_bull_fvg or is_bear_fvg) ? c_green : c_gray), text_color=color.white, text_size=size.small)
+    
+    table.cell(hud, 0, 5, "S5: Candle Rejection", text_color=color.white, text_size=size.small)
+    table.cell(hud, 1, 5, s5_text, bgcolor=s5_bg, text_color=c_white, text_size=size.small)
+
+    table.cell(hud, 0, 6, "Signal Execution", text_color=color.white, text_size=size.small)
+    table.cell(hud, 1, 6, (m15_bias == "BULLISH 🟢" and sell_sweep and choch_pass and is_bull_fvg and p5_buy_rejection) ? "BUY SIGNAL 🟢" : ((m15_bias == "BEARISH 🔴" and buy_sweep and choch_pass and is_bear_fvg and p5_sell_rejection) ? "SELL SIGNAL 🔴" : "SEARCHING..."), bgcolor=((m15_bias == "BULLISH 🟢" and sell_sweep and choch_pass and is_bull_fvg and p5_buy_rejection) or (m15_bias == "BEARISH 🔴" and buy_sweep and choch_pass and is_bear_fvg and p5_sell_rejection) ? c_green : c_gray), text_color=color.white, text_size=size.small)
