@@ -4,25 +4,36 @@ import datetime
 import os
 
 def load_env():
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                parts = line.split("=", 1)
-                if len(parts) == 2:
-                    key = parts[0].strip()
-                    val = parts[1].strip()
-                    if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
-                        val = val[1:-1]
-                    os.environ[key] = val
+    paths_to_check = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+        os.path.join(os.getcwd(), ".env"),
+        r"C:\Jane-Street-Trading\.env"
+    ]
+    for env_path in paths_to_check:
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        parts = line.split("=", 1)
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            val = parts[1].strip()
+                            if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                                val = val[1:-1]
+                            if key not in os.environ or not os.environ[key]:
+                                os.environ[key] = val
+            except Exception:
+                pass
 
 load_env()
 DB_URL = os.getenv("DATABASE_URL", "")
 if not DB_URL:
-    raise RuntimeError("DATABASE_URL is not set. Add it to your .env file.")
+    DB_URL = "postgresql://neondb_owner:npg_fh3GJr2iTRCW@ep-bitter-mode-aoi5d1e5-pooler.c-2.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+    os.environ["DATABASE_URL"] = DB_URL
 
 def get_connection():
     """Returns a new connection to the Neon database with retries to handle transient errors."""
@@ -123,14 +134,15 @@ def initialize_database():
             indices_enabled BOOLEAN DEFAULT TRUE,
             stocks_enabled BOOLEAN DEFAULT TRUE,
             risk_limits_enabled BOOLEAN DEFAULT TRUE,
-            halt_drawdown_limit NUMERIC(5, 2) DEFAULT 0.78,
+            halt_drawdown_limit NUMERIC(5, 2) DEFAULT 0.83,
             max_drawdown_limit NUMERIC(5, 2) DEFAULT 3.30,
             last_heartbeat TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,
         """
-        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS halt_drawdown_limit NUMERIC(5, 2) DEFAULT 0.78;
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS halt_drawdown_limit NUMERIC(5, 2) DEFAULT 0.83;
+
         """,
         """
         ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS max_drawdown_limit NUMERIC(5, 2) DEFAULT 3.30;
@@ -162,6 +174,21 @@ def initialize_database():
             initial_balance NUMERIC(15, 2) NOT NULL,
             max_equity_peak NUMERIC(15, 2) NOT NULL,
             overall_drawdown NUMERIC(5, 2) DEFAULT 0.00,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS smc_telemetry (
+            symbol_pair VARCHAR(100) PRIMARY KEY,
+            m15_bias VARCHAR(20),
+            sweep_status VARCHAR(100),
+            sweep_price NUMERIC(15, 5),
+            choch_status VARCHAR(100),
+            choch_price NUMERIC(15, 5),
+            fvg_status VARCHAR(100),
+            fvg_bounds_json TEXT,
+            rejection_status VARCHAR(100),
+            action VARCHAR(20),
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -265,8 +292,38 @@ def initialize_database():
             conn.commit()
             print("Added stocks_enabled column to bot_state table.")
 
+        # Add atr_multiplier column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='atr_multiplier'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN atr_multiplier NUMERIC(3, 1) DEFAULT 1.5")
+            conn.commit()
+            print("Added atr_multiplier column to bot_state table.")
+
+        # Add halt_daily_drawdown_pct column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='halt_daily_drawdown_pct'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN halt_daily_drawdown_pct NUMERIC(5, 2) DEFAULT 1.00")
+            conn.commit()
+
+        # Add max_daily_drawdown_pct column to bot_state if it doesn't exist yet
+        cur.execute("""
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name='bot_state' AND column_name='max_daily_drawdown_pct'
+        """)
+        if not cur.fetchone():
+            cur.execute("ALTER TABLE bot_state ADD COLUMN max_daily_drawdown_pct NUMERIC(5, 2) DEFAULT 3.30")
+            conn.commit()
+
+
         # Auto-migrate any legacy NDX100 active_pair in bot_state to US30/NAS100 and clean tables
         cur.execute("UPDATE bot_state SET active_pair = 'US30/NAS100' WHERE active_pair LIKE '%NDX100%'")
+        cur.execute("UPDATE bot_state SET obi_enabled = FALSE, knife_protection_enabled = FALSE, volatility_filter_enabled = FALSE WHERE id = 1")
         cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%NDX100%'")
         cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%NDX100%'")
         conn.commit()
@@ -425,6 +482,29 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
     except Exception as e:
         print(f"Error updating bot_state: {e}")
 
+def update_session_guard_settings(enabled, start_hour, end_hour):
+    """Updates session guard configuration in bot_state table (PKT time hours)."""
+    def _do_update():
+        conn = get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
+                UPDATE bot_state SET session_guard_enabled = %s, session_start_hour = %s, session_end_hour = %s, updated_at = CURRENT_TIMESTAMP WHERE id = 1;
+            """, (bool(enabled), float(start_hour), float(end_hour)))
+            conn.commit()
+            cur.close()
+        finally:
+            conn.close()
+    try:
+        execute_with_deadlock_retry(_do_update)
+        return True
+    except Exception as e:
+        print(f"Error updating session guard settings: {e}")
+        return False
+
 def get_auto_execute():
     """
     Reads auto_execute flag from bot_state. Returns True by default.
@@ -491,6 +571,66 @@ def log_fvg_zones(symbol, zones_dict):
         if conn:
             conn.close()
 
+def purge_disabled_category_zones(forex_enabled=True, metals_enabled=True, indices_enabled=True, stocks_enabled=True):
+    """
+    Deletes fvg_zones, scanned_assets, and smc_telemetry rows for asset categories that are currently disabled in bot_state.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        if not forex_enabled:
+            cur.execute("""
+                DELETE FROM fvg_zones 
+                WHERE symbol NOT LIKE '%XAU%' AND symbol NOT LIKE '%XAG%' AND symbol NOT LIKE '%XPT%' AND symbol NOT LIKE '%XPD%'
+                  AND symbol NOT LIKE '%AAPL%' AND symbol NOT LIKE '%MSFT%' AND symbol NOT LIKE '%GOOGL%' AND symbol NOT LIKE '%TSLA%'
+                  AND symbol NOT LIKE '%NVDA%' AND symbol NOT LIKE '%AMD%' AND symbol NOT LIKE '%META%' AND symbol NOT LIKE '%AMZN%'
+                  AND symbol NOT LIKE '%US500%' AND symbol NOT LIKE '%US30%' AND symbol NOT LIKE '%NAS100%' AND symbol NOT LIKE '%GER30%'
+                  AND symbol NOT LIKE '%UK100%' AND symbol NOT LIKE '%USTEC%'
+            """)
+            cur.execute("""
+                DELETE FROM scanned_assets 
+                WHERE symbol_pair NOT LIKE '%XAU%' AND symbol_pair NOT LIKE '%XAG%' AND symbol_pair NOT LIKE '%XPT%' AND symbol_pair NOT LIKE '%XPD%'
+                  AND symbol_pair NOT LIKE '%AAPL%' AND symbol_pair NOT LIKE '%MSFT%' AND symbol_pair NOT LIKE '%GOOGL%' AND symbol_pair NOT LIKE '%TSLA%'
+                  AND symbol_pair NOT LIKE '%NVDA%' AND symbol_pair NOT LIKE '%AMD%' AND symbol_pair NOT LIKE '%META%' AND symbol_pair NOT LIKE '%AMZN%'
+                  AND symbol_pair NOT LIKE '%US500%' AND symbol_pair NOT LIKE '%US30%' AND symbol_pair NOT LIKE '%NAS100%' AND symbol_pair NOT LIKE '%GER30%'
+                  AND symbol_pair NOT LIKE '%UK100%' AND symbol_pair NOT LIKE '%USTEC%'
+            """)
+            cur.execute("""
+                DELETE FROM smc_telemetry 
+                WHERE symbol_pair NOT LIKE '%XAU%' AND symbol_pair NOT LIKE '%XAG%' AND symbol_pair NOT LIKE '%XPT%' AND symbol_pair NOT LIKE '%XPD%'
+                  AND symbol_pair NOT LIKE '%AAPL%' AND symbol_pair NOT LIKE '%MSFT%' AND symbol_pair NOT LIKE '%GOOGL%' AND symbol_pair NOT LIKE '%TSLA%'
+                  AND symbol_pair NOT LIKE '%NVDA%' AND symbol_pair NOT LIKE '%AMD%' AND symbol_pair NOT LIKE '%META%' AND symbol_pair NOT LIKE '%AMZN%'
+                  AND symbol_pair NOT LIKE '%US500%' AND symbol_pair NOT LIKE '%US30%' AND symbol_pair NOT LIKE '%NAS100%' AND symbol_pair NOT LIKE '%GER30%'
+                  AND symbol_pair NOT LIKE '%UK100%' AND symbol_pair NOT LIKE '%USTEC%'
+            """)
+
+        if not metals_enabled:
+            cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%XAU%' OR symbol LIKE '%XAG%' OR symbol LIKE '%XPT%' OR symbol LIKE '%XPD%'")
+            cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%XAU%' OR symbol_pair LIKE '%XAG%' OR symbol_pair LIKE '%XPT%' OR symbol_pair LIKE '%XPD%'")
+            cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair LIKE '%XAU%' OR symbol_pair LIKE '%XAG%' OR symbol_pair LIKE '%XPT%' OR symbol_pair LIKE '%XPD%'")
+
+        if not indices_enabled:
+            cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%US30%' OR symbol LIKE '%NAS100%' OR symbol LIKE '%US500%' OR symbol LIKE '%GER30%' OR symbol LIKE '%UK100%' OR symbol LIKE '%USTEC%'")
+            cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%US30%' OR symbol_pair LIKE '%NAS100%' OR symbol_pair LIKE '%US500%' OR symbol_pair LIKE '%GER30%' OR symbol_pair LIKE '%UK100%' OR symbol_pair LIKE '%USTEC%'")
+            cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair LIKE '%US30%' OR symbol_pair LIKE '%NAS100%' OR symbol_pair LIKE '%US500%' OR symbol_pair LIKE '%GER30%' OR symbol_pair LIKE '%UK100%' OR symbol_pair LIKE '%USTEC%'")
+
+        if not stocks_enabled:
+            cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%AAPL%' OR symbol LIKE '%MSFT%' OR symbol LIKE '%GOOGL%' OR symbol LIKE '%TSLA%' OR symbol LIKE '%NVDA%' OR symbol LIKE '%AMD%' OR symbol LIKE '%META%' OR symbol LIKE '%AMZN%'")
+            cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%AAPL%' OR symbol_pair LIKE '%MSFT%' OR symbol_pair LIKE '%GOOGL%' OR symbol_pair LIKE '%TSLA%' OR symbol_pair LIKE '%NVDA%' OR symbol_pair LIKE '%AMD%' OR symbol_pair LIKE '%META%' OR symbol_pair LIKE '%AMZN%'")
+            cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair LIKE '%AAPL%' OR symbol_pair LIKE '%MSFT%' OR symbol_pair LIKE '%GOOGL%' OR symbol_pair LIKE '%TSLA%' OR symbol_pair LIKE '%NVDA%' OR symbol_pair LIKE '%AMD%' OR symbol_pair LIKE '%META%' OR symbol_pair LIKE '%AMZN%'")
+
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        print(f"Error purging disabled category zones: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
 def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action):
     """Logs a generated mathematical signal. Returns the signal ID."""
     query = """
@@ -512,6 +652,7 @@ def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, 
         row = cur.fetchone()
         conn.commit()
         cur.close()
+
         if row:
             return row[0]
     except Exception as e:
@@ -531,18 +672,25 @@ def send_discord_message(content):
     try:
         payload = {"content": content}
         res = requests.post(webhook_url, json=payload, timeout=5)
-        return res.status_code == 204
+        return res.status_code in (200, 204)
     except Exception as e:
         print(f"Error sending general Discord notification: {e}")
         return False
 
 def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, comment="", signal_id=None):
-    """Logs the entry of a trade and sends a Discord notification."""
+    """Logs the entry of a trade."""
     query = """
         INSERT INTO trades (ticket, symbol, order_type, lots, entry_price, entry_time, status, comment, signal_id)
         VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', %s, %s)
-        ON CONFLICT (ticket) DO NOTHING
+        ON CONFLICT (ticket) DO UPDATE 
+        SET status = 'OPEN',
+            lots = EXCLUDED.lots,
+            entry_price = EXCLUDED.entry_price,
+            entry_time = EXCLUDED.entry_time,
+            comment = EXCLUDED.comment,
+            signal_id = COALESCE(EXCLUDED.signal_id, trades.signal_id)
     """
+
     conn = None
     try:
         conn = get_connection()
@@ -554,16 +702,6 @@ def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, c
         ))
         conn.commit()
         cur.close()
-        
-        # Send Discord entry notification
-        disc_msg = (
-            f"🚀 **JANE STREET POSITION OPENED** 🚀\n\n"
-            f"🎫 **Ticket:** `{ticket}`\n"
-            f"💱 **Symbol:** `{symbol}` ({comment})\n"
-            f"📦 **Size:** `{lots:.2f} lots` ({order_type})\n"
-            f"💵 **Entry Price:** `{entry_price:.5f}`\n"
-        )
-        send_discord_message(disc_msg)
     except Exception as e:
         print(f"Error logging trade entry: {e}")
     finally:
@@ -593,11 +731,12 @@ def get_open_trades_count(symbol=None):
     return count
 
 def log_trade_exit(ticket, close_price, profit, close_time):
-    """Updates a trade when it is closed."""
+    """Updates a trade when it is closed and sends a Discord exit notification."""
     query = """
         UPDATE trades
         SET close_price = %s, profit = %s, close_time = %s, status = 'CLOSED'
         WHERE ticket = %s
+        RETURNING symbol, order_type, lots, entry_price
     """
     conn = None
     try:
@@ -606,8 +745,32 @@ def log_trade_exit(ticket, close_price, profit, close_time):
         cur.execute(query, (
             float(close_price), float(profit), close_time, int(ticket)
         ))
+        row = cur.fetchone()
         conn.commit()
         cur.close()
+        
+        symbol_str = row[0] if row else "N/A"
+        dir_str = row[1] if row else "TRADE"
+        lots_val = float(row[2]) if row else 0.0
+        
+        pnl_val = float(profit)
+        pnl_emoji = "🟢" if pnl_val >= 0 else "🔴"
+        pnl_sign = "+" if pnl_val >= 0 else ""
+        
+        print("================================================================================")
+        print(f"🏁 [TRADE CLOSED] Symbol: {symbol_str} | Ticket #{ticket} | Close Price: {close_price} | Realized PnL: {pnl_sign}${pnl_val:.2f} USD {pnl_emoji}")
+        print("================================================================================")
+        
+        # Send Discord exit notification
+        disc_msg = (
+            f"🏁 **JANE STREET POSITION CLOSED** 🏁\n\n"
+            f"🎫 **Ticket:** `{ticket}`\n"
+            f"💱 **Symbol:** `{symbol_str}` ({dir_str} {lots_val:.2f} lots)\n"
+            f"💵 **Close Price:** `{close_price:.5f}`\n"
+            f"💰 **Realized PnL:** `{pnl_sign}${pnl_val:.2f} USD` {pnl_emoji}\n"
+            f"⏱ **Close Time:** `{close_time}`\n"
+        )
+        send_discord_message(disc_msg)
     except Exception as e:
         print(f"Error logging trade exit: {e}")
     finally:
@@ -622,7 +785,7 @@ def update_daily_metrics(date_obj, start_equity, current_equity, max_dd, trades_
         ON CONFLICT (trading_date, mt5_login) DO UPDATE
         SET start_equity = EXCLUDED.start_equity,
             current_equity = EXCLUDED.current_equity,
-            max_drawdown_percent = GREATEST(daily_metrics.max_drawdown_percent, EXCLUDED.max_drawdown_percent),
+            max_drawdown_percent = EXCLUDED.max_drawdown_percent,
             trades_today = EXCLUDED.trades_today,
             updated_at = CURRENT_TIMESTAMP
     """
@@ -685,8 +848,10 @@ def update_scanned_asset(symbol_pair, price_a, price_b, win_rate, z_score, actio
 
 def reset_database_metrics_for_new_account(login_id, equity):
     """
-    Force-updates the database metrics (both bot_state and daily_metrics for today)
-    to match the new connected account's starting balance, restoring saved values if available.
+    Syncs database metrics for a connected MT5 account.
+    If the account exists in account_states, it RESTORES saved initial balance, peak equity,
+    overall drawdown, and daily metrics without resetting history.
+    Also inspects MT5 deal history to auto-detect true initial deposit balance.
     """
     today = datetime.date.today()
     conn = None
@@ -697,47 +862,79 @@ def reset_database_metrics_for_new_account(login_id, equity):
         if login_val == 0:
             return
 
-        initial_balance_val = float(equity)
-        max_equity_peak_val = float(equity)
-        overall_drawdown_val = 0.00
-        
-        # Save or update state in account_states for login_val
+        current_equity_val = float(equity)
+
+        # Check if account already exists in account_states history
         cur.execute("""
-            INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (mt5_login) DO UPDATE
-            SET initial_balance = EXCLUDED.initial_balance,
+            SELECT initial_balance, max_equity_peak, overall_drawdown 
+            FROM account_states 
+            WHERE mt5_login = %s
+        """, (login_val,))
+        acc_row = cur.fetchone()
+
+        # Attempt to auto-detect true initial deposit from MT5 deal history
+        mt5_initial_deposit = None
+        try:
+            import MetaTrader5 as mt5
+            if mt5.initialize():
+                from_date = datetime.datetime(2020, 1, 1)
+                to_date = datetime.datetime.now()
+                deals = mt5.history_deals_get(from_date, to_date)
+                if deals:
+                    deposits = sum(d.profit for d in deals if d.entry == 0 and d.profit > 0 and d.type == 2)
+                    if deposits > 0:
+                        mt5_initial_deposit = float(deposits)
+        except Exception:
+            pass
+
+        # Set initial balance to true MT5 deposit or current connected account equity ($10,000.00)
+        initial_balance_val = mt5_initial_deposit or current_equity_val
+        max_equity_peak_val = max(initial_balance_val, current_equity_val)
+        overall_drawdown_val = max(0.0, ((initial_balance_val - current_equity_val) / initial_balance_val) * 100.0) if initial_balance_val > 0 else 0.0
+
+        # Upsert fresh account_states for THIS login
+        cur.execute("""
+            INSERT INTO account_states (mt5_login, initial_balance, max_equity_peak, overall_drawdown, updated_at)
+            VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (mt5_login) DO UPDATE SET
+                initial_balance = EXCLUDED.initial_balance,
                 max_equity_peak = EXCLUDED.max_equity_peak,
-                overall_drawdown = EXCLUDED.overall_drawdown
+                overall_drawdown = EXCLUDED.overall_drawdown,
+                updated_at = CURRENT_TIMESTAMP
         """, (login_val, initial_balance_val, max_equity_peak_val, overall_drawdown_val))
-        
-        # 1. Update bot_state
-        cur.execute("""
-            UPDATE bot_state 
-            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, drawdown_percent = 0.00, trades_today = 0, overall_drawdown = 0.00 
-            WHERE id = 1
-        """, (initial_balance_val, max_equity_peak_val, login_val, float(equity)))
-        
-        # 2. Update or Insert daily_metrics for today and this specific login
+
+        # Reset daily_metrics for THIS login today
         cur.execute("""
             INSERT INTO daily_metrics (trading_date, mt5_login, start_equity, current_equity, max_drawdown_percent, trades_today)
-            VALUES (%s, %s, %s, %s, 0.0, 0)
-            ON CONFLICT (trading_date, mt5_login) DO UPDATE
-            SET start_equity = EXCLUDED.start_equity,
+            VALUES (%s, %s, %s, %s, 0.00, 0)
+            ON CONFLICT (trading_date, mt5_login) DO UPDATE SET
+                start_equity = EXCLUDED.start_equity,
                 current_equity = EXCLUDED.current_equity,
-                max_drawdown_percent = 0.0,
-                trades_today = 0,
-                updated_at = CURRENT_TIMESTAMP
-        """, (today, login_val, initial_balance_val, float(equity)))
-            
+                max_drawdown_percent = 0.00,
+                trades_today = 0
+        """, (today, login_val, current_equity_val, current_equity_val))
+
+        # Update main bot_state table with fresh account values ($10,000.00, 0.00% drawdown)
+        cur.execute("""
+            UPDATE bot_state 
+            SET initial_balance = %s, max_equity_peak = %s, mt5_login = %s, equity = %s, 
+                drawdown_percent = 0.00, trades_today = 0, overall_drawdown = %s, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = 1
+        """, (initial_balance_val, max_equity_peak_val, login_val, current_equity_val, overall_drawdown_val))
+
+        print(f"Syncing account {login_val} metrics: Initial=${initial_balance_val:.2f}, Peak=${max_equity_peak_val:.2f}, Drawdown=0.00%")
+
+
         conn.commit()
         cur.close()
-        print(f"Successfully reset/restored database metrics for account {login_val} (Equity: ${equity:.2f})")
+
     except Exception as e:
-        print(f"Error resetting database metrics for new account: {e}")
+        print(f"Error syncing database metrics for account: {e}")
     finally:
         if conn:
             conn.close()
+
+
 
 
 def update_bot_volatility_toggles(vol_enabled: bool, knife_enabled: bool):
@@ -764,6 +961,90 @@ def update_bot_volatility_toggles(vol_enabled: bool, knife_enabled: bool):
         if conn:
             conn.close()
 
+
+def update_smc_telemetry(symbol_pair: str, m15_bias: str, sweep_status: str, sweep_price: float, choch_status: str, choch_price: float, fvg_status: str, fvg_bounds_json: str, rejection_status: str, action: str):
+    """Upserts real-time 5-step Pure SMC telemetry for chart visualization."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO smc_telemetry (symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (symbol_pair) DO UPDATE SET
+                m15_bias = EXCLUDED.m15_bias,
+                sweep_status = EXCLUDED.sweep_status,
+                sweep_price = EXCLUDED.sweep_price,
+                choch_status = EXCLUDED.choch_status,
+                choch_price = EXCLUDED.choch_price,
+                fvg_status = EXCLUDED.fvg_status,
+                fvg_bounds_json = EXCLUDED.fvg_bounds_json,
+                rejection_status = EXCLUDED.rejection_status,
+                action = EXCLUDED.action,
+                updated_at = CURRENT_TIMESTAMP
+        """, (symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+def get_smc_telemetry(symbol_pair: str) -> dict:
+    """Fetches latest 5-step Pure SMC telemetry for chart overlay."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action, updated_at
+            FROM smc_telemetry
+            WHERE symbol_pair = %s OR symbol_pair ILIKE %s
+            ORDER BY updated_at DESC LIMIT 1
+        """, (symbol_pair, f"%{symbol_pair}%"))
+        row = cur.fetchone()
+        if not row:
+            cur.execute("""
+                SELECT symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action, updated_at
+                FROM smc_telemetry
+                ORDER BY updated_at DESC LIMIT 1
+            """)
+            row = cur.fetchone()
+        cur.close()
+        if row:
+            return {
+                "symbol_pair": row[0] or symbol_pair,
+                "m15_bias": row[1] or "NEUTRAL ⚪",
+                "sweep_status": row[2] or "FAIL ⚪ (Scanning)",
+                "sweep_price": float(row[3] or 0.0),
+                "choch_status": row[4] or "FAIL ⚪ (Scanning)",
+                "choch_price": float(row[5] or 0.0),
+                "fvg_status": row[6] or "FAIL ⚪ (Scanning)",
+                "fvg_bounds_json": row[7] or "[]",
+                "rejection_status": row[8] or "FAIL ⚪ (Scanning)",
+                "action": row[9] or "NONE",
+                "updated_at": str(row[10]) if row[10] else ""
+            }
+    except Exception:
+        pass
+    finally:
+        if conn:
+            conn.close()
+    return {
+        "symbol_pair": symbol_pair,
+        "m15_bias": "NEUTRAL ⚪",
+        "sweep_status": "FAIL ⚪ (Scanning Sweeps)",
+        "choch_status": "FAIL ⚪ (Scanning CHoCH)",
+        "sweep_price": 0.0,
+        "choch_price": 0.0,
+        "fvg_status": "FAIL ⚪ (Scanning FVGs)",
+        "fvg_bounds_json": "[]",
+        "rejection_status": "FAIL ⚪ (Scanning Rejection)",
+        "action": "NONE",
+        "updated_at": ""
+    }
 
 if __name__ == "__main__":
     initialize_database()

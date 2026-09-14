@@ -11,6 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         :root {
             --bg-color: #080c14;
@@ -252,10 +253,13 @@
             background: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 14px;
-            padding: 18px;
+            padding: 16px;
             backdrop-filter: blur(12px);
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
             transition: transform 0.3s;
+            overflow: hidden;
+            box-sizing: border-box;
+            min-width: 0;
         }
 
         .card:hover {
@@ -270,13 +274,21 @@
             font-weight: 700;
             margin-bottom: 8px;
             letter-spacing: 0.5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .card-value {
-            font-size: 22px;
+            font-size: clamp(13px, 1.6vw, 20px);
             font-weight: 700;
             font-family: 'Outfit', sans-serif;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
         }
+
 
         .status-running { color: var(--success); text-shadow: 0 0 10px rgba(16, 185, 129, 0.2); }
         .status-halted { color: var(--danger); text-shadow: 0 0 10px rgba(239, 68, 68, 0.2); }
@@ -808,15 +820,16 @@
             <div style="display: flex; align-items: center; gap: 10px;">
                 <span style="font-size: 22px;">🛡️</span>
                 <div>
-                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="trail-card-title">Multi-Tier Equity Profit Lock Guard (Dual Tier)</div>
-                    <div style="font-size: 11px; color: var(--text-muted);" id="trail-card-subtitle">Tier 1 (+ $60 peak locks + $52) | Tier 2 (+ $100+ peak locks 91%)</div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="trail-card-title">Multi-Tier Equity Profit Lock Guard (Option B - Balanced Buffer)</div>
+                    <div style="font-size: 11px; color: var(--text-muted);" id="trail-card-subtitle">Tier 1 (+$67 Peak locks +$53.00) | Tier 2 (+$99 Peak locks +$80.00) | Tier 3 (+$142 Peak locks +$120.00) | Tier 4 (+$185+ Peak locks +$155.00)</div>
                 </div>
             </div>
             <span id="trail-card-badge" class="market-badge" style="background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3);">⚪ TRAILING STOP INACTIVE</span>
         </div>
         <div id="trail-card-body" style="background: rgba(0, 0, 0, 0.25); padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.05); font-size: 13px; color: #e2e8f0; line-height: 1.5;">
-            ⚪ <strong>Multi-Tier Mode:</strong> Reversing from $60–$99 locks +$52.00+ cash profit! Reaching +$100+ locks 91% of peak earnings!
+            ⚪ <strong>Option B Active:</strong> Tier 1 (+$67 Peak locks +$53) | Tier 2 (+$99 Peak locks +$80) | Tier 3 (+$142 Peak locks +$120) | Tier 4 (+$185 Peak locks +$155)
         </div>
+
     </div>
 
     <!-- LIVE DAILY DRAWDOWN LIMIT STATUS CARD & CONFIGURATION CONTROL -->
@@ -840,9 +853,10 @@
                     ⚠️ Halt Drawdown Limit (%)
                 </label>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <input type="number" id="halt-limit-input" step="0.01" min="0.10" max="10.0" value="0.78" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 14px;" oninput="updateUsdCalculations()">
+                    <input type="number" id="halt-limit-input" step="0.01" min="0.10" max="10.0" value="1.00" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 14px;" oninput="updateUsdCalculations()">
                     <span style="font-size: 14px; font-weight: 700; color: #f59e0b;">%</span>
                 </div>
+
                 <div id="halt-limit-usd-display" style="font-size: 11px; font-weight: 600; color: #34d399; margin-top: 5px;">
                     💰 Equivalent Loss: <strong>$0.00 USD</strong>
                 </div>
@@ -869,6 +883,62 @@
             </div>
             <button onclick="saveDrawdownLimits()" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">
                 💾 Save Drawdown Limits
+            </button>
+    </div>
+
+    <!-- SESSION TIME GUARD (ALLOWED TRADING HOURS WINDOW - PKT TIME) CARD -->
+    <div id="session-guard-card" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 14px; padding: 18px; backdrop-filter: blur(12px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: all 0.4s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 22px;">⏰</span>
+                <div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; color: #ffffff;" id="session-card-title">Session Time Guard (Pakistani Time PKT Trading Window)</div>
+                    <div style="font-size: 11px; color: var(--text-muted);" id="session-card-subtitle">Restrict new trade entries strictly to high-liquidity session hours (PKT). Active trailing stops remain active 24/7.</div>
+                </div>
+            </div>
+            <span id="session-card-badge" class="market-badge badge-open">🟢 WINDOW OPEN</span>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 12px; background: rgba(0, 0, 0, 0.3); padding: 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08);">
+            <div>
+                <label style="font-size: 11px; font-weight: 700; color: #60a5fa; text-transform: uppercase; display: block; margin-bottom: 5px;">
+                    🛡️ Session Guard Toggle
+                </label>
+                <select id="session-toggle-select" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(96, 165, 250, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 13px;">
+                    <option value="false">DISABLED 🔴 (Trade 24/7)</option>
+                    <option value="true">ENABLED 🟢 (Restrict to Session Window)</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-size: 11px; font-weight: 700; color: #34d399; text-transform: uppercase; display: block; margin-bottom: 5px;">
+                    🛫 Start Time (PKT)
+                </label>
+                <select id="session-start-select" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(52, 211, 153, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 13px;">
+                    <option value="12.5">12:30 PM PKT (London Open)</option>
+                    <option value="17">05:00 PM PKT (London + NY Overlap)</option>
+                    <option value="18">06:00 PM PKT (NY Open)</option>
+                    <option value="5">05:00 AM PKT (Asian Session)</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-size: 11px; font-weight: 700; color: #f87171; text-transform: uppercase; display: block; margin-bottom: 5px;">
+                    🛬 End Time (PKT)
+                </label>
+                <select id="session-end-select" style="width: 100%; background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(248, 113, 113, 0.4); border-radius: 8px; padding: 8px 12px; color: #ffffff; font-weight: 700; font-size: 13px;">
+                    <option value="2">02:00 AM PKT (Close Before Rollover)</option>
+                    <option value="21">09:00 PM PKT (London Close)</option>
+                    <option value="3">03:00 AM PKT (NY Close)</option>
+                    <option value="16">04:00 PM PKT (Mid-Day)</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+            <div id="session-card-body" style="font-size: 12px; color: #e2e8f0; flex: 1;">
+                ✨ <strong>Session Guard Status:</strong> Disabled (Trading freely 24/7).
+            </div>
+            <button onclick="saveSessionGuardSettings()" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">
+                💾 Save Session Window
             </button>
         </div>
     </div>
@@ -898,14 +968,25 @@
     
     <!-- Account Information Grid -->
     <div class="grid">
-        <div class="card">
-            <div class="card-title">Account Equity</div>
-            <div class="card-value" id="account-equity">$0.00</div>
+        <div class="card" style="position: relative; overflow: hidden; min-width: 0; box-sizing: border-box;">
+            <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>ACCOUNT EQUITY</span>
+                <span id="account-id-tag" style="font-size: 10px; opacity: 0.8; color: var(--primary);">MT5 LIVE</span>
+            </div>
+            <div class="card-value" id="account-equity" style="font-size: clamp(14px, 1.7vw, 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; box-sizing: border-box;">$0.00</div>
+            <div class="card-subtitle" id="account-equity-sub" style="font-size: 11px; color: var(--text-muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Start: $0.00</div>
         </div>
-        <div class="card">
-            <div class="card-title">Daily Drawdown</div>
-            <div class="card-value" id="daily-drawdown">0.00%</div>
+        <div class="card" style="position: relative; overflow: hidden; min-width: 0; box-sizing: border-box;">
+            <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <span id="daily-drawdown-title">DAILY DRAWDOWN</span>
+
+                <span id="dd-halt-tag" style="font-size: 10px; opacity: 0.8; color: #f59e0b;">Halt: 0.83%</span>
+            </div>
+            <div class="card-value" id="daily-drawdown" style="font-size: clamp(14px, 1.7vw, 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; box-sizing: border-box;">$0.00 (0.00%)</div>
+            <div class="card-subtitle" id="daily-drawdown-card-sub" style="font-size: 11px; color: var(--text-muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Limit: 3.30%</div>
         </div>
+
+
         <div class="card">
             <div class="card-title">Trades Taken Today</div>
             <div class="card-value" id="trades-today">0 / 0</div>
@@ -916,6 +997,107 @@
         </div>
     </div>
     
+    <!-- PURE SMC 5-STEP VISUAL TELEMETRY WIDGET -->
+    <div id="pure-smc-widget" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 14px; padding: 20px; backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,0.25);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="font-size: 26px;">🏛️</span>
+                <div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 700; color: #ffffff;">Pure Institutional SMC / ICT 5-Step Live Telemetry</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Real-time visual tracking of M15 Bias, Liquidity Sweeps, CHoCH Levels, FVG Zones & Entry Signals</div>
+                </div>
+            </div>
+            <span id="smc-engine-badge" class="market-badge badge-open" style="font-size: 11px; padding: 6px 14px;">🟢 5-STEP SMC ENGINE ACTIVE</span>
+        </div>
+
+        <!-- 5-STEP SEQUENTIAL STATUS CARDS GRID -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+            <!-- STEP 1: M15 BIAS -->
+            <div id="smc-card-s1" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 1: M15 Structure Bias</div>
+                <div id="smc-s1-val" style="font-size: 14px; font-weight: 800; color: #38bdf8;">BEARISH 🔴</div>
+                <div id="smc-s1-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">M15 Structure: LH+LL</div>
+            </div>
+
+            <!-- STEP 2: M5 SWEEP -->
+            <div id="smc-card-s2" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 2: Liquidity Sweep</div>
+                <div id="smc-s2-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s2-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning M5 Sweeps</div>
+            </div>
+
+            <!-- STEP 3: M5 CHOCH -->
+            <div id="smc-card-s3" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 3: M5 CHoCH / BOS</div>
+                <div id="smc-s3-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s3-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning CHoCH Level</div>
+            </div>
+
+            <!-- STEP 4: FVG RETEST -->
+            <div id="smc-card-s4" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 4: 3-Candle FVG Zone</div>
+                <div id="smc-s4-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s4-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning Active FVGs</div>
+            </div>
+
+            <!-- STEP 5: REJECTION ENTRY -->
+            <div id="smc-card-s5" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 5: Candle Rejection</div>
+                <div id="smc-s5-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s5-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning Rejection Close</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LIVE PURE SMC INTERACTIVE CANDLESTICK CHART & VISUAL TELEMETRY CANVAS -->
+    <div id="chart-card-wrapper" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 14px; padding: 20px; position: relative; backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,0.25);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 22px;">📊</span>
+                <div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 700; color: #ffffff;">Live Institutional Pure SMC TradingView Chart (Zero MA / Vol / RSI)</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Real-time Candlesticks with Live 5-Step Telemetry HUD Overlay & Zero Extra Indicator Noise</div>
+                </div>
+            </div>
+            <span id="chart-pair-tag" class="market-badge badge-open" style="font-size: 11px; padding: 5px 12px;">XAUUSD / XAGUSD (M5)</span>
+        </div>
+
+        <!-- TOP-LEFT LIVE HUD SCANNER BANNER OVERLAY -->
+        <div id="smc-hud-banner" style="position: absolute; top: 75px; left: 35px; z-index: 100; background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(59, 130, 246, 0.6); padding: 10px 16px; border-radius: 10px; font-family: monospace; font-size: 12px; font-weight: 700; color: #ffffff; pointer-events: none; box-shadow: 0 6px 20px rgba(0,0,0,0.6);">
+            📊 [PURE SMC SCAN] Loading Live VPS Telemetry Status...
+        </div>
+
+        <!-- TRADINGVIEW CLEAN EMBED WIDGET (ZERO MA / ZERO VOLUME / ZERO RSI) -->
+        <div class="tradingview-widget-container" style="height: 480px; width: 100%; border-radius: 10px; overflow: hidden; background: #0b1120; border: 1px solid rgba(255,255,255,0.05);">
+            <div id="tradingview_smc_canvas" style="height: 100%; width: 100%;"></div>
+            <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+            <script type="text/javascript">
+                let tvWidget = null;
+                function loadTvChart(symbolStr) {
+                    const tvSymbol = (symbolStr && symbolStr.includes('XAU')) ? 'OANDA:XAUUSD' : ((symbolStr && symbolStr.includes('EUR')) ? 'FX:EURUSD' : ((symbolStr && symbolStr.includes('BTC')) ? 'BINANCE:BTCUSDT' : 'OANDA:XAUUSD'));
+                    document.getElementById('tradingview_smc_canvas').innerHTML = '';
+                    tvWidget = new TradingView.widget({
+                        "autosize": true,
+                        "symbol": tvSymbol,
+                        "interval": "5",
+                        "timezone": "Etc/UTC",
+                        "theme": "dark",
+                        "style": "1",
+                        "locale": "en",
+                        "toolbar_bg": "#0b1120",
+                        "enable_publishing": false,
+                        "hide_legend": false,
+                        "hide_side_toolbar": false,
+                        "hide_volume": true,
+                        "container_id": "tradingview_smc_canvas",
+                        "studies": []
+                    });
+                }
+                loadTvChart('XAUUSD');
+            </script>
+        </div>
+    </div>
+
     <!-- SMC Zones -->
     <div class="section-title" id="smc-title">Active SMC Structural Zones</div>
     <div class="zones-container" id="smc-zones-container">
@@ -970,9 +1152,129 @@
     <script>
         const API_URL = 'http://localhost:8081';
 
+        let smcChart = null;
+        let candleSeries = null;
+        let sweepLine = null;
+        let chochLine = null;
+
+        function initSmcChart() {
+            const container = document.getElementById('smc-candlestick-chart');
+            if (!container || smcChart) return;
+            try {
+                if (typeof LightweightCharts !== 'undefined') {
+                    smcChart = LightweightCharts.createChart(container, {
+                        width: container.clientWidth,
+                        height: 420,
+                        layout: { backgroundColor: '#0b1120', textColor: '#94a3b8' },
+                        grid: { vertLines: { color: 'rgba(255, 255, 255, 0.05)' }, horzLines: { color: 'rgba(255, 255, 255, 0.05)' } },
+                        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                        rightPriceScale: { borderColor: 'rgba(255, 255, 255, 0.1)' },
+                        timeScale: { borderColor: 'rgba(255, 255, 255, 0.1)', timeVisible: true }
+                    });
+                    candleSeries = smcChart.addCandlestickSeries({
+                        upColor: '#10b981', downColor: '#ef4444',
+                        borderUpColor: '#10b981', borderDownColor: '#ef4444',
+                        wickUpColor: '#10b981', wickDownColor: '#ef4444'
+                    });
+                    window.addEventListener('resize', () => {
+                        if (smcChart && container) smcChart.applyOptions({ width: container.clientWidth });
+                    });
+                }
+            } catch(e) { console.error('Chart init error:', e); }
+        }
+
+        async function fetchSmcTelemetry(activePair) {
+            initSmcChart();
+            try {
+                const res = await fetch(`/api/smc_telemetry?pair=${encodeURIComponent(activePair || 'XAUUSD/XAGUSD')}`);
+                if (!res.ok) return;
+                const smc = await res.json();
+                
+                const s1El = document.getElementById('smc-s1-val');
+                const s1Sub = document.getElementById('smc-s1-sub');
+                if (s1El) {
+                    s1El.textContent = smc.m15_bias || "NEUTRAL ⚪";
+                    s1El.style.color = (smc.m15_bias && smc.m15_bias.includes('BULLISH')) ? '#34d399' : ((smc.m15_bias && smc.m15_bias.includes('BEARISH')) ? '#f87171' : '#94a3b8');
+                    s1Sub.textContent = `M15 Structure: ${smc.m15_bias}`;
+                }
+                
+                const s2El = document.getElementById('smc-s2-val');
+                const s2Sub = document.getElementById('smc-s2-sub');
+                if (s2El) {
+                    s2El.textContent = smc.sweep_status || "FAIL ⚪";
+                    s2El.style.color = (smc.sweep_status && smc.sweep_status.includes('PASS')) ? '#34d399' : '#94a3b8';
+                    s2Sub.textContent = smc.sweep_price > 0 ? `Level: $${smc.sweep_price.toFixed(2)}` : 'Scanning M5 Sweeps';
+                }
+                
+                const s3El = document.getElementById('smc-s3-val');
+                const s3Sub = document.getElementById('smc-s3-sub');
+                if (s3El) {
+                    s3El.textContent = smc.choch_status || "FAIL ⚪";
+                    s3El.style.color = (smc.choch_status && smc.choch_status.includes('PASS')) ? '#34d399' : '#94a3b8';
+                    s3Sub.textContent = smc.choch_price > 0 ? `Break Level: $${smc.choch_price.toFixed(2)}` : 'Scanning CHoCH Level';
+                }
+                
+                const s4El = document.getElementById('smc-s4-val');
+                const s4Sub = document.getElementById('smc-s4-sub');
+                if (s4El) {
+                    s4El.textContent = smc.fvg_status || "FAIL ⚪";
+                    s4El.style.color = (smc.fvg_status && smc.fvg_status.includes('PASS')) ? '#34d399' : '#94a3b8';
+                    s4Sub.textContent = (smc.fvg_status && smc.fvg_status.includes('PASS')) ? 'Inside Active FVG Zone' : 'Scanning Active FVGs';
+                }
+                
+                const s5El = document.getElementById('smc-s5-val');
+                const s5Sub = document.getElementById('smc-s5-sub');
+                if (s5El) {
+                    s5El.textContent = smc.rejection_status || "FAIL ⚪";
+                    s5El.style.color = (smc.rejection_status && smc.rejection_status.includes('PASS')) ? '#34d399' : '#94a3b8';
+                    s5Sub.textContent = smc.action !== 'NONE' ? `Entry Action: ${smc.action}` : 'Scanning Rejection Close';
+                }
+
+                // Update Top-Left Live HUD Overlay Banner on Chart
+                const hudBanner = document.getElementById('smc-hud-banner');
+                if (hudBanner) {
+                    const pairName = smc.symbol_pair || activePair || 'XAUUSD/XAGUSD';
+                    const s1Str = smc.m15_bias || 'NEUTRAL ⚪';
+                    const s2Str = smc.sweep_status || 'FAIL ⚪';
+                    const s3Str = smc.choch_status || 'FAIL ⚪';
+                    const s4Str = smc.fvg_status || 'FAIL ⚪';
+                    const s5Str = smc.rejection_status || 'FAIL ⚪';
+
+                    hudBanner.innerHTML = `📊 <strong>[PURE SMC SCAN] ${pairName}</strong> | S1(Bias): <strong>${s1Str}</strong> | S2(Sweep): <strong>${s2Str}</strong> | S3(CHoCH): <strong>${s3Str}</strong> | S4(FVG): <strong>${s4Str}</strong> | S5(Candle): <strong>${s5Str}</strong>`;
+                }
+
+                // Update Chart Lines for Sweep & CHoCH Levels
+                if (candleSeries && typeof LightweightCharts !== 'undefined') {
+                    if (smc.sweep_price > 0) {
+                        if (sweepLine) candleSeries.removePriceLine(sweepLine);
+                        sweepLine = candleSeries.createPriceLine({
+                            price: smc.sweep_price,
+                            color: '#38bdf8',
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Dashed,
+                            axisLabelVisible: true,
+                            title: 'M5 LIQUIDITY SWEEP LEVEL'
+                        });
+                    }
+                    if (smc.choch_price > 0) {
+                        if (chochLine) candleSeries.removePriceLine(chochLine);
+                        chochLine = candleSeries.createPriceLine({
+                            price: smc.choch_price,
+                            color: '#f59e0b',
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Dashed,
+                            axisLabelVisible: true,
+                            title: 'M5 CHOCH / BOS REVERSAL LEVEL'
+                        });
+                    }
+                }
+            } catch(e) {}
+        }
+
         async function fetchStats() {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 800); // 800ms threshold for connection timeout
+            const timeoutId = setTimeout(() => controller.abort(), 12000); // 12-second threshold for resilient connection timeout
+
 
             try {
                 const response = await fetch(`${API_URL}/api/data`, { signal: controller.signal });
@@ -1014,26 +1316,48 @@
                 const trailBadge = document.getElementById('trail-card-badge');
                 const trailBody = document.getElementById('trail-card-body');
                 const flProfit = Number(data.floating_profit || 0.0);
-
                 const isTrailActiveText = data.system_status && data.system_status.includes('Trail Active');
-                if (flProfit >= 100.0 || (isTrailActiveText && data.system_status.includes('Tier 2'))) {
-                    const peakVal = Math.max(flProfit, 100.0);
-                    const floorVal = (peakVal * 0.91).toFixed(2);
-                    trailCard.style.border = '1px solid rgba(52, 211, 153, 0.6)';
+
+                if (flProfit >= 185.0 || (isTrailActiveText && data.system_status.includes('Tier 4'))) {
+                    const peakVal = Math.max(flProfit, 185.0);
+                    trailCard.style.border = '1px solid #10b981';
+                    trailCard.style.background = 'rgba(16, 185, 129, 0.2)';
+                    trailBadge.className = 'market-badge badge-open';
+                    trailBadge.style.background = 'rgba(16, 185, 129, 0.3)';
+                    trailBadge.style.color = '#34d399';
+                    trailBadge.style.border = '1px solid #10b981';
+                    trailBadge.textContent = '🟢 TIER 4 MEGA RUNNER TRAILING ACTIVE (+$155.00 LOCK)';
+                    trailBody.innerHTML = `🛡️ <strong>TIER 4 MEGA RUNNER LOCK ACTIVE:</strong> Peak Profit: <strong>+$${peakVal.toFixed(2)}</strong> | Locked Floor: <strong>+$155.00</strong><br>⚡ Trailing stop active locking +$155.00 USD cash profit!`;
+                } else if (flProfit >= 142.0 || (isTrailActiveText && data.system_status.includes('Tier 3'))) {
+                    const peakVal = Math.max(flProfit, 142.0);
+                    trailCard.style.border = '1px solid #10b981';
+                    trailCard.style.background = 'rgba(16, 185, 129, 0.15)';
+                    trailBadge.className = 'market-badge badge-open';
+                    trailBadge.style.background = 'rgba(16, 185, 129, 0.25)';
+                    trailBadge.style.color = '#34d399';
+                    trailBadge.style.border = '1px solid #34d399';
+                    trailBadge.textContent = '🟢 TIER 3 RUNNER TRAILING ACTIVE (+$120.00 LOCK)';
+                    trailBody.innerHTML = `🛡️ <strong>TIER 3 ADVANCED PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+$${peakVal.toFixed(2)}</strong> | Locked Floor: <strong>+$120.00</strong><br>⚡ Trailing stop active locking +$120.00 USD cash profit!`;
+                } else if (flProfit >= 99.0 || (isTrailActiveText && data.system_status.includes('Tier 2'))) {
+                    const peakVal = Math.max(flProfit, 99.0);
+                    trailCard.style.border = '1px solid #10b981';
                     trailCard.style.background = 'rgba(16, 185, 129, 0.12)';
                     trailBadge.className = 'market-badge badge-open';
                     trailBadge.style.background = 'rgba(16, 185, 129, 0.2)';
                     trailBadge.style.color = '#34d399';
-                    trailBadge.textContent = '🟢 TIER 2 TRAILING ACTIVE (91% LOCK)';
-                    trailBody.innerHTML = `🛡️ <strong>TIER 2 PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+$${peakVal.toFixed(2)}</strong> | Locked Floor (91%): <strong>+$${floorVal}</strong><br>⚡ Position is locking 91% of peak earnings!`;
-                } else if (flProfit >= 60.0 || isTrailActiveText) {
+                    trailBadge.style.border = '1px solid #34d399';
+                    trailBadge.textContent = '🟢 TIER 2 BALANCED TRAILING ACTIVE (+$80.00 LOCK)';
+                    trailBody.innerHTML = `🛡️ <strong>TIER 2 BALANCED PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+$${peakVal.toFixed(2)}</strong> | Locked Floor: <strong>+$80.00</strong><br>⚡ Trailing stop active locking +$80.00 USD cash profit!`;
+                } else if (flProfit >= 67.0 || (isTrailActiveText && data.system_status.includes('Tier 1'))) {
+                    const peakVal = Math.max(flProfit, 67.0);
                     trailCard.style.border = '1px solid rgba(59, 130, 246, 0.6)';
                     trailCard.style.background = 'rgba(59, 130, 246, 0.12)';
                     trailBadge.className = 'market-badge badge-open';
                     trailBadge.style.background = 'rgba(59, 130, 246, 0.2)';
                     trailBadge.style.color = '#60a5fa';
-                    trailBadge.textContent = '🔵 TIER 1 SAFETY FLOOR ACTIVE (+$52 LOCK)';
-                    trailBody.innerHTML = `🛡️ <strong>TIER 1 SAFETY FLOOR ACTIVE:</strong> Peak Profit: <strong>+$${Math.max(flProfit, 60.0).toFixed(2)}</strong> | Safety Floor: <strong>+$52.00</strong><br>⚡ If market reverses from $60–$99, bot will auto-close at +$52.00+ to lock first target profit!`;
+                    trailBadge.style.border = '1px solid rgba(59, 130, 246, 0.4)';
+                    trailBadge.textContent = '🔵 TIER 1 BASELINE TRAILING ACTIVE (+$53.00 LOCK)';
+                    trailBody.innerHTML = `🛡️ <strong>TIER 1 BASELINE LOCK ACTIVE:</strong> Peak Profit: <strong>+$${peakVal.toFixed(2)}</strong> | Safety Floor: <strong>+$53.00</strong><br>⚡ Trailing stop active! If profit drops to +$53.00 USD, bot auto-closes instantly!`;
                 } else {
                     trailCard.style.border = '1px solid rgba(148, 163, 184, 0.2)';
                     trailCard.style.background = 'rgba(15, 23, 42, 0.75)';
@@ -1041,8 +1365,9 @@
                     trailBadge.style.color = '#94a3b8';
                     trailBadge.style.border = '1px solid rgba(148, 163, 184, 0.3)';
                     trailBadge.textContent = '⚪ TRAILING STOP INACTIVE';
-                    trailBody.innerHTML = `⚪ <strong>Standby Mode:</strong> Reversing from $60–$99 locks +$52.00+ cash profit! Reaching +$100+ locks 91% of peak earnings! (Current Floating: $${flProfit >= 0 ? '+' : ''}${flProfit.toFixed(2)})`;
+                    trailBody.innerHTML = `⚪ <strong>Option B Active:</strong> Tier 1 (+$67 Peak locks +$53) | Tier 2 (+$99 Peak locks +$80) | Tier 3 (+$142 Peak locks +$120) | Tier 4 (+$185 Peak locks +$155) (Current Floating: $${flProfit >= 0 ? '+' : ''}${flProfit.toFixed(2)})`;
                 }
+
                 
                 // Update Z-Score
                 const zScoreEl = document.getElementById('z-score');
@@ -1063,42 +1388,128 @@
                 `;
                 
                 // Update Equity
-                document.getElementById('account-equity').textContent = `$${Number(data.equity).toFixed(2)}`;
+                const eqVal = Number(data.equity || 0.0);
+                const initBalVal = Number(data.initial_balance || 10000.0);
+                let startEqVal = Number(data.start_equity || eqVal);
                 
-                // Update Daily Drawdown
-                const drawdownEl = document.getElementById('daily-drawdown');
-                const ddVal = Number(data.drawdown || 0.0);
-                drawdownEl.textContent = `${ddVal.toFixed(2)}%`;
-                if (ddVal <= 0.0) {
-                    drawdownEl.className = 'card-value metric-positive';
-                } else {
-                    drawdownEl.className = 'card-value metric-negative';
+                // Bulletproof Failsafe: If startEqVal is missing or equals current equity, fallback to initial_balance ($10,000.00)
+                if ((Math.abs(eqVal - startEqVal) < 0.01 || startEqVal <= 0.0) && initBalVal > 0 && Math.abs(eqVal - initBalVal) >= 0.01) {
+                    startEqVal = initBalVal;
                 }
+
+                document.getElementById('account-equity').textContent = `$${eqVal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                const eqSubEl = document.getElementById('account-equity-sub');
+                if (eqSubEl) eqSubEl.textContent = `Start: $${startEqVal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                
+                // Update Daily Drawdown / Daily Gain
+                const drawdownEl = document.getElementById('daily-drawdown');
+                const ddSubEl = document.getElementById('daily-drawdown-card-sub');
+                const ddTitleEl = document.getElementById('daily-drawdown-title');
+                const ddVal = Number(data.drawdown || 0.0);
+                const pnlUsdVal = eqVal - startEqVal;
+
+                if (pnlUsdVal >= -0.001) {
+                    if (ddTitleEl) ddTitleEl.textContent = 'DAILY GAIN';
+                    const pnlGainPct = (startEqVal > 0) ? (Math.abs(pnlUsdVal) / startEqVal) * 100.0 : 0.0;
+                    const pctStr = (pnlGainPct < 0.01) ? pnlGainPct.toFixed(3) : pnlGainPct.toFixed(2);
+                    drawdownEl.textContent = `+$${Math.abs(pnlUsdVal).toFixed(2)} (+${pctStr}%)`;
+                    drawdownEl.className = 'card-value metric-positive';
+                    if (ddSubEl) ddSubEl.textContent = `Net Gain Baseline (Start: $${startEqVal.toFixed(2)})`;
+                } else {
+                    if (ddTitleEl) ddTitleEl.textContent = 'DAILY DRAWDOWN';
+                    const pnlLossPct = (startEqVal > 0) ? (Math.abs(pnlUsdVal) / startEqVal) * 100.0 : Math.abs(ddVal);
+                    const pctStr = (pnlLossPct < 0.01) ? pnlLossPct.toFixed(3) : pnlLossPct.toFixed(2);
+                    drawdownEl.textContent = `-$${Math.abs(pnlUsdVal).toFixed(2)} (-${pctStr}%)`;
+                    drawdownEl.className = 'card-value metric-negative';
+                    if (ddSubEl) ddSubEl.textContent = `Below Start Equity ($${startEqVal.toFixed(2)}) | Current DD: -${pnlLossPct.toFixed(2)}%`;
+                }
+
+
+
+
+
+
 
                 // Update Daily Drawdown Status Card
                 const ddCard = document.getElementById('drawdown-status-card');
                 const ddBadge = document.getElementById('drawdown-card-badge');
                 const ddBody = document.getElementById('drawdown-card-body');
-                const currentHalt = parseFloat(document.getElementById('halt-limit-input').value) || 0.78;
-                const currentMax = parseFloat(document.getElementById('max-limit-input').value) || 3.30;
+                
+                const haltInput = document.getElementById('halt-limit-input');
+                const maxInput = document.getElementById('max-limit-input');
+
+                const currentHalt = (data.halt_drawdown_limit !== undefined && data.halt_drawdown_limit !== null) ? Number(data.halt_drawdown_limit) : (parseFloat(haltInput.value) || 1.00);
+                const currentMax = (data.max_drawdown_limit !== undefined && data.max_drawdown_limit !== null) ? Number(data.max_drawdown_limit) : (parseFloat(maxInput.value) || 3.30);
+
+                if (haltInput && document.activeElement !== haltInput) {
+                    haltInput.value = currentHalt.toFixed(2);
+                }
+                if (maxInput && document.activeElement !== maxInput) {
+                    maxInput.value = currentMax.toFixed(2);
+                }
                 
                 updateUsdCalculations();
+                fetchSmcTelemetry(data.active_pair);
 
                 if (ddCard && ddBadge && ddBody) {
                     if (ddVal >= currentHalt) {
                         ddCard.style.border = '1px solid rgba(239, 68, 68, 0.6)';
                         ddCard.style.background = 'rgba(239, 68, 68, 0.12)';
                         ddBadge.className = 'market-badge badge-closed';
-                        ddBadge.textContent = `🔴 HALTED (${currentHalt}% THRESHOLD REACHED)`;
-                        ddBody.innerHTML = `⚠️ <strong>DAILY DRAWDOWN HALT ACTIVE:</strong> Current Drawdown: <strong>${ddVal.toFixed(2)}%</strong> >= <strong>${currentHalt}%</strong><br>🛡️ <strong>Protection Action:</strong> New trades are blocked and active positions auto-closed to freeze drawdown! Halt: ${currentHalt}% · Limit: ${currentMax}%`;
+                        ddBadge.textContent = `🔴 HALTED (${currentHalt.toFixed(2)}% THRESHOLD REACHED)`;
+                        ddBody.innerHTML = `⚠️ <strong>DAILY DRAWDOWN HALT ACTIVE:</strong> Current Drawdown: <strong>${ddVal.toFixed(2)}%</strong> >= <strong>${currentHalt.toFixed(2)}%</strong><br>🛡️ <strong>Protection Action:</strong> New trades are blocked and active positions auto-closed to freeze drawdown! Halt: ${currentHalt.toFixed(2)}% · Limit: ${currentMax.toFixed(2)}%`;
+                    } else if (ddVal < 0.0) {
+                        ddCard.style.border = '1px solid rgba(16, 185, 129, 0.6)';
+                        ddCard.style.background = 'rgba(16, 185, 129, 0.12)';
+                        ddBadge.className = 'market-badge badge-open';
+                        ddBadge.textContent = `🟢 PROFIT GAIN (+${Math.abs(ddVal).toFixed(2)}% / +$${Math.abs(pnlUsdVal).toFixed(2)})`;
+                        ddBody.innerHTML = `✨ <strong>Daily Equity Status:</strong> Account is in Net Profit Gain <strong>+$${Math.abs(pnlUsdVal).toFixed(2)} (+${Math.abs(ddVal).toFixed(2)}% Gain)</strong> relative to daily starting equity $${startEqVal.toFixed(2)}. Risk limits active (Halt: ${currentHalt.toFixed(2)}% · Limit: ${currentMax.toFixed(2)}%).`;
                     } else {
                         ddCard.style.border = '1px solid rgba(16, 185, 129, 0.4)';
                         ddCard.style.background = 'rgba(15, 23, 42, 0.75)';
                         ddBadge.className = 'market-badge badge-open';
-                        ddBadge.textContent = `🟢 RISK OK (HALT: ${currentHalt}% · LIMIT: ${currentMax}%)`;
-                        ddBody.innerHTML = `✨ <strong>Daily Drawdown Status:</strong> Current Drawdown is <strong>${ddVal.toFixed(2)}%</strong> (Below ${currentHalt}% Halt Threshold). Halt: ${currentHalt}% · Limit: ${currentMax}%.`;
+                        ddBadge.textContent = `🟢 RISK OK (HALT: ${currentHalt.toFixed(2)}% · LIMIT: ${currentMax.toFixed(2)}%)`;
+                        ddBody.innerHTML = `✨ <strong>Daily Drawdown Status:</strong> Current Drawdown is <strong>${ddVal.toFixed(2)}%</strong> (Below ${currentHalt.toFixed(2)}% Halt Threshold). Halt: ${currentHalt.toFixed(2)}% · Limit: ${currentMax.toFixed(2)}%.`;
+                    }
+                // Update Session Guard Status Card
+                const sessCard = document.getElementById('session-guard-card');
+                const sessBadge = document.getElementById('session-card-badge');
+                const sessBody = document.getElementById('session-card-body');
+                const sessToggle = document.getElementById('session-toggle-select');
+                const sessStart = document.getElementById('session-start-select');
+                const sessEnd = document.getElementById('session-end-select');
+
+                if (sessCard && sessBadge && sessBody && data.session_guard_enabled !== undefined) {
+                    const isSessOn = Boolean(data.session_guard_enabled);
+                    const startH = Number(data.session_start_hour ?? 12.5);
+                    const endH = Number(data.session_end_hour ?? 2.0);
+
+                    if (sessToggle && document.activeElement !== sessToggle) {
+                        sessToggle.value = isSessOn ? 'true' : 'false';
+                    }
+                    if (sessStart && document.activeElement !== sessStart) {
+                        sessStart.value = startH.toString();
+                    }
+                    if (sessEnd && document.activeElement !== sessEnd) {
+                        sessEnd.value = endH.toString();
+                    }
+
+                    if (isSessOn) {
+                        sessCard.style.border = '1px solid rgba(16, 185, 129, 0.6)';
+                        sessCard.style.background = 'rgba(16, 185, 129, 0.12)';
+                        sessBadge.className = 'market-badge badge-open';
+                        sessBadge.textContent = '🟢 SESSION GUARD ACTIVE';
+                        sessBody.innerHTML = `✨ <strong>Session Guard Status:</strong> Active (Restricting entries to allowed PKT window).`;
+                    } else {
+                        sessCard.style.border = '1px solid rgba(59, 130, 246, 0.4)';
+                        sessCard.style.background = 'rgba(15, 23, 42, 0.75)';
+                        sessBadge.className = 'market-badge badge-closed';
+                        sessBadge.textContent = '🔴 SESSION GUARD DISABLED (24/7)';
+                        sessBody.innerHTML = `✨ <strong>Session Guard Status:</strong> Disabled (Trading freely 24/7).`;
                     }
                 }
+
+
                 
                 // Update Trades Today
                 document.getElementById('trades-today').textContent = `${data.trades_today} / ${data.max_trades}`;
@@ -1121,13 +1532,14 @@
                 const symbolA = activePair.split(' vs ')[0];
                 document.getElementById('smc-title').textContent = `Active SMC Structural Zones (${symbolA})`;
                 const zonesContainer = document.getElementById('smc-zones-container');
-                if (data.zones && data.zones.length > 0) {
-                    zonesContainer.innerHTML = data.zones.map(z => {
+                const filteredZones = (data.zones || []).filter(z => z.label && z.label.toUpperCase().includes(symbolA.toUpperCase()));
+                if (filteredZones.length > 0) {
+                    zonesContainer.innerHTML = filteredZones.map(z => {
                         const badgeClass = z.type === 'OB' ? 'sell-badge' : 'buy-badge';
                         return `<span class="badge ${badgeClass}" style="font-size: 13px; padding: 6px 12px; display: inline-block;">${z.label}: ${z.range}</span>`;
                     }).join('');
                 } else {
-                    zonesContainer.innerHTML = `<span style="color: var(--text-muted); font-size: 14px;">No active SMC structural zones detected</span>`;
+                    zonesContainer.innerHTML = `<span style="color: var(--text-muted); font-size: 14px;">No active SMC structural zones detected for ${symbolA}</span>`;
                 }
                 
                 // Update Active Positions Table
@@ -1276,10 +1688,10 @@
         }
 
         function updateUsdCalculations() {
-            const equityStr = (document.getElementById('account-equity').textContent || '$0').replace('$', '').replace(/,/g, '');
+            const equityStr = document.getElementById('account-equity').textContent.replace('$', '').replace(',', '');
             const equity = parseFloat(equityStr) || 10000.0;
             
-            const haltPct = parseFloat(document.getElementById('halt-limit-input').value) || 0.78;
+            const haltPct = parseFloat(document.getElementById('halt-limit-input').value) || 0.80;
             const maxPct = parseFloat(document.getElementById('max-limit-input').value) || 3.30;
             
             const haltUsd = (equity * (haltPct / 100.0)).toFixed(2);
@@ -1293,7 +1705,7 @@
         }
 
         async function saveDrawdownLimits() {
-            const haltPct = parseFloat(document.getElementById('halt-limit-input').value) || 0.78;
+            const haltPct = parseFloat(document.getElementById('halt-limit-input').value) || 0.80;
             const maxPct = parseFloat(document.getElementById('max-limit-input').value) || 3.30;
             
             try {
@@ -1302,9 +1714,27 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ halt_drawdown_limit: haltPct, max_drawdown_limit: maxPct })
                 });
-                alert(`✅ Drawdown limits saved successfully!\nHalt Limit: ${haltPct}%\nMax Limit: ${maxPct}%`);
+                alert(`✅ Drawdown limits saved successfully!\nHalt Limit: ${haltPct.toFixed(2)}%\nMax Limit: ${maxPct.toFixed(2)}%`);
             } catch (ex) {
-                alert(`Drawdown limits saved locally: Halt ${haltPct}%, Max ${maxPct}%`);
+                alert(`Drawdown limits saved locally: Halt ${haltPct.toFixed(2)}%, Max ${maxPct.toFixed(2)}%`);
+            }
+        }
+
+        async function saveSessionGuardSettings() {
+            const enabled = document.getElementById('session-toggle-select').value === 'true';
+            const startHour = parseFloat(document.getElementById('session-start-select').value) || 12.5;
+            const endHour = parseFloat(document.getElementById('session-end-select').value) || 2.0;
+            
+            try {
+                const res = await fetch('/api/toggle-session-guard', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: enabled, start_hour: startHour, end_hour: endHour })
+                });
+                const statusText = enabled ? 'ENABLED 🟢' : 'DISABLED 🔴';
+                alert(`✅ Session Time Guard (PKT) saved successfully!\nStatus: ${statusText}\nWindow: ${document.getElementById('session-start-select').selectedOptions[0].text} to ${document.getElementById('session-end-select').selectedOptions[0].text}`);
+            } catch (ex) {
+                alert(`Session Guard settings updated locally.`);
             }
         }
 

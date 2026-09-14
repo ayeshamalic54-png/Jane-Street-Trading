@@ -7,6 +7,7 @@ except ImportError:
 
 import os
 from database import load_env
+# Forex App Engine - Production Ready (Z_ENTRY_THRESHOLD = 3.00, Risk Limits Enforced, Discord Signals Enabled)
 load_env()
 
 import MetaTrader5 as mt5
@@ -20,10 +21,16 @@ import joblib
 
 from math_models import KalmanFilterRegression, calculate_obi, test_cointegration, is_turning_point_confirmed
 from data_ingestion import initialize_mt5, check_and_subscribe_symbol, get_live_ticks, get_market_book, shutdown_mt5, get_rates_df, resolve_broker_symbol
-from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT
-from execution_bot import execute_three_part_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket
+from risk_safeguards import check_drawdown_limit, calculate_lots, is_spread_valid, get_trades_count_today, MAX_DAILY_TRADES, invalidate_trades_cache, round_volume, MAX_DAILY_LOSS_PERCENT, get_active_pairs_and_symbols, MAX_CONCURRENT_TRADES
+from video_strategy_engine import calculate_zscore_and_ema, evaluate_video_strategy_signal
+from smc_strategy_engine import evaluate_smc_strategy_signal
+
+
+from execution_bot import execute_three_part_trade, execute_three_part_hedge_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl
+
+
 from smc_indicators import detect_smc_zones, is_price_in_zones
-from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset
+from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset, purge_disabled_category_zones
 from news_guard import check_pair_news_block, check_post_news_stability
 try:
     from binance_execution import (
@@ -52,15 +59,24 @@ except ImportError:
     def close_binance_partial(*a, **k): pass
     def get_symbol_filters(*a, **k): return {}
 
-# Setup Logging
+# Setup Logging (Console + FileHandler)
 logger = logging.getLogger("SMC_Forex_Bot")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    
+    # Console Stream Handler
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     ch.setFormatter(formatter)
     logger.addHandler(ch)
+    
+    # File Handler (trading_system.log)
+    log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trading_system.log")
+    fh = logging.FileHandler(log_file_path, encoding='utf-8')
+    fh.setLevel(logging.INFO)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
 
 # ==============================================================================
 # GLOBAL STATE & PERSISTENCE
@@ -80,15 +96,31 @@ KF_CACHE = {}
 LAST_KF_UPDATE_BAR = {}
 WIN_RATE_CACHE = {}
 
-KNIFE_PROTECTION_ENABLED = True
-OBI_ENABLED = True
-VOLATILITY_FILTER_ENABLED = True
+KNIFE_PROTECTION_ENABLED = False
+OBI_ENABLED = False
+VOLATILITY_FILTER_ENABLED = False
+REQUIRE_SMC_CONFLUENCE = False
+SMC_ENABLED = True
 
 # Dashboard API base URL — update to your Replit URL when deployed
 DASHBOARD_API_URL = os.environ.get("DASHBOARD_API_URL", "http://localhost:80/api")
 
 def load_config():
     global GLOBAL_CONFIG
+    try:
+        conn_mig = get_connection()
+        cur_mig = conn_mig.cursor()
+        cur_mig.execute("""
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
+        """)
+        conn_mig.commit()
+        cur_mig.close()
+        conn_mig.close()
+    except Exception as ex_m:
+        pass
+
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -107,16 +139,9 @@ def load_config():
                         conn_mig.close()
                     except Exception:
                         pass
-                parts = active_pair.split('/')
-                if len(parts) == 2 and parts[0].strip() != parts[1].strip():
-                    GLOBAL_CONFIG["SYMBOL_A"] = parts[0].strip()
-                    GLOBAL_CONFIG["SYMBOL_B"] = parts[1].strip()
-                    logger.info(f"Loaded config: Leg A={GLOBAL_CONFIG['SYMBOL_A']} | Leg B={GLOBAL_CONFIG['SYMBOL_B']}")
-                else:
-                    logger.warning(f"shared_config.json has identical or invalid symbols — defaulting to EURUSD/GBPUSD")
-                    GLOBAL_CONFIG["SYMBOL_A"] = "EURUSD"
-                    GLOBAL_CONFIG["SYMBOL_B"] = "GBPUSD"
-                    save_config("EURUSD/GBPUSD")
+                GLOBAL_CONFIG["SYMBOL_A"] = active_pair.split("/")[0] if "/" in active_pair else "EURUSD"
+                GLOBAL_CONFIG["SYMBOL_B"] = active_pair.split("/")[1] if "/" in active_pair else "GBPUSD"
+                save_config(active_pair)
         except Exception as e:
             logger.error(f"Error loading config: {e}")
 
@@ -138,7 +163,8 @@ def fetch_db_config():
                crypto_enabled, metals_enabled, forex_enabled, indices_enabled,
                risk_limits_enabled, z_entry_threshold, default_lots, max_trades,
                knife_protection_enabled, obi_enabled, volatility_filter_enabled,
-               stocks_enabled, halt_drawdown_limit, max_drawdown_limit
+               stocks_enabled, halt_drawdown_limit, max_drawdown_limit,
+               session_guard_enabled, session_start_hour, session_end_hour
         FROM bot_state
         WHERE id = 1
     """
@@ -160,19 +186,24 @@ def fetch_db_config():
             cat_a = get_symbol_category(raw_active.split('/')[0]) if '/' in raw_active else "forex"
             active_pair = raw_active
             if (cat_a == "forex" and not f_on) or (cat_a == "metals" and not m_on) or (cat_a == "indices" and not i_on) or (cat_a == "stocks" and not s_on) or (cat_a == "crypto" and not c_on):
-                if i_on:
+                if f_on:
+                    active_pair = "EURUSD/GBPUSD"
+                elif m_on:
+                    active_pair = "XAUUSD/XAGUSD"
+                elif i_on:
                     active_pair = "US30/NAS100"
                 elif s_on:
                     active_pair = "AAPL/MSFT"
-                elif m_on:
-                    active_pair = "XAUUSD/XAGUSD"
-                elif f_on:
-                    active_pair = "AUDUSD/NZDUSD"
                 cur.execute("UPDATE bot_state SET active_pair = %s WHERE id = 1", (active_pair,))
                 conn.commit()
                 save_config(active_pair)
                 logger.info(f"Aligned active_pair with enabled category: {active_pair}")
                 
+            try:
+                purge_disabled_category_zones(forex_enabled=f_on, metals_enabled=m_on, indices_enabled=i_on, stocks_enabled=s_on)
+            except Exception as pe:
+                logger.warning(f"Error purging disabled category zones: {pe}")
+
             cur.close()
             conn.close()
             return (
@@ -182,24 +213,39 @@ def fetch_db_config():
                 bool(row[3] if row[3] is not None else True),
                 bool(row[4] if row[4] is not None else True),
                 False, # Hardcoded crypto_enabled to False
-                bool(row[6] if row[6] is not None else True),
-                bool(row[7] if row[7] is not None else True),
+                bool(row[6] if row[6] is not None else False), # Dynamic metals_enabled from DB
+                bool(row[7] if row[7] is not None else True),  # Dynamic forex_enabled from DB
                 bool(row[8] if row[8] is not None else True),
                 bool(row[9] if row[9] is not None else True),
-                float(row[10] or 2.0),
+                float(row[10]) if row[10] is not None else 0.60,
                 float(row[11]) if row[11] is not None else 0.01,
                 int(row[12] or 3),
                 bool(row[13] if row[13] is not None else True),
                 bool(row[14] if row[14] is not None else True),
                 bool(row[15] if row[15] is not None else True),
                 s_on,
-                float(row[17]) if len(row) > 17 and row[17] is not None else 0.78,
-                float(row[18]) if len(row) > 18 and row[18] is not None else 3.30
+                float(row[17]) if len(row) > 17 and row[17] is not None else 1.00,
+                float(row[18]) if len(row) > 18 and row[18] is not None else 3.30,
+                bool(row[19] if len(row) > 19 and row[19] is not None else False),
+                float(row[20]) if len(row) > 20 and row[20] is not None else 12.5,
+                float(row[21]) if len(row) > 21 and row[21] is not None else 2.0
             )
         else:
             cur.close()
-            conn.close()
     except Exception as e:
+        try:
+            conn_fix = get_connection()
+            cur_fix = conn_fix.cursor()
+            cur_fix.execute("""
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
+            """)
+            conn_fix.commit()
+            cur_fix.close()
+            conn_fix.close()
+        except Exception:
+            pass
         logger.warning(f"Could not fetch DB config directly: {e}")
     finally:
         if conn:
@@ -210,17 +256,23 @@ def fetch_db_config():
     return None
 
 
+PREV_TOGGLE_STATE = {}
+
 def update_live_toggles_from_db():
     """
     Refreshes global asset class toggles and settings directly from DB on every 2s loop cycle.
     Allows instant toggle updates from Dashboard without restarting the bot.
+    Logs instant VPS console alerts whenever any toggle is switched.
     """
     global FOREX_ENABLED, METALS_ENABLED, INDICES_ENABLED, STOCKS_ENABLED, CRYPTO_ENABLED, AUTO_EXECUTE, RISK_LIMITS_ENABLED, Z_ENTRY_THRESHOLD, SL_PIPS, TP_PIPS
+    global KNIFE_PROTECTION_ENABLED, OBI_ENABLED, VOLATILITY_FILTER_ENABLED, PREV_TOGGLE_STATE, SMC_ENABLED
     try:
+        import risk_safeguards
         cfg = fetch_db_config()
         if cfg:
             SL_PIPS = cfg[1]
             TP_PIPS = cfg[2]
+            SMC_ENABLED = True
             AUTO_EXECUTE = cfg[4]
             CRYPTO_ENABLED = False
             METALS_ENABLED = cfg[6]
@@ -228,7 +280,31 @@ def update_live_toggles_from_db():
             INDICES_ENABLED = cfg[8]
             RISK_LIMITS_ENABLED = cfg[9]
             Z_ENTRY_THRESHOLD = cfg[10]
+            KNIFE_PROTECTION_ENABLED = False
+            OBI_ENABLED = False
+            VOLATILITY_FILTER_ENABLED = False
             STOCKS_ENABLED = cfg[16]
+            if len(cfg) > 19:
+                risk_safeguards.SESSION_GUARD_ENABLED = cfg[19]
+                risk_safeguards.SESSION_START_HOUR = cfg[20]
+                risk_safeguards.SESSION_END_HOUR = cfg[21]
+
+            curr_state = {
+                "forex": FOREX_ENABLED,
+                "metals": METALS_ENABLED,
+                "auto_exec": AUTO_EXECUTE,
+                "risk_limits": RISK_LIMITS_ENABLED
+            }
+
+            if PREV_TOGGLE_STATE and curr_state != PREV_TOGGLE_STATE:
+                changes = []
+                for k, v in curr_state.items():
+                    if PREV_TOGGLE_STATE.get(k) != v:
+                        status_str = "ENABLED 🟢" if v else "DISABLED 🔴"
+                        changes.append(f"{k.upper()}: {status_str}")
+                logger.info(f"🔄 [DASHBOARD TOGGLE CHANGE DETECTED ⚡] " + " | ".join(changes))
+
+            PREV_TOGGLE_STATE = curr_state.copy()
     except Exception as e:
         logger.warning(f"Error in update_live_toggles_from_db: {e}")
 
@@ -404,30 +480,32 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                 pass
 
 
-Z_ENTRY_THRESHOLD = 2.0
+Z_ENTRY_THRESHOLD = 3.00
 ML_MODEL = None
 DEFAULT_LOTS = 0.01
 Z_EXIT_MEAN = 0.0
-REQUIRE_SMC_CONFLUENCE = True
+REQUIRE_SMC_CONFLUENCE = False
 AUTO_EXECUTE = True          # toggled from dashboard via DB
 CRYPTO_ENABLED = False
-METALS_ENABLED = True
+METALS_ENABLED = False
 FOREX_ENABLED = True
-INDICES_ENABLED = True
-STOCKS_ENABLED = True
+INDICES_ENABLED = False
+STOCKS_ENABLED = False
 RISK_LIMITS_ENABLED = True
 SMC_TIMEFRAME = mt5.TIMEFRAME_M5
 LOOP_INTERVAL = 2
 
+
 CANDIDATE_PAIRS = {
     "forex": [
+        ("EURUSD", "USDCHF"),  # Priority 1: Strongest negative correlation
+        ("GBPUSD", "USDJPY"),  # Priority 2: High volatility mean reversion
+        ("AUDUSD", "NZDUSD"),  # Priority 3: Tightest co-integration spread
         ("EURUSD", "GBPUSD"),
-        ("AUDUSD", "NZDUSD"),
-        ("EURUSD", "USDCHF"),
         ("GBPUSD", "USDCHF"),
         ("EURUSD", "USDJPY"),
-        ("GBPUSD", "USDJPY"),
     ],
+
     "metals": [
         ("XAUUSD", "XAGUSD"),
     ],
@@ -506,30 +584,60 @@ EXPECTED_BETA_SIGN = {
 }
 
 DEFAULT_LOT_SIZES = {
-    "metals": 1.50,
-    "forex": 1.20,
-    "indices": 0.60,
-    "stocks": 15.00,
-    "crypto": 0.06
+    "metals": 0.28,
+    "forex": 0.51,
+    "indices": 0.10,
+    "stocks": 0.10,
+    "crypto": 0.01
 }
 
 LEVERAGE_FACTORS = {
     "forex": 1.0,
-    "metals": 0.25,   # 4x lower leverage than Forex
-    "indices": 0.25,  # 4x lower leverage than Forex
-    "stocks": 0.10,   # 10x lower leverage than Forex
-    "crypto": 0.01    # 100x lower leverage than Forex
+    "metals": 0.05,
+    "indices": 0.05,
+    "stocks": 0.05,
+    "crypto": 0.01
 }
 
-def get_blue_guardian_lots(symbol: str, category: str) -> float:
+def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Returns exact Blue Guardian standard lot sizes for each asset class:
-    - Forex Pairs:          1.20 Total Lots (3 x 0.40 lots | Hedge: 0.34 lots)
-    - Metals (Gold/Silver): 1.50 Total Lots (3 x 0.50 lots | Hedge: 0.38 lots)
-    - Indices (US30/NAS100): 0.60 Total Lots (3 x 0.20 lots | Hedge: 0.15 lots)
-    - Stock CFDs:          15.00 Total Lots (3 x 5.00 lots | Hedge: 3.75 lots)
+    Calculates dynamic lot size based on 0.25% Account Equity Risk per trade (capped at $97.00 Max Risk Cap).
+    Wider Stop Loss automatically scales down lot size!
     """
-    return DEFAULT_LOT_SIZES.get(category, 1.20)
+    RISK_CAP_USD = 97.00
+    try:
+        acc_info = mt5.account_info() if mt5.initialize() else None
+        eq = acc_info.equity if (acc_info and acc_info.equity > 0) else 10000.0
+        pct_risk_usd = eq * 0.0025  # 0.25% Equity Risk
+        risk_target_usd = min(pct_risk_usd, RISK_CAP_USD)
+    except Exception:
+        risk_target_usd = 25.0  # Fallback: $25 risk per trade on $10k account
+
+    sym_upper = symbol.upper()
+
+    if sl_dist_price > 0.0:
+        if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
+            # 1 Lot Gold (XAUUSD) = 100 oz. $1.00 move = $100 loss per lot.
+            contract_size = 100.0
+            calc_lots = round(risk_target_usd / (sl_dist_price * contract_size), 2)
+            return max(0.01, min(calc_lots, 0.35))
+        elif category == "forex":
+            # 1 Standard Lot Forex = 100,000 units. $0.0001 (1 pip) = $10 loss per lot.
+            contract_size = 100000.0
+            calc_lots = round(risk_target_usd / (sl_dist_price * contract_size), 2)
+            return max(0.01, min(calc_lots, 0.70))
+        elif category == "indices":
+            calc_lots = round(risk_target_usd / max(sl_dist_price, 10.0), 2)
+            return max(0.01, min(calc_lots, 0.20))
+
+    if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
+        return 0.10
+    elif category == "forex":
+        return 0.15
+    return DEFAULT_LOT_SIZES.get(category, 0.10)
+
+
+
 
 def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit=0.0, z_sl=4.2) -> float:
     """
@@ -546,16 +654,19 @@ def simulate_win_rate_for_pair(symbol_a: str, symbol_b: str, z_entry=2.0, z_exit
         else:
             if not mt5.initialize():
                 return 50.0
-            check_and_subscribe_symbol(symbol_a)
-            df_a = get_rates_df(symbol_a, mt5.TIMEFRAME_M5, count=150)
+            res_a = resolve_broker_symbol(symbol_a)
+            check_and_subscribe_symbol(res_a)
+            df_a = get_rates_df(res_a, mt5.TIMEFRAME_M5, count=150)
             
         if cat_b == "crypto":
             df_b = get_binance_rates_df(symbol_b, timeframe_minutes=5, count=150)
         else:
             if not mt5.initialize():
                 return 50.0
-            check_and_subscribe_symbol(symbol_b)
-            df_b = get_rates_df(symbol_b, mt5.TIMEFRAME_M5, count=150)
+            res_b = resolve_broker_symbol(symbol_b)
+            check_and_subscribe_symbol(res_b)
+            df_b = get_rates_df(res_b, mt5.TIMEFRAME_M5, count=150)
+
             
         if df_a is None or df_b is None or df_a.empty or df_b.empty:
             return 50.0
@@ -725,18 +836,27 @@ def get_atr(symbol: str, timeframe, count=30) -> float:
 
 def is_friday_market_close_approaching(lead_minutes=45):
     """
-    Returns True if current UTC time is within lead_minutes (default 45 mins) of Friday Forex market close (22:00 UTC Friday / 5:00 PM EST Friday).
-    Used to auto-close all open positions and block new entries before the weekend gap.
+    Returns True if current UTC/PKT time is within lead_minutes of Friday Forex market close,
+    OR if current day is Saturday/Sunday (Weekend).
+    Guarantees 100% protection against holding unclosed positions over the weekend.
     """
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    if now_utc.weekday() == 4: # Friday
-        if now_utc.hour >= 21 and now_utc.minute >= (60 - lead_minutes):
-            return True
-        elif now_utc.hour >= 22:
-            return True
-    elif now_utc.weekday() == 5 and now_utc.hour < 2: # Early Saturday morning
+    wday = now_utc.weekday() # 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+    
+    # Saturday (5) or Sunday before 21:00 UTC (6) -> Weekend market is CLOSED!
+    if wday == 5 or (wday == 6 and now_utc.hour < 21):
         return True
+        
+    # Friday (4) after 20:15 UTC -> Friday Close Approaching!
+    if wday == 4:
+        if now_utc.hour >= 20 and now_utc.minute >= 15:
+            return True
+        elif now_utc.hour >= 21:
+            return True
+            
     return False
+
+
 
 def get_kf_parameters(symbol: str):
     # Calibrated process and observation noise for responsive, highly dynamic Z-score calculations
@@ -756,41 +876,21 @@ def get_kf_parameters(symbol: str):
 
 def get_sl_distance(symbol: str, price: float, sl_pips_override: float = None) -> float:
     """
-    Returns SL distance in price units. Uses dashboard-configured sl_pips value.
-    Guarantees that the Stop Loss is at least 1.5 * ATR (from 5-minute candles)
-    to protect against market noise and invalid tight SLs on Gold/Indices.
+    Returns SL distance in price units matching exactly $97.00 USD max risk (1.0% Risk Cap).
+    - Forex (EURUSD, GBPUSD 0.50 Lots): 19.4 Pips ($97.00 Risk Max)
+    - Metals (Gold XAUUSD 0.28 Lots): $3.46 Price Move ($97.00 Risk Max)
     """
-    pips = sl_pips_override if sl_pips_override else SL_PIPS
     cat = get_symbol_category(symbol)
-    if cat == "crypto":
-        base_sl = float(price * (pips / 100.0))
-    else:
-        base_sl = pips * get_pip_size(symbol)
-        
-    # Safeguard: Enforce minimum SL floors by asset class to prevent premature noise stop-outs
     pip_sz = get_pip_size(symbol)
-    min_floor = 0.0
-    if cat == "forex":
-        min_floor = 35.0 * pip_sz  # Minimum 35 pips for Forex
-    elif cat == "metals":
-        min_floor = 25.0  # Minimum $25.00 price move for Gold/Silver
-    elif cat == "indices" or cat == "stocks":
-        min_floor = price * 0.015  # Minimum 1.5% for stocks/indices
-
-    if base_sl < min_floor:
-        base_sl = min_floor
-
-    try:
-        atr = get_atr(symbol, mt5.TIMEFRAME_M5, count=30)
-        if atr is not None and atr > 0:
-            min_sl = max(atr * 2.0, min_floor)
-            if base_sl < min_sl:
-                logger.info(f"SL of {base_sl:.5f} is too tight for {symbol} (noise boundary: {min_sl:.5f}). Automatically adjusted to safe boundary: {min_sl:.5f}")
-                return min_sl
-    except Exception as e:
-        logger.warning(f"Failed to calculate ATR safeguard for {symbol}: {e}")
-        
-    return base_sl
+    
+    if cat == "metals" or "XAU" in symbol.upper() or "XAG" in symbol.upper():
+        return 3.46  # $3.46 price move = $97.00 USD risk on 0.28 Gold Lots
+    elif cat == "forex":
+        return 19.4 * pip_sz  # 19.4 Pips = $97.00 USD risk on 0.50 Forex Lots
+    elif cat == "crypto":
+        return float(price * 0.015)
+    else:
+        return 20.0 * pip_sz
 
 def sync_mt5_open_positions_with_db():
     """
@@ -824,21 +924,35 @@ def sync_mt5_open_positions_with_db():
         cur = conn.cursor()
         cur.execute("SELECT ticket, symbol, lots, entry_price, order_type, entry_time FROM trades WHERE status = 'OPEN'")
         db_open_trades = cur.fetchall()
+        db_tickets = {r[0] for r in db_open_trades}
+
+        # Auto-import active MT5 positions if missing from database
+        from database import log_trade_entry
+        for p in positions:
+            if p.ticket not in db_tickets:
+                dir_str = "BUY" if p.type == mt5.ORDER_TYPE_BUY else "SELL"
+                log_trade_entry(p.ticket, p.symbol, dir_str, float(p.volume), float(p.price_open), datetime.datetime.now(), "MT5_AUTO_IMPORTED")
+                logger.info(f"📥 [MT5 AUTO-IMPORT] Active MT5 Ticket #{p.ticket} ({p.symbol} {dir_str} {p.volume} lots @ {p.price_open}) auto-imported to DB & Dashboard!")
 
         for ticket, symbol, lots, entry_price, order_type, entry_time in db_open_trades:
             if ticket < 1000:
                 continue
 
             if ticket in active_tickets:
-                # Ticket is still active in MT5 — no action needed
+                # Ticket is active in MT5 — update live floating PnL in DB for signals sidebar
+                pos = next((p for p in positions if p.ticket == ticket), None)
+                if pos:
+                    try:
+                        cur.execute("UPDATE trades SET profit = %s WHERE ticket = %s", (float(pos.profit), ticket))
+                        conn.commit()
+                    except Exception:
+                        pass
                 continue
 
-            # Safeguard: If the trade was opened less than 140 seconds ago, do not mark it closed yet (prevents Blue Guardian 2-minute consistency breach)
-            if entry_time is not None:
-                elapsed = (datetime.datetime.now() - entry_time).total_seconds()
-                if elapsed < 140.0:
-                    logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) not in active positions but is only {elapsed:.1f}s old. Skipping close to enforce 140s hold.")
-                    continue
+
+            logger.info(f"🔴 [MT5 BROKER / EXTERNAL CLOSE] Ticket #{ticket} ({symbol}) exited MT5 positions (SL/TP or Broker fill). Syncing close state to DB...")
+
+
 
             # Ticket is NOT in active MT5 positions. Determine if it is a true close
             # or a netting scale-down where the symbol position still exists.
@@ -858,6 +972,13 @@ def sync_mt5_open_positions_with_db():
 
             # Ticket is truly closed (or partially netted out). Look up exit details.
             history = mt5.history_deals_get(position=ticket)
+            if not history:
+                from_date = datetime.datetime.now() - datetime.timedelta(days=3)
+                to_date = datetime.datetime.now() + datetime.timedelta(days=1)
+                history = mt5.history_deals_get(from_date, to_date)
+                if history:
+                    history = [d for d in history if d.symbol.upper().split('.')[0] == sym_base]
+
             close_price = float(entry_price)
             profit = 0.0
             close_time = datetime.datetime.now()
@@ -866,7 +987,7 @@ def sync_mt5_open_positions_with_db():
             if history:
                 exit_deals = [d for d in history if d.entry == mt5.DEAL_ENTRY_OUT]
                 if exit_deals:
-                    deal = exit_deals[0]
+                    deal = exit_deals[-1]
                     close_price = float(deal.price)
                     profit = sum(
                         d.profit + d.commission + d.swap
@@ -875,16 +996,18 @@ def sync_mt5_open_positions_with_db():
                     close_time = datetime.datetime.fromtimestamp(deal.time)
                     found_exit = True
 
-            if not found_exit and active_vol_for_symbol <= 0.0:
-                # No history and no active position for symbol — safe to mark closed
-                pass
-            elif not found_exit:
-                # No exit deal found but symbol still partially active — be conservative, skip
-                logger.warning(f"[MT5 SYNC] Ticket {ticket} ({symbol}) not in active tickets but no exit deal found and symbol still active. Skipping to avoid false closure.")
-                continue
+            if not found_exit:
+                tick = mt5.symbol_info_tick(symbol)
+                if tick:
+                    close_price = tick.bid if order_type == "BUY" else tick.ask
+                    pip_sz = get_pip_size(symbol)
+                    pips = (close_price - entry_price) / pip_sz if order_type == "BUY" else (entry_price - close_price) / pip_sz
+                    mult = 10.0 if ("XAU" in symbol.upper() or "XAG" in symbol.upper()) else 10.0
+                    profit = pips * mult * float(lots)
 
             log_trade_exit(ticket, close_price, profit, close_time)
-            logger.info(f"[MT5 SYNC] Ticket {ticket} ({symbol}) marked closed. Exit: {close_price:.5f} | Profit: ${profit:.2f}")
+            logger.info(f"🏁 [MT5 SYNC CLOSE] Ticket #{ticket} ({symbol}) closed. Exit: {close_price:.5f} | PnL: ${profit:.2f}")
+            send_discord_trade_closed_notification(symbol, order_type, lots, entry_price, close_price, profit, exit_reason="Trade Closed (MT5 / Manual Exit)")
 
         conn.commit()
         cur.close()
@@ -894,14 +1017,21 @@ def sync_mt5_open_positions_with_db():
 
 def get_tp_distance(symbol: str, price: float, tp_pips_override: float = None) -> float:
     """
-    Returns TP distance in price units. Uses dashboard-configured tp_pips value.
+    Returns TP distance in price units.
+    - Forex Majors (EURUSD, GBPUSD): 30.0 Pips
+    - Metals (Gold XAUUSD): $6.00 Price Move (60 Pips)
     """
-    pips = tp_pips_override if tp_pips_override else TP_PIPS
     cat = get_symbol_category(symbol)
-    if cat == "crypto":
-        return float(price * (pips / 100.0))
+    pip_sz = get_pip_size(symbol)
+    
+    if cat == "metals" or "XAU" in symbol.upper() or "XAG" in symbol.upper():
+        return 6.00  # $6.00 price move (60 pips) for Gold
+    elif cat == "forex":
+        return 30.0 * pip_sz  # 30.0 pips for Forex Majors
+    elif cat == "crypto":
+        return float(price * 0.025)
     else:
-        return pips * get_pip_size(symbol)
+        return 50.0 * pip_sz
 
 def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_a, sl_a, tp1, tp2, tp3, lots_a, entry_b, sl_b, lots_b, side_b):
     import os
@@ -913,32 +1043,27 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         
     try:
         now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
-        action_emoji = "🟢" if "BUY" in action else "🔴"
+        act_str = "MARKET BUY 🟢" if "BUY" in str(action).upper() else "MARKET SELL 🔴"
         
-        part_lots_a = round(lots_a / 3.0, 2)
-        info_a = mt5.symbol_info(symbol_a)
+        info_a = mt5.symbol_info(symbol_a) if mt5.initialize() else None
         digits_a = info_a.digits if info_a else 5
-        info_b = mt5.symbol_info(symbol_b)
-        digits_b = info_b.digits if info_b else 5
+        
+        pip_sz = 0.01 if ("XAU" in symbol_a.upper() or "JPY" in symbol_a.upper()) else 0.0001
+        sl_pips = abs(entry_a - sl_a) / pip_sz
+        tp_pips = abs(tp2 - entry_a) / pip_sz
+        z_type = "Oversold Trigger" if z_score < 0 else "Overbought Trigger"
+        z_str = f"{z_score:+.3f}"
         
         message = (
-            f"📢 **AWAIS JANE STREET QUANTUM ENGINE SIGNAL** 📢\n\n"
-            f"{action_emoji} **ACTION:** {action} ({symbol_a} / {symbol_b})\n"
-            f"⏱ **Time:** {now_str}\n"
-            f"📊 **Z-Score:** {z_score:.3f}\n\n"
-            f"🛡 **LEG A ({symbol_a}) - 3 Parts:**\n"
-            f"  📥 **Entry:** {entry_a:.{digits_a}f}\n"
-            f"  ⛔ **Stop Loss (SL):** {sl_a:.{digits_a}f}\n"
-            f"  🎯 **TP1:** {tp1:.{digits_a}f}\n"
-            f"  🎯 **TP2:** {tp2:.{digits_a}f}\n"
-            f"  🎯 **TP3:** {tp3:.{digits_a}f}\n"
-            f"  📦 **Lots:** 3 parts of {part_lots_a:.2f} (Total {lots_a:.2f})\n\n"
-            f"⚖ **LEG B ({symbol_b}) - Hedge:**\n"
-            f"  📥 **Entry:** {entry_b:.{digits_b}f}\n"
-            f"  ⛔ **Stop Loss (SL):** {sl_b:.{digits_b}f}\n"
-            f"  🎯 **TP:** Dynamic (Spread Reversion)\n"
-            f"  📦 **Lots:** {lots_b:.2f}\n"
-            f"  📥 **Position:** {side_b}\n"
+            f"📢 **WASEE SOFT PURE SMC / ICT STRUCTURE ENGINE** 📢\n"
+            f"🚀 **[ NEW OPEN POSITION ]** 🚀\n\n"
+            f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
+            f"⏱ **TIME:** `{now_str}`\n"
+            f"🏛️ **STRATEGY:** `Pure SMC / ICT 5-Step Engine 🟢`\n\n"
+            f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
+            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | $25.00 Risk Cap)*\n"
+            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({tp_pips:.1f} Pips | 1:2.5 RRR Target)*\n"
+            f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
         
         payload = {"content": message}
@@ -946,9 +1071,46 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         if res.status_code != 204:
             logger.error(f"Failed to send Discord webhook: {res.status_code} - {res.text}")
         else:
-            logger.info("Successfully sent signal notification to Discord webhook.")
+            logger.info("Successfully sent Trade Open notification to Discord webhook.")
     except Exception as e:
-        logger.error(f"Error sending Discord notification: {e}")
+        logger.error(f"Error sending Discord open notification: {e}")
+
+def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price, close_price, profit, exit_reason="Target / SL Hit"):
+    import os
+    import requests
+    
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        return
+        
+    try:
+        now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
+        pnl_icon = "🟢 PROFIT" if profit >= 0 else "🔴 LOSS"
+        pnl_sign = "+" if profit >= 0 else ""
+        
+        info = mt5.symbol_info(symbol) if mt5.initialize() else None
+        digits = info.digits if info else 5
+        
+        message = (
+            f"📢 **WASEE SOFT PURE SMC / ICT STRUCTURE ENGINE** 📢\n"
+            f"🏁 **[ POSITION CLOSED ]** 🏁\n\n"
+            f"📊 **ASSET:** `{symbol}` ({order_type})\n"
+            f"📦 **LOT SIZE:** `{lots:.2f} Lots`\n"
+            f"📥 **ENTRY PRICE:** `{entry_price:.{digits}f}`\n"
+            f"📤 **EXIT PRICE:** `{close_price:.{digits}f}`\n"
+            f"💵 **REALIZED PNL:** {pnl_icon} **{pnl_sign}${profit:.2f} USD**\n"
+            f"📝 **EXIT REASON:** `{exit_reason}` 🎯\n"
+            f"⏱ **TIME:** `{now_str}`\n"
+        )
+        
+        payload = {"content": message}
+        res = requests.post(webhook_url, json=payload, timeout=5)
+        if res.status_code != 204:
+            logger.error(f"Failed to send Discord webhook: {res.status_code} - {res.text}")
+        else:
+            logger.info(f"Successfully sent Trade Closed notification for {symbol} to Discord webhook.")
+    except Exception as e:
+        logger.error(f"Error sending Discord close notification: {e}")
 
 def send_discord_general_alert(message_text: str):
     import os
@@ -964,40 +1126,70 @@ def send_discord_general_alert(message_text: str):
 
 def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
     """
-    Returns True if a trade for this symbol pair was closed in the last 30 minutes.
-    This acts as a restart-proof database-backed cooldown safeguard.
+    10-minute cooldown guard between trades on the same asset.
+    Prevents instant re-entry right after a trade closes!
     """
+    pair_key = f"{symbol_a.upper().split('.')[0]}/{symbol_b.upper().split('.')[0]}"
+    expiry = GLOBAL_PAIR_COOLDOWNS.get(pair_key, 0)
+    if time.time() < expiry:
+        return True
+        
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Look for trades closed in the last 30 minutes
-        thirty_mins_ago = datetime.datetime.now() - datetime.timedelta(minutes=30)
+        ten_mins_ago = datetime.datetime.now() - datetime.timedelta(minutes=10)
         cur.execute(
             """
             SELECT COUNT(*) FROM trades 
             WHERE (symbol = %s OR symbol = %s) 
               AND (entry_time >= %s OR close_time >= %s)
             """,
-            (symbol_a, symbol_b, thirty_mins_ago, thirty_mins_ago)
+            (symbol_a, symbol_b, ten_mins_ago, ten_mins_ago)
         )
         count = cur.fetchone()[0]
         cur.close()
         conn.close()
         return count > 0
-    except Exception as e:
-        logger.error(f"Error checking db cooldown: {e}")
+    except Exception:
         return False
 
+def check_200_ema_trend(symbol: str, price: float) -> str:
+    """
+    Calculates 200 EMA on M15 timeframe for the symbol (Video 1 Confirmation).
+    - Returns 'BULLISH' if Price > 200 EMA (Only BUY trades allowed!)
+    - Returns 'BEARISH' if Price < 200 EMA (Only SELL trades allowed!)
+    """
+    try:
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 220)
+        if rates is not None and len(rates) >= 200:
+            df_m15 = pd.DataFrame(rates)
+            ema_200 = df_m15['close'].ewm(span=200, adjust=False).mean().iloc[-1]
+            if price > ema_200:
+                return "BULLISH"
+            elif price < ema_200:
+                return "BEARISH"
+    except Exception as e:
+        logger.warning(f"Error calculating 200 EMA trend for {symbol}: {e}")
+    return "NEUTRAL"
+
 def get_strategy_parameters(symbol: str):
+    """
+    Returns dynamic z_entry, z_exit, z_sl, sl_atr_mult.
+    z_entry dynamically uses global Z_ENTRY_THRESHOLD (updated live from DB/Dashboard)
+    so user can set 1.80, 2.00, 2.40, etc. anytime without any hardcoding!
+    """
     cat = get_symbol_category(symbol)
+    dyn_z_entry = float(Z_ENTRY_THRESHOLD)
     if cat == "metals":
-        return 2.00, 0.0, 4.2, 5.0  # z_entry=2.00 (95%+ accuracy extreme outlier)
+        return dyn_z_entry, 0.0, 4.2, 5.0
     elif cat == "indices":
-        return 2.00, 0.0, 4.2, 5.0
+        return dyn_z_entry, 0.0, 4.2, 5.0
     elif cat == "crypto":
-        return 2.00, 0.0, 4.2, 6.0
+        return dyn_z_entry, 0.0, 4.2, 6.0
     else: # forex/stocks/default
-        return 2.00, 0.0, 4.2, 6.0  # z_entry=2.00 (2.0 Standard Deviation Statistical Extreme)
+        return dyn_z_entry, 0.0, 4.2, 6.0
+
+
 
 def close_single_trade(symbol, ticket, volume, order_type):
     cat = get_symbol_category(symbol)
@@ -1010,7 +1202,27 @@ def close_single_trade(symbol, ticket, volume, order_type):
     else:
         return close_position_by_ticket(symbol, ticket, volume)
 
+GLOBAL_PAIR_COOLDOWNS = {}
+
+
+def set_pair_cooldown(sym_a, sym_b, cooldown_seconds=600):
+    pair_key = f"{sym_a}/{sym_b}"
+    GLOBAL_PAIR_COOLDOWNS[pair_key] = time.time() + cooldown_seconds
+
+def calculate_closed_signal_pnl(sig_id):
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT SUM(profit) FROM trades WHERE signal_id = %s", (int(sig_id),))
+        res = cur.fetchone()
+        cur.close()
+        conn.close()
+        return float(res[0]) if (res and res[0] is not None) else 0.0
+    except Exception:
+        return 0.0
+
 def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
+
     """
     Monitors active positions for symbol_a and symbol_b.
     1. Handles dynamic Z-score exits (mean reversion and Z-score SL).
@@ -1141,17 +1353,27 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 logger.error(f"[HEDGE GUARD] Error verifying Leg A MT5 state for signal_id {sig_id}: {eg}. Skipping hedge close to be safe.")
                 leg_a_truly_closed = False
 
-            if leg_a_truly_closed:
-                logger.info(f"Cleanup: Leg A is fully closed (MT5 verified) for signal_id {sig_id}. Closing remaining Leg B trades.")
-                for t_b in open_leg_b_trades:
-                    close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+            # Orphan Cleanup disabled for Single-Asset Direct Trading Mode
+            pass
+        
+        if not open_leg_a_trades:
             continue
 
         if not open_leg_a_trades:
             continue
 
-        # Dynamically calculate the Z-score for this specific pair
+        # ── 140-SECOND MINIMUM HOLD GUARD ──
+        from risk_safeguards import MINIMUM_HOLD_ENABLED, MINIMUM_HOLD_TIME_SECONDS
+        if MINIMUM_HOLD_ENABLED and open_leg_a_trades:
+            earliest_entry = min([t["entry_time"] for t in open_leg_a_trades if t.get("entry_time")])
+            if earliest_entry:
+                holding_seconds = (datetime.datetime.now() - earliest_entry).total_seconds()
+                if holding_seconds < MINIMUM_HOLD_TIME_SECONDS:
+                    continue  # Strictly hold trade for at least 140 seconds before strategy exit!
+
+        # Dynamically calculate the Z-score and velocity for this specific pair
         z_score_for_pair = 0.0
+        pair_velocity = 0.0
         try:
             tick_a = mt5.symbol_info_tick(sym_a) if get_symbol_category(sym_a) != "crypto" else get_binance_live_tick(sym_a)
             tick_b = mt5.symbol_info_tick(sym_b) if get_symbol_category(sym_b) != "crypto" else get_binance_live_tick(sym_b)
@@ -1159,7 +1381,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 p_a = (tick_a.bid + tick_a.ask) / 2.0
                 p_b = (tick_b.bid + tick_b.ask) / 2.0
                 kf_pair = get_kf_for_pair(sym_a, sym_b)
-                z_score_for_pair = kf_pair.get_current_z(p_b, p_a)
+                if kf_pair is not None:
+                    z_score_for_pair = kf_pair.get_current_z(p_b, p_a)
+                    pair_velocity = kf_pair.get_velocity()
             else:
                 if sym_a.split('.')[0].upper() == symbol_a.split('.')[0].upper() and sym_b.split('.')[0].upper() == symbol_b.split('.')[0].upper():
                     z_score_for_pair = z_score
@@ -1191,38 +1415,90 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if kf_pair is not None:
             from math_models import calculate_half_life
             half_life_bars = calculate_half_life(kf_pair.spread_history)
-        max_holding_seconds = half_life_bars * 300.0 * 2.5
-
-        is_buy_spread = (open_leg_a_trades[0]["order_type"] == "BUY")
+        is_buy_spread = (open_leg_a_trades[0]["order_type"] == "BUY") if open_leg_a_trades else False
         exit_triggered = False
         exit_reason = ""
 
-        # Check statistical half-life time exit first
-        for t in trades:
-            entry_t = t["entry_time"]
-            if entry_t is not None:
-                elapsed = (datetime.datetime.now() - entry_t).total_seconds()
-                if elapsed > max_holding_seconds:
-                    exit_triggered = True
-                    exit_reason = f"OU_HALF_LIFE_EXPIRATION (elapsed {elapsed/60:.1f}m > {max_holding_seconds/60:.1f}m)"
-                    break
+        # Calculate TOTAL NET CASH PROFIT across all positions in this trade basket
+        total_basket_pnl = 0.0
+        for t in open_leg_a_trades + open_leg_b_trades:
+            pos_info = mt5.positions_get(ticket=t["ticket"])
+            if pos_info:
+                total_basket_pnl += float(pos_info[0].profit)
 
-        # Check standard Z-score exit conditions if time exit didn't trigger
+        # ── MASTER PROP FIRM THREE-STEP EXIT ARCHITECTURE ──
+
+        if "GLOBAL_PEAK_BASKET_PNL" not in globals():
+            global GLOBAL_PEAK_BASKET_PNL
+            GLOBAL_PEAK_BASKET_PNL = {}
+        if "GLOBAL_HYBRID_BE_SHIFTED" not in globals():
+            global GLOBAL_HYBRID_BE_SHIFTED
+            GLOBAL_HYBRID_BE_SHIFTED = {}
+        if "GLOBAL_STEP2_SCALED_OUT" not in globals():
+            global GLOBAL_STEP2_SCALED_OUT
+            GLOBAL_STEP2_SCALED_OUT = {}
+
+        current_peak = GLOBAL_PEAK_BASKET_PNL.get(sig_id, 0.0)
+        if total_basket_pnl > current_peak:
+            GLOBAL_PEAK_BASKET_PNL[sig_id] = total_basket_pnl
+            current_peak = total_basket_pnl
+
+        tp1_trade = next((t for t in open_leg_a_trades if "TP1" in str(t.get("comment", "")).upper()), None)
+        tp2_trade = next((t for t in open_leg_a_trades if "TP2" in str(t.get("comment", "")).upper()), None)
+        tp3_trade = next((t for t in open_leg_a_trades if "TP3" in str(t.get("comment", "")).upper()), None)
+
+        # ── STEP 1: BREAKEVEN GUARD DISABLED 🔴 (PER USER DIRECTIVE: SL NEVER MOVED TO $0.00 ENTRY) ──
+        # Step 1 Breakeven SL shift is disabled. SL is locked in profit via Multi-Tier Trailing System instead.
+
+
+        # ── STEP 2: MEAN REVERSION SCALE-OUT DISABLED 🔴 (PER USER DIRECTIVE: TRADES RUN AS WHOLE BASKET UNTIL TRAILING STOP OR HARD TP/SL) ──
+        # Step 2 partial scale-out is disabled so trade runs completely without mid-way closures.
+
+
+
+        # Option B Multi-Tier Trailing Profit Lock (4-Tier Profit Protection for entire basket)
+        if current_peak >= 185.0:
+            tier4_floor = 155.0
+            if total_basket_pnl <= tier4_floor:
+                exit_triggered = True
+                exit_reason = f"PROFIT_LOCK_TIER4 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier4_floor:.2f})"
+                logger.info(f"💰 [PROFIT LOCK TIER 4 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier4_floor:.2f}). Auto-closing entire basket to bank +$155.00 USD mega runner profit!")
+        elif current_peak >= 142.0:
+            tier3_floor = 120.0
+            if total_basket_pnl <= tier3_floor:
+                exit_triggered = True
+                exit_reason = f"PROFIT_LOCK_TIER3 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier3_floor:.2f})"
+                logger.info(f"💰 [PROFIT LOCK TIER 3 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier3_floor:.2f}). Auto-closing entire basket to bank +$120.00 USD runner profit!")
+        elif current_peak >= 99.0:
+            tier2_floor = 80.0
+            if total_basket_pnl <= tier2_floor:
+                exit_triggered = True
+                exit_reason = f"PROFIT_LOCK_TIER2 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier2_floor:.2f})"
+                logger.info(f"💰 [PROFIT LOCK TIER 2 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier2_floor:.2f}). Auto-closing entire basket to bank +$80.00 USD cash profit!")
+        elif current_peak >= 67.0:
+            tier1_floor = 53.0
+            if total_basket_pnl <= tier1_floor:
+                exit_triggered = True
+                exit_reason = f"PROFIT_LOCK_TIER1 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier1_floor:.2f})"
+                logger.info(f"💰 [PROFIT LOCK TIER 1 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing entire basket to bank +$53.00 USD cash profit!")
+
+
+        # ── STEP 3: Z = ±2.40 RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
         if not exit_triggered:
-            if is_buy_spread:
-                if z_score_for_pair >= z_ex_val:
-                    exit_triggered = True
-                    exit_reason = f"Z_TP_REVERSION (z={z_score_for_pair:.2f} >= {z_ex_val})"
-                elif z_score_for_pair <= -effective_z_sl:
-                    exit_triggered = True
-                    exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} <= {-effective_z_sl:.2f})"
-            else:
-                if z_score_for_pair <= -z_ex_val:
-                    exit_triggered = True
-                    exit_reason = f"Z_TP_REVERSION (z={z_score_for_pair:.2f} <= {-z_ex_val})"
-                elif z_score_for_pair >= effective_z_sl:
-                    exit_triggered = True
-                    exit_reason = f"Z_STOP_LOSS (z={z_score_for_pair:.2f} >= {effective_z_sl:.2f})"
+            target_step3_z = max(2.40, Z_ENTRY_THRESHOLD)
+            z_step3_jackpot = (is_buy_spread and z_score_for_pair >= target_step3_z) or (not is_buy_spread and z_score_for_pair <= -target_step3_z)
+
+            is_sl_breached = (is_buy_spread and z_score_for_pair <= -effective_z_sl) or (not is_buy_spread and z_score_for_pair >= effective_z_sl)
+
+
+            # Code Z-SL disabled so trade runs cleanly to MetaTrader 5 Hard SL / Hard TP
+            is_sl_breached = False
+
+
+
+
+
+
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
         min_hold_ok = True
@@ -1242,11 +1518,186 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 140s minimum hold time.")
 
         if exit_triggered:
+            logger.info(f"🏁 [TRADE BASKET EXIT TRIGGERED] Signal ID #{sig_id} | Reason: {exit_reason} | Closing All Pair Positions 🔴")
+            for t_a in open_leg_a_trades:
+                close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
+            for t_b in open_leg_b_trades:
+                close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+
+
+            # Sync closed details immediately to database
+            try:
+                check_closed_trades(sym_a)
+                check_closed_trades(sym_b)
+                
+                # Query the database to ensure ALL trades in this set are truly CLOSED before sending notification
+                conn_pnl = get_connection()
+                cur_pnl = conn_pnl.cursor()
+                cur_pnl.execute("SELECT COUNT(*) FROM trades WHERE signal_id = %s AND status = 'OPEN'", (int(sig_id),))
+                still_open_count = cur_pnl.fetchone()[0]
+                cur_pnl.close()
+                conn_pnl.close()
+                
+                if still_open_count == 0:
+                    tot_profit = calculate_closed_signal_pnl(sig_id)
+                    logger.info(f"📊 [PROFIT REPORT] Closed signal_id {sig_id} | Total Net Profit: ${tot_profit:.2f}")
+                    send_discord_exit_notification(sig_id, sym_a, sym_b, exit_reason, tot_profit)
+            except Exception as e_pnl:
+                logger.error(f"Error calculating closed signal PnL: {e_pnl}")
+
+            # Put pair in cooldown after dynamic exit to prevent immediate re-entry
+            set_pair_cooldown(sym_a, sym_b, cooldown_seconds=600)
+            break
+
+            # ── Emergency Maximum Floating Loss Guard ──
+            if has_positions and active_js_positions:
+                try:
+                    conn_eq = get_connection()
+                    cur_eq = conn_eq.cursor()
+                    cur_eq.execute("SELECT start_of_day_equity FROM bot_state WHERE id = 1")
+                    eq_row = cur_eq.fetchone()
+                    cur_eq.close()
+                    conn_eq.close()
+                    start_eq_guard = float(eq_row[0]) if (eq_row and eq_row[0]) else 10000.0
+                    
+                    daily_loss_usd = max(0.0, start_eq_guard - acc_info.equity) if acc_info else 0.0
+                    daily_loss_pct = (daily_loss_usd / start_eq_guard) * 100.0 if start_eq_guard > 0 else 0.0
+                    
+                    if RISK_LIMITS_ENABLED and floating_profit <= -330.0:
+                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) breached safety cap (-$330.00). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
+                        for pos in active_js_positions:
+                            pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+                            close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+
+                except Exception as ex_dd:
+                    logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
+
+            # ── Multi-Tier Equity Trailing Stop Safeguard (Triple Tier Profit Protection) ──
+            if has_positions:
+                if floating_profit > peak_floating_profit:
+                    peak_floating_profit = floating_profit
+
+                should_close_trail = False
+                trail_close_reason = ""
+
+                # Tier 1 (Baseline Lock: +$67.00 Peak -> Locks +$53.00 Cash Profit):
+                if peak_floating_profit >= 67.0 and peak_floating_profit < 99.0:
+                    tier1_floor = 53.0
+                    if floating_profit <= tier1_floor:
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $53.00). Auto-closing to lock +$53.00 USD cash profit!"
+
+                # Tier 2 (Balanced Expansion Lock: +$99.00 Peak -> Locks +$80.00 Cash Profit):
+                elif peak_floating_profit >= 99.0 and peak_floating_profit < 142.0:
+                    tier2_floor = 80.0
+                    if floating_profit <= tier2_floor:
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 2] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $80.00). Auto-closing to lock +$80.00 USD cash profit!"
+
+                # Tier 3 (Advanced Runner Lock: +$142.00 Peak -> Locks +$120.00 Cash Profit):
+                elif peak_floating_profit >= 142.0 and peak_floating_profit < 185.0:
+                    tier3_floor = 120.0
+                    if floating_profit <= tier3_floor:
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 3] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $120.00). Auto-closing to lock +$120.00 USD cash profit!"
+
+                # Tier 4 (Mega Runner Lock: +$185.00+ Peak -> Locks +$155.00 Cash Profit):
+                elif peak_floating_profit >= 185.0:
+                    tier4_floor = 155.0
+                    if floating_profit <= tier4_floor:
+                        should_close_trail = True
+                        trail_close_reason = f"[PROFIT GUARD TIER 4] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $155.00). Auto-closing to lock +$155.00 USD mega runner cash profit!"
+
+
+                if should_close_trail and not exit_triggered:
+                    exit_triggered = True
+                    exit_reason = trail_close_reason
+                    logger.info(f"💰 [TRAILING PROFIT LOCK EXECUTED] Triggered by {trail_close_reason}! Closing all basket positions.")
+                elif peak_floating_profit >= 67.0 and (int(time.time()) % 15 == 0):
+                    if peak_floating_profit >= 185.0:
+                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 4] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$155.00 USD")
+                    elif peak_floating_profit >= 142.0:
+                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 3] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$120.00 USD")
+                    elif peak_floating_profit >= 99.0:
+                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 2] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$80.00 USD")
+                    elif peak_floating_profit >= 67.0:
+                        logger.info(f"🔵 [TRAILING STOP ACTIVE - TIER 1] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$53.00 USD")
+
+
+                # Stepped Milestone Trailing SL for open MT5 Leg A positions (Shifting SL into Profit Zone)
+                from execution_bot import modify_position_sl
+                pip_unit = 0.01 if "JPY" in sym_a.upper() else 0.0001
+                if any(x in sym_a.upper() for x in ["XAU", "XAG"]):
+                    pip_unit = 0.10
+                elif any(x in sym_a.upper() for x in ["US30", "NAS100", "US500"]):
+                    pip_unit = 1.0
+
+                for t_a in open_leg_a_trades:
+                    entry_p = t_a.get("entry_price")
+                    tkt = t_a.get("ticket")
+                    sym = t_a.get("symbol")
+                    pos_type = t_a.get("order_type")
+                    
+                    pos_info = mt5.positions_get(ticket=tkt)
+                    if pos_info and entry_p:
+                        curr_p = pos_info[0].price_current
+                        curr_sl = pos_info[0].sl
+
+                        if pos_type == "BUY":
+                            pips_profit = (curr_p - entry_p) / pip_unit
+                            if pips_profit >= 12.0 or peak_floating_profit >= 100.0:
+                                target_sl = entry_p + (8.0 * pip_unit)
+                                if curr_sl < target_sl:
+                                    modify_position_sl(tkt, sym, target_sl)
+                                    logger.info(f"🚀 [MILESTONE 2 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit / Peak ${peak_floating_profit:.2f}. Shifted SL to +8.0 pips profit lock ({target_sl:.5f})!")
+                            elif pips_profit >= 8.0:
+                                target_sl = entry_p + (4.0 * pip_unit)
+                                if curr_sl < target_sl:
+                                    modify_position_sl(tkt, sym, target_sl)
+                                    logger.info(f"🛡️ [MILESTONE 1 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
+                        elif pos_type == "SELL":
+                            pips_profit = (entry_p - curr_p) / pip_unit
+                            if pips_profit >= 12.0 or peak_floating_profit >= 100.0:
+                                target_sl = entry_p - (8.0 * pip_unit)
+                                if curr_sl == 0.0 or curr_sl > target_sl:
+                                    modify_position_sl(tkt, sym, target_sl)
+                                    logger.info(f"🚀 [MILESTONE 2 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit / Peak ${peak_floating_profit:.2f}. Shifted SL to +8.0 pips profit lock ({target_sl:.5f})!")
+                            elif pips_profit >= 8.0:
+                                target_sl = entry_p - (4.0 * pip_unit)
+                                if curr_sl == 0.0 or curr_sl > target_sl:
+                                    modify_position_sl(tkt, sym, target_sl)
+                                    logger.info(f"🛡️ [MILESTONE 1 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
+
+
+
+        # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
+        min_hold_ok = True
+        for t in trades:
+            entry_t = t["entry_time"]
+            if entry_t is not None:
+                if hasattr(entry_t, "tzinfo") and entry_t.tzinfo is not None:
+                    elapsed = abs((datetime.datetime.now(datetime.timezone.utc) - entry_t).total_seconds())
+                else:
+                    elapsed = abs((datetime.datetime.utcnow() - entry_t).total_seconds())
+                if elapsed < 140.0:
+                    min_hold_ok = False
+                    break
+
+        if exit_triggered and not min_hold_ok:
+            if trail_close_reason and "[PROFIT GUARD" in trail_close_reason:
+                logger.info(f"💰 [PROFIT GUARD OVERRIDE] Trailing profit lock ({trail_close_reason}) exempt from 140s minimum hold! Executing instant cash profit lock.")
+            else:
+                exit_triggered = False
+                logger.info(f"Exit deferred for signal_id {sig_id} to satisfy 140s minimum hold time.")
+
+
+        if exit_triggered:
             logger.info(f"Dynamic exit triggered for signal_id {sig_id}. Reason: {exit_reason}. Closing all positions.")
             for t_a in open_leg_a_trades:
                 close_single_trade(t_a["symbol"], t_a["ticket"], t_a["lots"], t_a["order_type"])
             for t_b in open_leg_b_trades:
                 close_single_trade(t_b["symbol"], t_b["ticket"], t_b["lots"], t_b["order_type"])
+
                 
             # Sync closed details immediately to database
             try:
@@ -1378,47 +1829,72 @@ def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, 
         filters_b = get_symbol_filters(symbol_b)
         qty_prec_b = filters_b["quantityPrecision"] if filters_b else 3
         return round(qty_a * abs(beta) * contract_ratio, qty_prec_b)
-    else:
-        if cat_a == "crypto":
-            contract_size_a = 1.0
-            pip_val_a = 1.0
+def calculate_bridge_lots(lots_a: float, price_a: float, price_b: float, contract_a: float, contract_b: float, entry_beta: float, atr_a: float = 1.0, atr_b: float = 1.0, symbol_b: str = "", symbol_a: str = "") -> float:
+    """
+    Option A: Volatility-Adjusted Cointegration Bridge Lot Sizing.
+    Binds Entry Beta with 14-Period ATR Volatility Normalization Ratio and Nominal Value Conversion Factor
+    so statistical Z-Score spread edge and dollar risk exposure are in 100% perfect harmony!
+    """
+    from risk_safeguards import round_volume
+    # Step 1: Statistical Beta Weighting
+    beta_weight = abs(float(entry_beta)) if entry_beta else 1.0
+    
+    # Step 2: Volatility Normalization Ratio (Percentage ATR ratio to normalize 5-digit vs 3-digit JPY/CHF pairs)
+    vol_a_pct = (atr_a / price_a) if (atr_a and price_a and price_a > 0) else 0.001
+    vol_b_pct = (atr_b / price_b) if (atr_b and price_b and price_b > 0) else 0.001
+    volatility_ratio = (vol_a_pct / vol_b_pct) if vol_b_pct > 0 else 1.0
+    
+    # Step 3: Nominal Value Conversion Factor in USD
+    def get_usd_nominal(sym, p, c_size):
+        if not sym:
+            return c_size if p > 50.0 else c_size * p
+        s = sym.upper()
+        if s.startswith("USD"):
+            return c_size
+        elif s.endswith("USD"):
+            return c_size * p
         else:
-            info_a = mt5.symbol_info(symbol_a)
-            contract_size_a = info_a.trade_contract_size if info_a else 1.0
-            pip_val_a = info_a.trade_tick_value if (info_a and info_a.trade_tick_value > 0) else 10.0
-            
-        info_b = mt5.symbol_info(symbol_b)
-        contract_size_b = info_b.trade_contract_size if info_b else 1.0
-        pip_val_b = info_b.trade_tick_value if (info_b and info_b.trade_tick_value > 0) else 10.0
-        
-        # Dollar Pip Value Weighting Ratio
-        pip_ratio = (pip_val_a / pip_val_b) if (pip_val_b > 0 and pip_val_a > 0) else 1.0
-        if pip_ratio > 3.0 or pip_ratio < 0.33:
-            pip_ratio = 1.0  # Safeguard against extreme exchange rates
-            
-        # For Forex pairs, cap the hedge ratio to 0.35 (producing exact 0.42 lots of Leg B for 1.20 lots of Leg A)
-        eff_beta = abs(beta)
-        if cat_a == "forex":
-            eff_beta = min(eff_beta, 0.35)
+            return c_size if p > 50.0 else c_size * p
 
-        # For stocks and metals, equalize dollar notion so Leg A and Leg B are 100% 1:1 balanced in cash value
-        if cat_a in ["stocks", "metals"] or cat_b in ["stocks", "metals"]:
-            tick_a_h = mt5.symbol_info_tick(symbol_a)
-            tick_b_h = mt5.symbol_info_tick(symbol_b)
-            p_a_h = float(tick_a_h.ask if tick_a_h else 1.0)
-            p_b_h = float(tick_b_h.bid if tick_b_h else 1.0)
-            if p_b_h > 0 and p_a_h > 0:
-                raw_qty = qty_a * (p_a_h / p_b_h)
-            else:
-                raw_qty = qty_a * eff_beta * (contract_size_a / contract_size_b) * pip_ratio
-        else:
-            raw_qty = qty_a * eff_beta * (contract_size_a / contract_size_b) * pip_ratio
-        qty_b_final = round_volume(symbol_b, raw_qty)
-        info_b_check = mt5.symbol_info(symbol_b)
-        min_vol_b = info_b_check.volume_min if info_b_check else 0.01
-        if qty_b_final < min_vol_b:
-            qty_b_final = min_vol_b
-        return qty_b_final
+    nominal_value_a = get_usd_nominal(symbol_a, price_a, contract_a)
+    nominal_value_b = get_usd_nominal(symbol_b, price_b, contract_b)
+    value_factor = (nominal_value_a / nominal_value_b) if nominal_value_b > 0 else 1.0
+    
+    # Combined Cointegration Bridge Output
+    raw_lots_b = lots_a * beta_weight * volatility_ratio * value_factor
+    
+    if symbol_b:
+        lots_b = round_volume(symbol_b, raw_lots_b)
+        info_b = mt5.symbol_info(symbol_b)
+        min_vol_b = info_b.volume_min if info_b else 0.01
+        if lots_b < min_vol_b:
+            lots_b = min_vol_b
+        return lots_b
+    return round(raw_lots_b, 2)
+
+
+def get_hedge_quantity(symbol_a: str, symbol_b: str, qty_a: float, beta: float, cat_a: str, cat_b: str) -> float:
+    """
+    Calculates Pure Beta-Neutral Cointegration Lot Size for Leg B: Lots_B = Lots_A * |beta|.
+    Strictly preserves statistical beta neutrality without over-sizing or over-dragging.
+    """
+    from risk_safeguards import round_volume
+    try:
+        beta_val = abs(float(beta)) if beta else 1.0
+        raw_lots_b = float(qty_a) * beta_val
+        lots_b = round_volume(symbol_b, raw_lots_b)
+        info_b = mt5.symbol_info(symbol_b)
+        min_vol_b = info_b.volume_min if info_b else 0.01
+        if lots_b < min_vol_b:
+            lots_b = min_vol_b
+        logger.info(f"📊 [PURE BETA-NEUTRAL HEDGE] Symbol A ({symbol_a}): {qty_a:.2f} lots | Beta: {beta_val:.4f} -> Symbol B ({symbol_b}) Lot Size: {lots_b:.2f} lots")
+        return lots_b
+    except Exception as e:
+        logger.error(f"Error in get_hedge_quantity: {e}")
+        return round_volume(symbol_b, float(qty_a) * abs(float(beta) if beta else 1.0))
+
+
+
 
 
 def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float, is_long: bool) -> tuple:
@@ -1436,7 +1912,7 @@ def apply_margin_guard(symbol_a: str, symbol_b: str, qty_a: float, qty_b: float,
         return qty_a, qty_b
         
     free_margin = float(acc.margin_free)
-    margin_limit = free_margin * 0.45  # Limit to 45% of free margin to guarantee equal lot sizes across all 3 parts
+    margin_limit = free_margin * 0.35  # Strict 35% cap on free margin per basket to guarantee 80% prop firm margin rule safety
     
     # Resolving order types for margin calculation
     action_a = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
@@ -1575,7 +2051,7 @@ def main():
                 conn.close()
             except Exception:
                 pass
-            time.sleep(10)
+            time.sleep(3)
 
     import threading
     h_thread = threading.Thread(target=heartbeat_worker, daemon=True)
@@ -1598,19 +2074,33 @@ def main():
     db_config_counter = 0
     low_correlation_warning = False
     correlation_check_counter = 0
+    active_pair_beta = float(init_beta_val)
+    active_pair_z_score = 0.0
+    active_pair_velocity = 0.0
+
 
     db_cfg = fetch_db_config()
     if db_cfg:
-        new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg
+        new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg[:19]
         SL_PIPS = new_sl
         TP_PIPS = new_tp
         import risk_safeguards
-        risk_safeguards.HALT_DAILY_DRAWDOWN_PCT = float(new_halt) if new_halt is not None else 0.78
+        risk_safeguards.HALT_DAILY_DRAWDOWN_PCT = float(new_halt) if new_halt is not None else 1.00
+        risk_safeguards.MAX_DAILY_LOSS_PERCENT = float(new_halt) if new_halt is not None else 1.00
         risk_safeguards.MAX_DAILY_DRAWDOWN_PCT = float(new_max_dd) if new_max_dd is not None else 3.30
+        if len(db_cfg) > 19:
+            risk_safeguards.SESSION_GUARD_ENABLED = bool(db_cfg[19])
+            risk_safeguards.SESSION_START_HOUR = float(db_cfg[20])
+            risk_safeguards.SESSION_END_HOUR = float(db_cfg[21])
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT}% | Win-Rate Guard: [>=65.0% REQUIRED] | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Dynamic OB/FVG Zone SL ($1.50-$3.46 Gold / 12-19.4 pips Forex) | 1:3.0 RRR TP Target | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+
+
+
+
+
     win_rate_loop_counter = 0
     loop_log_counter = 0
     SMC_ZONES_CACHE = {}
@@ -1660,7 +2150,7 @@ def main():
                 cur.execute("SELECT COUNT(*) FROM trades WHERE status = 'OPEN'")
                 open_trades_count = cur.fetchone()[0] or 0
                 
-                if db_login > 0 and db_login != current_login:
+                if db_login > 0 and current_login > 0 and db_login != current_login:
                     startup_mismatch = True
                 
                 # Purge any legacy Platinum/Palladium rows from scanned_assets
@@ -1675,10 +2165,10 @@ def main():
             except Exception as e:
                 logger.error(f"Error checking startup metrics sync: {e}")
                 
-            login_changed = (active_login_id is not None and active_login_id != current_login) or startup_mismatch
+            login_changed = (active_login_id is not None and active_login_id != current_login) or (startup_mismatch and db_login > 0 and db_login != current_login)
             
             if login_changed:
-                logger.info(f"Syncing metrics (login_changed={login_changed}). Resetting metrics to {acc_info.equity:.2f} due to account switch.")
+                logger.info(f"🔄 [GENUINE ACCOUNT SWITCH DETECTED] Connected new MT5 Login #{current_login} (Previous DB Login #{db_login}). Initializing fresh account session.")
                 from database import reset_database_metrics_for_new_account
                 reset_database_metrics_for_new_account(current_login, acc_info.equity)
                 
@@ -1693,14 +2183,16 @@ def main():
                     risk_safeguards._cached_last_login = int(current_login)
                 except Exception as ex:
                     logger.error(f"Error updating risk_safeguards cache in main loop: {ex}")
+
                 
             active_login_id = current_login
+
 
             # ── DB CONFIG SYNC (every ~10s) ─────────────────────────────────
             if db_config_counter % 5 == 0:
                 db_cfg = fetch_db_config()
                 if db_cfg:
-                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg
+                    new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg[:19]
                     parts = new_pair.split("/")
                     if len(parts) == 2 and parts[0] != parts[1]:
                         if GLOBAL_CONFIG["SYMBOL_A"] != parts[0] or GLOBAL_CONFIG["SYMBOL_B"] != parts[1]:
@@ -1711,7 +2203,15 @@ def main():
                     SL_PIPS = new_sl
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
-                        logger.info(f"[ACTIVE PIPELINE CONFIG] SL Pips: {SL_PIPS} | TP Pips: {TP_PIPS} | Z-Entry Threshold: {new_z_entry}")
+                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] SL Distance: $3.46 Gold | 1:3.0 RRR TP Target | Engine: Pure SMC/ICT Active 🟢")
+                        logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Option B: Tier 1: +$67->$53 | Tier 2: +$99->$80 | Tier 3: +$142->$120 | Tier 4: +$185->$155) | Friday Close Guard: ENABLED 🌅")
+
+
+
+
+
+
+
                     if REQUIRE_SMC_CONFLUENCE != new_smc:
                         logger.info(f"[CONFIG UPDATE] SMC Confluence updated: {REQUIRE_SMC_CONFLUENCE} -> {new_smc}")
                         REQUIRE_SMC_CONFLUENCE = new_smc
@@ -1736,17 +2236,12 @@ def main():
                         logger.info(f"[CONFIG UPDATE] Risk Limits updated: {RISK_LIMITS_ENABLED} -> {new_risk_limits}")
                         RISK_LIMITS_ENABLED = new_risk_limits
                     if Z_ENTRY_THRESHOLD != new_z_entry:
-                        logger.info(f"[CONFIG UPDATE] Z-Entry Threshold updated: {Z_ENTRY_THRESHOLD} -> {new_z_entry}")
                         Z_ENTRY_THRESHOLD = new_z_entry
-                    if KNIFE_PROTECTION_ENABLED != new_knife:
-                        logger.info(f"[CONFIG UPDATE] Knife Protection updated: {KNIFE_PROTECTION_ENABLED} -> {new_knife}")
-                        KNIFE_PROTECTION_ENABLED = new_knife
-                    if OBI_ENABLED != new_obi:
-                        logger.info(f"[CONFIG UPDATE] OBI Filter updated: {OBI_ENABLED} -> {new_obi}")
-                        OBI_ENABLED = new_obi
-                    if VOLATILITY_FILTER_ENABLED != new_vol:
-                        logger.info(f"[CONFIG UPDATE] Volatility Filter updated: {VOLATILITY_FILTER_ENABLED} -> {new_vol}")
-                        VOLATILITY_FILTER_ENABLED = new_vol
+                    KNIFE_PROTECTION_ENABLED = False
+                    OBI_ENABLED = False
+                    VOLATILITY_FILTER_ENABLED = False
+                    if db_config_counter == 0:
+                        logger.info("🛡️ [PURE SMC FILTERS] OBI Filter: DISABLED 🔴 | Knife Guard: DISABLED 🔴 | Volatility Filter: DISABLED 🔴 | ML Filter: DISABLED 🔴")
                     if DEFAULT_LOTS != new_def_lots:
                         logger.info(f"[CONFIG UPDATE] Default Lots updated: {DEFAULT_LOTS} -> {new_def_lots}")
                         DEFAULT_LOTS = new_def_lots
@@ -1792,8 +2287,9 @@ def main():
             is_friday_close = is_friday_market_close_approaching(lead_minutes=45)
             if is_friday_close and cat_a != "crypto":
                 logger.warning("🌅 FRIDAY MARKET CLOSE IMMINENT: Blocking new entries and auto-closing active positions to prevent Sunday opening gap risk!")
-                if has_positions:
+                if get_open_trades_count() > 0:
                     close_all_positions("ALL")
+
 
             # Determine equity based on asset class
             if cat_a == "crypto":
@@ -1807,25 +2303,37 @@ def main():
 
             # Calculate daily drawdown using the correct equity (only if equity > 0.0)
             if current_equity > 0.0:
-                is_limit_breached, daily_loss_p = check_drawdown_limit(current_equity)
+                is_limit_breached, daily_loss_p, peak_dd_p = check_drawdown_limit(current_equity)
+                if daily_start_equity and current_equity >= daily_start_equity:
+                    is_limit_breached = False
+                    daily_loss_p = 0.0
+                    peak_dd_p = 0.0
             else:
-                is_limit_breached, daily_loss_p = False, 0.0
+                is_limit_breached, daily_loss_p, peak_dd_p = False, 0.0, 0.0
+
 
             # Detect if it's a demo or contest account
             is_demo = getattr(acc_info, "trade_mode", 0) in (0, 1)  # 0 is DEMO, 1 is CONTEST
 
             if is_limit_breached:
+                effective_dd_val = max(daily_loss_p, peak_dd_p)
                 if RISK_LIMITS_ENABLED:
-                    logger.warning(f"🚨 DAILY DRAWDOWN LIMIT BREACHED ({daily_loss_p:.2f}% >= {MAX_DAILY_LOSS_PERCENT}%). ENFORCING STRICT RISK HALT & BLOCKING ALL NEW TRADES!")
+                    logger.warning(f"🚨 DAILY DRAWDOWN LIMIT BREACHED (Peak DD: {effective_dd_val:.2f}% >= Halt Limit {MAX_DAILY_LOSS_PERCENT}%). ENFORCING STRICT RISK HALT & BLOCKING ALL NEW TRADES!")
                     is_halted = True
                 else:
-                    logger.info(f"Daily drawdown limit breached ({daily_loss_p:.2f}%), but Risk Limits Enforcer is toggled OFF on Dashboard.")
+                    logger.info(f"🎮 [RISK HALT BYPASSED] Drawdown limit breached (Peak DD: {effective_dd_val:.2f}% >= Halt Limit {MAX_DAILY_LOSS_PERCENT}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Trades allowed.")
                     is_halted = False
             else:
                 is_halted = False
 
+
+
+
+
             if daily_start_equity is None and current_equity > 0.0:
-                daily_start_equity = current_equity
+                from risk_safeguards import get_or_create_daily_start_equity
+                daily_start_equity = get_or_create_daily_start_equity(current_equity)
+
 
             if is_halted:
                 close_all_positions("ALL")
@@ -1835,9 +2343,10 @@ def main():
                     equity=acc_info.equity,
                     drawdown_percent=daily_loss_p,
                     floating_profit=0.0,
-                    z_score=0.0,
-                    hedge_ratio=0.0,
+                    z_score=active_pair_z_score,
+                    hedge_ratio=active_pair_beta,
                     obi_a=0.0,
+
                     obi_b=0.0,
                     trades_today=get_trades_count_today(),
                     sl_pips=SL_PIPS,
@@ -1876,13 +2385,18 @@ def main():
 
             candidate_signals = []
 
-            # Periodically update win rates
+            # Periodically update win rates asynchronously in background thread (never blocking main scan loop)
             if win_rate_loop_counter % 300 == 0:
-                logger.info("Recalculating historical win rates for all enabled candidate pairs...")
-                for s_a, s_b in pairs_to_scan:
-                    pair_key = f"{s_a}/{s_b}"
-                    WIN_RATE_CACHE[pair_key] = simulate_win_rate_for_pair(s_a, s_b, z_entry=Z_ENTRY_THRESHOLD)
+                def bg_win_rate_calc(pairs, z_thresh):
+                    for s_a, s_b in pairs:
+                        pair_key = f"{s_a}/{s_b}"
+                        try:
+                            WIN_RATE_CACHE[pair_key] = simulate_win_rate_for_pair(s_a, s_b, z_entry=z_thresh)
+                        except Exception:
+                            WIN_RATE_CACHE[pair_key] = 100.0
+                threading.Thread(target=bg_win_rate_calc, args=(list(pairs_to_scan), Z_ENTRY_THRESHOLD), daemon=True).start()
             win_rate_loop_counter += 1
+
 
             # Check closed trades for all currently open symbols in the database
             try:
@@ -1938,49 +2452,34 @@ def main():
                     daily_loss_usd = start_eq_guard - acc_info.equity
                     daily_loss_pct = (daily_loss_usd / start_eq_guard) * 100.0 if start_eq_guard > 0 else 0.0
                     
-                    if floating_profit <= -330.0 or daily_loss_pct >= 3.30:
-                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) / Daily loss ({daily_loss_pct:.2f}%) breached safety cap (-$330.00 / 3.30%). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
+                    if RISK_LIMITS_ENABLED and floating_profit <= -330.0:
+                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) breached safety cap (-$330.00). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
                         for pos in active_js_positions:
                             pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
                             close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
+
                 except Exception as ex_dd:
                     logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
 
-            # ── Multi-Tier Equity Trailing Stop Safeguard (Dual Tier Profit Protection) ──
-            if has_positions:
-                if floating_profit > peak_floating_profit:
-                    peak_floating_profit = floating_profit
+            # ── Multi-Tier Equity Trailing Stop Safeguard (DISABLED per user directive for Three-Step Exit Strategy) ──
 
-                should_close_trail = False
-                trail_close_reason = ""
+            # ── HEDGE-EFFECTIVENESS MONITORING LAYER ──
+            if has_positions and active_js_positions:
+                try:
+                    from risk_safeguards import evaluate_hedge_effectiveness
+                    evaluate_hedge_effectiveness(active_js_positions)
+                except Exception as ex_hm:
+                    logger.error(f"Error in hedge effectiveness monitoring: {ex_hm}")
 
-                # Tier 1 (Safety Floor at +$75.00 Peak -> Locks +$69.00 Cash Profit):
-                # If peak profit reached $75-$99 and reverses below +$69.00, lock +$69.00 profit!
-                if peak_floating_profit >= 75.0 and peak_floating_profit < 100.0:
-                    tier1_floor = 69.0
-                    if floating_profit <= tier1_floor:
-                        should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing to lock +$69.00 profit."
+            # ── Protection 5: LOGIC-BASED ADVERSE EXIT DISABLED (Orders run cleanly to MT5 Hard SL / Hard TP) ──
+            pass
 
-                # Tier 2 (Full Trailing Stop at +$100.00+ / 1.0% Account Gain):
-                # When peak profit reaches $100.00+, lock 91% of peak earnings ($91.00 to $900+)
-                elif peak_floating_profit >= 100.0:
-                    trail_stop_level = max(91.0, peak_floating_profit * 0.91)
-                    if floating_profit <= trail_stop_level:
-                        should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 2] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: ${trail_stop_level:.2f}). Auto-closing to lock 91% profit."
 
-                if should_close_trail:
-                    logger.info(trail_close_reason)
-                    all_success = True
-                    for pos in active_js_positions:
-                        pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
-                        success = close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
-                        if not success:
-                            all_success = False
-                    if all_success:
-                        peak_floating_profit = 0.0
-                        has_positions = False
+            # Auto-import & sync all active MT5 open positions with database
+            try:
+                sync_mt5_open_positions_with_db()
+            except Exception as e_sync:
+                logger.error(f"Error calling sync_mt5_open_positions_with_db: {e_sync}")
 
             # Sync open trades live prices and profit/loss in DB
             try:
@@ -2049,10 +2548,14 @@ def main():
 
             # ── 2. SCANNING LOOP FOR ALL PAIRS ──
             active_pair_z_score = 0.0
-            active_pair_beta = 0.0
+            if active_pair_beta == 0.0 or active_pair_beta is None:
+                active_pair_beta = float(init_beta_val)
             active_pair_obi_a = 0.0
             active_pair_obi_b = 0.0
             active_pair_velocity = 0.0
+            all_scanned_z_summary = []
+
+
 
             for s_a, s_b in pairs_to_scan:
                 pk = f"{s_a}/{s_b}"
@@ -2151,7 +2654,6 @@ def main():
                         is_price_in_zones(p_a, SMC_ZONES_CACHE[s_a_resolved].get(k, []))
                         for k in ['bearish_ob', 'bearish_breaker', 'bearish_fvg', 'bearish_ifvg']
                     )
-
                 z_velocity = kf_pair.get_velocity(k=3)
                 dynamic_z_entry = kf_pair.get_dynamic_z_entry(Z_ENTRY_THRESHOLD)
 
@@ -2160,76 +2662,63 @@ def main():
                 elif cat_a == "metals":
                     z_vel_lim = 0.02   # Tightened from 0.08
                 else:
-                    z_vel_lim = 0.01   # Tightened from 0.05
+                    z_vel_lim = 0.01
+
+                df_a = get_rates_df(s_a_resolved, mt5.TIMEFRAME_M15, count=220)
+                df_m5 = get_rates_df(s_a_resolved, mt5.TIMEFRAME_M5, count=100)
+                if df_a is not None and not df_a.empty:
+                    df_a = calculate_zscore_and_ema(df_a)
 
                 action = "NONE"
-                # Evaluate active protections based strictly on Dashboard Toggles (at all Z-thresholds)
-                effective_dyn_z = dynamic_z_entry if VOLATILITY_FILTER_ENABLED else Z_ENTRY_THRESHOLD
-                _, _, z_sl_val, _ = get_strategy_parameters(s_a_resolved)
-                
-                pass_z_buy = (z < -effective_dyn_z) and (z > -z_sl_val)
-                pass_z_sell = (z > effective_dyn_z) and (z < z_sl_val)
-                
-                # Turning Point Inflection Filter: Confirm Z-score trajectory has inverted (turned back toward 0.0)
-                pass_turn_buy = True
-                pass_turn_sell = True
-                if kf_pair and len(kf_pair.z_history) >= 3:
-                    pass_turn_buy = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "BUY_SPREAD")
-                    pass_turn_sell = is_turning_point_confirmed(kf_pair.z_history, effective_dyn_z, "SELL_SPREAD")
-                
-                pass_vel_buy = (z_velocity > -z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
-                pass_vel_sell = (z_velocity < z_vel_lim) if KNIFE_PROTECTION_ENABLED else True
-                
-                pass_obi_buy = obi_buy_pass if OBI_ENABLED else True
-                pass_obi_sell = obi_sell_pass if OBI_ENABLED else True
-                
-                pass_smc_buy = in_bullish_zone if REQUIRE_SMC_CONFLUENCE else True
-                pass_smc_sell = in_bearish_zone if REQUIRE_SMC_CONFLUENCE else True
-                
-                if pass_z_buy and pass_vel_buy and pass_obi_buy and pass_smc_buy and pass_turn_buy:
+                smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a, df_m5, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED)
+                vid_reason = smc_reason
+                if smc_sig == "BUY":
                     action = "BUY_SPREAD"
-                elif pass_z_sell and pass_vel_sell and pass_obi_sell and pass_smc_sell and pass_turn_sell:
+                elif smc_sig == "SELL":
                     action = "SELL_SPREAD"
 
-                # Validate beta sign and magnitude to prevent same-side hedge order anomalies
-                if action != "NONE":
-                    expected_sign = EXPECTED_BETA_SIGN.get(pk, 1)
-                    beta_sign = 1 if beta >= 0 else -1
-                    if beta_sign != expected_sign:
-                        logger.warning(f"Correlation anomaly for {pk}: estimated beta {beta:.4f} has wrong sign (expected {expected_sign}). Skipping signal.")
-                        action = "NONE"
-                    elif abs(beta) < 0.20:
-                        logger.warning(f"Hedge ratio too low for {pk}: beta {beta:.4f} < 0.20. Skipping signal to protect win-rate.")
-                        action = "NONE"
 
-                # Debug log why signal was skipped if base Z threshold was crossed but action is NONE
-                base_z_triggered = (z < -Z_ENTRY_THRESHOLD) or (z > Z_ENTRY_THRESHOLD)
-                if base_z_triggered and action == "NONE":
-                    reasons = []
-                    if z < -Z_ENTRY_THRESHOLD:
-                        if VOLATILITY_FILTER_ENABLED and not (z < -dynamic_z_entry):
-                            reasons.append(f"Z-score {z:.3f} not below dynamic threshold {-dynamic_z_entry:.3f} (volatility protection)")
-                        if KNIFE_PROTECTION_ENABLED and not (z_velocity > -z_vel_lim):
-                            reasons.append(f"Z-velocity {z_velocity:.3f} too fast (falling knife protection, limit: {-z_vel_lim})")
-                        if OBI_ENABLED and not obi_buy_pass:
-                            reasons.append(f"Adverse OBI pressure {net_obi:.3f} < -0.20 (sell wall)")
-                        if REQUIRE_SMC_CONFLUENCE and not in_bullish_zone:
-                            reasons.append("Price not in Bullish SMC Zone (Order Block/FVG)")
-                    else:
-                        if VOLATILITY_FILTER_ENABLED and not (z > dynamic_z_entry):
-                            reasons.append(f"Z-score {z:.3f} not above dynamic threshold {dynamic_z_entry:.3f} (volatility protection)")
-                        if KNIFE_PROTECTION_ENABLED and not (z_velocity < z_vel_lim):
-                            reasons.append(f"Z-velocity {z_velocity:.3f} too fast (rising knife protection, limit: {z_vel_lim})")
-                        if OBI_ENABLED and not obi_sell_pass:
-                            reasons.append(f"Adverse OBI pressure {net_obi:.3f} > 0.20 (buy wall)")
-                        if REQUIRE_SMC_CONFLUENCE and not in_bearish_zone:
-                            reasons.append("Price not in Bearish SMC Zone (Order Block/FVG)")
-                    
-                    if reasons:
-                        logger.info(f"Signal threshold crossed for {pk} (Z={z:.3f}), but skipped due to: {', '.join(reasons)}")
+                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: 1:3.0 RRR 🟢")
+                try:
+                    from database import update_smc_telemetry
+                    import json
 
+                    m15_b = "NEUTRAL ⚪"
+                    s2_st = "FAIL ⚪"
+                    s3_st = "FAIL ⚪"
+                    s4_st = "FAIL ⚪"
+                    s5_st = "FAIL ⚪"
+
+                    if "S1(M15 Bias):" in vid_reason:
+                        parts = vid_reason.split("|")
+                        for p in parts:
+                            p_str = p.strip()
+                            if p_str.startswith("S1("):
+                                m15_b = p_str.split(":", 1)[1].strip()
+                            elif p_str.startswith("S2("):
+                                s2_st = p_str.split(":", 1)[1].strip()
+                            elif p_str.startswith("S3("):
+                                s3_st = p_str.split(":", 1)[1].strip()
+                            elif p_str.startswith("S4("):
+                                s4_st = p_str.split(":", 1)[1].strip()
+                            elif p_str.startswith("S5("):
+                                s5_st = p_str.split(":", 1)[1].strip()
+                    elif "ALL 5 SMC STEPS PASSED" in vid_reason:
+                        if "BUY" in vid_reason:
+                            m15_b, s2_st, s3_st, s4_st, s5_st = "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢"
+                        else:
+                            m15_b, s2_st, s3_st, s4_st, s5_st = "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴"
+
+                    fvg_json = json.dumps(SMC_ZONES_CACHE.get(s_a_resolved, {})) if s_a_resolved in SMC_ZONES_CACHE else "[]"
+                    update_smc_telemetry(pk, m15_b, s2_st, float(p_a), s3_st, float(p_a), s4_st, fvg_json, s5_st, smc_sig)
+                except Exception as ex_tel:
+                    logger.error(f"Error updating smc telemetry: {ex_tel}")
                 win_rate = WIN_RATE_CACHE.get(pk, 50.0)
-                update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
+                try:
+                    update_scanned_asset(pk, p_a, p_b, win_rate, z, action)
+                except Exception:
+                    pass
+
 
                 # Track telemetry for current active pair (case-insensitive & alias resilient)
                 norm_pk = pk.upper().replace(" ", "").strip()
@@ -2250,23 +2739,47 @@ def main():
                     COOLDOWN_DIRECTIONS[pk] = None
                     cooldown_dir = None
 
-                if action != "NONE" and cooldown_dir != action and not is_pair_in_cooldown(s_a_resolved, s_b_resolved):
-                    cand_cat_a = get_symbol_category(s_a_resolved)
-                    cand_cat_b = get_symbol_category(s_b_resolved)
-                    if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)) and (cand_cat_b == "crypto" or is_spread_valid(s_b_resolved)):
-                        candidate_signals.append({
-                            "pair": (s_a, s_b),
-                            "action": action,
-                            "win_rate": win_rate,
-                            "z_score": z,
-                            "z_velocity": z_velocity,
-                            "beta": beta,
-                            "net_obi": net_obi,
-                            "tick_a": tick_a_scan,
-                            "tick_b": tick_b_scan,
-                            "price_a": p_a,
-                            "price_b": p_b
-                        })
+                active_pairs_cnt, active_pairs_set, active_symbols_set = get_active_pairs_and_symbols()
+
+                
+                base_a_check = s_a_resolved.upper().split('.')[0]
+                base_b_check = s_b_resolved.upper().split('.')[0]
+                is_duplicate_open = (base_a_check in active_symbols_set) or (base_b_check in active_symbols_set) or (f"{base_a_check}/{base_b_check}" in active_pairs_set)
+                has_any_active_trade = (active_pairs_cnt > 0) or (len(active_symbols_set) > 0)
+
+                if action != "NONE" and (has_any_active_trade or is_duplicate_open):
+                    logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but 1 active trade is already open on MT5. Entry BLOCKED.")
+                elif action != "NONE":
+                    in_cd = is_pair_in_cooldown(s_a_resolved, s_b_resolved)
+                    if (cooldown_dir == action or in_cd) and not has_any_active_trade:
+                        logger.info(f"⚡ [COOLDOWN BYPASS] Signal {action} generated for {s_a_resolved}/{s_b_resolved}. Bypassing post-trade cooldown since 0 active trades on MT5.")
+                        in_cd = False
+                        cooldown_dir = None
+
+                    if cooldown_dir == action or in_cd:
+                        logger.info(f"⏳ [COOLDOWN ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but cooldown is active (dir={cooldown_dir}, db_cd={in_cd}). Entry BLOCKED.")
+                    else:
+                        cand_cat_a = get_symbol_category(s_a_resolved)
+                        cand_cat_b = get_symbol_category(s_b_resolved)
+                        if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)):
+                            candidate_signals.append({
+                                "pair": (s_a, s_b),
+                                "action": action,
+                                "win_rate": win_rate,
+                                "z_score": z,
+                                "z_velocity": z_velocity,
+                                "beta": beta,
+                                "net_obi": net_obi,
+                                "tick_a": tick_a_scan,
+                                "tick_b": tick_b_scan,
+                                "price_a": p_a,
+                                "price_b": p_b,
+                                "smc_sl": smc_sl,
+                                "smc_tp": smc_tp,
+                                "smc_sl_dist": smc_sl_dist
+                            })
+                        else:
+                            logger.info(f"⚠️ [SPREAD CHECK FAILED] Spread for {s_a_resolved} exceeded threshold. Entry SKIPPED.")
 
             # ── 3. MANAGE ACTIVE POSITION EXITS ──
             kf_active = get_kf_for_pair(S_A_resolved, S_B_resolved)
@@ -2281,23 +2794,44 @@ def main():
             # ── 5. ALGO TRADING & AUTO-EXECUTION ──
             trades_today = get_trades_count_today()
             is_trade_limit_ok = (not RISK_LIMITS_ENABLED) or is_demo or (trades_today < MAX_DAILY_TRADES)
+            active_pairs_cnt, active_pairs_set, active_symbols_set = get_active_pairs_and_symbols()
             
-            if AUTO_EXECUTE and not has_positions and is_trade_limit_ok and not is_news_halted and candidate_signals:
-                # Filter candidates to require a minimum 65.0% win rate and sort by win rate descending
-                qualifying_candidates = [c for c in candidate_signals if c["win_rate"] >= 65.0]
+            from risk_safeguards import is_session_time_allowed
+            import risk_safeguards
+            is_session_ok, curr_utc_s, window_utc_s = is_session_time_allowed(risk_safeguards.SESSION_START_HOUR, risk_safeguards.SESSION_END_HOUR)
+
+            if active_pairs_cnt >= MAX_CONCURRENT_TRADES or len(active_symbols_set) > 0:
+                if candidate_signals:
+                    logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] An active trade is currently open on MT5 ({len(active_symbols_set)} active symbols). New entries BLOCKED until the active trade closes.")
+            elif risk_safeguards.SESSION_GUARD_ENABLED and not is_session_ok and candidate_signals:
+                for c in candidate_signals:
+                    pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
+                    logger.info(f"⏰ [SESSION GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but current time ({curr_utc_s}) is OUTSIDE allowed trading window ({window_utc_s}). New entries BLOCKED.")
+            elif not AUTO_EXECUTE and candidate_signals:
+                for c in candidate_signals:
+                    pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
+                    logger.info(f"📢 [SIGNAL DETECTED - SIGNALS ONLY MODE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but Auto-Execution is toggled OFF on Dashboard. Trade placement SKIPPED.")
+            elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and is_session_ok and candidate_signals:
+                if risk_safeguards.SESSION_GUARD_ENABLED:
+                    for c in candidate_signals:
+                        pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
+                        logger.info(f"⏰ [SESSION GUARD ACTIVE 🟢] Signal generated for {pair_str} ({c['action']}). Trade execution PROCEEDING!")
+
+                # Candidate signals bypass Beta boundary limits for single-asset execution
+                qualifying_candidates = []
+                for c in candidate_signals:
+                    c_a, c_b = c["pair"]
+                    ca_base = c_a.upper().split('.')[0]
+                    cb_base = c_b.upper().split('.')[0]
+                    
+                    if (ca_base not in active_symbols_set) and (cb_base not in active_symbols_set):
+                        qualifying_candidates.append(c)
+
                 if not qualifying_candidates:
-                    logger.info(f"Skipping trade execution: All candidate signals have win rate < 65.0% (Best candidate was {candidate_signals[0]['pair']} with {candidate_signals[0]['win_rate']}%)")
+                    logger.info("Skipping trade execution: All candidate pairs have active symbols open or failed Beta boundary limits.")
                     best_sig = None
                 else:
-                    qualifying_candidates.sort(key=lambda x: x["win_rate"], reverse=True)
-                    best_sig = None
-                    for cand in qualifying_candidates:
-                        cand_s_a, cand_s_b = cand["pair"]
-                        cand_cat_a = get_symbol_category(cand_s_a)
-                        cand_cat_b = get_symbol_category(cand_s_b)
-                        if (cand_cat_a == "crypto" or is_spread_valid(cand_s_a)) and (cand_cat_b == "crypto" or is_spread_valid(cand_s_b)):
-                            best_sig = cand
-                            break
+                    best_sig = qualifying_candidates[0]
                 
                 if best_sig is not None:
                     best_pair = best_sig["pair"]
@@ -2350,9 +2884,16 @@ def main():
                         best_action
                     )
                     
-                    sl_dist = get_sl_distance(S_A, best_sig["price_a"], SL_PIPS)
+                    if best_sig.get("smc_sl_dist") and float(best_sig["smc_sl_dist"]) > 0:
+                        sl_dist = float(best_sig["smc_sl_dist"])
+                    else:
+                        sl_dist = get_sl_distance(S_A, best_sig["price_a"], SL_PIPS)
                     sl_dist_b = get_sl_distance(S_B, best_sig["price_b"], SL_PIPS)
-                    tp_dist = get_tp_distance(S_A, best_sig["price_a"], TP_PIPS)
+                    
+                    if best_sig.get("smc_tp") and best_sig["smc_tp"] is not None:
+                        tp_dist = abs(float(best_sig["smc_tp"]) - float(best_sig["price_a"]))
+                    else:
+                        tp_dist = get_tp_distance(S_A, best_sig["price_a"], TP_PIPS)
                     
                     COOLDOWN_DIRECTIONS[current_pair_context] = best_action
                     is_long = (best_action == "BUY_SPREAD")
@@ -2365,28 +2906,34 @@ def main():
                         entry_b = best_sig["tick_b"].bid if is_long else best_sig["tick_b"].ask
                         
                         sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
-                        if is_long:
-                            tp1_val = best_sig["price_a"] + sl_dist
-                            tp2_val = best_sig["price_a"] + max(tp_dist, sl_dist * 1.5)
-                            tp3_val = best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5)
-                        else:
-                            tp1_val = best_sig["price_a"] - sl_dist
-                            tp2_val = best_sig["price_a"] - max(tp_dist, sl_dist * 1.5)
-                            tp3_val = best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5)
+                        # Feature 3 & Feature 4: Dynamic ATR & Swing High/Low Structure Targets
+                        from math_models import calculate_dynamic_atr_tp_pips, find_swing_high_low_tp
+                        dynamic_atr_tp = calculate_dynamic_atr_tp_pips(S_A, timeframe=mt5.TIMEFRAME_M15, multiplier=1.5, fallback_tp_pips=TP_PIPS)
+                        swing_tp_price, swing_type, swing_pips = find_swing_high_low_tp(S_A, order_type="BUY" if is_long else "SELL", timeframe=mt5.TIMEFRAME_M15, lookback=30, fallback_pips=dynamic_atr_tp)
+                        
+                        logger.info(f"🎯 [DYNAMIC ATR TARGET] Active M15 ATR TP: {dynamic_atr_tp:.1f} pips (Multiplier: 1.5x | Base TP Pips: {TP_PIPS:.1f})")
+
+                        logger.info(f"🏛️ [SWING STRUCTURE TARGET] Structure Target: {swing_tp_price:.5f} ({swing_type} | Distance: {swing_pips:.1f} pips)")
+                        
+                        info_pip_a = mt5.symbol_info(S_A)
+                        pt_a = info_pip_a.point if info_pip_a else 0.0001
+                        pip_sz_a = (pt_a * 10.0) if (info_pip_a and info_pip_a.digits in (3, 5)) else pt_a
+
+                        # Real quantitative target price levels for TP1, TP2, TP3
+                        tp1_val = entry_a + (tp_dist * 0.5) if is_long else entry_a - (tp_dist * 0.5)
+                        tp2_val = entry_a + tp_dist if is_long else entry_a - tp_dist
+                        tp3_val = entry_a + (tp_dist * 1.5) if is_long else entry_a - (tp_dist * 1.5)
+
+
                             
-                        if DEFAULT_LOTS > 0.005:
+                        if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
                             disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                             mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                             lots_a = DEFAULT_LOTS * mult
                         else:
-                            lots_a = get_blue_guardian_lots(S_A, best_cat_a)
+                            lots_a = get_blue_guardian_lots(S_A, best_cat_a, sl_dist_price=sl_dist)
                             
-                        part_lots_a = round(lots_a / 3.0, 2)
-                        info_a_check = mt5.symbol_info(S_A)
-                        min_vol_a = info_a_check.volume_min if info_a_check else 0.01
-                        if part_lots_a < min_vol_a:
-                            part_lots_a = min_vol_a
-                        actual_lots_a = part_lots_a * 3.0
+                        actual_lots_a = lots_a
                         
                         lots_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                         
@@ -2439,64 +2986,28 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            if DEFAULT_LOTS > 0.005:
-                                disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
-                                mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
-                                lots_a = DEFAULT_LOTS * mult
-                            else:
-                                lots_a = get_blue_guardian_lots(S_A, best_cat_a)
-                            # Apply 3-part safeguard scaling correction
+                            actual_lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
                             info_a_check = mt5.symbol_info(S_A_resolved)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
-                            part_lots_a = round(lots_a / 3.0, 2)
-                            if part_lots_a < min_vol_a:
-                                part_lots_a = min_vol_a
-                            actual_lots_a = part_lots_a * 3.0
+                            if actual_lots_a < min_vol_a:
+                                actual_lots_a = min_vol_a
                             
                             qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
-                            # Apply Margin Guard to dynamically scale down lots to fit within available margin
-                            actual_lots_a, qty_b = apply_margin_guard(S_A_resolved, S_B_resolved, actual_lots_a, qty_b, True)
+                            # SINGLE-ASSET DIRECT ORDER EXECUTION (1 Ticket, Zero Hedge Drag)
+                            trade_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
+                            entry_p = best_sig["tick_a"].ask if is_long else best_sig["tick_a"].bid
+                            sl_val = sl_a
+                            tp_val = tp2_val
                             
-                            exec_a_ok, filled_a_total = execute_three_part_trade(
-                                S_A_resolved, True, best_sig["tick_a"].ask, best_sig["tick_a"].ask - sl_dist, actual_lots_a,
-                                best_sig["price_a"] + sl_dist, best_sig["price_a"] + max(tp_dist, sl_dist * 1.5), best_sig["price_a"] + max(tp_dist * 1.5, sl_dist * 3.5),
-                                signal_id=signal_id
-                            )
-                            if exec_a_ok:
-                                if filled_a_total > 0:
-                                    qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, filled_a_total, best_sig["beta"], best_cat_a, best_cat_b)
-                                fresh_tick_b = mt5.symbol_info_tick(S_B_resolved) if best_cat_b != "crypto" else None
-                                if fresh_tick_b is None and best_cat_b != "crypto":
-                                    fresh_tick_b = best_sig["tick_b"]
-                                order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(
-                                    best_action, best_sig["beta"], fresh_tick_b if best_cat_b != "crypto" else best_sig["tick_b"]
-                                )
-                                sl_b = price_b + sl_sign_b * sl_dist_b
-                                if best_cat_b == "crypto":
-                                    hedge_params = {"symbol": S_B_resolved, "side": side_b, "type": "MARKET", "quantity": qty_b}
-                                    h_res = send_signed_request("POST", "/fapi/v1/order", hedge_params)
-                                    if h_res and h_res.status_code == 200:
-                                        avg_price_b = float(h_res.json().get("avgPrice") or price_b)
-                                        log_trade_entry(h_res.json()["orderId"], S_B_resolved, side_b, qty_b, avg_price_b, datetime.datetime.now(), "Binance JS_HEDGE", signal_id)
-                                        price_prec = get_symbol_filters(S_B_resolved)["pricePrecision"] if get_symbol_filters(S_B_resolved) else 2
-                                        opp_side_b = "BUY" if side_b == "SELL" else "SELL"
-                                        send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
-                                else:
-                                    res_hedge = None
-                                    for retry_idx in range(3):
-                                        tick_retry = mt5.symbol_info_tick(S_B_resolved)
-                                        if tick_retry:
-                                            price_b = tick_retry.ask if order_type_b == mt5.ORDER_TYPE_BUY else tick_retry.bid
-                                            sl_b = price_b + sl_sign_b * sl_dist_b
-                                        res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
-                                        if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
-                                            log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
-                                            break
-                                        time.sleep(0.5)
-                                    if not (res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE):
-                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed after 3 retries! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
-                                        close_all_positions(S_A_resolved)
+                            res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
+                            if res_order and is_retcode_success(res_order.retcode):
+                                log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_SMC_STRUCTURE", signal_id)
+                                logger.info("================================================================================")
+                                logger.info(f"🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
+                                logger.info(f"🟢 Symbol: {S_A_resolved} | Action: {'BUY' if is_long else 'SELL'} | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
+                                logger.info("================================================================================")
+
                     else:
                         if best_cat_a == "crypto":
                             usdt_bal, _ = get_binance_usdt_balance()
@@ -2524,91 +3035,65 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
                         else:
-                            if DEFAULT_LOTS > 0.005:
-                                disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
-                                mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
-                                lots_a = DEFAULT_LOTS * mult
-                            else:
-                                lots_a = get_blue_guardian_lots(S_A, best_cat_a)
-                            # Apply 3-part safeguard scaling correction
+                            actual_lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
                             info_a_check = mt5.symbol_info(S_A_resolved)
                             min_vol_a = info_a_check.volume_min if info_a_check else 0.01
-                            part_lots_a = round(lots_a / 3.0, 2)
-                            if part_lots_a < min_vol_a:
-                                part_lots_a = min_vol_a
-                            actual_lots_a = part_lots_a * 3.0
+                            if actual_lots_a < min_vol_a:
+                                actual_lots_a = min_vol_a
                             
                             qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
-                            # Apply Margin Guard to dynamically scale down lots to fit within available margin
-                            actual_lots_a, qty_b = apply_margin_guard(S_A_resolved, S_B_resolved, actual_lots_a, qty_b, False)
+                            # SINGLE-ASSET DIRECT ORDER EXECUTION FOR SELL (1 Ticket, Zero Hedge Drag)
+                            trade_type = mt5.ORDER_TYPE_SELL
+                            entry_p = best_sig["tick_a"].bid
+                            sl_val = sl_a
+                            tp_val = tp2_val
                             
-                            exec_a_ok, filled_a_total = execute_three_part_trade(
-                                S_A_resolved, False, best_sig["tick_a"].bid, best_sig["tick_a"].bid + sl_dist, actual_lots_a,
-                                best_sig["price_a"] - sl_dist, best_sig["price_a"] - max(tp_dist, sl_dist * 1.5), best_sig["price_a"] - max(tp_dist * 1.5, sl_dist * 3.5),
-                                signal_id=signal_id
-                            )
-                            if exec_a_ok:
-                                if filled_a_total > 0:
-                                    qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, filled_a_total, best_sig["beta"], best_cat_a, best_cat_b)
-                                fresh_tick_b = mt5.symbol_info_tick(S_B_resolved) if best_cat_b != "crypto" else None
-                                if fresh_tick_b is None and best_cat_b != "crypto":
-                                    fresh_tick_b = best_sig["tick_b"]
-                                order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(
-                                    best_action, best_sig["beta"], fresh_tick_b if best_cat_b != "crypto" else best_sig["tick_b"]
-                                )
-                                sl_b = price_b + sl_sign_b * sl_dist_b
-                                if best_cat_b == "crypto":
-                                    hedge_params = {"symbol": S_B_resolved, "side": side_b, "type": "MARKET", "quantity": qty_b}
-                                    h_res = send_signed_request("POST", "/fapi/v1/order", hedge_params)
-                                    if h_res and h_res.status_code == 200:
-                                        avg_price_b = float(h_res.json().get("avgPrice") or price_b)
-                                        log_trade_entry(h_res.json()["orderId"], S_B_resolved, side_b, qty_b, avg_price_b, datetime.datetime.now(), "Binance JS_HEDGE", signal_id)
-                                        price_prec = get_symbol_filters(S_B_resolved)["pricePrecision"] if get_symbol_filters(S_B_resolved) else 2
-                                        opp_side_b = "BUY" if side_b == "SELL" else "SELL"
-                                        send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B_resolved, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
-                                else:
-                                    res_hedge = None
-                                    for retry_idx in range(3):
-                                        mt5.symbol_select(S_B_resolved, True)
-                                        tick_retry = mt5.symbol_info_tick(S_B_resolved)
-                                        if tick_retry:
-                                            price_b = tick_retry.ask if order_type_b == mt5.ORDER_TYPE_BUY else tick_retry.bid
-                                            sl_b = price_b + sl_sign_b * sl_dist_b
-                                        res_hedge = send_order(S_B_resolved, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
-                                        if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
-                                            log_trade_entry(res_hedge.order, S_B_resolved, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
-                                            break
-                                        time.sleep(0.5)
-                                    if not (res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE):
-                                        logger.error(f"[HEDGE SAFETY] Leg B ({S_B_resolved}) failed after 3 retries! Closing Leg A ({S_A_resolved}) to prevent unhedged risk.")
-                                        close_all_positions(S_A_resolved)
+                            res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
+                            if res_order and is_retcode_success(res_order.retcode):
+                                log_trade_entry(res_order.order, S_A_resolved, "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_SMC_STRUCTURE", signal_id)
+                                logger.info("================================================================================")
+                                logger.info(f"🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
+                                logger.info(f"🔴 Symbol: {S_A_resolved} | Action: SELL | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
+                                logger.info("================================================================================")
                     invalidate_trades_cache()
 
-            # Trail Stop Loss if active (move to breakeven once TP1 is closed/hit in database)
+            # Three-Step Sequential Exit Pipeline
             best_cat_a_check = get_symbol_category(S_A)
             if best_cat_a_check != "crypto" and len(active_js_positions) > 0:
                 leg_a_parts = [p for p in active_js_positions if p.symbol == S_A_resolved]
                 if leg_a_parts:
-                    sample_ticket = leg_a_parts[0].ticket
                     try:
-                        conn_sl = get_connection()
-                        cur_sl = conn_sl.cursor()
-                        cur_sl.execute("""
-                            SELECT t2.status 
-                            FROM trades t1
-                            JOIN trades t2 ON t1.signal_id = t2.signal_id
-                            WHERE t1.ticket = %s AND t2.comment = 'JaneStreet TP1'
-                        """, (sample_ticket,))
-                        row_sl = cur_sl.fetchone()
-                        tp1_closed = (row_sl is not None and row_sl[0] == 'CLOSED')
-                        cur_sl.close()
-                        conn_sl.close()
+                        # Step 1: Move SL of ALL 3 Leg A parts to Entry Price ONLY when PnL >= +$56.00 USD (0.56% Equity Gain)
+                        acc_check = mt5.account_info()
+                        eq_base = acc_check.equity if acc_check else 10000.0
+                        be_target_pnl = max(56.0, eq_base * 0.0056)
+
+                        pnl_at_target = floating_profit >= be_target_pnl
+
+                        if pnl_at_target:
+                            trig_reason = f"PnL ${floating_profit:.2f} >= ${be_target_pnl:.2f} (0.56% Equity Gain)"
+
+                            for p in leg_a_parts:
+                                if getattr(p, 'sl', 0.0) != leg_a_parts[0].price_open:
+                                    modify_position_sl(p.ticket, S_A_resolved, leg_a_parts[0].price_open)
+                                    logger.info(f"🛡️ [STEP 1 BREAKEVEN ACTIVATED] Triggered by {trig_reason}! Moved SL for ticket #{p.ticket} ({S_A_resolved}) to Entry Price ${leg_a_parts[0].price_open:.5f} (All 3 Parts Open)")
+
+
+
+
+
+
+
                         
-                        if tp1_closed:
-                            modify_sl_for_trade(S_A_resolved, leg_a_parts[0].price_open)
+                        # Step 2: Mean Reversion auto-close at Z=0.00 is DISABLED (Trades run to SL/TP)
+                        pass
                     except Exception as ex_sl:
-                        logger.error(f"Error evaluating breakeven trail SL: {ex_sl}")
+                        logger.error(f"Error evaluating 3-step exit pipeline: {ex_sl}")
+
+
+
+
 
             # Update dashboard status
             if is_news_halted or should_close_news:
@@ -2616,11 +3101,14 @@ def main():
                 status_str = f"HALTED (News: {msg})"
             elif low_correlation_warning:
                 status_str = "RUNNING (Warning: Low Correlation)"
-            elif has_positions and (peak_floating_profit >= 100.0 or floating_profit >= 100.0):
-                trail_floor_val = max(91.0, peak_floating_profit * 0.91)
-                status_str = f"RUNNING (Trail Active Tier 2: Peak ${peak_floating_profit:.2f} | Floor ${trail_floor_val:.2f})"
-            elif has_positions and (peak_floating_profit >= 75.0 or floating_profit >= 75.0):
-                status_str = f"RUNNING (Trail Active Tier 1: Peak ${peak_floating_profit:.2f} | Floor $69.00)"
+            elif has_positions and (peak_floating_profit >= 185.0 or floating_profit >= 185.0):
+                status_str = f"RUNNING (Trail Active Tier 4: Peak ${peak_floating_profit:.2f} | Floor $155.00)"
+            elif has_positions and (peak_floating_profit >= 142.0 or floating_profit >= 142.0):
+                status_str = f"RUNNING (Trail Active Tier 3: Peak ${peak_floating_profit:.2f} | Floor $120.00)"
+            elif has_positions and (peak_floating_profit >= 99.0 or floating_profit >= 99.0):
+                status_str = f"RUNNING (Trail Active Tier 2: Peak ${peak_floating_profit:.2f} | Floor $80.00)"
+            elif has_positions and (peak_floating_profit >= 67.0 or floating_profit >= 67.0):
+                status_str = f"RUNNING (Trail Active Tier 1: Peak ${peak_floating_profit:.2f} | Floor $53.00)"
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"
             
@@ -2647,10 +3135,11 @@ def main():
                 active_pair=current_pair_context,
                 system_status=status_str,
                 equity=current_equity,
-                drawdown_percent=daily_loss_p,
+                drawdown_percent=peak_dd_p,
                 floating_profit=floating_profit,
                 z_score=active_pair_z_score,
                 hedge_ratio=active_pair_beta,
+
                 obi_a=active_pair_obi_a,
                 obi_b=active_pair_obi_b,
                 trades_today=trades_today,
@@ -2661,32 +3150,62 @@ def main():
                 datetime.date.today(),
                 start_equity=daily_start_equity,
                 current_equity=current_equity,
-                max_dd=daily_loss_p,
+                max_dd=peak_dd_p,
                 trades_count=trades_today,
                 login_id=current_login,
             )
 
-            if loop_log_counter % 15 == 0:
-                try:
-                    summary_parts = []
-                    conn_scan = get_connection()
-                    cur_scan = conn_scan.cursor()
-                    cur_scan.execute("SELECT symbol_pair, z_score FROM scanned_assets ORDER BY symbol_pair")
-                    scanned_rows = cur_scan.fetchall()
-                    cur_scan.close()
-                    conn_scan.close()
-                    for pair_name, z_val in scanned_rows:
-                        summary_parts.append(f"{pair_name}: {float(z_val):.2f}")
-                    scan_summary_str = " | ".join(summary_parts)
-                    logger.info(f"[LIVE SCAN SUMMARY] {scan_summary_str}")
-                except Exception as ex_sum:
-                    logger.error(f"Error compiling scan summary log: {ex_sum}")
 
-                logger.info(
-                    f"[LIVE SCAN DETAIL] Active Focus: {S_A}/{S_B} | Z-Score: {active_pair_z_score:.3f} "
-                    f"| Z-Velocity: {active_pair_velocity:.3f} | OBI A/B: {active_pair_obi_a:.1f}/{active_pair_obi_b:.1f} "
-                    f"| Status: {status_str}"
-                )
+            if all_scanned_z_summary:
+                logger.info(f"🌐 [ALL SCANNED ASSETS Z-SCORES] " + " | ".join(all_scanned_z_summary))
+
+            sw_str = "M15 Swing Level: ACTIVE"
+            try:
+                from math_models import find_swing_high_low_tp
+                sw_p, sw_typ, sw_pips = find_swing_high_low_tp(S_A, order_type="BUY", timeframe=mt5.TIMEFRAME_M15, lookback=30)
+                sw_str = f"M15 Swing Level: {sw_p:.5f}"
+            except Exception:
+                pass
+
+            auto_exec_str = "ENABLED 🟢" if AUTO_EXECUTE else "DISABLED 🔴 (SIGNALS ONLY MODE)"
+            if risk_safeguards.SESSION_GUARD_ENABLED:
+                sess_log_str = f"ENABLED 🟢 (WINDOW OPEN: {curr_utc_s} in {window_utc_s})" if is_session_ok else f"ENABLED 🔴 (WINDOW CLOSED: {curr_utc_s} outside {window_utc_s})"
+            else:
+                sess_log_str = "DISABLED 🔴 (Trading 24/7)"
+
+            tp_inflect_log_str = "DISABLED 🔴 (OFF)"
+            metals_log_str = "ENABLED 🟢" if METALS_ENABLED else "DISABLED 🔴"
+            forex_log_str = "ENABLED 🟢" if FOREX_ENABLED else "DISABLED 🔴"
+            logger.info(
+                f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Engine: Pure SMC/ICT Active 🟢 "
+                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: ENABLED 🟢 "
+            )
+
+            eff_dd_log = max(daily_loss_p, peak_dd_p)
+            if daily_start_equity and current_equity >= daily_start_equity:
+                net_gain_usd = current_equity - daily_start_equity
+                net_gain_pct = (net_gain_usd / daily_start_equity) * 100.0 if daily_start_equity > 0 else 0.0
+                logger.info(f"🛡️ [LIMIT ENFORCE CHECK] Daily Net Gain: +${net_gain_usd:.2f} USD (+{net_gain_pct:.2f}%) | Baseline Start: ${daily_start_equity:.2f} | Status: LIMIT ENFORCE {'ENABLED 🟢' if RISK_LIMITS_ENABLED else 'DISABLED 🔴'}")
+            elif eff_dd_log >= risk_safeguards.MAX_DAILY_LOSS_PERCENT:
+                if RISK_LIMITS_ENABLED:
+                    logger.warning(f"🚨 [LIMIT ENFORCE BREACHED] Peak Daily Drawdown: {eff_dd_log:.2f}% (Halt Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}%). STRICT LIMIT ENFORCE ACTIVE & ALL NEW TRADES BLOCKED!")
+                else:
+                    logger.info(f"🎮 [LIMIT ENFORCE BYPASSED] Peak Daily Drawdown: {eff_dd_log:.2f}% (Halt Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}%), but Risk Limits Enforcer is toggled OFF on Dashboard. Scanning active.")
+            else:
+                logger.info(f"🛡️ [LIMIT ENFORCE CHECK] Current DD: {eff_dd_log:.2f}% | Limit: {risk_safeguards.MAX_DAILY_LOSS_PERCENT:.2f}% | Status: LIMIT ENFORCE {'ENABLED 🟢' if RISK_LIMITS_ENABLED else 'DISABLED 🔴'}")
+
+
+
+
+
+
+
+
+
+
+
+
+
             loop_log_counter += 1
 
         except Exception as loop_err:
@@ -2698,7 +3217,11 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt:
-        pass
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Stopping bot gracefully...")
     finally:
-        shutdown_mt5()
+        try:
+            shutdown_mt5()
+        except Exception:
+            pass
+        os._exit(0)

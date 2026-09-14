@@ -30,7 +30,7 @@ from execution_bot import execute_three_part_trade, execute_three_part_hedge_tra
 
 
 from smc_indicators import detect_smc_zones, is_price_in_zones
-from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset
+from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset, purge_disabled_category_zones
 from news_guard import check_pair_news_block, check_post_news_stability
 try:
     from binance_execution import (
@@ -199,6 +199,11 @@ def fetch_db_config():
                 save_config(active_pair)
                 logger.info(f"Aligned active_pair with enabled category: {active_pair}")
                 
+            try:
+                purge_disabled_category_zones(forex_enabled=f_on, metals_enabled=m_on, indices_enabled=i_on, stocks_enabled=s_on)
+            except Exception as pe:
+                logger.warning(f"Error purging disabled category zones: {pe}")
+
             cur.close()
             conn.close()
             return (

@@ -56,15 +56,30 @@ router.get("/dashboard", async (req, res) => {
       comment: t.comment ?? null,
     }));
 
-    const activeZones = zoneRows.map((z) => {
-      const meta = ZONE_META[z.zoneType] ?? { label: z.zoneType.toUpperCase(), bullish: true };
-      const dir = meta.bullish ? "BULLISH" : "BEARISH";
-      return {
-        type: `${dir}_${meta.label}`,
-        label: `${meta.bullish ? "🟢" : "🔴"} ${meta.label} · ${z.symbol}`,
-        range: `${Number(z.lowPrice).toFixed(5)}–${Number(z.highPrice).toFixed(5)}`,
-      };
-    });
+    const forexOn = botState?.forexEnabled ?? true;
+    const metalsOn = botState?.metalsEnabled ?? true;
+    const indicesOn = botState?.indicesEnabled ?? true;
+    const stocksOn = botState?.stocksEnabled ?? true;
+
+    const isSymbolEnabled = (sym: string) => {
+      const s = sym.toUpperCase();
+      if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
+      if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
+      if (s.includes("US30") || s.includes("NAS100") || s.includes("US500") || s.includes("GER30") || s.includes("UK100") || s.includes("USTEC")) return indicesOn;
+      return forexOn;
+    };
+
+    const activeZones = zoneRows
+      .filter((z) => isSymbolEnabled(z.symbol))
+      .map((z) => {
+        const meta = ZONE_META[z.zoneType] ?? { label: z.zoneType.toUpperCase(), bullish: true };
+        const dir = meta.bullish ? "BULLISH" : "BEARISH";
+        return {
+          type: `${dir}_${meta.label}`,
+          label: `${meta.bullish ? "🟢" : "🔴"} ${meta.label} · ${z.symbol}`,
+          range: `${Number(z.lowPrice).toFixed(5)}–${Number(z.highPrice).toFixed(5)}`,
+        };
+      });
 
     return res.json({
       systemStatus: botState?.systemStatus ?? "BOT OFFLINE",
@@ -86,14 +101,16 @@ router.get("/dashboard", async (req, res) => {
       activePositions: openPositions,
       recentTrades: recentClosedTrades,
       activeZones,
-      scannedAssets: scannedAssetsRows.map((s) => ({
-        symbolPair: s.symbolPair,
-        priceA: Number(s.priceA ?? 0),
-        priceB: Number(s.priceB ?? 0),
-        winRate: Number(s.winRate ?? 50.0),
-        zScore: Number(s.zScore ?? 0),
-        action: s.action ?? "NONE",
-      })),
+      scannedAssets: scannedAssetsRows
+        .filter((s) => isSymbolEnabled(s.symbolPair))
+        .map((s) => ({
+          symbolPair: s.symbolPair,
+          priceA: Number(s.priceA ?? 0),
+          priceB: Number(s.priceB ?? 0),
+          winRate: Number(s.winRate ?? 50.0),
+          zScore: Number(s.zScore ?? 0),
+          action: s.action ?? "NONE",
+        })),
       botOnline: isOnline,
       autoExecute: botState?.autoExecute ?? true,
       cryptoEnabled: botState?.cryptoEnabled ?? true,

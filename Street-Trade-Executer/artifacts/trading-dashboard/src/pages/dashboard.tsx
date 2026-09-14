@@ -993,21 +993,21 @@ export default function Dashboard() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">SMC Zones · FVG · OB · Breaker</CardTitle>
-                {activeZones.length > 0 && (
+                {selectedAssetZones.length > 0 && (
                   <Badge variant="outline" className="text-[10px] rounded-sm bg-indigo-500/10 text-indigo-400 border-indigo-500/30 font-bold shadow-[0_0_8px_rgba(99,102,241,0.08)]">
-                    {activeZones.length} ACTIVE
+                    {selectedAssetZones.length} ACTIVE ({selectedChartSymbol})
                   </Badge>
                 )}
               </div>
             </CardHeader>
             <CardContent>
-              {activeZones.length === 0 ? (
+              {selectedAssetZones.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-4 text-center border border-dashed border-border rounded">
-                  No active zones — bot writes zones every ~20s when connected
+                  No active zones for {selectedChartSymbol} — bot writes zones every ~20s when connected
                 </div>
               ) : (
                 <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                  {activeZones.map((zone, i) => {
+                  {selectedAssetZones.map((zone, i) => {
                     const bull = zoneBullish(zone.type);
                     const zoneLabel = zone.type.replace("BULLISH_", "").replace("BEARISH_", "");
                     return (
