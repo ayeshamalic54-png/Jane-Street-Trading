@@ -2203,7 +2203,7 @@ def main():
                     SL_PIPS = new_sl
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
-                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] SL Distance: $3.46 Gold | 1:3.0 RRR TP Target | Engine: Pure SMC/ICT Active 🟢")
+                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] SL Distance: $3.46 Gold | 1:2.7 RRR TP Target ($67.50 USD Profit Target) | Engine: Pure SMC/ICT Active 🟢")
                         logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Option B: Tier 1: +$67->$53 | Tier 2: +$99->$80 | Tier 3: +$142->$120 | Tier 4: +$185->$155) | Friday Close Guard: ENABLED 🌅")
 
 
