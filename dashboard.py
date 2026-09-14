@@ -6,7 +6,7 @@ import sys
 import urllib.parse
 import json
 
-PORT = 8080
+PORT = int(os.getenv("PORT", 8080))
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 
 class SafeHandler(http.server.SimpleHTTPRequestHandler):
@@ -65,16 +65,17 @@ def start_server():
     socketserver.TCPServer.allow_reuse_address = True
     
     try:
-        with socketserver.TCPServer(("", PORT), SafeHandler) as httpd:
+        with socketserver.TCPServer(("0.0.0.0", PORT), SafeHandler) as httpd:
             print("\n=========================================")
             print(f"  QUANT ENGINE DASHBOARD SERVER ACTIVE   ")
             print("=========================================")
-            print(f"Dashboard URL: http://localhost:{PORT}/dashboard.html")
-            print("Keep this window open to view live performance updates.")
+            print(f"Dashboard Server bound to 0.0.0.0:{PORT}")
             print("Press Ctrl+C to stop the dashboard server.\n")
             
-            # Automatically launch default browser to view the dashboard
-            webbrowser.open(f"http://localhost:{PORT}/dashboard.html")
+            try:
+                webbrowser.open(f"http://localhost:{PORT}/dashboard.html")
+            except Exception:
+                pass
             
             httpd.serve_forever()
     except KeyboardInterrupt:
