@@ -941,21 +941,29 @@ def get_smc_telemetry(symbol_pair: str) -> dict:
         cur.execute("""
             SELECT symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action, updated_at
             FROM smc_telemetry
-            WHERE symbol_pair = %s
-        """, (symbol_pair,))
+            WHERE symbol_pair = %s OR symbol_pair ILIKE %s
+            ORDER BY updated_at DESC LIMIT 1
+        """, (symbol_pair, f"%{symbol_pair}%"))
         row = cur.fetchone()
+        if not row:
+            cur.execute("""
+                SELECT symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action, updated_at
+                FROM smc_telemetry
+                ORDER BY updated_at DESC LIMIT 1
+            """)
+            row = cur.fetchone()
         cur.close()
         if row:
             return {
-                "symbol_pair": row[0],
-                "m15_bias": row[1] or "NEUTRAL",
-                "sweep_status": row[2] or "FAIL ⚪",
+                "symbol_pair": row[0] or symbol_pair,
+                "m15_bias": row[1] or "NEUTRAL ⚪",
+                "sweep_status": row[2] or "FAIL ⚪ (Scanning)",
                 "sweep_price": float(row[3] or 0.0),
-                "choch_status": row[4] or "FAIL ⚪",
+                "choch_status": row[4] or "FAIL ⚪ (Scanning)",
                 "choch_price": float(row[5] or 0.0),
-                "fvg_status": row[6] or "FAIL ⚪",
+                "fvg_status": row[6] or "FAIL ⚪ (Scanning)",
                 "fvg_bounds_json": row[7] or "[]",
-                "rejection_status": row[8] or "FAIL ⚪",
+                "rejection_status": row[8] or "FAIL ⚪ (Scanning)",
                 "action": row[9] or "NONE",
                 "updated_at": str(row[10]) if row[10] else ""
             }
@@ -966,14 +974,14 @@ def get_smc_telemetry(symbol_pair: str) -> dict:
             conn.close()
     return {
         "symbol_pair": symbol_pair,
-        "m15_bias": "NEUTRAL",
-        "sweep_status": "FAIL ⚪",
+        "m15_bias": "NEUTRAL ⚪",
+        "sweep_status": "FAIL ⚪ (Scanning Sweeps)",
+        "choch_status": "FAIL ⚪ (Scanning CHoCH)",
         "sweep_price": 0.0,
-        "choch_status": "FAIL ⚪",
         "choch_price": 0.0,
-        "fvg_status": "FAIL ⚪",
+        "fvg_status": "FAIL ⚪ (Scanning FVGs)",
         "fvg_bounds_json": "[]",
-        "rejection_status": "FAIL ⚪",
+        "rejection_status": "FAIL ⚪ (Scanning Rejection)",
         "action": "NONE",
         "updated_at": ""
     }
