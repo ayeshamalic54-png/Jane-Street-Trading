@@ -3,6 +3,7 @@ import pandas as pd
 import logging
 import sys
 import os
+import time
 
 logger = logging.getLogger("SMC_Forex_Bot")
 
@@ -66,31 +67,74 @@ def check_and_subscribe_symbol(symbol):
     if symbol in _SUBSCRIBED_SYMBOLS:
         return True
         
-    selected = mt5.symbol_select(symbol, True)
+    resolved = resolve_broker_symbol(symbol)
+    selected = mt5.symbol_select(resolved, True)
     if not selected:
-        logger.error(f"Symbol {symbol} is not available in the Market Watch or is invalid.")
+        selected = mt5.symbol_select(symbol, True)
+        
+    if not selected:
+        logger.info(f"Symbol {symbol} (or broker alias) is not offered by your broker account. Skipping scan for this symbol.")
         return False
         
     # Subscribe to L2 depth of market book
-    book_sub = mt5.market_book_add(symbol)
+    book_sub = mt5.market_book_add(resolved)
     _SUBSCRIBED_SYMBOLS.add(symbol)
+    _SUBSCRIBED_SYMBOLS.add(resolved)
     if book_sub:
-        logger.info(f"Subscribed to Order Book updates for {symbol}")
+        logger.info(f"Subscribed to Order Book updates for {resolved}")
     else:
-        logger.warning(f"Could not subscribe to Order Book for {symbol} (Level-2 depth might be disabled by broker)")
+        logger.info(f"Market Watch active for {resolved} (Level-1 Bid/Ask ticks active; L2 DOM depth not required).")
         
     return True
 
+
+
 def get_rates_df(symbol, timeframe, count=200):
     """Fetches historical price candles and returns them as a pandas DataFrame."""
-    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
-    if rates is None:
-        logger.error(f"Failed to fetch rates for {symbol}. Error: {mt5.last_error()}")
+    resolved = resolve_broker_symbol(symbol)
+    
+    # Ensure symbol is selected in MT5 Market Watch
+    try:
+        mt5.symbol_select(resolved, True)
+        if resolved != symbol:
+            mt5.symbol_select(symbol, True)
+    except Exception:
+        pass
+
+    rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
+    if (rates is None or len(rates) == 0) and resolved != symbol:
+        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
+        
+    if rates is None or len(rates) == 0:
+        time.sleep(0.15)
+        rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
+
+    if rates is None or len(rates) == 0:
+        # Fallback search across all broker symbols for matching base alias (e.g. GOLD, XAUUSD.pro, XAUUSD.m)
+        try:
+            all_symbols = mt5.symbols_get()
+            if all_symbols:
+                target_base = symbol.upper().replace("USD", "").replace("EUR", "")
+                for s_info in all_symbols:
+                    s_name = s_info.name
+                    if symbol.upper() in s_name.upper() or (len(target_base) >= 3 and target_base in s_name.upper()):
+                        mt5.symbol_select(s_name, True)
+                        r_try = mt5.copy_rates_from_pos(s_name, timeframe, 0, count)
+                        if r_try is not None and len(r_try) > 0:
+                            rates = r_try
+                            logger.info(f"Resolved alternative symbol {s_name} for {symbol} candles.")
+                            break
+        except Exception:
+            pass
+
+    if rates is None or len(rates) == 0:
+        logger.info(f"Broker does not offer candles for {symbol} (resolved: {resolved}). Skipping pair scan.")
         return None
         
     df = pd.DataFrame(rates)
     df['time'] = pd.to_datetime(df['time'], unit='s')
     return df
+
 
 def get_live_ticks(symbol):
     """Fetches the latest tick (bid, ask, time) for a symbol."""
@@ -142,8 +186,18 @@ def shutdown_mt5(symbol=None):
     mt5.shutdown()
     logger.info("MT5 connection closed.")
 
+SYMBOL_ALIASES = {
+    "NAS100": ["NAS100", "USTEC", "US100", "NQ100", "NDX100", "NASDAQ"],
+    "US30": ["US30", "DJ30", "WS30", "USIND30", "DOW30"],
+    "US500": ["US500", "SPX500", "SP500", "USA500"],
+    "GER30": ["GER30", "GER40", "DAX30", "DAX40", "DE30", "DE40"],
+    "UK100": ["UK100", "FTSE100", "GB100"],
+    "XAUUSD": ["XAUUSD", "GOLD"],
+    "XAGUSD": ["XAGUSD", "SILVER"],
+}
+
 def resolve_broker_symbol(symbol):
-    """Resolves broker-specific symbol suffixes (e.g. EURUSD.a, EURUSD.m, EURUSD.ecn, XAUUSD.pro)."""
+    """Resolves broker-specific symbol names and suffixes (e.g. NAS100 -> USTEC.m, EURUSD -> EURUSD.a)."""
     try:
         all_symbols = mt5.symbols_get()
         if not all_symbols:
@@ -151,9 +205,22 @@ def resolve_broker_symbol(symbol):
         sym_names = [s.name for s in all_symbols]
         if symbol in sym_names:
             return symbol
+            
+        # Check alias list first (e.g., NAS100 -> USTEC, US100, NQ100)
+        candidates = SYMBOL_ALIASES.get(symbol.upper(), [symbol])
+        
+        for cand in candidates:
+            if cand in sym_names:
+                return cand
+            for s in sym_names:
+                if s.startswith(cand) or cand in s or s.replace('.', '').replace('-', '').upper() == cand.upper():
+                    return s
+                    
+        # General prefix match fallback
         for s in sym_names:
-            if s.startswith(symbol) or symbol in s or s.replace('.', '').replace('-', '') == symbol:
+            if s.startswith(symbol) or symbol in s or s.replace('.', '').replace('-', '').upper() == symbol.upper():
                 return s
     except Exception:
         pass
     return symbol
+
