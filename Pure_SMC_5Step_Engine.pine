@@ -1,14 +1,16 @@
 //@version=5
-indicator("Pure Institutional SMC / ICT 5-Step Engine (1:1 App Sync)", overlay=true, max_boxes_count=100, max_lines_count=100, max_labels_count=100)
+indicator("Pure Institutional SMC / ICT 5-Step Engine (Zone Mitigation & Auto-Delete)", overlay=true, max_boxes_count=100, max_lines_count=100, max_labels_count=100)
 
 // ── 1. INPUT CONFIGURATION ──
-m15_tf      = input.timeframe("15", "M15 Higher Timeframe Bias")
-max_drawings= input.int(25, "Max Active Drawings on Chart", minval=5, maxval=50)
-show_hud    = input.bool(true, "Show 5-Step Telemetry HUD Table")
-show_sweeps = input.bool(true, "Show Liquidity Sweeps")
-show_choch  = input.bool(true, "Show CHoCH / BOS Lines")
-show_fvgs   = input.bool(true, "Show FVG Boxes")
-show_obs    = input.bool(true, "Show Order Blocks (OB)")
+m15_tf        = input.timeframe("15", "M15 Higher Timeframe Bias")
+max_drawings  = input.int(25, "Max Active Drawings on Chart", minval=5, maxval=50)
+mitigate_mode = input.string("Full Fill (Breakthrough)", "Zone Mitigation Mode", options=["Full Fill (Breakthrough)", "Touch (Retest)"])
+show_hud      = input.bool(true, "Show 5-Step Telemetry HUD Table")
+show_sweeps   = input.bool(true, "Show Liquidity Sweeps")
+show_choch    = input.bool(true, "Show CHoCH / BOS Lines")
+show_fvgs     = input.bool(true, "Show FVG Boxes")
+show_obs      = input.bool(true, "Show Order Blocks (OB)")
+show_breakers = input.bool(true, "Show Breaker Blocks (BB)")
 
 // ── 2. M15 MARKET STRUCTURE BIAS ──
 [m15_high, m15_low, m15_close] = request.security(syminfo.tickerid, m15_tf, [high[1], low[1], close[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
@@ -58,8 +60,12 @@ var line[]  sweep_lines  = array.new_line()
 var label[] sweep_labels = array.new_label()
 var line[]  choch_lines  = array.new_line()
 var label[] choch_labels = array.new_label()
-var box[]   fvg_boxes    = array.new_box()
-var box[]   ob_boxes     = array.new_box()
+
+// Active Zone Tracking Arrays for Mitigation/Auto-Delete
+var box[]   zone_boxes   = array.new_box()
+var float[] zone_tops    = array.new_float()
+var float[] zone_bots    = array.new_float()
+var bool[]  zone_is_bull = array.new_bool()
 
 add_line(arr, ln) =>
     array.push(arr, ln)
@@ -71,10 +77,16 @@ add_label(arr, lbl) =>
     if array.size(arr) > max_drawings
         label.delete(array.shift(arr))
 
-add_box(arr, bx) =>
-    array.push(arr, bx)
-    if array.size(arr) > max_drawings
-        box.delete(array.shift(arr))
+add_smc_zone(bx, top_val, bot_val, is_bullish) =>
+    array.push(zone_boxes, bx)
+    array.push(zone_tops, top_val)
+    array.push(zone_bots, bot_val)
+    array.push(zone_is_bull, is_bullish)
+    if array.size(zone_boxes) > max_drawings
+        box.delete(array.shift(zone_boxes))
+        array.shift(zone_tops)
+        array.shift(zone_bots)
+        array.shift(zone_is_bull)
 
 // ── 4. SWEEP DETECTION ON CURRENT BAR ──
 bool sell_sweep = false
@@ -121,37 +133,112 @@ if show_choch and bear_choch
     add_line(choch_lines, ln)
     add_label(choch_labels, lbl)
 
-// ── 6. FVG & ORDER BLOCK ANCHORED BOXES ──
+// ── 6. FVG, ORDER BLOCK & BREAKER CREATION ──
 is_bull_fvg = low > high[2]
 is_bear_fvg = high < low[2]
 is_bull_ob  = close[1] < open[1] and close > high[2]
 is_bear_ob  = close[1] > open[1] and close < low[2]
 
+// Breaker Blocks (Broken Order Blocks)
+var float last_bear_ob_top = na
+var float last_bear_ob_bot = na
+var float last_bull_ob_top = na
+var float last_bull_ob_bot = na
+
+if is_bear_ob
+    last_bear_ob_top := math.max(high[1], low[1])
+    last_bear_ob_bot := math.min(high[1], low[1])
+
+if is_bull_ob
+    last_bull_ob_top := math.max(high[1], low[1])
+    last_bull_ob_bot := math.min(high[1], low[1])
+
+bool is_bull_breaker = not na(last_bear_ob_top) and close > last_bear_ob_top
+bool is_bear_breaker = not na(last_bull_ob_bot) and close < last_bull_ob_bot
+
+if is_bull_breaker
+    last_bear_ob_top := na // Reset once converted
+
+if is_bear_breaker
+    last_bull_ob_bot := na // Reset once converted
+
+// Create FVG Boxes
 if show_fvgs and is_bull_fvg
     top_fvg = math.max(low, high[2])
     bot_fvg = math.min(low, high[2])
     bx = box.new(left=bar_index - 2, top=top_fvg, right=bar_index + 3, bottom=bot_fvg, border_color=c_green, bgcolor=color.new(c_green, 85), text="BULL FVG", text_size=size.tiny, text_color=c_green)
-    add_box(fvg_boxes, bx)
+    add_smc_zone(bx, top_fvg, bot_fvg, true)
 
 if show_fvgs and is_bear_fvg
     top_fvg = math.max(low[2], high)
     bot_fvg = math.min(low[2], high)
     bx = box.new(left=bar_index - 2, top=top_fvg, right=bar_index + 3, bottom=bot_fvg, border_color=c_red, bgcolor=color.new(c_red, 85), text="BEAR FVG", text_size=size.tiny, text_color=c_red)
-    add_box(fvg_boxes, bx)
+    add_smc_zone(bx, top_fvg, bot_fvg, false)
 
+// Create OB Boxes
 if show_obs and is_bull_ob
     top_ob = math.max(high[1], low[1])
     bot_ob = math.min(high[1], low[1])
     bx = box.new(left=bar_index - 1, top=top_ob, right=bar_index + 4, bottom=bot_ob, border_color=c_blue, bgcolor=color.new(c_blue, 80), text="BULL OB", text_size=size.tiny, text_color=c_white)
-    add_box(ob_boxes, bx)
+    add_smc_zone(bx, top_ob, bot_ob, true)
 
 if show_obs and is_bear_ob
     top_ob = math.max(high[1], low[1])
     bot_ob = math.min(high[1], low[1])
     bx = box.new(left=bar_index - 1, top=top_ob, right=bar_index + 4, bottom=bot_ob, border_color=c_purple, bgcolor=color.new(c_purple, 80), text="BEAR OB", text_size=size.tiny, text_color=c_white)
-    add_box(ob_boxes, bx)
+    add_smc_zone(bx, top_ob, bot_ob, false)
 
-// ── 7. CANDLE REJECTION EVALUATION (MATCHING PYTHON APP LOGIC) ──
+// Create Breaker Boxes
+if show_breakers and is_bull_breaker
+    top_brk = last_bear_ob_top[1]
+    bot_brk = last_bear_ob_bot[1]
+    if not na(top_brk) and not na(bot_brk)
+        bx = box.new(left=bar_index - 2, top=top_brk, right=bar_index + 4, bottom=bot_brk, border_color=c_orange, bgcolor=color.new(c_orange, 80), text="BULL BREAKER", text_size=size.tiny, text_color=c_black)
+        add_smc_zone(bx, top_brk, bot_brk, true)
+
+if show_breakers and is_bear_breaker
+    top_brk = last_bull_ob_top[1]
+    bot_brk = last_bull_ob_bot[1]
+    if not na(top_brk) and not na(bot_brk)
+        bx = box.new(left=bar_index - 2, top=top_brk, right=bar_index + 4, bottom=bot_brk, border_color=c_magenta, bgcolor=color.new(c_magenta, 80), text="BEAR BREAKER", text_size=size.tiny, text_color=c_white)
+        add_smc_zone(bx, top_brk, bot_brk, false)
+
+// ── 7. ZONE MITIGATION ENGINE (AUTO-DELETE FILLED ZONES) ──
+if array.size(zone_boxes) > 0
+    for i = array.size(zone_boxes) - 1 to 0
+        bx      = array.get(zone_boxes, i)
+        top_val = array.get(zone_tops, i)
+        bot_val = array.get(zone_bots, i)
+        is_bull = array.get(zone_is_bull, i)
+        
+        bool filled = false
+        if is_bull
+            // Bullish zone filled when price penetrates bottom (or top if Touch mode)
+            if mitigate_mode == "Touch (Retest)"
+                if low <= top_val
+                    filled := true
+            else
+                if low <= bot_val
+                    filled := true
+        else
+            // Bearish zone filled when price rises above top (or bottom if Touch mode)
+            if mitigate_mode == "Touch (Retest)"
+                if high >= bot_val
+                    filled := true
+            else
+                if high >= top_val
+                    filled := true
+        
+        if filled
+            box.delete(bx)
+            array.remove(zone_boxes, i)
+            array.remove(zone_tops, i)
+            array.remove(zone_bots, i)
+            array.remove(zone_is_bull, i)
+        else
+            box.set_right(bx, bar_index + 3)
+
+// ── 8. CANDLE REJECTION EVALUATION (MATCHING PYTHON APP LOGIC) ──
 bool p5_buy_rejection  = (close[1] >= open[1]) and (close >= open)
 bool p5_sell_rejection = (close[1] <= open[1]) and (close <= open)
 
@@ -165,7 +252,7 @@ else if m15_bias == "BEARISH 🔴"
     s5_text := p5_sell_rejection ? "PASS 🔴 (Red Rej)" : "FAIL ⚪ (No Red Rej)"
     s5_bg   := p5_sell_rejection ? c_red : c_gray
 
-// ── 8. TELEMETRY HUD TABLE (1:1 SYNC WITH PYTHON APP) ──
+// ── 9. TELEMETRY HUD TABLE (1:1 SYNC WITH PYTHON APP) ──
 var table hud = table.new(position.top_right, 2, 7, bgcolor=color.new(c_blue, 20), border_color=c_gray, border_width=1)
 if barstate.islast and show_hud
     table.cell(hud, 0, 0, "PURE SMC 5-STEP HUD", bgcolor=c_blue, text_color=c_white, text_size=size.small)
