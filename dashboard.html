@@ -1532,13 +1532,14 @@
                 const symbolA = activePair.split(' vs ')[0];
                 document.getElementById('smc-title').textContent = `Active SMC Structural Zones (${symbolA})`;
                 const zonesContainer = document.getElementById('smc-zones-container');
-                if (data.zones && data.zones.length > 0) {
-                    zonesContainer.innerHTML = data.zones.map(z => {
+                const filteredZones = (data.zones || []).filter(z => z.label && z.label.toUpperCase().includes(symbolA.toUpperCase()));
+                if (filteredZones.length > 0) {
+                    zonesContainer.innerHTML = filteredZones.map(z => {
                         const badgeClass = z.type === 'OB' ? 'sell-badge' : 'buy-badge';
                         return `<span class="badge ${badgeClass}" style="font-size: 13px; padding: 6px 12px; display: inline-block;">${z.label}: ${z.range}</span>`;
                     }).join('');
                 } else {
-                    zonesContainer.innerHTML = `<span style="color: var(--text-muted); font-size: 14px;">No active SMC structural zones detected</span>`;
+                    zonesContainer.innerHTML = `<span style="color: var(--text-muted); font-size: 14px;">No active SMC structural zones detected for ${symbolA}</span>`;
                 }
                 
                 // Update Active Positions Table

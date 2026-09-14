@@ -571,6 +571,66 @@ def log_fvg_zones(symbol, zones_dict):
         if conn:
             conn.close()
 
+def purge_disabled_category_zones(forex_enabled=True, metals_enabled=True, indices_enabled=True, stocks_enabled=True):
+    """
+    Deletes fvg_zones, scanned_assets, and smc_telemetry rows for asset categories that are currently disabled in bot_state.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        if not forex_enabled:
+            cur.execute("""
+                DELETE FROM fvg_zones 
+                WHERE symbol NOT LIKE '%XAU%' AND symbol NOT LIKE '%XAG%' AND symbol NOT LIKE '%XPT%' AND symbol NOT LIKE '%XPD%'
+                  AND symbol NOT LIKE '%AAPL%' AND symbol NOT LIKE '%MSFT%' AND symbol NOT LIKE '%GOOGL%' AND symbol NOT LIKE '%TSLA%'
+                  AND symbol NOT LIKE '%NVDA%' AND symbol NOT LIKE '%AMD%' AND symbol NOT LIKE '%META%' AND symbol NOT LIKE '%AMZN%'
+                  AND symbol NOT LIKE '%US500%' AND symbol NOT LIKE '%US30%' AND symbol NOT LIKE '%NAS100%' AND symbol NOT LIKE '%GER30%'
+                  AND symbol NOT LIKE '%UK100%' AND symbol NOT LIKE '%USTEC%'
+            """)
+            cur.execute("""
+                DELETE FROM scanned_assets 
+                WHERE symbol_pair NOT LIKE '%XAU%' AND symbol_pair NOT LIKE '%XAG%' AND symbol_pair NOT LIKE '%XPT%' AND symbol_pair NOT LIKE '%XPD%'
+                  AND symbol_pair NOT LIKE '%AAPL%' AND symbol_pair NOT LIKE '%MSFT%' AND symbol_pair NOT LIKE '%GOOGL%' AND symbol_pair NOT LIKE '%TSLA%'
+                  AND symbol_pair NOT LIKE '%NVDA%' AND symbol_pair NOT LIKE '%AMD%' AND symbol_pair NOT LIKE '%META%' AND symbol_pair NOT LIKE '%AMZN%'
+                  AND symbol_pair NOT LIKE '%US500%' AND symbol_pair NOT LIKE '%US30%' AND symbol_pair NOT LIKE '%NAS100%' AND symbol_pair NOT LIKE '%GER30%'
+                  AND symbol_pair NOT LIKE '%UK100%' AND symbol_pair NOT LIKE '%USTEC%'
+            """)
+            cur.execute("""
+                DELETE FROM smc_telemetry 
+                WHERE symbol_pair NOT LIKE '%XAU%' AND symbol_pair NOT LIKE '%XAG%' AND symbol_pair NOT LIKE '%XPT%' AND symbol_pair NOT LIKE '%XPD%'
+                  AND symbol_pair NOT LIKE '%AAPL%' AND symbol_pair NOT LIKE '%MSFT%' AND symbol_pair NOT LIKE '%GOOGL%' AND symbol_pair NOT LIKE '%TSLA%'
+                  AND symbol_pair NOT LIKE '%NVDA%' AND symbol_pair NOT LIKE '%AMD%' AND symbol_pair NOT LIKE '%META%' AND symbol_pair NOT LIKE '%AMZN%'
+                  AND symbol_pair NOT LIKE '%US500%' AND symbol_pair NOT LIKE '%US30%' AND symbol_pair NOT LIKE '%NAS100%' AND symbol_pair NOT LIKE '%GER30%'
+                  AND symbol_pair NOT LIKE '%UK100%' AND symbol_pair NOT LIKE '%USTEC%'
+            """)
+
+        if not metals_enabled:
+            cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%XAU%' OR symbol LIKE '%XAG%' OR symbol LIKE '%XPT%' OR symbol LIKE '%XPD%'")
+            cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%XAU%' OR symbol_pair LIKE '%XAG%' OR symbol_pair LIKE '%XPT%' OR symbol_pair LIKE '%XPD%'")
+            cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair LIKE '%XAU%' OR symbol_pair LIKE '%XAG%' OR symbol_pair LIKE '%XPT%' OR symbol_pair LIKE '%XPD%'")
+
+        if not indices_enabled:
+            cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%US30%' OR symbol LIKE '%NAS100%' OR symbol LIKE '%US500%' OR symbol LIKE '%GER30%' OR symbol LIKE '%UK100%' OR symbol LIKE '%USTEC%'")
+            cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%US30%' OR symbol_pair LIKE '%NAS100%' OR symbol_pair LIKE '%US500%' OR symbol_pair LIKE '%GER30%' OR symbol_pair LIKE '%UK100%' OR symbol_pair LIKE '%USTEC%'")
+            cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair LIKE '%US30%' OR symbol_pair LIKE '%NAS100%' OR symbol_pair LIKE '%US500%' OR symbol_pair LIKE '%GER30%' OR symbol_pair LIKE '%UK100%' OR symbol_pair LIKE '%USTEC%'")
+
+        if not stocks_enabled:
+            cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%AAPL%' OR symbol LIKE '%MSFT%' OR symbol LIKE '%GOOGL%' OR symbol LIKE '%TSLA%' OR symbol LIKE '%NVDA%' OR symbol LIKE '%AMD%' OR symbol LIKE '%META%' OR symbol LIKE '%AMZN%'")
+            cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%AAPL%' OR symbol_pair LIKE '%MSFT%' OR symbol_pair LIKE '%GOOGL%' OR symbol_pair LIKE '%TSLA%' OR symbol_pair LIKE '%NVDA%' OR symbol_pair LIKE '%AMD%' OR symbol_pair LIKE '%META%' OR symbol_pair LIKE '%AMZN%'")
+            cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair LIKE '%AAPL%' OR symbol_pair LIKE '%MSFT%' OR symbol_pair LIKE '%GOOGL%' OR symbol_pair LIKE '%TSLA%' OR symbol_pair LIKE '%NVDA%' OR symbol_pair LIKE '%AMD%' OR symbol_pair LIKE '%META%' OR symbol_pair LIKE '%AMZN%'")
+
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        print(f"Error purging disabled category zones: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
 def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action):
     """Logs a generated mathematical signal. Returns the signal ID."""
     query = """
