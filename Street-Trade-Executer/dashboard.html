@@ -1524,7 +1524,12 @@
                 }
                 
                 // Highlight active asset class button
-                const activePair = data.current_coin; // Format: "SYMBOL_A vs SYMBOL_B"
+                let activePair = data.current_coin || data.active_pair || "XAUUSD vs XAGUSD";
+                if (data.forex_enabled === false && (activePair.includes("EURUSD") || activePair.includes("GBPUSD"))) {
+                    if (data.metals_enabled !== false) activePair = "XAUUSD vs XAGUSD";
+                    else if (data.indices_enabled !== false) activePair = "US30 vs NAS100";
+                    else if (data.stocks_enabled !== false) activePair = "AAPL vs MSFT";
+                }
                 document.getElementById('active-pair-name').textContent = activePair;
                 updateActiveButton(activePair);
                 

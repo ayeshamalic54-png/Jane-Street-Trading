@@ -69,6 +69,22 @@ router.get("/dashboard", async (req, res) => {
       return forexOn;
     };
 
+    const rawPair = botState?.activePair ?? "EURUSD/GBPUSD";
+    const pairSymA = (rawPair.split(/[\/\s]/)[0] || "").toUpperCase();
+    const isRawPairEnabled = isSymbolEnabled(pairSymA);
+
+    let effectiveCurrentPair = rawPair;
+    if (!isRawPairEnabled) {
+      if (metalsOn) effectiveCurrentPair = "XAUUSD/XAGUSD";
+      else if (indicesOn) effectiveCurrentPair = "US30/NAS100";
+      else if (stocksOn) effectiveCurrentPair = "AAPL/MSFT";
+      else if (forexOn) effectiveCurrentPair = "EURUSD/GBPUSD";
+      
+      try {
+        db.update(botStateTable).set({ activePair: effectiveCurrentPair }).where(eq(botStateTable.id, 1)).execute();
+      } catch (e) {}
+    }
+
     const activeZones = zoneRows
       .filter((z) => isSymbolEnabled(z.symbol))
       .map((z) => {
@@ -83,7 +99,7 @@ router.get("/dashboard", async (req, res) => {
 
     return res.json({
       systemStatus: botState?.systemStatus ?? "BOT OFFLINE",
-      currentPair: botState?.activePair ?? "EURUSD/GBPUSD",
+      currentPair: effectiveCurrentPair,
       lastUpdate: botState?.updatedAt?.toISOString() ?? null,
       equity: Number(botState?.equity ?? 0),
       drawdownPercent: Number(botState?.drawdownPercent ?? 0),

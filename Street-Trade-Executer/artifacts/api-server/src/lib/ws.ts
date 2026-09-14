@@ -90,6 +90,18 @@ async function buildDashboardPayload() {
     return forexOn;
   };
 
+  const rawPair = botState?.activePair ?? "EURUSD/GBPUSD";
+  const pairSymA = (rawPair.split(/[\/\s]/)[0] || "").toUpperCase();
+  const isRawPairEnabled = isSymbolEnabled(pairSymA);
+
+  let effectiveCurrentPair = rawPair;
+  if (!isRawPairEnabled) {
+    if (metalsOn) effectiveCurrentPair = "XAUUSD/XAGUSD";
+    else if (indicesOn) effectiveCurrentPair = "US30/NAS100";
+    else if (stocksOn) effectiveCurrentPair = "AAPL/MSFT";
+    else if (forexOn) effectiveCurrentPair = "EURUSD/GBPUSD";
+  }
+
   const activeZones = (cachedZoneRows || [])
     .filter((z: any) => isSymbolEnabled(z.symbol))
     .map((z: any) => {
@@ -104,7 +116,7 @@ async function buildDashboardPayload() {
 
   return {
     systemStatus: botState?.systemStatus ?? "BOT OFFLINE",
-    currentPair: botState?.activePair ?? "EURUSD/GBPUSD",
+    currentPair: effectiveCurrentPair,
     lastUpdate: botState?.updatedAt?.toISOString() ?? null,
     equity: Number(botState?.equity ?? 0),
     drawdownPercent: Number(botState?.drawdownPercent ?? 0),

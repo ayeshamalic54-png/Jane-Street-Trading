@@ -351,6 +351,33 @@ export default function Dashboard() {
     });
   }, [wsData]);
 
+  useEffect(() => {
+    const dbData = wsData ?? httpData;
+    if (!dbData) return;
+    const forexOn = dbData.forexEnabled ?? true;
+    const metalsOn = dbData.metalsEnabled ?? true;
+    const indicesOn = dbData.indicesEnabled ?? true;
+    const stocksOn = dbData.stocksEnabled ?? true;
+
+    const isSymEnabled = (sym: string) => {
+      const s = (sym || "").toUpperCase();
+      if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
+      if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
+      if (s.includes("US30") || s.includes("NAS100") || s.includes("US500") || s.includes("GER30") || s.includes("UK100") || s.includes("USTEC")) return indicesOn;
+      return forexOn;
+    };
+
+    const curPairSym = (dbData.currentPair || "").split(/[\/\s]/)[0];
+    if (curPairSym && isSymEnabled(curPairSym) && ((selectedChartSymbol === "EURUSD" && !forexOn) || !isSymEnabled(selectedChartSymbol))) {
+      setSelectedChartSymbol(curPairSym);
+    } else if (!isSymEnabled(selectedChartSymbol)) {
+      if (metalsOn) setSelectedChartSymbol("XAUUSD");
+      else if (indicesOn) setSelectedChartSymbol("US30");
+      else if (stocksOn) setSelectedChartSymbol("AAPL");
+      else if (forexOn) setSelectedChartSymbol("EURUSD");
+    }
+  }, [wsData, httpData, selectedChartSymbol]);
+
   const executeTrade = useExecuteTrade();
   const { data: signalsData } = useGetSignals({ limit: 50 });
 
