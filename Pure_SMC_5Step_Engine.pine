@@ -1,5 +1,5 @@
 //@version=5
-indicator("Pure Institutional SMC / ICT 5-Step Engine (Zone Mitigation & Auto-Delete)", overlay=true, max_boxes_count=100, max_lines_count=100, max_labels_count=100)
+indicator("Pure Institutional SMC / ICT 5-Step Engine (1:1 Python Sync & Mitigation)", overlay=true, max_boxes_count=100, max_lines_count=100, max_labels_count=100)
 
 // ── 1. INPUT CONFIGURATION ──
 m15_tf        = input.timeframe("15", "M15 Higher Timeframe Bias")
@@ -88,46 +88,70 @@ add_smc_zone(bx, top_val, bot_val, is_bullish) =>
         array.shift(zone_bots)
         array.shift(zone_is_bull)
 
-// ── 4. SWEEP DETECTION ON CURRENT BAR ──
+// ── 4. DYNAMIC 15-BAR SWEEP DETECTION (1:1 SYNC WITH PYTHON APP) ──
+lookback_bars = 15
+
 bool sell_sweep = false
 bool buy_sweep = false
 float sweep_price = na
+int sweep_k_offset = 0
 
-if not na(last_sl) and low < last_sl and close >= last_sl
-    sell_sweep  := true
-    sweep_price := last_sl
+if not na(last_sl)
+    for k = 0 to lookback_bars
+        if low[k] < last_sl and close[k] >= last_sl
+            sell_sweep := true
+            sweep_price := last_sl
+            sweep_k_offset := k
+            break
 
-if not na(last_sh) and high > last_sh and close <= last_sh
-    buy_sweep   := true
-    sweep_price := last_sh
+if not na(last_sh)
+    for k = 0 to lookback_bars
+        if high[k] > last_sh and close[k] <= last_sh
+            buy_sweep := true
+            sweep_price := last_sh
+            sweep_k_offset := k
+            break
 
-if show_sweeps and sell_sweep
-    ln  = line.new(bar_index - 4, sweep_price, bar_index + 2, sweep_price, color=c_cyan, style=line.style_dashed, width=2)
-    lbl = label.new(bar_index, sweep_price, "SELL SWEEP", color=c_cyan, textcolor=c_black, style=label.style_label_up, size=size.small)
+if show_sweeps and sell_sweep and barstate.islast
+    ln  = line.new(bar_index - sweep_k_offset - 4, sweep_price, bar_index + 2, sweep_price, color=c_cyan, style=line.style_dashed, width=2)
+    lbl = label.new(bar_index - sweep_k_offset, sweep_price, "SELL SWEEP", color=c_cyan, textcolor=c_black, style=label.style_label_up, size=size.small)
     add_line(sweep_lines, ln)
     add_label(sweep_labels, lbl)
 
-if show_sweeps and buy_sweep
-    ln  = line.new(bar_index - 4, sweep_price, bar_index + 2, sweep_price, color=c_magenta, style=line.style_dashed, width=2)
-    lbl = label.new(bar_index, sweep_price, "BUY SWEEP", color=c_magenta, textcolor=c_white, style=label.style_label_down, size=size.small)
+if show_sweeps and buy_sweep and barstate.islast
+    ln  = line.new(bar_index - sweep_k_offset - 4, sweep_price, bar_index + 2, sweep_price, color=c_magenta, style=line.style_dashed, width=2)
+    lbl = label.new(bar_index - sweep_k_offset, sweep_price, "BUY SWEEP", color=c_magenta, textcolor=c_white, style=label.style_label_down, size=size.small)
     add_line(sweep_lines, ln)
     add_label(sweep_labels, lbl)
 
-// ── 5. CHOCH / BOS DETECTION ON CURRENT BAR ──
+// ── 5. DYNAMIC 15-BAR CHOCH / BOS DETECTION (1:1 SYNC WITH PYTHON APP) ──
 h5_prev = ta.highest(high, 5)[1]
 l5_prev = ta.lowest(low, 5)[1]
 
-bool bull_choch = sell_sweep and close > h5_prev
-bool bear_choch = buy_sweep and close < l5_prev
+bool bull_choch = false
+bool bear_choch = false
+
+if sell_sweep
+    for k = 0 to lookback_bars
+        if close[k] > h5_prev
+            bull_choch := true
+            break
+
+if buy_sweep
+    for k = 0 to lookback_bars
+        if close[k] < l5_prev
+            bear_choch := true
+            break
+
 bool choch_pass = bull_choch or bear_choch
 
-if show_choch and bull_choch
+if show_choch and bull_choch and barstate.islast
     ln  = line.new(bar_index - 5, h5_prev, bar_index + 2, h5_prev, color=c_yellow, style=line.style_solid, width=2)
     lbl = label.new(bar_index, h5_prev, "BULLISH CHoCH", color=c_green, textcolor=c_white, style=label.style_label_down, size=size.small)
     add_line(choch_lines, ln)
     add_label(choch_labels, lbl)
 
-if show_choch and bear_choch
+if show_choch and bear_choch and barstate.islast
     ln  = line.new(bar_index - 5, l5_prev, bar_index + 2, l5_prev, color=c_orange, style=line.style_solid, width=2)
     lbl = label.new(bar_index, l5_prev, "BEARISH CHoCH", color=c_red, textcolor=c_white, style=label.style_label_up, size=size.small)
     add_line(choch_lines, ln)
@@ -270,7 +294,7 @@ if barstate.islast and show_hud
     table.cell(hud, 0, 4, "S4: FVG / OB Zone", text_color=color.white, text_size=size.small)
     table.cell(hud, 1, 4, (is_bull_fvg or is_bear_fvg or is_bull_ob or is_bear_ob) ? "ACTIVE 🟢" : "FAIL ⚪", bgcolor=((is_bull_fvg or is_bear_fvg) ? c_green : c_gray), text_color=color.white, text_size=size.small)
     
-    table.cell(hud, 0, 5, "S5: Candle Rejection", text_color=color.white, text_size=size.small)
+    table.cell(hud, 0, 5, "S5: Candle Rejection", text_color=c_white, text_size=size.small)
     table.cell(hud, 1, 5, s5_text, bgcolor=s5_bg, text_color=c_white, text_size=size.small)
 
     table.cell(hud, 0, 6, "Signal Execution", text_color=color.white, text_size=size.small)
