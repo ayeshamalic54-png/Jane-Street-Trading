@@ -88,8 +88,8 @@ export default function Signals() {
     const isMetals = ["XAU", "XAG", "GOLD", "SILVER"].some(x => s.includes(x));
     const isCrypto = s.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(x => s.includes(x));
     
-    const slDist = isMetals ? 3.46 : (isCrypto ? entry * 0.015 : 0.00194);
-    const tpDist = isMetals ? 8.65 : (isCrypto ? entry * 0.0375 : 0.00485); // 1:2.5 RRR Target
+    const slDist = isMetals ? 7.50 : (isCrypto ? entry * 0.015 : 0.00194);
+    const tpDist = slDist * 1.8; // 1:1.8 RRR Target for ALL assets (Gold & Forex)
     const pricePrecision = isCrypto ? 2 : (getPipSize(sig.symbolA) <= 0.0001 ? 5 : getPipSize(sig.symbolA) <= 0.01 ? 3 : 2);
 
     const sB = sig.symbolB.toUpperCase();
