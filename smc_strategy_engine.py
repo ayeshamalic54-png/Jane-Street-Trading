@@ -70,7 +70,7 @@ def evaluate_smc_strategy_signal(
     if is_m15_bullish and has_sell_sweep and has_bull_choch and in_bull_fvg and p5_buy_rejection:
         buf = 0.75 if is_metals else 0.00040
         raw_sl_dist = max(0.0, price - (sweep_low_price - buf))
-        max_cap = 3.46 if is_metals else 0.00194
+        max_cap = 7.50 if is_metals else 0.00194
         min_cap = 1.50 if is_metals else 0.00120
         sl_dist = max(min_cap, min(raw_sl_dist, max_cap))
 
@@ -93,7 +93,7 @@ def evaluate_smc_strategy_signal(
     if is_m15_bearish and has_buy_sweep and has_bear_choch and in_bear_fvg and p5_sell_rejection:
         buf = 0.75 if is_metals else 0.00040
         raw_sl_dist = max(0.0, (sweep_high_price + buf) - price)
-        max_cap = 3.46 if is_metals else 0.00194
+        max_cap = 7.50 if is_metals else 0.00194
         min_cap = 1.50 if is_metals else 0.00120
         sl_dist = max(min_cap, min(raw_sl_dist, max_cap))
 
