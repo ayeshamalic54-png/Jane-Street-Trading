@@ -75,7 +75,7 @@ def evaluate_smc_strategy_signal(
         sl_dist = max(min_cap, min(raw_sl_dist, max_cap))
 
         sl_price = price - sl_dist
-        tp_price = price + (2.7 * sl_dist)  # 1:2.7 RRR Target ($67.50 USD Profit)
+        tp_price = price + (1.8 * sl_dist)  # 1:1.8 RRR Target ($91.00 USD Profit Target)
 
         reason = f"🟢 ALL 5 SMC STEPS PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) + CHoCH ({bull_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f}"
         logger.info("================================================================================")
@@ -98,7 +98,7 @@ def evaluate_smc_strategy_signal(
         sl_dist = max(min_cap, min(raw_sl_dist, max_cap))
 
         sl_price = price + sl_dist
-        tp_price = price - (2.7 * sl_dist)  # 1:2.7 RRR Target ($67.50 USD Profit)
+        tp_price = price - (1.8 * sl_dist)  # 1:1.8 RRR Target ($91.00 USD Profit Target)
 
         reason = f"🔴 ALL 5 SMC STEPS PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) + CHoCH ({bear_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f}"
         logger.info("================================================================================")
