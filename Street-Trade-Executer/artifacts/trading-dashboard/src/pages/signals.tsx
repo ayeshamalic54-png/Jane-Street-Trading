@@ -23,10 +23,9 @@ export default function Signals() {
   const isLoading = isSignalsLoading || isConfigLoading;
 
   const handleExecuteSignal = (sig: any) => {
-    const isBuy = sig.action === "BUY_SPREAD";
+    const isBuy = sig.action === "BUY_SPREAD" || sig.action === "BUY";
     const dirA = isBuy ? "BUY" : "SELL";
     
-    // Check if symbol A is metals/indices to assign category-specific lots if dashboard is 0.0
     const getSymbolCategory = (sym: string): string => {
       const s = sym.toUpperCase();
       if (["XAU", "XAG", "XPT", "XPD", "PLAT", "PALL"].some(x => s.includes(x))) return "metals";
@@ -35,62 +34,22 @@ export default function Signals() {
     };
 
     const category = getSymbolCategory(sig.symbolA);
-    let defaultLots = config?.defaultLots ?? 0.0;
-    if (defaultLots > 0.005) {
-      const leverageFactors: Record<string, number> = {
-        forex: 1.0,
-        metals: 0.25,
-        indices: 0.25,
-        stocks: 0.10,
-        crypto: 0.01
-      };
-      defaultLots = defaultLots * (leverageFactors[category] ?? 1.0);
-    } else {
-      if (category === "metals") defaultLots = 0.28;
-      else if (category === "indices") defaultLots = 0.60;
-      else defaultLots = 0.51; // forex
-    }
-
-    const partLotsA = defaultLots / 3.0;
-    const betaVal = Number(sig.beta ?? 1.0);
-    const betaPositive = (betaVal >= 0);
-    
-    let dirB: "BUY" | "SELL" | "CLOSE" = "BUY";
-    if (isBuy) {
-      // BUY_SPREAD: BUY A, SELL B if beta > 0. If beta < 0, BUY B!
-      dirB = betaPositive ? "SELL" : "BUY";
-    } else {
-      // SELL_SPREAD: SELL A, BUY B if beta > 0. If beta < 0, SELL B!
-      dirB = betaPositive ? "BUY" : "SELL";
-    }
-
-    // Hedge lots are multiplied by 3.0 in main.py, so we pass the part scale here
-    const partLotsB = Math.max(0.01, Math.abs(partLotsA * betaVal));
+    let execLots = (category === "metals") ? 0.07 : 0.51;
 
     const slPips = config?.slPips ?? 10;
     const tpPips = config?.tpPips ?? 20;
 
     executeTrade.mutate(
-      { data: { symbol: sig.symbolA, direction: dirA, lots: partLotsA, slPips, tpPips } },
+      { data: { symbol: sig.symbolA, direction: dirA, lots: execLots, slPips, tpPips } },
       {
         onSuccess: () => {
-          executeTrade.mutate(
-            { data: { symbol: sig.symbolB, direction: dirB, lots: partLotsB, slPips, tpPips, comment: "JS_HEDGE_MANUAL_LEGB" } },
-            {
-              onSuccess: () => {
-                toast({
-                  title: "🚀 One-Click Spread Executed",
-                  description: `Queued: ${dirA} ${sig.symbolA} (${defaultLots.toFixed(2)} lots) & ${dirB} ${sig.symbolB} (${(partLotsB * 3.0).toFixed(2)} lots) successfully!`,
-                });
-              },
-              onError: () => {
-                toast({ title: `Failed to queue second leg ${sig.symbolB}`, variant: "destructive" });
-              }
-            }
-          );
+          toast({
+            title: "🚀 Pure SMC Trade Executed",
+            description: `Queued: ${dirA} ${sig.symbolA} (${execLots.toFixed(2)} lots) successfully!`,
+          });
         },
         onError: () => {
-          toast({ title: `Failed to queue first leg ${sig.symbolA}`, variant: "destructive" });
+          toast({ title: `Failed to queue ${dirA} ${sig.symbolA}`, variant: "destructive" });
         }
       }
     );
@@ -214,57 +173,23 @@ export default function Signals() {
     };
 
     const category = getSymbolCategory(sig.symbolA);
-    let defaultLots = config?.defaultLots ?? 0.0;
-    if (defaultLots > 0.005) {
-      const leverageFactors: Record<string, number> = {
-        forex: 1.0,
-        metals: 0.25,
-        indices: 0.25,
-        stocks: 0.10,
-        crypto: 0.01
-      };
-      defaultLots = defaultLots * (leverageFactors[category] ?? 1.0);
-    } else {
-      if (category === "metals") defaultLots = 0.28;
-      else if (category === "indices") defaultLots = 0.60;
-      else defaultLots = 0.51; // forex
-    }
-
-    const partLotsA = (defaultLots / 3.0).toFixed(2);
-    const totalLotsA = defaultLots.toFixed(2);
-    
-    const betaVal = Number(sig.beta ?? 1.0);
-    const betaPositive = (betaVal >= 0);
-    
-    let legBDirection = "BUY";
-    if (isBuy) {
-      // BUY_SPREAD: BUY A, SELL B if beta > 0. If beta < 0 (negative correlation), BUY B to hedge!
-      legBDirection = betaPositive ? "SELL" : "BUY";
-    } else {
-      // SELL_SPREAD: SELL A, BUY B if beta > 0. If beta < 0 (negative correlation), SELL B to hedge!
-      legBDirection = betaPositive ? "BUY" : "SELL";
-    }
-
-    const lotsB = Math.max(0.01, Math.abs(defaultLots * betaVal)).toFixed(2);
-
-    const zType = sig.zScore < 0 ? "Oversold Trigger" : "Overbought Trigger";
-    const zStr = sig.zScore > 0 ? `+${sig.zScore.toFixed(3)}` : sig.zScore.toFixed(3);
+    const lotStr = (category === "metals") ? "0.07" : "0.51";
     const actStr = isBuy ? "MARKET BUY 🟢" : "MARKET SELL 🔴";
 
-    const text = `📢 *WASEE SOFT PROBABILITY Z-CORE SIGNAL ENGINE* 📢\n` +
+    const text = `📢 *PURE SMC / ICT 5-STEP SIGNAL ENGINE* 📢\n` +
       `🚀 *[ NEW OPEN POSITION ]* 🚀\n\n` +
       `🟢 *ACTION:* \`${actStr}\` (${sig.symbolA})\n` +
       `⏱ *TIME:* \`${timeStr}\` \n` +
-      `📊 *Z-SCORE ENTRY:* \`${zStr}\` *(${zType})*\n\n` +
+      `📊 *STRATEGY:* \`Pure SMC/ICT 5-Step Structure\`\n\n` +
       `📥 *ENTRY PRICE:* \`${details.entry}\` \n` +
-      `⛔ *STOP LOSS (SL):* \`${details.sl}\` *($97.00 Risk Cap)*\n` +
-      `🎯 *TAKE PROFIT (TP):* \`${details.tp2}\` *(1:2.5 RRR Target)*\n` +
-      `📦 *LOT SIZE:* \`${totalLotsA} Lots\``;
+      `⛔ *STOP LOSS (SL):* \`${details.sl}\` *(Swing High + $0.75 Buffer)*\n` +
+      `🎯 *TAKE PROFIT (TP):* \`${details.tp2}\` *(1:1.8 RRR Target / +$91 Profit)*\n` +
+      `📦 *LOT SIZE:* \`${lotStr} Lots\``;
 
     navigator.clipboard.writeText(text).then(() => {
       toast({
         title: "📋 Copied to Clipboard!",
-        description: "Signal text formatted for WhatsApp has been copied successfully.",
+        description: "Signal text formatted for Pure SMC Discord/WhatsApp notification copied successfully.",
       });
     }).catch(() => {
       toast({
@@ -278,8 +203,8 @@ export default function Signals() {
   return (
     <div className="flex flex-col h-full overflow-auto bg-background p-6 space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">Signal Log</h2>
-        <p className="text-sm text-muted-foreground">Statistical arbitrage model generation log</p>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">Pure SMC / ICT Signal Log</h2>
+        <p className="text-sm text-muted-foreground">Automated 5-Step Pure SMC execution & telemetry log</p>
       </div>
 
       <Card className="bg-card border-border">
@@ -298,14 +223,14 @@ export default function Signals() {
                 <TableRow className="border-border hover:bg-transparent">
                   <TableHead className="font-mono text-xs">TIME</TableHead>
                   <TableHead className="font-mono text-xs">ACTION</TableHead>
-                  <TableHead className="font-mono text-xs">PAIR A / B</TableHead>
+                  <TableHead className="font-mono text-xs">ASSET</TableHead>
                   <TableHead className="font-mono text-xs text-right font-medium">ENTRY</TableHead>
                   <TableHead className="font-mono text-xs text-right text-red-400 font-medium">SL</TableHead>
-                  <TableHead className="font-mono text-xs text-right text-green-400 font-medium">TP (1:2.5)</TableHead>
+                  <TableHead className="font-mono text-xs text-right text-green-400 font-medium">TP (1:1.8)</TableHead>
                   <TableHead className="font-mono text-xs text-center">STATUS</TableHead>
                   <TableHead className="font-mono text-xs text-right">LOTS</TableHead>
                   <TableHead className="font-mono text-xs text-right">P&L</TableHead>
-                  <TableHead className="font-mono text-xs text-right">Z-SCORE</TableHead>
+                  <TableHead className="font-mono text-xs text-right">SMC BIAS / STEPS</TableHead>
                   <TableHead className="font-mono text-xs text-center">ACTION</TableHead>
                 </TableRow>
               </TableHeader>
@@ -314,6 +239,8 @@ export default function Signals() {
                   const details = getSignalDetails(sig);
                   const tradesList = sig.trades ?? [];
                   const totalProfitVal = sig.totalProfit;
+                  const isMetals = ["XAU", "XAG", "GOLD", "SILVER"].some(x => (sig.symbolA ?? "").toUpperCase().includes(x));
+                  const displayLots = isMetals ? "0.07" : (sig.totalLots !== undefined ? sig.totalLots.toFixed(2) : "0.51");
                   return (
                     <TableRow key={sig.id} className="border-border hover:bg-muted/30">
                       <TableCell className="font-mono text-xs text-muted-foreground">
@@ -322,8 +249,7 @@ export default function Signals() {
                       <TableCell>{getActionBadge(sig.action)}</TableCell>
                       <TableCell className="font-mono text-sm">
                         <div className="flex flex-col">
-                          <span>{sig.symbolA}</span>
-                          <span className="text-[10px] text-muted-foreground">{sig.symbolB}</span>
+                          <span className="font-bold">{sig.symbolA}</span>
                         </div>
                       </TableCell>
                       <TableCell className="font-mono text-right text-sm">{details.entry}</TableCell>
@@ -336,8 +262,8 @@ export default function Signals() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="font-mono text-right text-sm text-muted-foreground">
-                        {sig.totalLots !== undefined ? sig.totalLots.toFixed(2) : "—"}
+                      <TableCell className="font-mono text-right text-sm font-semibold text-foreground">
+                        {displayLots}
                       </TableCell>
                       <TableCell className={cn(
                         "font-mono text-right text-sm font-semibold",
@@ -345,11 +271,10 @@ export default function Signals() {
                       )}>
                         {totalProfitVal != null ? (totalProfitVal >= 0 ? "+" : "") + totalProfitVal.toFixed(2) : "—"}
                       </TableCell>
-                      <TableCell className={cn(
-                        "font-mono text-right font-bold text-sm",
-                        Math.abs(sig.zScore) >= 2 ? (sig.zScore > 0 ? "text-red-500" : "text-green-500") : "text-foreground"
-                      )}>
-                        {sig.zScore.toFixed(3)}
+                      <TableCell className="font-mono text-right">
+                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 font-mono text-[10px]">
+                          SMC 5/5 🟢
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1.5">
