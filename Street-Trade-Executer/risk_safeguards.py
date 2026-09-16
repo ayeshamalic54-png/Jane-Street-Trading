@@ -13,14 +13,18 @@ MAX_DAILY_LOSS_PERCENT = 1.00
 
 MAX_FLOATING_LOSS_USD = 330.0
 # Maximum number of trades allowed per day
-MAX_DAILY_TRADES = 3
+MAX_DAILY_TRADES = 30
 # Risk percentage per trade (e.g. 1.0% of account equity = $100 USD on $10k)
 RISK_PERCENT = 1.0
 
 # Maximum spread allowed in pips
 MAX_SPREAD_PIPS = 2.0
 
-SESSION_GUARD_ENABLED = False
+# Beta ratio boundaries allowed to guarantee hedge ratio equilibrium
+MIN_BETA_CAP = 0.50
+MAX_BETA_CAP = 1.65
+
+SESSION_GUARD_ENABLED = True
 SESSION_START_HOUR = 12.5  # 12:30 PM PKT (London Open)
 SESSION_END_HOUR = 2.0     # 02:00 AM PKT (Before Rollover Close)
 
@@ -264,7 +268,9 @@ def check_drawdown_limit(current_equity):
     
     effective_drawdown = max(daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT)
     if effective_drawdown >= MAX_DAILY_LOSS_PERCENT:
-        logger.info(f"Daily drawdown limit reached: {effective_drawdown:.2f}% (Halt Limit: {MAX_DAILY_LOSS_PERCENT}% | Max Limit: {MAX_DAILY_DRAWDOWN_PCT}%)")
+        halt_usd = (start_equity * MAX_DAILY_LOSS_PERCENT / 100.0) if start_equity > 0 else 0.0
+        max_usd = (start_equity * MAX_DAILY_DRAWDOWN_PCT / 100.0) if start_equity > 0 else 0.0
+        logger.info(f"🛡️ [DAILY DRAWDOWN LIMIT REACHED 🔴] Peak Drawdown Hit: {effective_drawdown:.2f}% (-${daily_loss:.2f} USD) | Halt Drawdown Limit: {MAX_DAILY_LOSS_PERCENT:.2f}% (-${halt_usd:.2f} USD) | Max Drawdown Cap: {MAX_DAILY_DRAWDOWN_PCT:.2f}% (-${max_usd:.2f} USD). Trading HALTED.")
         return True, daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT
         
     return False, daily_loss_percent, _PEAK_DAILY_DRAWDOWN_PCT
@@ -389,9 +395,9 @@ def is_spread_valid(symbol):
         price = (tick.bid + tick.ask) / 2.0
         max_spread = (price * 0.001) / pip_size
     elif any(x in s for x in ["XAU", "XPT", "XPD", "PLAT", "PALL"]):
-        max_spread = 5.0  # standard threshold for major precious metals
+        max_spread = 60.0  # Prop firm spread threshold for Gold ($0.60 spread)
     elif "XAG" in s:
-        max_spread = 10.0
+        max_spread = 80.0
     elif any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"]):
         max_spread = 30.0
     elif any(x in s for x in ["US500", "US30", "NAS100", "GER30", "UK100", "SPX", "DJI", "NDX", "USTEC"]):
