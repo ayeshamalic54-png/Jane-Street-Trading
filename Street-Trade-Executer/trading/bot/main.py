@@ -601,40 +601,15 @@ LEVERAGE_FACTORS = {
 
 def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Calculates dynamic lot size based on 0.25% Account Equity Risk per trade (capped at $97.00 Max Risk Cap).
-    Wider Stop Loss automatically scales down lot size!
+    Strictly Hard-Locked Lot Size Engine for Pure SMC Setup:
+    Always returns 0.07 Lots for Gold/Metals and Forex to prevent dynamic scaling up to 0.14.
     """
-    RISK_CAP_USD = 97.00
-    try:
-        acc_info = mt5.account_info() if mt5.initialize() else None
-        eq = acc_info.equity if (acc_info and acc_info.equity > 0) else 10000.0
-        pct_risk_usd = eq * 0.0025  # 0.25% Equity Risk
-        risk_target_usd = min(pct_risk_usd, RISK_CAP_USD)
-    except Exception:
-        risk_target_usd = 25.0  # Fallback: $25 risk per trade on $10k account
-
     sym_upper = symbol.upper()
-
-    if sl_dist_price > 0.0:
-        if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
-            # 1 Lot Gold (XAUUSD) = 100 oz. $1.00 move = $100 loss per lot.
-            contract_size = 100.0
-            calc_lots = round(risk_target_usd / (sl_dist_price * contract_size), 2)
-            return max(0.01, min(calc_lots, 0.35))
-        elif category == "forex":
-            # 1 Standard Lot Forex = 100,000 units. $0.0001 (1 pip) = $10 loss per lot.
-            contract_size = 100000.0
-            calc_lots = round(risk_target_usd / (sl_dist_price * contract_size), 2)
-            return max(0.01, min(calc_lots, 0.70))
-        elif category == "indices":
-            calc_lots = round(risk_target_usd / max(sl_dist_price, 10.0), 2)
-            return max(0.01, min(calc_lots, 0.20))
-
     if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
-        return 0.10
+        return 0.07
     elif category == "forex":
-        return 0.15
-    return DEFAULT_LOT_SIZES.get(category, 0.10)
+        return 0.07
+    return 0.07
 
 
 
@@ -2204,7 +2179,7 @@ def main():
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
                         logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] SL Distance: $7.50 Gold Cap | 1:1.8 RRR TP Target ($91 USD Profit Target) | Engine: Pure SMC/ICT Active 🟢")
-                        logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Option B: Tier 1: +$67->$53 | Tier 2: +$99->$80 | Tier 3: +$142->$120 | Tier 4: +$185->$155) | Friday Close Guard: ENABLED 🌅")
+                        logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Tier 1: +$62.00 Net Profit Lock | Tier 2: +$80.00 Net Profit Lock | Full TP Target: +$91.00 USD) | Friday Close Guard: ENABLED 🌅")
 
 
 
