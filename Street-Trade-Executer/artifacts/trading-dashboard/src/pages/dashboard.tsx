@@ -999,14 +999,14 @@ export default function Dashboard() {
                     <span className="text-zinc-400">Execution Strategy:</span> <span className="text-emerald-400 font-bold">Unmitigated FVG / OB Retest</span>
                   </div>
                   <div>
-                    <span className="text-zinc-400">Target RRR:</span> <span className="text-zinc-100 font-bold">1:3.0 RRR</span>
+                    <span className="text-zinc-400">Target RRR:</span> <span className="text-zinc-100 font-bold">1:1.8 RRR</span>
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 pt-1 border-t border-border">
                 <div>
                   <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Max Risk Cap</div>
-                  <div className="font-mono text-sm font-bold text-amber-400">$97.00 USD ($3.46 Gold Move)</div>
+                  <div className="font-mono text-sm font-bold text-amber-400">$50.54 USD ($7.50 Gold Move)</div>
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Hedge Ratio (β)</div>
