@@ -585,7 +585,7 @@ EXPECTED_BETA_SIGN = {
 
 DEFAULT_LOT_SIZES = {
     "metals": 0.07,
-    "forex": 0.07,
+    "forex": 0.51,
     "indices": 0.10,
     "stocks": 0.10,
     "crypto": 0.01
@@ -602,14 +602,14 @@ LEVERAGE_FACTORS = {
 def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
     Strictly Hard-Locked Lot Size Engine for Pure SMC Setup:
-    Always returns 0.07 Lots for Gold/Metals and Forex to prevent dynamic scaling up to 0.14.
+    Returns 0.07 Lots for Gold/Metals and 0.51 Lots for Forex.
     """
     sym_upper = symbol.upper()
     if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
         return 0.07
     elif category == "forex":
-        return 0.07
-    return 0.07
+        return 0.51
+    return 0.51
 
 
 
@@ -2978,6 +2978,25 @@ def main():
                             res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
                             if res_order and is_retcode_success(res_order.retcode):
                                 log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_SMC_STRUCTURE", signal_id)
+                                try:
+                                    send_discord_signal_notification(
+                                        action="BUY",
+                                        symbol_a=S_A_resolved,
+                                        symbol_b=S_B_resolved,
+                                        z_score=best_sig["z_score"],
+                                        entry_a=res_order.price,
+                                        sl_a=sl_val,
+                                        tp1=tp1_val,
+                                        tp2=tp_val,
+                                        tp3=tp3_val,
+                                        lots_a=actual_lots_a,
+                                        entry_b=0.0,
+                                        sl_b=0.0,
+                                        lots_b=0.0,
+                                        side_b="NONE"
+                                    )
+                                except Exception as ex_open_notify:
+                                    logger.error(f"Error sending Discord OPEN notification: {ex_open_notify}")
                                 logger.info("================================================================================")
                                 logger.info(f"🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
                                 logger.info(f"🟢 Symbol: {S_A_resolved} | Action: {'BUY' if is_long else 'SELL'} | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
@@ -3027,6 +3046,25 @@ def main():
                             res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
                             if res_order and is_retcode_success(res_order.retcode):
                                 log_trade_entry(res_order.order, S_A_resolved, "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_SMC_STRUCTURE", signal_id)
+                                try:
+                                    send_discord_signal_notification(
+                                        action="SELL",
+                                        symbol_a=S_A_resolved,
+                                        symbol_b=S_B_resolved,
+                                        z_score=best_sig["z_score"],
+                                        entry_a=res_order.price,
+                                        sl_a=sl_val,
+                                        tp1=tp1_val,
+                                        tp2=tp_val,
+                                        tp3=tp3_val,
+                                        lots_a=actual_lots_a,
+                                        entry_b=0.0,
+                                        sl_b=0.0,
+                                        lots_b=0.0,
+                                        side_b="NONE"
+                                    )
+                                except Exception as ex_open_notify_sell:
+                                    logger.error(f"Error sending Discord OPEN notification for SELL: {ex_open_notify_sell}")
                                 logger.info("================================================================================")
                                 logger.info(f"🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
                                 logger.info(f"🔴 Symbol: {S_A_resolved} | Action: SELL | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
