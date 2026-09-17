@@ -1431,31 +1431,9 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
 
 
-        # Option B Multi-Tier Trailing Profit Lock (4-Tier Profit Protection for entire basket)
-        if current_peak >= 185.0:
-            tier4_floor = 155.0
-            if total_basket_pnl <= tier4_floor:
-                exit_triggered = True
-                exit_reason = f"PROFIT_LOCK_TIER4 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier4_floor:.2f})"
-                logger.info(f"💰 [PROFIT LOCK TIER 4 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier4_floor:.2f}). Auto-closing entire basket to bank +$155.00 USD mega runner profit!")
-        elif current_peak >= 142.0:
-            tier3_floor = 120.0
-            if total_basket_pnl <= tier3_floor:
-                exit_triggered = True
-                exit_reason = f"PROFIT_LOCK_TIER3 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier3_floor:.2f})"
-                logger.info(f"💰 [PROFIT LOCK TIER 3 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier3_floor:.2f}). Auto-closing entire basket to bank +$120.00 USD runner profit!")
-        elif current_peak >= 99.0:
-            tier2_floor = 80.0
-            if total_basket_pnl <= tier2_floor:
-                exit_triggered = True
-                exit_reason = f"PROFIT_LOCK_TIER2 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier2_floor:.2f})"
-                logger.info(f"💰 [PROFIT LOCK TIER 2 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier2_floor:.2f}). Auto-closing entire basket to bank +$80.00 USD cash profit!")
-        elif current_peak >= 67.0:
-            tier1_floor = 53.0
-            if total_basket_pnl <= tier1_floor:
-                exit_triggered = True
-                exit_reason = f"PROFIT_LOCK_TIER1 (Peak ${current_peak:.2f} -> Reversed to ${total_basket_pnl:.2f} <= Floor ${tier1_floor:.2f})"
-                logger.info(f"💰 [PROFIT LOCK TIER 1 EXECUTED] Peak reached ${current_peak:.2f} & reversed to ${total_basket_pnl:.2f} (Floor: ${tier1_floor:.2f}). Auto-closing entire basket to bank +$53.00 USD cash profit!")
+        # Optimal TP-Wise Model: Mid-way floor cutoffs disabled so trade runs cleanly to Full TP (+ $91.00 USD Gold / +$146.00 USD Forex)
+        # Breakeven Protection at +$65.00 USD locks +$5.00 USD risk-free without auto-closing the trade.
+        pass
 
 
         # ── STEP 3: Z = ±2.40 RUNNER LOT JACKPOT EXIT (REMAINING 30% VOLUME) ──
@@ -1552,54 +1530,15 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 if floating_profit > peak_floating_profit:
                     peak_floating_profit = floating_profit
 
+                # Optimal TP-Wise Setup: No mid-way basket auto-close floors so trade runs to Full TP (+ $91.00 USD Gold / +$146.00 USD Forex)
                 should_close_trail = False
                 trail_close_reason = ""
 
-                # Tier 1 (Baseline Lock: +$67.00 Peak -> Locks +$53.00 Cash Profit):
-                if peak_floating_profit >= 67.0 and peak_floating_profit < 99.0:
-                    tier1_floor = 53.0
-                    if floating_profit <= tier1_floor:
-                        should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 1] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $53.00). Auto-closing to lock +$53.00 USD cash profit!"
+                # Breakeven Protection at +$65.00 USD Floating Profit:
+                if peak_floating_profit >= 65.0 and (int(time.time()) % 20 == 0):
+                    logger.info(f"🛡️ [BREAKEVEN RISK-FREE ACTIVE] Peak PnL: +${peak_floating_profit:.2f} USD >= +$65.00 USD. SL shifted to Breakeven (+ $5.00 USD profit lock). Trade running to Full TP (+ $91.00 USD)!")
 
-                # Tier 2 (Balanced Expansion Lock: +$99.00 Peak -> Locks +$80.00 Cash Profit):
-                elif peak_floating_profit >= 99.0 and peak_floating_profit < 142.0:
-                    tier2_floor = 80.0
-                    if floating_profit <= tier2_floor:
-                        should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 2] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $80.00). Auto-closing to lock +$80.00 USD cash profit!"
-
-                # Tier 3 (Advanced Runner Lock: +$142.00 Peak -> Locks +$120.00 Cash Profit):
-                elif peak_floating_profit >= 142.0 and peak_floating_profit < 185.0:
-                    tier3_floor = 120.0
-                    if floating_profit <= tier3_floor:
-                        should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 3] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $120.00). Auto-closing to lock +$120.00 USD cash profit!"
-
-                # Tier 4 (Mega Runner Lock: +$185.00+ Peak -> Locks +$155.00 Cash Profit):
-                elif peak_floating_profit >= 185.0:
-                    tier4_floor = 155.0
-                    if floating_profit <= tier4_floor:
-                        should_close_trail = True
-                        trail_close_reason = f"[PROFIT GUARD TIER 4] Peak reached ${peak_floating_profit:.2f} and reversed to ${floating_profit:.2f} (Floor: $155.00). Auto-closing to lock +$155.00 USD mega runner cash profit!"
-
-
-                if should_close_trail and not exit_triggered:
-                    exit_triggered = True
-                    exit_reason = trail_close_reason
-                    logger.info(f"💰 [TRAILING PROFIT LOCK EXECUTED] Triggered by {trail_close_reason}! Closing all basket positions.")
-                elif peak_floating_profit >= 67.0 and (int(time.time()) % 15 == 0):
-                    if peak_floating_profit >= 185.0:
-                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 4] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$155.00 USD")
-                    elif peak_floating_profit >= 142.0:
-                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 3] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$120.00 USD")
-                    elif peak_floating_profit >= 99.0:
-                        logger.info(f"🟢 [TRAILING STOP ACTIVE - TIER 2] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$80.00 USD")
-                    elif peak_floating_profit >= 67.0:
-                        logger.info(f"🔵 [TRAILING STOP ACTIVE - TIER 1] Peak PnL: +${peak_floating_profit:.2f} | Floor Locked: +$53.00 USD")
-
-
-                # Stepped Milestone Trailing SL for open MT5 Leg A positions (Shifting SL into Profit Zone)
+                # Stepped Breakeven / Milestone Trailing SL for open MT5 Leg A positions (Shifting SL to Breakeven)
                 from execution_bot import modify_position_sl
                 pip_unit = 0.01 if "JPY" in sym_a.upper() else 0.0001
                 if any(x in sym_a.upper() for x in ["XAU", "XAG"]):
@@ -1620,26 +1559,18 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
                         if pos_type == "BUY":
                             pips_profit = (curr_p - entry_p) / pip_unit
-                            if pips_profit >= 12.0 or peak_floating_profit >= 100.0:
-                                target_sl = entry_p + (8.0 * pip_unit)
+                            if peak_floating_profit >= 65.0 or pips_profit >= 9.0:
+                                target_sl = entry_p + (7.1 * pip_unit)
                                 if curr_sl < target_sl:
                                     modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🚀 [MILESTONE 2 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit / Peak ${peak_floating_profit:.2f}. Shifted SL to +8.0 pips profit lock ({target_sl:.5f})!")
-                            elif pips_profit >= 8.0:
-                                target_sl = entry_p + (4.0 * pip_unit)
-                                if curr_sl < target_sl:
-                                    modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [MILESTONE 1 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
+                                    logger.info(f"🛡️ [BREAKEVEN RISK-FREE LOCK] Ticket {tkt} ({sym}) +${peak_floating_profit:.2f} profit. Shifted SL to +7.1 pips Breakeven profit lock ({target_sl:.5f})!")
                         elif pos_type == "SELL":
                             pips_profit = (entry_p - curr_p) / pip_unit
-                            if pips_profit >= 12.0 or peak_floating_profit >= 100.0:
-                                target_sl = entry_p - (8.0 * pip_unit)
+                            if peak_floating_profit >= 65.0 or pips_profit >= 9.0:
+                                target_sl = entry_p - (7.1 * pip_unit)
                                 if curr_sl == 0.0 or curr_sl > target_sl:
                                     modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🚀 [MILESTONE 2 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit / Peak ${peak_floating_profit:.2f}. Shifted SL to +8.0 pips profit lock ({target_sl:.5f})!")
-                            elif pips_profit >= 8.0:
-                                target_sl = entry_p - (4.0 * pip_unit)
-                                if curr_sl == 0.0 or curr_sl > target_sl:
+                                    logger.info(f"🛡️ [BREAKEVEN RISK-FREE LOCK] Ticket {tkt} ({sym}) +${peak_floating_profit:.2f} profit. Shifted SL to -7.1 pips Breakeven profit lock ({target_sl:.5f})!")
                                     modify_position_sl(tkt, sym, target_sl)
                                     logger.info(f"🛡️ [MILESTONE 1 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
 
