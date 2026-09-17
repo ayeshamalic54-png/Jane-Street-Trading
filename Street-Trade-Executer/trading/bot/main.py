@@ -1525,20 +1525,21 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 except Exception as ex_dd:
                     logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
 
-            # ── Multi-Tier Equity Trailing Stop Safeguard (Triple Tier Profit Protection) ──
+            # ── Breakeven Risk-Free Protection Guard (Shift SL to Breakeven +$5.00 Profit Lock at +$65.00 USD) ──
             if has_positions:
                 if floating_profit > peak_floating_profit:
                     peak_floating_profit = floating_profit
 
-                # Optimal TP-Wise Setup: No mid-way basket auto-close floors so trade runs to Full TP (+ $91.00 USD Gold / +$146.00 USD Forex)
+                import risk_safeguards
+                is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', True)
+                be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 65.0)
+
                 should_close_trail = False
                 trail_close_reason = ""
 
-                # Breakeven Protection at +$65.00 USD Floating Profit:
-                if peak_floating_profit >= 65.0 and (int(time.time()) % 20 == 0):
-                    logger.info(f"🛡️ [BREAKEVEN RISK-FREE ACTIVE] Peak PnL: +${peak_floating_profit:.2f} USD >= +$65.00 USD. SL shifted to Breakeven (+ $5.00 USD profit lock). Trade running to Full TP (+ $91.00 USD)!")
+                if is_be_enabled and peak_floating_profit >= be_trigger_usd and (int(time.time()) % 20 == 0):
+                    logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVE 🟢] Peak PnL: +${peak_floating_profit:.2f} USD >= +${be_trigger_usd:.2f} USD. SL shifted to Breakeven (+ $5.00 USD profit lock). Trade running to Full TP (+ $91.00 USD)!")
 
-                # Stepped Breakeven / Milestone Trailing SL for open MT5 Leg A positions (Shifting SL to Breakeven)
                 from execution_bot import modify_position_sl
                 pip_unit = 0.01 if "JPY" in sym_a.upper() else 0.0001
                 if any(x in sym_a.upper() for x in ["XAU", "XAG"]):
@@ -1559,20 +1560,18 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
                         if pos_type == "BUY":
                             pips_profit = (curr_p - entry_p) / pip_unit
-                            if peak_floating_profit >= 65.0 or pips_profit >= 9.0:
+                            if is_be_enabled and (peak_floating_profit >= be_trigger_usd or pips_profit >= 9.0):
                                 target_sl = entry_p + (7.1 * pip_unit)
                                 if curr_sl < target_sl:
                                     modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [BREAKEVEN RISK-FREE LOCK] Ticket {tkt} ({sym}) +${peak_floating_profit:.2f} profit. Shifted SL to +7.1 pips Breakeven profit lock ({target_sl:.5f})!")
+                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Breakeven profit lock ({target_sl:.5f})!")
                         elif pos_type == "SELL":
                             pips_profit = (entry_p - curr_p) / pip_unit
-                            if peak_floating_profit >= 65.0 or pips_profit >= 9.0:
+                            if is_be_enabled and (peak_floating_profit >= be_trigger_usd or pips_profit >= 9.0):
                                 target_sl = entry_p - (7.1 * pip_unit)
                                 if curr_sl == 0.0 or curr_sl > target_sl:
                                     modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [BREAKEVEN RISK-FREE LOCK] Ticket {tkt} ({sym}) +${peak_floating_profit:.2f} profit. Shifted SL to -7.1 pips Breakeven profit lock ({target_sl:.5f})!")
-                                    modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [MILESTONE 1 TRAIL - PROFIT LOCK] Ticket {tkt} ({sym}) +{pips_profit:.1f} pips in profit. Shifted SL to +4.0 pips profit lock ({target_sl:.5f})!")
+                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Breakeven profit lock ({target_sl:.5f})!")
 
 
 

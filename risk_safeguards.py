@@ -28,6 +28,10 @@ SESSION_GUARD_ENABLED = True
 SESSION_START_HOUR = 12.5  # 12:30 PM PKT (London Open)
 SESSION_END_HOUR = 2.0     # 02:00 AM PKT (Before Rollover Close)
 
+# Breakeven Risk-Free Protection Guard (Shift SL to Breakeven +$5.00 profit lock at +$65.00 USD profit)
+BREAKEVEN_GUARD_ENABLED = True
+BREAKEVEN_TRIGGER_PROFIT_USD = 65.0  # +$65.00 USD (70% of Full TP Target)
+
 def is_session_time_allowed(start_hour=12.5, end_hour=2.0, current_dt=None):
     """
     Checks if current Pakistani Time (PKT = UTC+5) falls within allowed trading session window.
