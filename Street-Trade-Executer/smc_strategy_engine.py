@@ -69,11 +69,11 @@ def evaluate_smc_strategy_signal(
     in_bull_fvg = is_price_in_zones(price, zones_bull['bullish_fvg']) or is_price_in_zones(curr_low, zones_bull['bullish_fvg'])
     in_bear_fvg = is_price_in_zones(price, zones_bear['bearish_fvg']) or is_price_in_zones(curr_high, zones_bear['bearish_fvg'])
 
-    # Step 6: Valid Rejection Candle (Candle touched FVG & closed green for BUY / red for SELL)
+    # Step 6 & 7: Valid Rejection Candle & Closed Confirmation
     p5_buy_rejection = in_bull_fvg and (price >= open_price)
     p5_sell_rejection = in_bear_fvg and (price <= open_price)
 
-    # ── 1. BUY SIGNAL EVALUATION (ALL STEPS MANDATORY 🟢) ──
+    # ── 1. BUY SIGNAL EVALUATION (ALL 7 STEPS MANDATORY 🟢) ──
     if is_m15_bullish and has_sell_sweep and has_bull_choch and (len(zones_bull['bullish_fvg']) > 0) and in_bull_fvg and p5_buy_rejection:
         buf = 0.75 if is_metals else 0.00040
         raw_sl_dist = max(0.0, price - (sweep_low_price - buf))
@@ -93,11 +93,12 @@ def evaluate_smc_strategy_signal(
         logger.info(f"🟢 Step 4 (Post-CHoCH FVG): New FVG Created 🟢")
         logger.info(f"🟢 Step 5 (FVG Retest): Price retested Post-CHoCH FVG 🟢")
         logger.info(f"🟢 Step 6 (Rejection Candle): Closed Green Rejection 🟢")
+        logger.info(f"🟢 Step 7 (Closed Confirmation): Candle Closed -> BUY Order Sent 🟢")
         logger.info(f"🟢 Dynamic SL @ {sl_price:.5f} | TP @ {tp_price:.5f} 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
-    # ── 2. SELL SIGNAL EVALUATION (ALL STEPS MANDATORY 🔴) ──
+    # ── 2. SELL SIGNAL EVALUATION (ALL 7 STEPS MANDATORY 🔴) ──
     if is_m15_bearish and has_buy_sweep and has_bear_choch and (len(zones_bear['bearish_fvg']) > 0) and in_bear_fvg and p5_sell_rejection:
         buf = 0.75 if is_metals else 0.00040
         raw_sl_dist = max(0.0, (sweep_high_price + buf) - price)
@@ -117,25 +118,28 @@ def evaluate_smc_strategy_signal(
         logger.info(f"🔴 Step 4 (Post-CHoCH FVG): New FVG Created 🔴")
         logger.info(f"🔴 Step 5 (FVG Retest): Price retested Post-CHoCH FVG 🔴")
         logger.info(f"🔴 Step 6 (Rejection Candle): Closed Red Rejection 🔴")
+        logger.info(f"🔴 Step 7 (Closed Confirmation): Candle Closed -> SELL Order Sent 🔴")
         logger.info(f"🔴 Dynamic SL @ {sl_price:.5f} | TP @ {tp_price:.5f} 🔴")
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
-    # ── 3. SCANNER LOGGING ──
+    # ── 3. SCANNER LOGGING (ALL 7 STEPS INDIVIDUALLY DISPLAYED) ──
     if is_m15_bullish:
         step1_s = "BULLISH 🟢"
         step2_s = "PASS 🟢 (Sell-Side Sweep)" if has_sell_sweep else "FAIL ⚪ (No Sell-Side Sweep)"
         step3_s = "PASS 🟢 (Bullish CHoCH)" if has_bull_choch else "FAIL ⚪ (No Bullish CHoCH)"
-        step4_s = "PASS 🟢 (Post-CHoCH FVG Created)" if (len(zones_bull['bullish_fvg']) > 0) else "FAIL ⚪ (No Post-CHoCH FVG)"
-        step5_s = "PASS 🟢 (In Post-CHoCH FVG)" if in_bull_fvg else "FAIL ⚪ (No FVG Retest)"
-        step6_s = "PASS 🟢 (Green Rejection)" if p5_buy_rejection else "FAIL ⚪ (No Rejection Close)"
+        step4_s = "PASS 🟢 (Post-CHoCH FVG)" if (len(zones_bull['bullish_fvg']) > 0) else "FAIL ⚪ (No Post-CHoCH FVG)"
+        step5_s = "PASS 🟢 (Retested FVG)" if in_bull_fvg else "FAIL ⚪ (No Retest)"
+        step6_s = "PASS 🟢 (Green Rejection)" if p5_buy_rejection else "FAIL ⚪ (No Rejection)"
+        step7_s = "PASS 🟢 (Candle Closed)" if p5_buy_rejection else "FAIL ⚪ (Waiting Candle Close)"
     elif is_m15_bearish:
         step1_s = "BEARISH 🔴"
         step2_s = "PASS 🔴 (Buy-Side Sweep)" if has_buy_sweep else "FAIL ⚪ (No Buy-Side Sweep)"
         step3_s = "PASS 🔴 (Bearish CHoCH)" if has_bear_choch else "FAIL ⚪ (No Bearish CHoCH)"
-        step4_s = "PASS 🔴 (Post-CHoCH FVG Created)" if (len(zones_bear['bearish_fvg']) > 0) else "FAIL ⚪ (No Post-CHoCH FVG)"
-        step5_s = "PASS 🔴 (In Post-CHoCH FVG)" if in_bear_fvg else "FAIL ⚪ (No FVG Retest)"
-        step6_s = "PASS 🔴 (Red Rejection)" if p5_sell_rejection else "FAIL ⚪ (No Rejection Close)"
+        step4_s = "PASS 🔴 (Post-CHoCH FVG)" if (len(zones_bear['bearish_fvg']) > 0) else "FAIL ⚪ (No Post-CHoCH FVG)"
+        step5_s = "PASS 🔴 (Retested FVG)" if in_bear_fvg else "FAIL ⚪ (No Retest)"
+        step6_s = "PASS 🔴 (Red Rejection)" if p5_sell_rejection else "FAIL ⚪ (No Rejection)"
+        step7_s = "PASS 🔴 (Candle Closed)" if p5_sell_rejection else "FAIL ⚪ (Waiting Candle Close)"
     else:
         step1_s = "NEUTRAL ⚪"
         step2_s = "FAIL ⚪ (M15 Structure Neutral)"
@@ -143,6 +147,7 @@ def evaluate_smc_strategy_signal(
         step4_s = "FAIL ⚪ (M15 Structure Neutral)"
         step5_s = "FAIL ⚪ (M15 Structure Neutral)"
         step6_s = "FAIL ⚪ (M15 Structure Neutral)"
+        step7_s = "FAIL ⚪ (M15 Structure Neutral)"
 
-    scan_msg = f"Scanning Strict SMC | S1(M15): {step1_s} | S2(Sweep): {step2_s} | S3(CHoCH): {step3_s} | S4(Post-CHoCH FVG): {step4_s} | S5(Retest): {step5_s} | S6(Rejection): {step6_s}"
+    scan_msg = f"Scanning Strict 7-Step SMC | S1(M15): {step1_s} | S2(Sweep): {step2_s} | S3(CHoCH): {step3_s} | S4(Post-CHoCH FVG): {step4_s} | S5(Retest): {step5_s} | S6(Rejection): {step6_s} | S7(Closed): {step7_s}"
     return "NONE", None, None, 0.0, scan_msg
