@@ -125,9 +125,10 @@ def detect_choch_bos(df_m5, sweep_idx, is_bullish=True):
     
     - Bullish CHoCH: After sell-side sweep, M5 candle CLOSES above the last minor lower high before/at the sweep.
     - Bearish CHoCH: After buy-side sweep, M5 candle CLOSES below the last minor higher low before/at the sweep.
+    Returns: (has_choch, choch_level, choch_candle_index)
     """
     if df_m5 is None or sweep_idx < 0 or sweep_idx >= len(df_m5):
-        return False, 0.0
+        return False, 0.0, -1
 
     highs = df_m5['high'].values
     lows = df_m5['low'].values
@@ -140,16 +141,16 @@ def detect_choch_bos(df_m5, sweep_idx, is_bullish=True):
         # Check if any candle from sweep_idx to current candle CLOSES above minor_lh
         for j in range(sweep_idx, n):
             if closes[j] > minor_lh:
-                return True, float(minor_lh)
+                return True, float(minor_lh), j
     else:
         # Minor higher low before or at sweep_idx
         minor_hl = min(lows[max(0, sweep_idx - 5):sweep_idx + 1])
         # Check if any candle from sweep_idx to current candle CLOSES below minor_hl
         for j in range(sweep_idx, n):
             if closes[j] < minor_hl:
-                return True, float(minor_hl)
+                return True, float(minor_hl), j
 
-    return False, 0.0
+    return False, 0.0, -1
 
 
 def detect_order_blocks(df):
@@ -217,9 +218,10 @@ def detect_order_blocks(df):
     return active_bull_obs, active_bear_obs, breaker_bull_obs, breaker_bear_obs
 
 
-def detect_smc_zones(df):
+def detect_smc_zones(df, min_idx=0):
     """
     Step 4: Fair Value Gaps (3-Candle FVG), Order Blocks (OB), and Breaker Blocks.
+    Only FVGs created at or after min_idx (post-CHoCH) are included.
     Returns active unmitigated zones.
     """
     if df is None or len(df) < 5:
@@ -238,7 +240,8 @@ def detect_smc_zones(df):
     raw_bull_fvgs = []
     raw_bear_fvgs = []
 
-    for i in range(2, n):
+    start_scan = max(2, min_idx if min_idx >= 0 else 0)
+    for i in range(start_scan, n):
         if lows[i] > highs[i - 2]:
             raw_bull_fvgs.append((highs[i - 2], lows[i], i))
         elif highs[i] < lows[i - 2]:
@@ -285,4 +288,3 @@ def is_price_in_zones(price, zones):
         if low <= price <= high:
             return True
     return False
-

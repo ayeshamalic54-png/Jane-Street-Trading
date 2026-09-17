@@ -1,21 +1,167 @@
 import numpy as np
 import pandas as pd
 
-def detect_smc_zones(df):
+def get_swing_points(df, n_left=2, n_right=2):
     """
-    Detects active (unmitigated) SMC zones from a pandas DataFrame of rates.
-    df must have columns: ['open', 'high', 'low', 'close']
-    Returns a dictionary of lists of (low_price, high_price) tuples.
-    Zone types: bullish_ob, bearish_ob, bullish_fvg, bearish_fvg,
-                bullish_breaker, bearish_breaker, bullish_ifvg, bearish_ifvg
+    Returns lists of swing highs (price, index) and swing lows (price, index)
+    using fractal definitions with n_left and n_right candles.
+    """
+    if df is None or len(df) < (n_left + n_right + 1):
+        return [], []
+
+    highs = df['high'].values
+    lows = df['low'].values
+    n = len(df)
+
+    swing_highs = []
+    swing_lows = []
+
+    for i in range(n_left, n - n_right):
+        is_sh = True
+        is_sl = True
+
+        for j in range(1, n_left + 1):
+            if highs[i] <= highs[i - j]:
+                is_sh = False
+            if lows[i] >= lows[i - j]:
+                is_sl = False
+
+        for j in range(1, n_right + 1):
+            if highs[i] <= highs[i + j]:
+                is_sh = False
+            if lows[i] >= lows[i + j]:
+                is_sl = False
+
+        if is_sh:
+            swing_highs.append((float(highs[i]), i))
+        if is_sl:
+            swing_lows.append((float(lows[i]), i))
+
+    return swing_highs, swing_lows
+
+
+def detect_market_structure(df):
+    """
+    Pure M15 Market Structure Bias:
+    - BULLISH: Higher Highs (HH) + Higher Lows (HL)
+    - BEARISH: Lower Highs (LH) + Lower Lows (LL)
+    - NEUTRAL: Mixed or insufficient swing data
+    """
+    swing_highs, swing_lows = get_swing_points(df, n_left=2, n_right=2)
+
+    if len(swing_highs) < 2 or len(swing_lows) < 2:
+        return 'NEUTRAL'
+
+    has_hh = swing_highs[-1][0] > swing_highs[-2][0]
+    has_hl = swing_lows[-1][0] > swing_lows[-2][0]
+
+    has_lh = swing_highs[-1][0] < swing_highs[-2][0]
+    has_ll = swing_lows[-1][0] < swing_lows[-2][0]
+
+    if has_hh and has_hl:
+        return 'BULLISH'
+    elif has_lh and has_ll:
+        return 'BEARISH'
+    elif has_hh:
+        return 'BULLISH'
+    elif has_ll:
+        return 'BEARISH'
+
+    return 'NEUTRAL'
+
+
+def detect_liquidity_sweep(df_m5):
+    """
+    Step 2: M5 Liquidity Sweep Detection.
+    Checks if recent candles sweep a confirmed M5 swing low (sell-side) or swing high (buy-side).
+    
+    - Sell-side Sweep (for BUY): Candle low[i] < swing_low AND close[i] >= swing_low.
+    - Buy-side Sweep (for SELL): Candle high[i] > swing_high AND close[i] <= swing_high.
+
+    Returns:
+    - (is_swept_sell_side, sweep_lowest_price, swing_level, sweep_idx)
+    - (is_swept_buy_side, sweep_highest_price, swing_level, sweep_idx)
+    """
+    swing_highs, swing_lows = get_swing_points(df_m5, n_left=2, n_right=2)
+    if not swing_highs or not swing_lows:
+        return (False, 0.0, 0.0, -1), (False, 0.0, 0.0, -1)
+
+    highs = df_m5['high'].values
+    lows = df_m5['low'].values
+    closes = df_m5['close'].values
+    n = len(df_m5)
+
+    sell_sweep = (False, 0.0, 0.0, -1)
+    buy_sweep = (False, 0.0, 0.0, -1)
+
+    # Check recent candles for a liquidity sweep
+    lookback_start = max(0, n - 15)
+    for i in range(lookback_start, n):
+        # 1. Sell-side sweep (BUY setup): Price wicks below recent swing low, but closes ABOVE it
+        for sl_val, sl_idx in reversed(swing_lows):
+            if i > sl_idx + 1:
+                if lows[i] < sl_val and closes[i] >= sl_val:
+                    sell_sweep = (True, float(lows[i]), float(sl_val), i)
+                    break
+        if sell_sweep[0]:
+            break
+
+    for i in range(lookback_start, n):
+        # 2. Buy-side sweep (SELL setup): Price wicks above recent swing high, but closes BELOW it
+        for sh_val, sh_idx in reversed(swing_highs):
+            if i > sh_idx + 1:
+                if highs[i] > sh_val and closes[i] <= sh_val:
+                    buy_sweep = (True, float(highs[i]), float(sh_val), i)
+                    break
+        if buy_sweep[0]:
+            break
+
+    return sell_sweep, buy_sweep
+
+
+def detect_choch_bos(df_m5, sweep_idx, is_bullish=True):
+    """
+    Step 3: Bullish / Bearish CHoCH (Change of Character) & BOS.
+    
+    - Bullish CHoCH: After sell-side sweep, M5 candle CLOSES above the last minor lower high before/at the sweep.
+    - Bearish CHoCH: After buy-side sweep, M5 candle CLOSES below the last minor higher low before/at the sweep.
+    Returns: (has_choch, choch_level, choch_candle_index)
+    """
+    if df_m5 is None or sweep_idx < 0 or sweep_idx >= len(df_m5):
+        return False, 0.0, -1
+
+    highs = df_m5['high'].values
+    lows = df_m5['low'].values
+    closes = df_m5['close'].values
+    n = len(df_m5)
+
+    if is_bullish:
+        # Minor lower high before or at sweep_idx
+        minor_lh = max(highs[max(0, sweep_idx - 5):sweep_idx + 1])
+        # Check if any candle from sweep_idx to current candle CLOSES above minor_lh
+        for j in range(sweep_idx, n):
+            if closes[j] > minor_lh:
+                return True, float(minor_lh), j
+    else:
+        # Minor higher low before or at sweep_idx
+        minor_hl = min(lows[max(0, sweep_idx - 5):sweep_idx + 1])
+        # Check if any candle from sweep_idx to current candle CLOSES below minor_hl
+        for j in range(sweep_idx, n):
+            if closes[j] < minor_hl:
+                return True, float(minor_hl), j
+
+    return False, 0.0, -1
+
+
+def detect_order_blocks(df):
+    """
+    Detects Order Blocks (OB) and Breaker Blocks:
+    - Bullish OB: Last down candle (close < open) before strong upward displacement breaking structure.
+    - Bearish OB: Last up candle (close > open) before strong downward displacement breaking structure.
+    - Breaker Blocks: Failed OBs swept and broken by price.
     """
     if df is None or len(df) < 5:
-        return {
-            'bullish_ob': [], 'bearish_ob': [],
-            'bullish_fvg': [], 'bearish_fvg': [],
-            'bullish_breaker': [], 'bearish_breaker': [],
-            'bullish_ifvg': [], 'bearish_ifvg': []
-        }
+        return [], [], [], []
 
     highs = df['high'].values
     lows = df['low'].values
@@ -23,164 +169,121 @@ def detect_smc_zones(df):
     closes = df['close'].values
     n = len(df)
 
-    raw_bullish_obs = []
-    raw_bearish_obs = []
-    raw_bullish_fvgs = []
-    raw_bearish_fvgs = []
+    raw_bull_obs = []
+    raw_bear_obs = []
 
-    bullish_breakers = []
-    bearish_breakers = []
-    bullish_ifvgs = []
-    bearish_ifvgs = []
+    for i in range(2, n - 1):
+        if closes[i - 1] < opens[i - 1] and closes[i] > highs[i - 2]:
+            ob_low = float(lows[i - 1])
+            ob_high = float(highs[i - 1])
+            raw_bull_obs.append((ob_low, ob_high, i))
+        elif closes[i - 1] > opens[i - 1] and closes[i] < lows[i - 2]:
+            ob_low = float(lows[i - 1])
+            ob_high = float(highs[i - 1])
+            raw_bear_obs.append((ob_low, ob_high, i))
 
-    # 1. First Pass: Detect FVGs and potential Order Blocks
-    for i in range(2, n):
-        # --- Fair Value Gaps (FVG) ---
-        # Bullish FVG: Gap between candle i-2 High and candle i Low
-        if lows[i] > highs[i-2]:
-            raw_bullish_fvgs.append([highs[i-2], lows[i], i])
+    active_bull_obs = []
+    active_bear_obs = []
+    breaker_bull_obs = []
+    breaker_bear_obs = []
 
-        # Bearish FVG: Gap between candle i-2 Low and candle i High
-        elif highs[i] < lows[i-2]:
-            raw_bearish_fvgs.append([highs[i], lows[i-2], i])
-
-        # --- Order Blocks (OB) ---
-        # Bullish OB: last down candle before a strong up move
-        if closes[i] > highs[i-1] and closes[i-1] < opens[i-1]:
-            raw_bullish_obs.append([lows[i-1], highs[i-1], i-1])
-
-        # Bearish OB: last up candle before a strong down move
-        elif closes[i] < lows[i-1] and closes[i-1] > opens[i-1]:
-            raw_bearish_obs.append([lows[i-1], highs[i-1], i-1])
-
-    # 2. Check OB mitigation & Breaker conversion
-    active_bullish_obs = []
-    active_bearish_obs = []
-
-    for ob in raw_bullish_obs:
-        ob_low, ob_high, ob_idx = ob
+    for low_b, high_b, idx in raw_bull_obs:
         mitigated = False
-        for j in range(ob_idx + 2, n):
-            if closes[j] < ob_low:
+        broken_as_breaker = False
+        for j in range(idx + 1, n):
+            if closes[j] < low_b:
                 mitigated = True
-                bearish_breakers.append([ob_low, ob_high, j])
+                broken_as_breaker = True
                 break
-            elif lows[j] <= ob_low:
+        if not mitigated:
+            active_bull_obs.append((low_b, high_b))
+        elif broken_as_breaker:
+            if closes[-1] >= low_b:
+                breaker_bear_obs.append((low_b, high_b))
+
+    for low_b, high_b, idx in raw_bear_obs:
+        mitigated = False
+        broken_as_breaker = False
+        for j in range(idx + 1, n):
+            if closes[j] > high_b:
+                mitigated = True
+                broken_as_breaker = True
+                break
+        if not mitigated:
+            active_bear_obs.append((low_b, high_b))
+        elif broken_as_breaker:
+            if closes[-1] <= high_b:
+                breaker_bull_obs.append((low_b, high_b))
+
+    return active_bull_obs, active_bear_obs, breaker_bull_obs, breaker_bear_obs
+
+
+def detect_smc_zones(df, min_idx=0):
+    """
+    Step 4: Fair Value Gaps (3-Candle FVG), Order Blocks (OB), and Breaker Blocks.
+    Only FVGs created at or after min_idx (post-CHoCH) are included.
+    Returns active unmitigated zones.
+    """
+    if df is None or len(df) < 5:
+        return {
+            'bullish_fvg': [], 'bearish_fvg': [],
+            'bullish_ob': [], 'bearish_ob': [],
+            'bullish_breaker': [], 'bearish_breaker': [],
+            'bullish_ifvg': [], 'bearish_ifvg': []
+        }
+
+    highs = df['high'].values
+    lows = df['low'].values
+    closes = df['close'].values
+    n = len(df)
+
+    raw_bull_fvgs = []
+    raw_bear_fvgs = []
+
+    start_scan = max(2, min_idx if min_idx >= 0 else 0)
+    for i in range(start_scan, n):
+        if lows[i] > highs[i - 2]:
+            raw_bull_fvgs.append((highs[i - 2], lows[i], i))
+        elif highs[i] < lows[i - 2]:
+            raw_bear_fvgs.append((highs[i], lows[i - 2], i))
+
+    active_bull = []
+    active_bear = []
+
+    for low_b, high_b, idx in raw_bull_fvgs:
+        mitigated = False
+        for j in range(idx + 1, n):
+            if closes[j] < low_b:
                 mitigated = True
                 break
         if not mitigated:
-            active_bullish_obs.append((ob_low, ob_high))
+            active_bull.append((float(low_b), float(high_b)))
 
-    for ob in raw_bearish_obs:
-        ob_low, ob_high, ob_idx = ob
+    for low_b, high_b, idx in raw_bear_fvgs:
         mitigated = False
-        for j in range(ob_idx + 2, n):
-            if closes[j] > ob_high:
-                mitigated = True
-                bullish_breakers.append([ob_low, ob_high, j])
-                break
-            elif highs[j] >= ob_high:
+        for j in range(idx + 1, n):
+            if closes[j] > high_b:
                 mitigated = True
                 break
         if not mitigated:
-            active_bearish_obs.append((ob_low, ob_high))
+            active_bear.append((float(low_b), float(high_b)))
 
-    # 3. Check FVG mitigation & iFVG conversion
-    active_bullish_fvgs = []
-    active_bearish_fvgs = []
-
-    for fvg in raw_bullish_fvgs:
-        fvg_low, fvg_high, fvg_idx = fvg
-        mitigated = False
-        for j in range(fvg_idx + 1, n):
-            if closes[j] < fvg_low:
-                mitigated = True
-                bearish_ifvgs.append([fvg_low, fvg_high, j])
-                break
-            elif lows[j] <= fvg_low:
-                mitigated = True
-                break
-        if not mitigated:
-            active_bullish_fvgs.append((fvg_low, fvg_high))
-
-    for fvg in raw_bearish_fvgs:
-        fvg_low, fvg_high, fvg_idx = fvg
-        mitigated = False
-        for j in range(fvg_idx + 1, n):
-            if closes[j] > fvg_high:
-                mitigated = True
-                bullish_ifvgs.append([fvg_low, fvg_high, j])
-                break
-            elif highs[j] >= fvg_high:
-                mitigated = True
-                break
-        if not mitigated:
-            active_bearish_fvgs.append((fvg_low, fvg_high))
-
-    # 4. Check Breakers for mitigation
-    active_bullish_breakers = []
-    active_bearish_breakers = []
-
-    for brk in bullish_breakers:
-        brk_low, brk_high, brk_idx = brk
-        mitigated = False
-        for j in range(brk_idx + 1, n):
-            if lows[j] <= brk_low:
-                mitigated = True
-                break
-        if not mitigated:
-            active_bullish_breakers.append((brk_low, brk_high))
-
-    for brk in bearish_breakers:
-        brk_low, brk_high, brk_idx = brk
-        mitigated = False
-        for j in range(brk_idx + 1, n):
-            if highs[j] >= brk_high:
-                mitigated = True
-                break
-        if not mitigated:
-            active_bearish_breakers.append((brk_low, brk_high))
-
-    # 5. Check iFVGs for mitigation
-    active_bullish_ifvgs = []
-    active_bearish_ifvgs = []
-
-    for ifvg in bullish_ifvgs:
-        ifvg_low, ifvg_high, ifvg_idx = ifvg
-        mitigated = False
-        for j in range(ifvg_idx + 1, n):
-            if lows[j] <= ifvg_low:
-                mitigated = True
-                break
-        if not mitigated:
-            active_bullish_ifvgs.append((ifvg_low, ifvg_high))
-
-    for ifvg in bearish_ifvgs:
-        ifvg_low, ifvg_high, ifvg_idx = ifvg
-        mitigated = False
-        for j in range(ifvg_idx + 1, n):
-            if highs[j] >= ifvg_high:
-                mitigated = True
-                break
-        if not mitigated:
-            active_bearish_ifvgs.append((ifvg_low, ifvg_high))
+    bull_ob, bear_ob, bull_breaker, bear_breaker = detect_order_blocks(df)
 
     return {
-        'bullish_ob': active_bullish_obs,
-        'bearish_ob': active_bearish_obs,
-        'bullish_fvg': active_bullish_fvgs,
-        'bearish_fvg': active_bearish_fvgs,
-        'bullish_breaker': active_bullish_breakers,
-        'bearish_breaker': active_bearish_breakers,
-        'bullish_ifvg': active_bullish_ifvgs,
-        'bearish_ifvg': active_bearish_ifvgs
+        'bullish_fvg': active_bull,
+        'bearish_fvg': active_bear,
+        'bullish_ob': bull_ob,
+        'bearish_ob': bear_ob,
+        'bullish_breaker': bull_breaker,
+        'bearish_breaker': bear_breaker,
+        'bullish_ifvg': active_bull,
+        'bearish_ifvg': active_bear
     }
 
+
 def is_price_in_zones(price, zones):
-    """
-    Helper to check if a given price falls within any of the provided zones.
-    zones: list of (low, high) tuples
-    """
+    """Checks if current price is inside any active zone."""
     for low, high in zones:
         if low <= price <= high:
             return True
