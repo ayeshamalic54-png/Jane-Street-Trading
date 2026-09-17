@@ -6,23 +6,46 @@ from database import log_trade_entry, log_trade_exit, get_connection
 logger = logging.getLogger("SMC_Forex_Bot")
 MAGIC_NUMBER = 992026           # Unique magic number for Jane Street system trades
 
+def is_retcode_success(res):
+    """Returns True if MT5 order_send result represents a successful fill."""
+    if res is None:
+        return False
+    retcode = getattr(res, 'retcode', None)
+    comment = str(getattr(res, 'comment', '') or '').lower()
+    if retcode in [mt5.TRADE_RETCODE_DONE, 10008, 10009, 0]:
+        return True
+    if comment in ["done", "request executed", "order executed"]:
+        return True
+    return False
+
 def send_order(symbol, order_type, price, volume, sl, tp, comment):
-    """Submits order to MT5. Automatically handles FOK vs IOC vs RETURN filling modes."""
+    """Submits order to MT5. Automatically handles FOK vs IOC vs RETURN filling modes and live price updates."""
     # Ensure symbol is active and selected in MT5 Market Watch
     mt5.symbol_select(symbol, True)
     
-    # If price is 0.0 or outdated, re-fetch live tick
-    if price is None or price <= 0:
-        tick = mt5.symbol_info_tick(symbol)
-        if tick:
-            price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+    # Always refresh live market tick price to prevent 10021 (No prices / Off quotes)
+    tick = mt5.symbol_info_tick(symbol)
+    if tick:
+        live_p = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+        if live_p > 0:
+            price = live_p
+            
+    # Dynamically detect broker's exact supported filling mode for this symbol
+    info = mt5.symbol_info(symbol)
+    filling_modes = []
+    if info and hasattr(info, "filling_mode"):
+        fm = info.filling_mode
+        # Bitmask check: Bit 0 (1)=FOK, Bit 1 (2)=IOC, Bit 2 (4)=RETURN
+        if fm & 1:
+            filling_modes.append(mt5.ORDER_FILLING_FOK)
+        if fm & 2:
+            filling_modes.append(mt5.ORDER_FILLING_IOC)
+        if fm & 4:
+            filling_modes.append(mt5.ORDER_FILLING_RETURN)
+            
+    if not filling_modes:
+        filling_modes = [mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_RETURN]
 
-    filling_modes = [
-        mt5.ORDER_FILLING_FOK,
-        mt5.ORDER_FILLING_IOC,
-        mt5.ORDER_FILLING_RETURN
-    ]
-    
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
@@ -31,7 +54,7 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
         "price": price,
         "sl": sl,
         "tp": tp,
-        "deviation": 10,
+        "deviation": 20,
         "magic": MAGIC_NUMBER,
         "comment": comment,
         "type_time": mt5.ORDER_TIME_GTC,
@@ -39,6 +62,13 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
     
     result = None
     for mode in filling_modes:
+        # Re-fetch ultra-fresh tick price before sending to eliminate retcode 10021 (No prices)
+        tick = mt5.symbol_info_tick(symbol)
+        if tick:
+            fresh_p = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+            if fresh_p > 0:
+                request["price"] = fresh_p
+
         request["type_filling"] = mode
         result = mt5.order_send(request)
         
@@ -46,8 +76,8 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             logger.error(f"MT5 order_send returned None for mode {mode}. Error: {mt5.last_error()}")
             continue
             
-        if result.retcode == mt5.TRADE_RETCODE_DONE:
-            logger.info(f"Order filled successfully using mode {mode}")
+        if is_retcode_success(result):
+            logger.info(f"Order filled successfully using mode {mode} (retcode={result.retcode}, comment='{result.comment}')")
             return result
             
         # Check if volume is invalid and auto-correct to broker volume_min
@@ -58,7 +88,7 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
                 logger.warning(f"[VOLUME HEAL] Retrying order for {symbol} with broker min volume: {corrected_vol}")
                 request["volume"] = corrected_vol
                 res_retry = mt5.order_send(request)
-                if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+                if is_retcode_success(res_retry):
                     logger.info(f"Order filled successfully after volume auto-correction.")
                     return res_retry
             logger.error(f"Order rejected due to invalid volume: {result.comment}")
@@ -69,7 +99,7 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             logger.warning(f"[STOPS HEAL] Retrying order for {symbol} with sl=0.0 due to invalid broker stops level: {result.comment}")
             request["sl"] = 0.0
             res_retry = mt5.order_send(request)
-            if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+            if is_retcode_success(res_retry):
                 logger.info(f"Order filled successfully after stops auto-correction.")
                 return res_retry
             logger.error(f"Order rejected due to invalid stops: {result.comment}")
@@ -94,27 +124,23 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
                     logger.warning(f"[MARGIN HEAL] Insufficient margin ({result.comment}). Auto-scaling volume {request['volume']} -> {scaled_vol}")
                     request["volume"] = scaled_vol
                     res_retry = mt5.order_send(request)
-                    if res_retry and res_retry.retcode == mt5.TRADE_RETCODE_DONE:
+                    if is_retcode_success(res_retry):
                         logger.info(f"Order filled successfully after margin auto-scaling.")
                         return res_retry
             logger.error(f"Order rejected due to insufficient margin: {result.comment}")
             return None
 
         # Check if the error is due to disabled auto-trading on client or server
-        if "AutoTrading disabled" in comment_str or result.retcode in [10022, 10026, 10034]:
-            logger.error(f"Order rejected: AutoTrading is disabled! Details: {result.comment}")
+        if "AutoTrading disabled" in comment_str or result.retcode in [10022, 10026, 10027, 10034]:
+            logger.error(f"⚠️ [ALGO TRADING DISABLED] Order rejected (retcode={result.retcode}): Enable 'Algo Trading' button in MT5 top toolbar! Details: {result.comment}")
             return None
             
-        # If the failure is not related to filling mode, we should not retry other modes
-        if result.retcode not in [10013, 10030]:
-            break
-            
-        logger.warning(f"Order mode {mode} failed: {result.comment}. Retrying next mode...")
+        logger.warning(f"Order mode {mode} failed (retcode={result.retcode}): {result.comment}. Trying next filling mode...")
         
     if result:
-        err_comment = result.comment if result else "No response"
-        logger.error(f"Order failed after trying all filling modes: {err_comment}")
+        logger.error(f"Order failed after trying all filling modes: retcode={result.retcode} ({result.comment})")
     return None
+
 
 def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots, tp1, tp2, tp3, signal_id=None):
     """
@@ -140,7 +166,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
     for part_name, tp_val in parts:
         # Pass the actual tp_val so the MT5 broker server executes the target exit reliably!
         res = send_order(symbol, order_type, entry_price, part_lots, sl_price, tp_val, f"JS_{part_name}")
-        if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+        if is_retcode_success(res):
             ticket = res.order
             filled_lots = getattr(res, 'volume', part_lots)
             if filled_lots <= 0:
@@ -162,12 +188,55 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
                 comment=f"JaneStreet {part_name}",
                 signal_id=signal_id
             )
-            logger.info(f"Successfully executed {part_name} order ({filled_lots} lots | Server TP and SL set; 140s / 2m20s hold enforced). Ticket: {ticket}")
+            logger.info(f"🟢 [ENTRY SUCCESS] Ticket #{ticket} | Symbol: {symbol} | Type: {'BUY' if is_long else 'SELL'} | {part_name} Volume: {filled_lots} Lots | Target TP: {tp_val:.5f} | SL: {sl_price:.5f}")
             success = True
         else:
             err_msg = res.comment if res else "No response"
-            logger.error(f"Failed to execute {part_name} order: {err_msg}")
+            logger.error(f"❌ [ENTRY FAILED] {part_name} Order Execution Error: {err_msg}")
+
             
+    return success, total_filled_lots
+
+def execute_three_part_hedge_trade(symbol, is_long, entry_price, total_lots, sl_price=0.0, tp_price=0.0, signal_id=None):
+    """
+    Executes Leg B hedge split into 3 matching hedge orders (JS_HEDGE_TP1, JS_HEDGE_TP2, JS_HEDGE_TP3)
+    for 1:1 order mapping architecture with Hard Broker Stop Loss protection on MT5.
+    """
+    order_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
+    part_lots = round(total_lots / 3.0, 2)
+    from risk_safeguards import round_volume
+    part_lots = round_volume(symbol, part_lots)
+    
+    parts = ["TP1", "TP2", "TP3"]
+    success = False
+    total_filled_lots = 0.0
+
+    for part_name in parts:
+        res = send_order(symbol, order_type, entry_price, part_lots, sl_price, tp_price, f"JS_HEDGE_{part_name}")
+        if is_retcode_success(res):
+            ticket = res.order
+            filled_lots = getattr(res, 'volume', part_lots)
+            if filled_lots <= 0:
+                filled_lots = part_lots
+            filled_lots = round_volume(symbol, filled_lots)
+            total_filled_lots += filled_lots
+
+            log_trade_entry(
+                ticket=ticket,
+                symbol=symbol,
+                order_type="BUY" if is_long else "SELL",
+                lots=filled_lots,
+                entry_price=entry_price,
+                entry_time=datetime.datetime.now(),
+                comment=f"JaneStreet HEDGE_{part_name}",
+                signal_id=signal_id
+            )
+            logger.info(f"🟢 [HEDGE ENTRY SUCCESS] Ticket #{ticket} | Symbol: {symbol} | Type: {'BUY' if is_long else 'SELL'} | HEDGE_{part_name} Volume: {filled_lots} Lots")
+            success = True
+        else:
+            err_msg = res.comment if res else "No response"
+            logger.error(f"❌ [HEDGE ENTRY FAILED] HEDGE_{part_name} Order Execution Error: {err_msg}")
+
     return success, total_filled_lots
 
 def close_all_positions(symbol, comment_filter="JS_"):
@@ -232,6 +301,45 @@ def close_all_positions(symbol, comment_filter="JS_"):
                 err_msg = res.comment if res else "No response"
                 logger.error(f"Failed to close position ticket {pos.ticket}: {err_msg}")
 
+def modify_position_sl(ticket, symbol, new_sl):
+    """
+    Modifies the Stop Loss of an active MT5 position to new_sl (e.g. Breakeven / Entry Price).
+    """
+    try:
+        mt5.symbol_select(symbol, True)
+        positions = mt5.positions_get(ticket=ticket)
+        if not positions:
+            # Try searching by symbol if ticket lookup fails
+            all_pos = mt5.positions_get(symbol=symbol)
+            if all_pos:
+                positions = [p for p in all_pos if p.ticket == ticket]
+        if not positions:
+            logger.warning(f"Could not find position ticket {ticket} ({symbol}) to modify SL.")
+            return False
+
+        pos = positions[0]
+        request = {
+            "action": mt5.TRADE_ACTION_SLTP,
+            "position": ticket,
+            "symbol": symbol,
+            "sl": float(new_sl),
+            "tp": float(pos.tp) if hasattr(pos, 'tp') and pos.tp else 0.0,
+            "magic": MAGIC_NUMBER,
+        }
+        res = mt5.order_send(request)
+        if is_retcode_success(res):
+            logger.info(f"🛡️ [BREAKEVEN SL ACTIVATED] Moved Stop Loss for ticket {ticket} ({symbol}) to Breakeven entry price: {new_sl:.5f}")
+            return True
+        else:
+            err_c = res.comment if res else mt5.last_error()
+            logger.error(f"Failed to modify SL for ticket {ticket}: {err_c}")
+
+            return False
+    except Exception as e:
+        logger.error(f"Error modifying SL for ticket {ticket}: {e}")
+        return False
+
+
 def modify_sl_for_trade(symbol, new_sl):
     """Modifies the Stop Loss of all active trade parts to the new_sl price."""
     positions = mt5.positions_get(symbol=symbol)
@@ -256,13 +364,16 @@ def modify_sl_for_trade(symbol, new_sl):
                 request = {
                     "action": mt5.TRADE_ACTION_SLTP,
                     "position": pos.ticket,
+                    "symbol": pos.symbol,
                     "sl": new_sl,
                     "tp": pos.tp
                 }
+
                 res = mt5.order_send(request)
-                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    logger.info(f"Modified SL to {new_sl:.5f} for position ticket: {pos.ticket}")
+                if is_retcode_success(res):
+                    logger.info(f"🛡️ [BREAKEVEN APPLIED] MT5 Ticket #{pos.ticket} SL moved to Breakeven (${new_sl:.5f}) 🛡️")
                 else:
+
                     err_msg = res.comment if res else "No response"
                     logger.error(f"Failed to modify SL for position ticket {pos.ticket}: {err_msg}")
 
@@ -437,17 +548,8 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
         
     pos = positions[0]
 
-    # ── STRICT BLUE GUARDIAN 140s (2m 20s) HOLD RULE GUARD ──
-    # Prevents closing any position before 140 seconds have elapsed to avoid prop firm account breach
-    pos_time = getattr(pos, "time", 0)
-    if pos_time > 0:
-        import time as pytime
-        tick_pos = mt5.symbol_info_tick(symbol)
-        now_time = tick_pos.time if (tick_pos and tick_pos.time > 0) else int(pytime.time())
-        elapsed = abs(now_time - pos_time)
-        if elapsed < 140.0:
-            logger.warning(f"[BLUE GUARDIAN HOLD GUARD] Deferring close of ticket {ticket} ({symbol}) — held for only {elapsed:.1f}s (< 140s / 2m 20s rule). Position kept open.")
-            return False
+    # ── HOLD GUARD DISABLED PER USER DIRECTIVE FOR INSTANT MANUAL/BOT CLOSES ──
+    # Positions can close instantly at any time without 140s delay
     
     tick = mt5.symbol_info_tick(symbol)
     if tick is None:
@@ -456,14 +558,8 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
     close_order_type = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
     price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
     
-    vol = min(float(volume_to_close), float(pos.volume))
-    
-    info = mt5.symbol_info(symbol)
-    if info:
-        step = info.volume_step
-        vol = round(round(vol / step) * step, 2)
-        if vol < info.volume_min:
-            vol = info.volume_min
+    from risk_safeguards import round_volume
+    vol = round_volume(symbol, min(float(volume_to_close), float(pos.volume)))
             
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
@@ -483,16 +579,27 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
     for mode in filling_modes:
         request["type_filling"] = mode
         res = mt5.order_send(request)
-        if res:
-            if res.retcode == mt5.TRADE_RETCODE_DONE:
-                logger.info(f"Successfully closed position ticket {ticket} | Volume: {vol} | Mode: {mode}")
-                check_closed_trades(symbol)
-                return True
-            elif res.retcode in (10018, 10021): # Market is closed
-                logger.warning(f"Market is closed for {symbol} (Ticket {ticket}). Deferring close until market reopens.")
-                return False
+        if is_retcode_success(res):
+            logger.info(f"🔴 [TRADE EXIT EXECUTED] Ticket #{ticket} | Symbol: {symbol} | Volume: {vol} Lots | Execution Mode: {mode}")
+            check_closed_trades(symbol)
+            return True
+        elif res and res.retcode in (10018, 10021): # Market is closed
+            logger.warning(f"Market is closed for {symbol} (Ticket {ticket}). Deferring close until market reopens.")
+            return False
+
             
     err_comment = res.comment if res else "No response"
     logger.error(f"Failed to close position ticket {ticket}: {err_comment}")
     return False
+
+
+def check_pre_entry_direction_confirmation(signal_type, z_score, z_velocity, pair_str="", velocity_threshold=None):
+    """
+    Protection 3: Pre-Entry Direction Confirmation.
+    COMPLETELY DISABLED per user directive to ensure pure baseline immediate entry on Z threshold cross!
+    """
+    return True, "Pre-entry direction filter DISABLED (Pure Baseline)"
+
+
+
 
