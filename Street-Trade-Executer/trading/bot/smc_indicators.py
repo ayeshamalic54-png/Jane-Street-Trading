@@ -62,10 +62,6 @@ def detect_market_structure(df):
         return 'BULLISH'
     elif has_lh and has_ll:
         return 'BEARISH'
-    elif has_hh:
-        return 'BULLISH'
-    elif has_ll:
-        return 'BEARISH'
 
     return 'NEUTRAL'
 
@@ -94,8 +90,8 @@ def detect_liquidity_sweep(df_m5):
     sell_sweep = (False, 0.0, 0.0, -1)
     buy_sweep = (False, 0.0, 0.0, -1)
 
-    # Check recent candles for a liquidity sweep
-    lookback_start = max(0, n - 15)
+    # Check recent candles for a liquidity sweep (Max 6 candles / 30 mins lookback)
+    lookback_start = max(0, n - 6)
     for i in range(lookback_start, n):
         # 1. Sell-side sweep (BUY setup): Price wicks below recent swing low, but closes ABOVE it
         for sl_val, sl_idx in reversed(swing_lows):

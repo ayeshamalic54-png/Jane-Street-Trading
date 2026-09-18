@@ -35,15 +35,19 @@ def evaluate_smc_strategy_signal(
         return "NONE", None, None, 0.0, "Insufficient candle data for SMC"
 
     eval_df = df_m5 if (df_m5 is not None and len(df_m5) >= 10) else df_m15
-    curr_row = eval_df.iloc[-1]
-    prev_row = eval_df.iloc[-2] if len(eval_df) >= 2 else curr_row
+    
+    # Strictly evaluate completed closed candle (iloc[-2]) to satisfy Step 7 (Closed Confirmation)
+    if len(eval_df) < 3:
+        return "NONE", None, None, 0.0, "Insufficient candle history for closed candle confirmation"
 
-    price = float(curr_row['close'])
-    open_price = float(curr_row['open'])
-    curr_low = float(curr_row['low'])
-    curr_high = float(curr_row['high'])
-    prev_close = float(prev_row['close'])
-    prev_open = float(prev_row['open'])
+    curr_live_row = eval_df.iloc[-1]
+    closed_row = eval_df.iloc[-2]  # LAST CONFIRMED CLOSED CANDLE
+
+    price = float(curr_live_row['close'])
+    closed_close = float(closed_row['close'])
+    closed_open = float(closed_row['open'])
+    closed_low = float(closed_row['low'])
+    closed_high = float(closed_row['high'])
 
     is_metals = (category == "metals" or "XAU" in str(df_m15.get('symbol', '')))
 
@@ -65,13 +69,13 @@ def evaluate_smc_strategy_signal(
     zones_bull = detect_smc_zones(eval_df, min_idx=bull_choch_idx) if has_bull_choch else {'bullish_fvg': []}
     zones_bear = detect_smc_zones(eval_df, min_idx=bear_choch_idx) if has_bear_choch else {'bearish_fvg': []}
 
-    # Step 5: Price RETESTS THAT SAME NEW Post-CHoCH FVG
-    in_bull_fvg = is_price_in_zones(price, zones_bull['bullish_fvg']) or is_price_in_zones(curr_low, zones_bull['bullish_fvg'])
-    in_bear_fvg = is_price_in_zones(price, zones_bear['bearish_fvg']) or is_price_in_zones(curr_high, zones_bear['bearish_fvg'])
+    # Step 5: CLOSED CANDLE Retests THAT SAME NEW Post-CHoCH FVG
+    in_bull_fvg = is_price_in_zones(closed_close, zones_bull['bullish_fvg']) or is_price_in_zones(closed_low, zones_bull['bullish_fvg'])
+    in_bear_fvg = is_price_in_zones(closed_close, zones_bear['bearish_fvg']) or is_price_in_zones(closed_high, zones_bear['bearish_fvg'])
 
-    # Step 6 & 7: Valid Rejection Candle & Closed Confirmation
-    p5_buy_rejection = in_bull_fvg and (price >= open_price)
-    p5_sell_rejection = in_bear_fvg and (price <= open_price)
+    # Step 6 & 7: Valid Rejection Direction on CONFIRMED CLOSED CANDLE (iloc[-2])
+    p5_buy_rejection = in_bull_fvg and (closed_close >= closed_open)
+    p5_sell_rejection = in_bear_fvg and (closed_close <= closed_open)
 
     # ── 1. BUY SIGNAL EVALUATION (ALL 7 STEPS MANDATORY 🟢) ──
     if is_m15_bullish and has_sell_sweep and has_bull_choch and (len(zones_bull['bullish_fvg']) > 0) and in_bull_fvg and p5_buy_rejection:
