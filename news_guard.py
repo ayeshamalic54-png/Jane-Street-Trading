@@ -195,8 +195,12 @@ def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
     """
     currencies = set()
     for s in symbols:
-        s_clean = s.replace("/", "").replace("USDT", "USD").upper()
-        if len(s_clean) == 6:
+        s_clean = str(s).replace("/", "").replace("USDT", "USD").upper()
+        if "XAU" in s_clean or "XAG" in s_clean or "GOLD" in s_clean:
+            currencies.add("USD")
+            currencies.add("XAU")
+            currencies.add("XAG")
+        elif len(s_clean) == 6:
             currencies.add(s_clean[:3])
             currencies.add(s_clean[3:])
         else:
@@ -236,7 +240,7 @@ def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
         event_title = event.get("title", "News")
         date_str = event.get("date", "")
 
-        if impact == "high" and country in currencies:
+        if impact == "high" and (country in currencies or country == "ALL" or (country == "USD" and ("XAU" in currencies or "USD" in currencies))):
             try:
                 event_time = datetime.datetime.fromisoformat(date_str).astimezone(datetime.timezone.utc)
                 diff_minutes = (event_time - utc_now).total_seconds() / 60.0

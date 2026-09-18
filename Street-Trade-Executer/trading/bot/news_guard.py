@@ -195,8 +195,12 @@ def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
     """
     currencies = set()
     for s in symbols:
-        s_clean = s.replace("/", "").replace("USDT", "USD").upper()
-        if len(s_clean) == 6:
+        s_clean = str(s).replace("/", "").replace("USDT", "USD").upper()
+        if "XAU" in s_clean or "XAG" in s_clean or "GOLD" in s_clean:
+            currencies.add("USD")
+            currencies.add("XAU")
+            currencies.add("XAG")
+        elif len(s_clean) == 6:
             currencies.add(s_clean[:3])
             currencies.add(s_clean[3:])
         else:
@@ -236,7 +240,7 @@ def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
         event_title = event.get("title", "News")
         date_str = event.get("date", "")
 
-        if impact == "high" and country in currencies:
+        if impact == "high" and (country in currencies or country == "ALL" or (country == "USD" and ("XAU" in currencies or "USD" in currencies))):
             try:
                 event_time = datetime.datetime.fromisoformat(date_str).astimezone(datetime.timezone.utc)
                 diff_minutes = (event_time - utc_now).total_seconds() / 60.0
@@ -245,7 +249,8 @@ def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
                 if -post_minutes <= diff_minutes <= pre_minutes:
                     reason = f"{country} HIGH IMPACT NEWS ({event_title})"
                     mins = max(1, int(round(diff_minutes)))
-                    logger.info(f"📰 HIGH-IMPACT NEWS IMMINENT: High impact {country} news ({event_title}) in {mins}m. Blocking new trade entries to protect capital.")
+                    pair_str = "/".join(symbols) if isinstance(symbols, (list, tuple, set)) else str(symbols)
+                    logger.info(f"NEWS BLOCK | Currency: {country} | Event: {event_title} | Pair: {pair_str} | Time: {mins}m | TRADE BLOCKED")
                     send_discord_news_alert(country, event_title, mins, stage="Stage 1")
                     return True, reason, country, event_title
             except Exception:

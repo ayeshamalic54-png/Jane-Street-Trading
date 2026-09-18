@@ -2705,9 +2705,16 @@ def main():
             import risk_safeguards
             is_session_ok, curr_utc_s, window_utc_s = is_session_time_allowed(risk_safeguards.SESSION_START_HOUR, risk_safeguards.SESSION_END_HOUR)
 
+            from news_guard import check_pair_news_block
+            is_news_blocked, news_reason, news_curr, news_event = check_pair_news_block([S_A_resolved, S_B_resolved], pre_minutes=15.0, post_minutes=30.0)
+
             if active_pairs_cnt >= MAX_CONCURRENT_TRADES or len(active_symbols_set) > 0:
                 if candidate_signals:
                     logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] An active trade is currently open on MT5 ({len(active_symbols_set)} active symbols). New entries BLOCKED until the active trade closes.")
+            elif is_news_blocked and candidate_signals:
+                for c in candidate_signals:
+                    pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
+                    logger.info(f"📰 [HIGH IMPACT NEWS GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']}), but {news_reason} is ACTIVE. New entries BLOCKED.")
             elif risk_safeguards.SESSION_GUARD_ENABLED and not is_session_ok and candidate_signals:
                 for c in candidate_signals:
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
@@ -2716,7 +2723,7 @@ def main():
                 for c in candidate_signals:
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
                     logger.info(f"📢 [SIGNAL DETECTED - SIGNALS ONLY MODE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but Auto-Execution is toggled OFF on Dashboard. Trade placement SKIPPED.")
-            elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_halted and is_session_ok and candidate_signals:
+            elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_blocked and is_session_ok and candidate_signals:
                 if risk_safeguards.SESSION_GUARD_ENABLED:
                     for c in candidate_signals:
                         pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
