@@ -2705,9 +2705,6 @@ def main():
             import risk_safeguards
             is_session_ok, curr_utc_s, window_utc_s = is_session_time_allowed(risk_safeguards.SESSION_START_HOUR, risk_safeguards.SESSION_END_HOUR)
 
-            from news_guard import check_pair_news_block
-            is_news_blocked, news_reason, news_curr, news_event = check_pair_news_block([S_A_resolved, S_B_resolved], pre_minutes=15.0, post_minutes=30.0)
-
             if active_pairs_cnt >= MAX_CONCURRENT_TRADES or len(active_symbols_set) > 0:
                 if candidate_signals:
                     logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] An active trade is currently open on MT5 ({len(active_symbols_set)} active symbols). New entries BLOCKED until the active trade closes.")
