@@ -1,0 +1,25 @@
+Initializing MT5 connection...
+MT5 Initialized: True
+
+========================================================================
+EMPIRICAL LIVE VERIFICATION FROM MT5 FOR SYMBOL: XAUUSD
+========================================================================
+1. MT5 Live Price:       $4395.51
+2. MT5 M15 200 EMA:      $4427.17
+   -> Protection 1 (200 EMA Macro Trend): Price ($4395.51) >= 200 EMA ($4427.17)
+      STATUS: FAIL (Price is $-31.66 relative to 200 EMA)
+3. Market Structure:     BEARISH
+   -> Protection 2 (M15 Market Structure): Trend is BEARISH
+      STATUS: FAIL
+4. ICT Bullish Zones (OB / FVG / Breaker / iFVG):
+   - No active Bullish OB / FVG / Breaker zones found in current M15 window
+   -> Protection 3 (ICT Zone Retest): Is Price ($4395.51) inside any Bullish Zone?
+      STATUS: FAIL (Price is OUTSIDE all active Bullish zones)
+5. Current M15 Rejection Candle:
+   - Open: $4395.29 | High: $4396.97 | Low: $4392.61 | Close: $4395.51
+   -> Protection 4 (Rejection Candle): Green Bullish Candle (Close >= Open)
+      STATUS: PASS
+========================================================================
+Engine Evaluated Signal Output: NONE
+Engine Reason Log Output:       Scanning SELL | P1(200 EMA): PASS 🔴 | P2(Structure): PASS 🔴 (BEARISH) | P3(ICT Zone): PASS 🔴 | P4(Candle): FAIL 🟢 (Waiting for Red Candle)
+========================================================================

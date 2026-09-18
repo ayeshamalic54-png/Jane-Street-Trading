@@ -1030,14 +1030,14 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         z_str = f"{z_score:+.3f}"
         
         message = (
-            f"📢 **WASEE SOFT PURE SMC / ICT STRUCTURE ENGINE** 📢\n"
+            f"📢 **PURE SMC / ICT 7-STEP SIGNAL ENGINE** 📢\n"
             f"🚀 **[ NEW OPEN POSITION ]** 🚀\n\n"
             f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
-            f"🏛️ **STRATEGY:** `Pure SMC / ICT 5-Step Engine 🟢`\n\n"
+            f"📊 **STRATEGY:** `Pure SMC / ICT 7-Step Structure 🟢`\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
-            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | $25.00 Risk Cap)*\n"
-            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({tp_pips:.1f} Pips | 1:2.5 RRR Target)*\n"
+            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Local Sweep + Buffer)*\n"
+            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *(1:1.8 RRR Target / +$91 Profit)*\n"
             f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
         
@@ -1067,7 +1067,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         digits = info.digits if info else 5
         
         message = (
-            f"📢 **WASEE SOFT PURE SMC / ICT STRUCTURE ENGINE** 📢\n"
+            f"📢 **PURE SMC / ICT 7-STEP SIGNAL ENGINE** 📢\n"
             f"🏁 **[ POSITION CLOSED ]** 🏁\n\n"
             f"📊 **ASSET:** `{symbol}` ({order_type})\n"
             f"📦 **LOT SIZE:** `{lots:.2f} Lots`\n"

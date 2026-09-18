@@ -997,54 +997,68 @@
         </div>
     </div>
     
-    <!-- PURE SMC 5-STEP VISUAL TELEMETRY WIDGET -->
+    <!-- PURE SMC 7-STEP VISUAL TELEMETRY WIDGET -->
     <div id="pure-smc-widget" class="card" style="margin-bottom: 25px; background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 14px; padding: 20px; backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,0.25);">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
             <div style="display: flex; align-items: center; gap: 12px;">
                 <span style="font-size: 26px;">🏛️</span>
                 <div>
-                    <div style="font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 700; color: #ffffff;">Pure Institutional SMC / ICT 5-Step Live Telemetry</div>
-                    <div style="font-size: 11px; color: var(--text-muted);">Real-time visual tracking of M15 Bias, Liquidity Sweeps, CHoCH Levels, FVG Zones & Entry Signals</div>
+                    <div style="font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 700; color: #ffffff;">Pure Institutional SMC / ICT 7-Step Live Telemetry</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Real-time visual tracking of M15 Bias, Sweeps, Post-CHoCH FVGs, FVG Retest & Closed Rejection Confirmation</div>
                 </div>
             </div>
-            <span id="smc-engine-badge" class="market-badge badge-open" style="font-size: 11px; padding: 6px 14px;">🟢 5-STEP SMC ENGINE ACTIVE</span>
+            <span id="smc-engine-badge" class="market-badge badge-open" style="font-size: 11px; padding: 6px 14px;">🟢 7-STEP SMC ENGINE ACTIVE</span>
         </div>
 
-        <!-- 5-STEP SEQUENTIAL STATUS CARDS GRID -->
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+        <!-- 7-STEP SEQUENTIAL STATUS CARDS GRID -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;">
             <!-- STEP 1: M15 BIAS -->
-            <div id="smc-card-s1" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+            <div id="smc-card-s1" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; transition: all 0.3s ease;">
                 <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 1: M15 Structure Bias</div>
-                <div id="smc-s1-val" style="font-size: 14px; font-weight: 800; color: #38bdf8;">BEARISH 🔴</div>
+                <div id="smc-s1-val" style="font-size: 13px; font-weight: 800; color: #38bdf8;">BEARISH 🔴</div>
                 <div id="smc-s1-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">M15 Structure: LH+LL</div>
             </div>
 
             <!-- STEP 2: M5 SWEEP -->
-            <div id="smc-card-s2" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+            <div id="smc-card-s2" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; transition: all 0.3s ease;">
                 <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 2: Liquidity Sweep</div>
-                <div id="smc-s2-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s2-val" style="font-size: 13px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
                 <div id="smc-s2-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning M5 Sweeps</div>
             </div>
 
             <!-- STEP 3: M5 CHOCH -->
-            <div id="smc-card-s3" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
+            <div id="smc-card-s3" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; transition: all 0.3s ease;">
                 <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 3: M5 CHoCH / BOS</div>
-                <div id="smc-s3-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
-                <div id="smc-s3-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning CHoCH Level</div>
+                <div id="smc-s3-val" style="font-size: 13px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s3-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Post-Sweep CHoCH</div>
             </div>
 
-            <!-- STEP 4: FVG RETEST -->
-            <div id="smc-card-s4" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
-                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 4: 3-Candle FVG Zone</div>
-                <div id="smc-s4-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
-                <div id="smc-s4-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning Active FVGs</div>
+            <!-- STEP 4: POST-CHOCH FVG -->
+            <div id="smc-card-s4" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 4: Post-CHoCH FVG</div>
+                <div id="smc-s4-val" style="font-size: 13px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s4-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">New FVG Zone</div>
             </div>
 
-            <!-- STEP 5: REJECTION ENTRY -->
-            <div id="smc-card-s5" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; transition: all 0.3s ease;">
-                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 5: Candle Rejection</div>
-                <div id="smc-s5-val" style="font-size: 14px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
-                <div id="smc-s5-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Scanning Rejection Close</div>
+            <!-- STEP 5: SAME FVG RETEST -->
+            <div id="smc-card-s5" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 5: FVG Retest</div>
+                <div id="smc-s5-val" style="font-size: 13px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s5-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Price In FVG Zone</div>
+            </div>
+
+            <!-- STEP 6: REJECTION CANDLE -->
+            <div id="smc-card-s6" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 6: Rejection Candle</div>
+                <div id="smc-s6-val" style="font-size: 13px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s6-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">FVG Rejection Wick</div>
+            </div>
+
+            <!-- STEP 7: CANDLE CLOSED CONFIRMATION -->
+            <div id="smc-card-s7" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; transition: all 0.3s ease;">
+                <div style="font-size: 10px; text-transform: uppercase; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">Step 7: Candle Closed</div>
+                <div id="smc-s7-val" style="font-size: 13px; font-weight: 800; color: #94a3b8;">FAIL ⚪</div>
+                <div id="smc-s7-sub" style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Closed Confirmation</div>
             </div>
         </div>
     </div>
@@ -1056,7 +1070,7 @@
                 <span style="font-size: 22px;">📊</span>
                 <div>
                     <div style="font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 700; color: #ffffff;">Live Institutional Pure SMC TradingView Chart (Zero MA / Vol / RSI)</div>
-                    <div style="font-size: 11px; color: var(--text-muted);">Real-time Candlesticks with Live 5-Step Telemetry HUD Overlay & Zero Extra Indicator Noise</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Real-time Candlesticks with Live 7-Step Telemetry HUD Overlay & Zero Extra Indicator Noise</div>
                 </div>
             </div>
             <span id="chart-pair-tag" class="market-badge badge-open" style="font-size: 11px; padding: 5px 12px;">XAUUSD / XAGUSD (M5)</span>

@@ -1,0 +1,293 @@
+[0.3s] A trending market is like a speeding
+[2.6s] bus. Just as you would wait for a bus to
+[5.0s] slow down or completely stop before you
+[7.8s] board, with a trending market, you
+[9.5s] wouldn't just enter trades anywhere.
+[11.6s] Instead, you would wait for the trend to
+[13.5s] slow down before entering your trade.
+[16.2s] This slowing down of a trending market
+[18.4s] is often referred to as a retracement or
+[21.3s] more specifically a pullback. However,
+[24.2s] identifying pullbacks in the market is
+[26.2s] always easier said than done. It's not
+[28.6s] always straightforward to determine the
+[30.5s] end of a bullbuck and the beginning of a
+[32.7s] trend continuation. That is why in this
+[35.2s] video we're going to explore a unique
+[37.0s] trading tool known as the Zcore
+[39.4s] probability indicator. When used
+[41.6s] alongside other confluence factors, this
+[44.1s] indicator can help us anticipate market
+[46.6s] pullbacks before they even happen. Let's
+[49.3s] get into it. Now, as mentioned earlier,
+[51.6s] this indicator is called Zcore
+[53.9s] probability indicator. To add it to our
+[56.2s] chart, we're going to click on
+[57.4s] indicators, then type in Zcore [music]
+[60.3s] probability.
+[61.9s] This one by Steves.
+[64.2s] The Zcore probability indicator is a
+[67.2s] statistical tool used in trading and is
+[69.7s] based on the concepts of Zcore. Now, you
+[72.6s] may be thinking,
+[73.5s] but what exactly is Zcore?
+[76.2s] Well, zcore is basically a statistical
+[78.6s] measurement that describes a values
+[81.1s] relationship to the mean of a group of
+[83.3s] values. This indicator uses both the
+[85.9s] standard deviation and the mean of a
+[88.0s] data set to provide a zcore which is
+[90.6s] then translated into a probability. Now
+[93.5s] this trading tool is made up of several
+[95.6s] different components. This red and green
+[98.0s] histogram is called the zscore
+[100.2s] histogram. When it's colored red it
+[102.3s] indicates a bearish market momentum and
+[104.7s] when it's colored green it indicates a
+[107.0s] bullish market momentum. This white line
+[109.6s] right here is called the Z SMA, which is
+[112.5s] just a simple moving average plotted on
+[115.0s] top of the Zcore indicator. When the
+[117.4s] Zcore histogram is colored green and
+[119.7s] goes above the moving average, that
+[121.8s] indicates a strong bullish momentum. And
+[124.5s] when it's colored green and below the
+[126.8s] moving average, that indicates a
+[129.0s] weakening of that bullish momentum or a
+[131.4s] pullback in the market. And of course,
+[133.4s] it's going to be the opposite in a
+[135.0s] bearish market. Next, we have these
+[137.4s] horizontal lines right here that
+[139.7s] correspond to the scale values of 0, 1,
+[143.1s] 2, and 3, as well as minus1, minus2, and
+[147.2s] minus3. [music] These are basically the
+[149.9s] standard deviations. These numbers
+[152.4s] indicate the price points that GBP JPY
+[155.4s] will need to achieve in order to get to
+[157.4s] these specific standard deviations. So,
+[160.1s] for example, in order for it to get to
+[161.8s] the third standard deviation, it would
+[163.8s] need to get to the price level of
+[166.0s] 170.21,
+[167.5s] which is just a tiny bit higher than
+[169.8s] where it's currently at. This table
+[172.1s] contains the zcore or [music] the
+[174.0s] standard deviations. And down here we
+[176.0s] have the probabilities of each standard
+[178.2s] deviation being achieved or not being
+[180.6s] achieved. So for example, suppose the
+[183.0s] price of GBP JPY is increasing and
+[185.8s] pushes into the 2 to three Zcore range.
+[189.3s] In that case, the indicator can help
+[191.3s] estimate the price level corresponding
+[193.2s] to a retracement to a Zcore of 2 and the
+[196.7s] probability of this retracement
+[198.7s] happening. So as we can see here, GBP
+[201.4s] JPY pushed into a Zcore of 2.453.
+[205.0s] [music]
+[205.6s] Now according to this indicator the
+[207.8s] probability of GBP JPY coming back down
+[210.6s] to the second Zcore is 0.98 or 98%.
+[215.8s] And for this to happen GBP JPY will need
+[218.5s] to come back down to this [music] exact
+[220.9s] price point as indicated by the
+[222.9s] indicator. And we can apply the same
+[225.7s] method for any other Zcore. So for
+[228.1s] example, if you wanted to know what the
+[230.2s] chance is that the price will get to the
+[232.6s] minus1 zcore, you just look at this
+[235.3s] number which is 0.16. So there is only a
+[238.9s] 16% chance that the price will get to
+[241.6s] the minus1 zcore. And in order to do
+[244.0s] that, the price will need to come back
+[245.8s] down to this exact price point. Pretty
+[248.4s] cool, right? Bear in mind that these
+[250.8s] probabilities pertain to retracements
+[253.4s] rather than continued price movements.
+[255.8s] So for example here the exact zcore of
+[258.5s] GBP JPY is 2.453.
+[261.8s] For any zcore lower than 2.453
+[265.4s] the indicator provides the probability
+[267.4s] of the price retracing to that level.
+[270.6s] However for any zcores higher than 2.453
+[274.6s] the indicator predicts the likelihood of
+[276.6s] the price failing to reach that point.
+[279.5s] As an example consider a zcore of three.
+[283.0s] This reflects a continued price
+[284.8s] movement. not a retracement. This value
+[287.8s] doesn't represent the likelihood that
+[289.6s] the price will reach the third zcore,
+[292.1s] but rather the probability that the
+[294.2s] price will not get there. Essentially,
+[297.0s] this can be interpreted to mean that 98%
+[299.8s] of data points fall below a zcore of
+[303.0s] three or that there is a 98% chance that
+[306.2s] the price will not reach that level.
+[308.5s] [music]
+[308.7s] The input settings of this indicator
+[310.6s] allows us to change the look back
+[312.3s] length, the SMA length, as well as other
+[315.1s] options. For this video, we're going to
+[317.1s] keep everything else at default, but
+[318.8s] we're going to disable the Z table and
+[321.1s] the SMA. Then on the style tab, we're
+[323.8s] going to disable the labels option and
+[326.1s] then click okay. Now,
+[327.8s] how are we going to be using this
+[329.5s] indicator to trade?
+[330.8s] Well, it's really simple. Every time the
+[333.2s] price pushes into a zcore lower than
+[335.8s] minus3, we're going to wait for it to
+[337.8s] start coming back up to indicate a
+[340.0s] bullish retracement. Then we're going to
+[342.6s] enter a [music] long trade.
+[346.2s] On the other hand, every time the price
+[348.2s] pushes to a zcore that's higher than
+[351.0s] three, we're going to wait for it to
+[352.7s] start coming back down to indicate a
+[355.0s] bearish retracement [music] and then
+[357.1s] we're going to enter a short trade.
+[361.0s] Now, let's add two extra confirmation
+[363.4s] indicators to create a simple yet
+[365.8s] powerful trading strategy. But before we
+[368.2s] do that, if you're looking for a forex
+[370.1s] broker with some of the lowest
+[371.4s] commissions and spreads in the market,
+[373.0s] then check out Hank Trade. I personally
+[375.6s] use them on a daily basis, as you can
+[377.6s] see here, this is my trading history. I
+[380.0s] mainly scalp gold. And up here, you can
+[382.6s] see that it's actually a live account.
+[384.9s] If you're like me and you love having a
+[387.0s] high leverage on your trading account,
+[388.9s] then you're in luck because Hanker Trade
+[390.9s] offers a maximum leverage of 1 to500.
+[394.6s] And if that's not enough, they're also
+[396.3s] going to give you a 100% bonus for all
+[399.4s] your deposits up to $25,000. So if you
+[402.4s] deposit, say $500, they're going to give
+[405.1s] you a bonus of $500. So you'll have
+[408.0s] $1,000 to trade with. [music] to access
+[410.3s] the bonus as well as all the other
+[411.9s] perks. Sign up to Hanker Trade using the
+[414.2s] link in the video description. Back to
+[416.2s] the video. Open the indicator search tab
+[418.6s] and type in market bias. Select this one
+[421.9s] by Professor X. [music] Next, type in
+[424.4s] support resistance channels. This one by
+[427.2s] Lansome the Blue. Double click on the
+[429.6s] market bias indicator [music] and on the
+[431.8s] inputs tab, change the length to 150 and
+[435.4s] change the smoothing to 50. Then on the
+[437.8s] style tab, disable this first option.
+[440.8s] [music] This indicator is going to be
+[442.5s] used for trend confirmations. The
+[444.7s] support and resistance indicator is
+[446.3s] going to be used for exactly that to
+[448.4s] identify support and resistance levels.
+[450.8s] And yes, we're going to stick to its
+[452.6s] default settings. Now, how do we trade
+[455.1s] using this strategy? Well, let me show
+[457.4s] you. to take a long trade. First, the
+[460.2s] trend ribbon of the market bias
+[461.9s] indicator should be colored dark green
+[464.1s] to indicate a pullback in a bullish
+[466.2s] trend. Second, we want the zcore
+[468.7s] histogram to go below the minus3 zcore.
+[472.3s] So, basically below this lower red zone.
+[476.6s] This indicates that the price is further
+[479.2s] away from the mean or the average which
+[482.0s] is a good thing for us because if it
+[483.8s] comes back up to the mean that would be
+[486.2s] an opportunity for us to make some
+[488.0s] profit. The third condition is that we
+[490.6s] want the market to print a green bullish
+[492.9s] candle with a zcore that is higher than
+[495.4s] that of the current candle. So this is
+[497.9s] the zcore of the current candle. If the
+[500.4s] next candle's zcore happens to be
+[502.5s] greater than this then it's a valid
+[505.0s] setup.
+[506.3s] [music]
+[507.7s] Having the current candle's zcore higher
+[510.2s] than that of the previous candle
+[512.1s] indicates the beginning of this bullish
+[514.2s] trend continuation and an end of this
+[516.9s] pullback. This becomes our potential
+[519.8s] entry candle. Last but not least, we
+[522.6s] want that potential entry candle to be
+[524.9s] rejecting off of a support level. To
+[527.6s] confirm that, we just activate the
+[529.2s] support resistance indicator. And as you
+[531.8s] can see here, there is this green level
+[533.9s] right here which indicates a support
+[536.1s] level and the price is rejecting from
+[538.2s] it. This is going to increase the
+[540.2s] probability of the price going in the
+[542.4s] direction of our trade. All our entry
+[544.6s] conditions are met on this candle. So,
+[547.0s] we're going to enter a long trade here.
+[549.4s] The stop loss is going to be set below
+[551.4s] the most recent swing low. For the
+[553.7s] takerit, we're going to set it at 2.5
+[556.2s] times the risk. We let the trade run
+[560.8s] and take profit. For short trades, we're
+[564.2s] just going to do the opposite. So,
+[565.9s] first, [music] the trend ribbon of the
+[567.4s] market bias indicator should be colored
+[569.6s] dark red to indicate a pullback in a
+[572.0s] bearish trend. Second, we want the Zcore
+[575.4s] histogram to go above the third upper
+[578.2s] Zcore. So, basically above this upper
+[581.0s] red zone.
+[583.7s] This indicates that the price is further
+[586.3s] away from its mean or the average, which
+[588.9s] is going to be a good thing for us
+[590.3s] because if the price goes back to the
+[592.2s] mean, that would be an opportunity for
+[594.3s] us to make some profit. [music]
+[596.9s] The third condition is that we want the
+[599.0s] market to print a red bearish candle
+[601.0s] with a zcore that is lower than that of
+[603.5s] the current candle. So, this is the
+[605.7s] zcore of the current candle. If the next
+[608.1s] candle's zcore happens to be less than
+[610.6s] this, then it's a valid setup.
+[613.1s] [music]
+[614.5s] Having the current candle's zcore higher
+[616.9s] than that of the previous candle
+[618.6s] indicates the beginning of this bearish
+[620.5s] trend continuation and an end of this
+[623.0s] pullback. This becomes our potential
+[625.8s] entry candle. Last but not least, we
+[628.2s] want that potential entry candle to be
+[630.2s] rejecting off of a resistance level. To
+[633.0s] confirm that, we just activate the
+[634.6s] support resistance indicator. And as you
+[637.2s] can see here, there is this red level
+[639.3s] right here which indicates a resistance
+[641.4s] level. and the price is rejecting from
+[643.5s] it. This is going to increase the
+[645.3s] probability of the price going in the
+[647.4s] direction of our trade. All our entry
+[649.6s] conditions are met on this candle. So,
+[651.8s] we're going to enter a short trade here.
+[654.6s] The stop loss is going to be set above
+[656.6s] the most recent swing high. And for the
+[659.7s] takerit, we're going to set it at 2.5
+[661.6s] [music] times the risk. We let the trade
+[664.5s] run
+[667.2s] and take profit. [music]
+[669.9s] This is just one of the many strategies
+[671.9s] that you can do using the Zcore
+[674.1s] probability indicator. Go ahead and take
+[676.6s] a look at this awesome tool and see what
+[679.0s] other strategies you can come up with.
+[681.2s] If you have any questions about this
+[683.1s] specific strategy, let us know in the
+[685.3s] comment section below. That's been it
+[686.8s] for this video. I hope you found some
+[688.4s] value. If you did, hit the like button
+[690.5s] below and consider subscribing to stay
+[692.3s] [music] tuned. Thanks for watching. See
+[694.6s] you next time.

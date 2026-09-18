@@ -176,11 +176,11 @@ export default function Signals() {
     const lotStr = (category === "metals") ? "0.07" : "0.51";
     const actStr = isBuy ? "MARKET BUY 🟢" : "MARKET SELL 🔴";
 
-    const text = `📢 *PURE SMC / ICT 5-STEP SIGNAL ENGINE* 📢\n` +
+    const text = `📢 *PURE SMC / ICT 7-STEP SIGNAL ENGINE* 📢\n` +
       `🚀 *[ NEW OPEN POSITION ]* 🚀\n\n` +
       `🟢 *ACTION:* \`${actStr}\` (${sig.symbolA})\n` +
       `⏱ *TIME:* \`${timeStr}\` \n` +
-      `📊 *STRATEGY:* \`Pure SMC/ICT 5-Step Structure\`\n\n` +
+      `📊 *STRATEGY:* \`Pure SMC/ICT 7-Step Structure\`\n\n` +
       `📥 *ENTRY PRICE:* \`${details.entry}\` \n` +
       `⛔ *STOP LOSS (SL):* \`${details.sl}\` *(Swing High + $0.75 Buffer)*\n` +
       `🎯 *TAKE PROFIT (TP):* \`${details.tp2}\` *(1:1.8 RRR Target / +$91 Profit)*\n` +
@@ -204,7 +204,7 @@ export default function Signals() {
     <div className="flex flex-col h-full overflow-auto bg-background p-6 space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-foreground">Pure SMC / ICT Signal Log</h2>
-        <p className="text-sm text-muted-foreground">Automated 5-Step Pure SMC execution & telemetry log</p>
+        <p className="text-sm text-muted-foreground">Automated 7-Step Pure SMC execution & telemetry log</p>
       </div>
 
       <Card className="bg-card border-border">
