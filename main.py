@@ -2815,20 +2815,14 @@ def main():
                         entry_b = best_sig["tick_b"].bid if is_long else best_sig["tick_b"].ask
                         
                         sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
-                        # Feature 3 & Feature 4: Dynamic ATR & Swing High/Low Structure Targets
-                        from math_models import calculate_dynamic_atr_tp_pips, find_swing_high_low_tp
-                        dynamic_atr_tp = calculate_dynamic_atr_tp_pips(S_A, timeframe=mt5.TIMEFRAME_M15, multiplier=1.5, fallback_tp_pips=TP_PIPS)
-                        swing_tp_price, swing_type, swing_pips = find_swing_high_low_tp(S_A, order_type="BUY" if is_long else "SELL", timeframe=mt5.TIMEFRAME_M15, lookback=30, fallback_pips=dynamic_atr_tp)
-                        
-                        logger.info(f"🎯 [DYNAMIC ATR TARGET] Active M15 ATR TP: {dynamic_atr_tp:.1f} pips (Multiplier: 1.5x | Base TP Pips: {TP_PIPS:.1f})")
-
-                        logger.info(f"🏛️ [SWING STRUCTURE TARGET] Structure Target: {swing_tp_price:.5f} ({swing_type} | Distance: {swing_pips:.1f} pips)")
+                        # Pure SMC/ICT 1:1.8 RRR Take Profit Target (Disabled Dynamic ATR)
+                        tp_dist = 1.8 * sl_dist
                         
                         info_pip_a = mt5.symbol_info(S_A)
                         pt_a = info_pip_a.point if info_pip_a else 0.0001
                         pip_sz_a = (pt_a * 10.0) if (info_pip_a and info_pip_a.digits in (3, 5)) else pt_a
 
-                        # Real quantitative target price levels for TP1, TP2, TP3
+                        # Pure 1:1.8 RRR Target Price Levels ($91.00 Profit Target on Gold 0.07 Lots)
                         tp1_val = entry_a + (tp_dist * 0.5) if is_long else entry_a - (tp_dist * 0.5)
                         tp2_val = entry_a + tp_dist if is_long else entry_a - tp_dist
                         tp3_val = entry_a + (tp_dist * 1.5) if is_long else entry_a - (tp_dist * 1.5)
@@ -3125,7 +3119,7 @@ def main():
             forex_log_str = "ENABLED 🟢" if FOREX_ENABLED else "DISABLED 🔴"
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Engine: Pure SMC/ICT Active 🟢 "
-                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: ENABLED 🟢 "
+                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: DISABLED ❌ (Pure 1:1.8 RRR Target) "
             )
 
             eff_dd_log = max(daily_loss_p, peak_dd_p)
