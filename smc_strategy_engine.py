@@ -209,9 +209,10 @@ def evaluate_smc_strategy_signal(
             scan_rrr = 2.0
 
         if scan_rrr >= 2.0:
-            step9_s = f"PASS 🟢 ({scan_rrr:.2f}R Target >= 2.0R Min)"
+            target_rrr_lock = min(3.0, max(2.0, scan_rrr))
+            step9_s = f"PASS 🟢 ({scan_rrr:.1f}R Target Space -> Locked {target_rrr_lock:.1f}R TP)"
         else:
-            step9_s = f"FAIL 🔴 ({scan_rrr:.2f}R Target < 2.0R Min)"
+            step9_s = f"FAIL 🔴 ({scan_rrr:.1f}R Target Space < 2.0R Min)"
     except Exception:
         step9_s = "PASS 🟢 (M15 Target Min 2.0R / Preferred 3.0R)"
 
