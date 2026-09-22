@@ -3123,7 +3123,7 @@ def main():
             forex_log_str = "ENABLED 🟢" if FOREX_ENABLED else "DISABLED 🔴"
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Engine: Pure SMC/ICT Active 🟢 "
-                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: DISABLED ❌ (Pure 1:1.8 RRR Target) "
+                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: DISABLED ❌ (M15 Structural Target: Min 2.0R / Preferred 3.0R) "
             )
 
             eff_dd_log = max(daily_loss_p, peak_dd_p)

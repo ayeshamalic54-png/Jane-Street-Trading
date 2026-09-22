@@ -2000,7 +2000,7 @@ def main():
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Dynamic OB/FVG Zone SL ($1.50-$7.50 Gold / 12-19.4 pips Forex) | 1:1.8 RRR TP Target ($91 USD Profit Target) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target Min 2.0R / Preferred 3.0R) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
 
 
 
@@ -2108,7 +2108,7 @@ def main():
                     SL_PIPS = new_sl
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
-                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] SL Distance: $7.50 Gold Cap | 1:1.8 RRR TP Target ($91 USD Profit Target) | Engine: Pure SMC/ICT Active 🟢")
+                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target Min 2.0R / Preferred 3.0R) | Engine: Pure SMC/ICT Active 🟢")
                         logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Tier 1: +$62.00 Net Profit Lock | Tier 2: +$80.00 Net Profit Lock | Full TP Target: +$91.00 USD) | Friday Close Guard: ENABLED 🌅")
 
 
@@ -3123,7 +3123,7 @@ def main():
             forex_log_str = "ENABLED 🟢" if FOREX_ENABLED else "DISABLED 🔴"
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Engine: Pure SMC/ICT Active 🟢 "
-                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: DISABLED ❌ (Pure 1:1.8 RRR Target) "
+                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: DISABLED ❌ (M15 Structural Target: Min 2.0R / Preferred 3.0R) "
             )
 
             eff_dd_log = max(daily_loss_p, peak_dd_p)
