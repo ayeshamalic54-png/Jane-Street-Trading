@@ -2587,7 +2587,7 @@ def main():
                     action = "SELL_SPREAD"
 
 
-                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: 1:1.8 RRR ($91 Profit Target) 🟢")
+                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: M15 Structural Target (Min 2.0R / Preferred 3.0R) 🟢")
                 try:
                     from database import update_smc_telemetry
                     import json
