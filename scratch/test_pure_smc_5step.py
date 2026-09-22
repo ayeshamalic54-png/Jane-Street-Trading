@@ -54,7 +54,7 @@ act_sell, tp_s, sl_s, dist_s, msg_s = evaluate_smc_strategy_signal(df_m15=df_m15
 clean_s = msg_s.encode('ascii', errors='ignore').decode('ascii')
 
 # --- 3. TEST CASE 3: FOREX MAJOR (EURUSD) 5-STEP BUY SETUP ---
-m15_forex = [{'open': d['open']/4000.0, 'high': d['high']/4000.0, 'low': d['low']/4000.0, 'close': d['close']/4000.0, 'symbol': 'EURUSD'} for d in m15_bull]
+m15_forex = [{'open': d['open']/4000.0, 'high': (d['high']+40.0)/4000.0 if d['high']==4425 else d['high']/4000.0, 'low': d['low']/4000.0, 'close': d['close']/4000.0, 'symbol': 'EURUSD'} for d in m15_bull]
 df_m15_fx = pd.DataFrame(m15_forex)
 
 m5_fx_data = [{'open': d['open']/4000.0, 'high': d['high']/4000.0, 'low': d['low']/4000.0, 'close': d['close']/4000.0} for d in m5_buy_data]

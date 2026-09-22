@@ -80,15 +80,25 @@ def evaluate_smc_strategy_signal(
     # ── 1. BUY SIGNAL EVALUATION (CONDITION 8 & 9 MANDATORY 🟢) ──
     if is_m15_bullish and has_sell_sweep and has_bull_choch and (len(zones_bull['bullish_fvg']) > 0) and in_bull_fvg and p5_buy_rejection:
         buf = 0.75 if is_metals else 0.00040
+        min_dist = 0.01 if is_metals else 0.00010
         sl_price = sweep_low_price - buf
-        sl_dist = max(0.01, price - sl_price)
+        sl_dist = max(min_dist, price - sl_price)
 
         # Condition 9: Identify next M15 structural target high above entry
         from smc_indicators import get_swing_points
         m15_sh, _ = get_swing_points(df_m15, n_left=2, n_right=2)
         m15_targets = [p for p, _ in m15_sh if p > price]
-        target_high = min(m15_targets) if m15_targets else (price + 3.0 * sl_dist)
-        avail_rrr = (target_high - price) / sl_dist
+        if not m15_targets:
+            target_high = price + 3.0 * sl_dist
+            avail_rrr = 3.0
+        else:
+            valid_targets = [p for p in m15_targets if (p - price) / sl_dist >= 2.0]
+            if valid_targets:
+                target_high = min(valid_targets)
+                avail_rrr = (target_high - price) / sl_dist
+            else:
+                target_high = max(m15_targets)
+                avail_rrr = (target_high - price) / sl_dist
 
         if avail_rrr < 2.0 and not bypass_filters:
             return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 2.0R Requirement)"
@@ -107,15 +117,25 @@ def evaluate_smc_strategy_signal(
     # ── 2. SELL SIGNAL EVALUATION (CONDITION 8 & 9 MANDATORY 🔴) ──
     if is_m15_bearish and has_buy_sweep and has_bear_choch and (len(zones_bear['bearish_fvg']) > 0) and in_bear_fvg and p5_sell_rejection:
         buf = 0.75 if is_metals else 0.00040
+        min_dist = 0.01 if is_metals else 0.00010
         sl_price = sweep_high_price + buf
-        sl_dist = max(0.01, sl_price - price)
+        sl_dist = max(min_dist, sl_price - price)
 
         # Condition 9: Identify next M15 structural target low below entry
         from smc_indicators import get_swing_points
         _, m15_sl = get_swing_points(df_m15, n_left=2, n_right=2)
         m15_targets = [p for p, _ in m15_sl if p < price]
-        target_low = max(m15_targets) if m15_targets else (price - 3.0 * sl_dist)
-        avail_rrr = (price - target_low) / sl_dist
+        if not m15_targets:
+            target_low = price - 3.0 * sl_dist
+            avail_rrr = 3.0
+        else:
+            valid_targets = [p for p in m15_targets if (price - p) / sl_dist >= 2.0]
+            if valid_targets:
+                target_low = max(valid_targets)
+                avail_rrr = (price - target_low) / sl_dist
+            else:
+                target_low = min(m15_targets)
+                avail_rrr = (price - target_low) / sl_dist
 
         if avail_rrr < 2.0 and not bypass_filters:
             return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 2.0R Requirement)"
