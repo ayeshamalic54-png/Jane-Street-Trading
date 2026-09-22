@@ -178,7 +178,42 @@ def evaluate_smc_strategy_signal(
         step7_s = "FAIL ⚪ (M15 Structure Neutral)"
 
     step8_s = "PASS 🟢 (0.75 Buf)" if is_metals else "PASS 🟢 (0.0004 Buf)"
-    step9_s = "PASS 🟢 (M15 Target Min 2.0R / Preferred 3.0R)"
+
+    try:
+        from smc_indicators import get_swing_points
+        buf = 0.75 if is_metals else 0.00040
+        min_dist = 0.01 if is_metals else 0.00010
+        if is_m15_bullish:
+            sl_p_check = (sweep_low_price - buf) if has_sell_sweep else (price - (1.5 if is_metals else 0.0015))
+            sl_d_check = max(min_dist, price - sl_p_check)
+            m15_sh, _ = get_swing_points(df_m15, n_left=2, n_right=2)
+            m15_targets = [p for p, _ in m15_sh if p > price]
+            if not m15_targets:
+                scan_rrr = 3.0
+            else:
+                valid_targets = [p for p in m15_targets if (p - price) / sl_d_check >= 2.0]
+                target_high = min(valid_targets) if valid_targets else max(m15_targets)
+                scan_rrr = (target_high - price) / sl_d_check
+        elif is_m15_bearish:
+            sl_p_check = (sweep_high_price + buf) if has_buy_sweep else (price + (1.5 if is_metals else 0.0015))
+            sl_d_check = max(min_dist, sl_p_check - price)
+            _, m15_sl = get_swing_points(df_m15, n_left=2, n_right=2)
+            m15_targets = [p for p, _ in m15_sl if p < price]
+            if not m15_targets:
+                scan_rrr = 3.0
+            else:
+                valid_targets = [p for p in m15_targets if (price - p) / sl_d_check >= 2.0]
+                target_low = max(valid_targets) if valid_targets else min(m15_targets)
+                scan_rrr = (price - target_low) / sl_d_check
+        else:
+            scan_rrr = 2.0
+
+        if scan_rrr >= 2.0:
+            step9_s = f"PASS 🟢 ({scan_rrr:.2f}R Target >= 2.0R Min)"
+        else:
+            step9_s = f"FAIL 🔴 ({scan_rrr:.2f}R Target < 2.0R Min)"
+    except Exception:
+        step9_s = "PASS 🟢 (M15 Target Min 2.0R / Preferred 3.0R)"
 
     scan_msg = f"Scanning Strict 9-Condition SMC | S1(M15): {step1_s} | S2(Sweep): {step2_s} | S3(CHoCH): {step3_s} | S4(Post-CHoCH FVG): {step4_s} | S5(Retest): {step5_s} | S6(Rejection): {step6_s} | S7(Closed): {step7_s} | S8(SL Buf): {step8_s} | S9(Target): {step9_s}"
     return "NONE", None, None, 0.0, scan_msg
