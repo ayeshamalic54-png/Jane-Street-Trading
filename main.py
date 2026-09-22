@@ -1045,15 +1045,17 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         z_type = "Oversold Trigger" if z_score < 0 else "Overbought Trigger"
         z_str = f"{z_score:+.3f}"
         
+        rrr_val = (abs(tp2 - entry_a) / abs(entry_a - sl_a)) if abs(entry_a - sl_a) > 0 else 2.0
+        
         message = (
-            f"📢 **PURE SMC / ICT 7-STEP SIGNAL ENGINE** 📢\n"
+            f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
             f"🚀 **[ NEW OPEN POSITION ]** 🚀\n\n"
             f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
-            f"📊 **STRATEGY:** `Pure SMC / ICT 7-Step Structure 🟢`\n\n"
+            f"📊 **STRATEGY:** `Pure SMC / ICT 9-Condition Structure 🟢`\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
-            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Local Sweep + Buffer)*\n"
-            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *(1:1.8 RRR Target / +$91 Profit)*\n"
+            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Sweep + 0.75 Buffer)*\n"
+            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.1f}R Target / M15 Structural Target)*\n"
             f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
         
