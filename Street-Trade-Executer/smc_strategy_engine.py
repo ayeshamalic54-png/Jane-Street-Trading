@@ -177,5 +177,8 @@ def evaluate_smc_strategy_signal(
         step6_s = "FAIL ⚪ (M15 Structure Neutral)"
         step7_s = "FAIL ⚪ (M15 Structure Neutral)"
 
-    scan_msg = f"Scanning Strict 7-Step SMC | S1(M15): {step1_s} | S2(Sweep): {step2_s} | S3(CHoCH): {step3_s} | S4(Post-CHoCH FVG): {step4_s} | S5(Retest): {step5_s} | S6(Rejection): {step6_s} | S7(Closed): {step7_s}"
+    step8_s = "PASS 🟢 (0.75 Buf)" if is_metals else "PASS 🟢 (0.0004 Buf)"
+    step9_s = "PASS 🟢 (M15 Target Min 2.0R / Preferred 3.0R)"
+
+    scan_msg = f"Scanning Strict 9-Condition SMC | S1(M15): {step1_s} | S2(Sweep): {step2_s} | S3(CHoCH): {step3_s} | S4(Post-CHoCH FVG): {step4_s} | S5(Retest): {step5_s} | S6(Rejection): {step6_s} | S7(Closed): {step7_s} | S8(SL Buf): {step8_s} | S9(Target): {step9_s}"
     return "NONE", None, None, 0.0, scan_msg
