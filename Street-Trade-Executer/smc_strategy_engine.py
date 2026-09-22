@@ -103,14 +103,14 @@ def evaluate_smc_strategy_signal(
         if avail_rrr < 2.0 and not bypass_filters:
             return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 2.0R Requirement)"
 
-        target_rrr = min(3.0, max(2.0, avail_rrr))
+        target_rrr = 2.0  # Execute at 2.0R (Max 3.0R space requirement)
         tp_price = price + (target_rrr * sl_dist)
 
         reason = f"🟢 STRICT SMC PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) + CHoCH ({bull_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.1f}R)"
         logger.info("================================================================================")
         logger.info(f"🟢 [STRICT SMC BUY SIGNAL EXECUTED] 🚀")
         logger.info(f"🟢 Condition 8 (Structural SL): Sweep Low ({sweep_low_price:.2f}) - 0.75 = {sl_price:.2f} 🟢")
-        logger.info(f"🟢 Condition 9 (Target TP): M15 Target ({target_high:.2f}) -> {target_rrr:.1f}R TP @ {tp_price:.2f} 🟢")
+        logger.info(f"🟢 Condition 9 (Target TP): M15 Target ({target_high:.2f}) -> Executing 2.0R TP @ {tp_price:.2f} 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
@@ -140,14 +140,14 @@ def evaluate_smc_strategy_signal(
         if avail_rrr < 2.0 and not bypass_filters:
             return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 2.0R Requirement)"
 
-        target_rrr = min(3.0, max(2.0, avail_rrr))
+        target_rrr = 2.0  # Execute at 2.0R (Max 3.0R space requirement)
         tp_price = price - (target_rrr * sl_dist)
 
         reason = f"🔴 STRICT SMC PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) + CHoCH ({bear_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.1f}R)"
         logger.info("================================================================================")
         logger.info(f"🔴 [STRICT SMC SELL SIGNAL EXECUTED] 🚀")
         logger.info(f"🔴 Condition 8 (Structural SL): Sweep High ({sweep_high_price:.2f}) + 0.75 = {sl_price:.2f} 🔴")
-        logger.info(f"🔴 Condition 9 (Target TP): M15 Target ({target_low:.2f}) -> {target_rrr:.1f}R TP @ {tp_price:.2f} 🔴")
+        logger.info(f"🔴 Condition 9 (Target TP): M15 Target ({target_low:.2f}) -> Executing 2.0R TP @ {tp_price:.2f} 🔴")
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
@@ -209,8 +209,7 @@ def evaluate_smc_strategy_signal(
             scan_rrr = 2.0
 
         if scan_rrr >= 2.0:
-            target_rrr_lock = min(3.0, max(2.0, scan_rrr))
-            step9_s = f"PASS 🟢 ({scan_rrr:.1f}R Target Space -> Locked {target_rrr_lock:.1f}R TP)"
+            step9_s = f"PASS 🟢 ({scan_rrr:.1f}R Target Space -> Executing 2.0R TP)"
         else:
             step9_s = f"FAIL 🔴 ({scan_rrr:.1f}R Target Space < 2.0R Min)"
     except Exception:
