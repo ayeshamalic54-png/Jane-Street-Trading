@@ -77,53 +77,57 @@ def evaluate_smc_strategy_signal(
     p5_buy_rejection = in_bull_fvg and (closed_close >= closed_open)
     p5_sell_rejection = in_bear_fvg and (closed_close <= closed_open)
 
-    # ── 1. BUY SIGNAL EVALUATION (ALL 7 STEPS MANDATORY 🟢) ──
+    # ── 1. BUY SIGNAL EVALUATION (CONDITION 8 & 9 MANDATORY 🟢) ──
     if is_m15_bullish and has_sell_sweep and has_bull_choch and (len(zones_bull['bullish_fvg']) > 0) and in_bull_fvg and p5_buy_rejection:
-        buf = 1.75 if is_metals else 0.00040
-        raw_sl_dist = max(0.0, price - (sweep_low_price - buf))
-        max_cap = 10.00 if is_metals else 0.00194
-        min_cap = 2.00 if is_metals else 0.00120
-        sl_dist = max(min_cap, min(raw_sl_dist, max_cap))
+        buf = 0.75 if is_metals else 0.00040
+        sl_price = sweep_low_price - buf
+        sl_dist = max(0.01, price - sl_price)
 
-        sl_price = price - sl_dist
-        tp_price = price + (1.8 * sl_dist)  # 1:1.8 RRR Target ($91.00 USD Profit Target)
+        # Condition 9: Identify next M15 structural target high above entry
+        from smc_indicators import get_swing_points
+        m15_sh, _ = get_swing_points(df_m15, n_left=2, n_right=2)
+        m15_targets = [p for p, _ in m15_sh if p > price]
+        target_high = min(m15_targets) if m15_targets else (price + 3.0 * sl_dist)
+        avail_rrr = (target_high - price) / sl_dist
 
-        reason = f"🟢 STRICT 7-STEP SMC PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) + CHoCH ({bull_choch_lvl:.2f}) + Post-CHoCH FVG Retest Rejection | SL: {sl_price:.2f}"
+        if avail_rrr < 2.0 and not bypass_filters:
+            return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 2.0R Requirement)"
+
+        target_rrr = min(3.0, max(2.0, avail_rrr))
+        tp_price = price + (target_rrr * sl_dist)
+
+        reason = f"🟢 STRICT SMC PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) + CHoCH ({bull_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.1f}R)"
         logger.info("================================================================================")
-        logger.info(f"🟢 [STRICT SMC 7-STEP BUY SIGNAL EXECUTED] 🚀")
-        logger.info(f"🟢 Step 1 (M15 Structure): Bullish HH+HL 🟢")
-        logger.info(f"🟢 Step 2 (M5 Sweep): Sell-side Sweep @ {sweep_low_price:.2f} 🟢")
-        logger.info(f"🟢 Step 3 (M5 CHoCH): Bullish Close > {bull_choch_lvl:.2f} 🟢")
-        logger.info(f"🟢 Step 4 (Post-CHoCH FVG): New FVG Created 🟢")
-        logger.info(f"🟢 Step 5 (FVG Retest): Price retested Post-CHoCH FVG 🟢")
-        logger.info(f"🟢 Step 6 (Rejection Candle): Closed Green Rejection 🟢")
-        logger.info(f"🟢 Step 7 (Closed Confirmation): Candle Closed -> BUY Order Sent 🟢")
-        logger.info(f"🟢 Dynamic SL @ {sl_price:.5f} | TP @ {tp_price:.5f} 🟢")
+        logger.info(f"🟢 [STRICT SMC BUY SIGNAL EXECUTED] 🚀")
+        logger.info(f"🟢 Condition 8 (Structural SL): Sweep Low ({sweep_low_price:.2f}) - 0.75 = {sl_price:.2f} 🟢")
+        logger.info(f"🟢 Condition 9 (Target TP): M15 Target ({target_high:.2f}) -> {target_rrr:.1f}R TP @ {tp_price:.2f} 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
-    # ── 2. SELL SIGNAL EVALUATION (ALL 7 STEPS MANDATORY 🔴) ──
+    # ── 2. SELL SIGNAL EVALUATION (CONDITION 8 & 9 MANDATORY 🔴) ──
     if is_m15_bearish and has_buy_sweep and has_bear_choch and (len(zones_bear['bearish_fvg']) > 0) and in_bear_fvg and p5_sell_rejection:
-        buf = 1.75 if is_metals else 0.00040
-        raw_sl_dist = max(0.0, (sweep_high_price + buf) - price)
-        max_cap = 10.00 if is_metals else 0.00194
-        min_cap = 2.00 if is_metals else 0.00120
-        sl_dist = max(min_cap, min(raw_sl_dist, max_cap))
+        buf = 0.75 if is_metals else 0.00040
+        sl_price = sweep_high_price + buf
+        sl_dist = max(0.01, sl_price - price)
 
-        sl_price = price + sl_dist
-        tp_price = price - (1.8 * sl_dist)  # 1:1.8 RRR Target ($91.00 USD Profit Target)
+        # Condition 9: Identify next M15 structural target low below entry
+        from smc_indicators import get_swing_points
+        _, m15_sl = get_swing_points(df_m15, n_left=2, n_right=2)
+        m15_targets = [p for p, _ in m15_sl if p < price]
+        target_low = max(m15_targets) if m15_targets else (price - 3.0 * sl_dist)
+        avail_rrr = (price - target_low) / sl_dist
 
-        reason = f"🔴 STRICT 7-STEP SMC PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) + CHoCH ({bear_choch_lvl:.2f}) + Post-CHoCH FVG Retest Rejection | SL: {sl_price:.2f}"
+        if avail_rrr < 2.0 and not bypass_filters:
+            return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 2.0R Requirement)"
+
+        target_rrr = min(3.0, max(2.0, avail_rrr))
+        tp_price = price - (target_rrr * sl_dist)
+
+        reason = f"🔴 STRICT SMC PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) + CHoCH ({bear_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.1f}R)"
         logger.info("================================================================================")
-        logger.info(f"🔴 [STRICT SMC 7-STEP SELL SIGNAL EXECUTED] 🚀")
-        logger.info(f"🔴 Step 1 (M15 Structure): Bearish LH+LL 🔴")
-        logger.info(f"🔴 Step 2 (M5 Sweep): Buy-side Sweep @ {sweep_high_price:.2f} 🔴")
-        logger.info(f"🔴 Step 3 (M5 CHoCH): Bearish Close < {bear_choch_lvl:.2f} 🔴")
-        logger.info(f"🔴 Step 4 (Post-CHoCH FVG): New FVG Created 🔴")
-        logger.info(f"🔴 Step 5 (FVG Retest): Price retested Post-CHoCH FVG 🔴")
-        logger.info(f"🔴 Step 6 (Rejection Candle): Closed Red Rejection 🔴")
-        logger.info(f"🔴 Step 7 (Closed Confirmation): Candle Closed -> SELL Order Sent 🔴")
-        logger.info(f"🔴 Dynamic SL @ {sl_price:.5f} | TP @ {tp_price:.5f} 🔴")
+        logger.info(f"🔴 [STRICT SMC SELL SIGNAL EXECUTED] 🚀")
+        logger.info(f"🔴 Condition 8 (Structural SL): Sweep High ({sweep_high_price:.2f}) + 0.75 = {sl_price:.2f} 🔴")
+        logger.info(f"🔴 Condition 9 (Target TP): M15 Target ({target_low:.2f}) -> {target_rrr:.1f}R TP @ {tp_price:.2f} 🔴")
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 

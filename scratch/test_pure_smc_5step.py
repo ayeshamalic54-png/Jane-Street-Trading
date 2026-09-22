@@ -8,7 +8,7 @@ from smc_strategy_engine import evaluate_smc_strategy_signal
 from smc_indicators import detect_market_structure, detect_liquidity_sweep, detect_choch_bos, detect_smc_zones, is_price_in_zones
 
 # --- 1. TEST CASE 1: 5-STEP BUY SETUP ---
-prices_bull = [4350, 4360, 4370, 4380, 4375, 4365, 4360, 4365, 4375, 4385, 4395, 4410, 4405, 4395, 4390, 4392, 4396, 4400, 4405, 4410]
+prices_bull = [4350, 4360, 4370, 4380, 4375, 4365, 4360, 4365, 4375, 4385, 4395, 4425, 4420, 4395, 4390, 4392, 4396, 4400, 4405, 4410]
 m15_bull = []
 for p in prices_bull:
     m15_bull.append({'open': p-1, 'high': p+2, 'low': p-2, 'close': p, 'symbol': 'XAUUSD'})
@@ -31,7 +31,7 @@ act_buy, tp_b, sl_b, dist_b, msg_b = evaluate_smc_strategy_signal(df_m15=df_m15_
 clean_b = msg_b.encode('ascii', errors='ignore').decode('ascii')
 
 # --- 2. TEST CASE 2: 5-STEP SELL SETUP ---
-prices_bear = [4450, 4440, 4430, 4410, 4415, 4425, 4430, 4425, 4415, 4405, 4395, 4380, 4385, 4395, 4400, 4398, 4394, 4390, 4385, 4380]
+prices_bear = [4450, 4440, 4430, 4410, 4415, 4425, 4430, 4425, 4415, 4405, 4395, 4370, 4375, 4395, 4400, 4398, 4394, 4390, 4385, 4380]
 m15_bear = []
 for p in prices_bear:
     m15_bear.append({'open': p+1, 'high': p+2, 'low': p-2, 'close': p, 'symbol': 'XAUUSD'})
