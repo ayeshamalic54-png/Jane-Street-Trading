@@ -601,14 +601,30 @@ LEVERAGE_FACTORS = {
 
 def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Strictly Hard-Locked Lot Size Engine for Pure SMC Setup:
-    Returns 0.07 Lots for Gold/Metals and 0.51 Lots for Forex.
+    Dynamic Prop Firm Lot Sizing Engine:
+    Calculates exact lot size for 0.5% Account Risk ($49.73 USD on $9,947 Account).
+    If sl_dist_price is not provided, defaults to 0.07 Lots for Metals / 0.51 Lots for Forex.
     """
     sym_upper = symbol.upper()
+    try:
+        acc_info = mt5.account_info()
+        equity = acc_info.equity if (acc_info and acc_info.equity > 0) else 9947.0
+    except Exception:
+        equity = 9947.0
+
+    risk_pct = float(os.getenv("RISK_PER_TRADE_PCT", "0.5")) / 100.0
+    risk_usd = equity * risk_pct
+
+    if sl_dist_price > 0:
+        if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
+            lots = risk_usd / (sl_dist_price * 100.0)
+            return round(max(0.01, min(lots, 0.50)), 2)
+        elif category == "forex":
+            lots = risk_usd / (sl_dist_price * 100000.0)
+            return round(max(0.01, min(lots, 2.00)), 2)
+
     if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
         return 0.07
-    elif category == "forex":
-        return 0.51
     return 0.51
 
 
