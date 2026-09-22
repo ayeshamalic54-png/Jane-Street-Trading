@@ -2819,16 +2819,20 @@ def main():
                         entry_b = best_sig["tick_b"].bid if is_long else best_sig["tick_b"].ask
                         
                         sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
-                        # Pure SMC/ICT 1:1.8 RRR Take Profit Target (Disabled Dynamic ATR)
-                        tp_dist = 1.8 * sl_dist
+                        # Condition 9: Pure SMC/ICT M15 Structural Take Profit Target
+                        if best_sig.get("smc_tp") and best_sig["smc_tp"] is not None:
+                            tp2_val = float(best_sig["smc_tp"])
+                            tp_dist = abs(tp2_val - entry_a)
+                        else:
+                            tp_dist = 2.0 * sl_dist
+                            tp2_val = entry_a + tp_dist if is_long else entry_a - tp_dist
                         
                         info_pip_a = mt5.symbol_info(S_A)
                         pt_a = info_pip_a.point if info_pip_a else 0.0001
                         pip_sz_a = (pt_a * 10.0) if (info_pip_a and info_pip_a.digits in (3, 5)) else pt_a
 
-                        # Pure 1:1.8 RRR Target Price Levels ($91.00 Profit Target on Gold 0.07 Lots)
+                        # Target Price Levels
                         tp1_val = entry_a + (tp_dist * 0.5) if is_long else entry_a - (tp_dist * 0.5)
-                        tp2_val = entry_a + tp_dist if is_long else entry_a - tp_dist
                         tp3_val = entry_a + (tp_dist * 1.5) if is_long else entry_a - (tp_dist * 1.5)
 
 
