@@ -2574,8 +2574,12 @@ def main():
                 if df_a is not None and not df_a.empty:
                     df_a = calculate_zscore_and_ema(df_a)
 
+                # Strictly cut off forming live candle (iloc[-1]) so signal engine ONLY evaluates completed closed candles
+                df_m5_closed = df_m5.iloc[:-1].copy() if (df_m5 is not None and len(df_m5) > 10) else df_m5
+                df_a_closed = df_a.iloc[:-1].copy() if (df_a is not None and len(df_a) > 15) else df_a
+
                 action = "NONE"
-                smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a, df_m5, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED)
+                smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a_closed, df_m5_closed, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED)
                 vid_reason = smc_reason
                 if smc_sig == "BUY":
                     action = "BUY_SPREAD"
