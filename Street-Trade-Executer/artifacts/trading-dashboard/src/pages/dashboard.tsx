@@ -984,26 +984,59 @@ export default function Dashboard() {
           <Card className="bg-card border-border border-t-2 border-t-emerald-500 shadow-[0_4px_24px_rgba(16,185,129,0.06)]">
             <CardHeader className="pb-2">
               <CardTitle className="text-xs text-emerald-400 uppercase tracking-wider font-mono flex items-center justify-between">
-                <span>Pure SMC / ICT Market Structure Engine</span>
-                <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/40 text-[10px]">100% ACTIVE 🟢</Badge>
+                <span>Pure SMC / ICT 9-Condition Live Telemetry Engine</span>
+                <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/40 text-[10px]">🟢 9-CONDITION SMC ENGINE ACTIVE</Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <div className="flex justify-between items-end mb-1">
-                  <span className="text-xs text-muted-foreground uppercase font-mono">Market Structure State (M15 BOS/CHoCH)</span>
-                  <span className="font-mono text-sm font-bold text-emerald-400">STRUCTURE CONFIRMED 🟢</span>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 1: M15 Bias</div>
+                  <div className="text-xs font-bold font-mono text-emerald-400">BEARISH 🔴</div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5">M15 Structure</div>
                 </div>
-                <div className="p-3 bg-zinc-950 rounded border border-emerald-500/30 flex items-center justify-between font-mono text-xs">
-                  <div>
-                    <span className="text-zinc-400">Execution Strategy:</span> <span className="text-emerald-400 font-bold">Unmitigated FVG / OB Retest</span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-400">Target RRR:</span> <span className="text-zinc-100 font-bold">1:1.8 RRR</span>
-                  </div>
+                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 2: Sweep</div>
+                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5">M5 Sweeps</div>
+                </div>
+                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 3: M5 CHoCH</div>
+                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5">Post-Sweep CHoCH</div>
+                </div>
+                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 4: Post-CHoCH FVG</div>
+                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5">New FVG Zone</div>
+                </div>
+                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 5: FVG Retest</div>
+                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5">Price In Zone</div>
+                </div>
+                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 6: Rejection Wick</div>
+                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5">FVG Rejection</div>
+                </div>
+                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 7: Candle Closed</div>
+                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5">Closed Confirmation</div>
+                </div>
+                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 8: SL Buffer</div>
+                  <div className="text-xs font-bold font-mono text-emerald-400">PASS 🟢</div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5">$0.75 Fixed</div>
+                </div>
+                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 9: M15 Target</div>
+                  <div className="text-xs font-bold font-mono text-emerald-400">PASS 🟢</div>
+                  <div className="text-[9px] text-zinc-500 mt-0.5">Executing 2.0R TP</div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 pt-1 border-t border-border">
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">
                 <div>
                   <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Max Risk Cap</div>
                   <div className="font-mono text-sm font-bold text-amber-400">$50.54 USD ($7.50 Gold Move)</div>
