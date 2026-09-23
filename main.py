@@ -2649,10 +2649,6 @@ def main():
                     from database import update_smc_telemetry
                     import json
 
-                try:
-                    from database import update_smc_telemetry
-                    import json
-
                     m15_b = "NEUTRAL ⚪"
                     s2_st = "FAIL ⚪"
                     s3_st = "FAIL ⚪"
