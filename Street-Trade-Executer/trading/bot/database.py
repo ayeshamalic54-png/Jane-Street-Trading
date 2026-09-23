@@ -212,6 +212,19 @@ def initialize_database():
             conn.commit()
             print("Added risk_limits_enabled column to bot_state table.")
 
+        # Add 9-condition telemetry columns to smc_telemetry table if they don't exist
+        for col in ['retest_status', 's6_status', 's7_status', 's8_status', 's9_status']:
+            try:
+                cur.execute(f"""
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name='smc_telemetry' AND column_name='{col}'
+                """)
+                if not cur.fetchone():
+                    cur.execute(f"ALTER TABLE smc_telemetry ADD COLUMN {col} VARCHAR(150)")
+                    conn.commit()
+            except Exception:
+                pass
+
         # Add signal_id column to trades if it doesn't exist yet
         cur.execute("""
             SELECT 1 FROM information_schema.columns 
@@ -962,15 +975,35 @@ def update_bot_volatility_toggles(vol_enabled: bool, knife_enabled: bool):
             conn.close()
 
 
-def update_smc_telemetry(symbol_pair: str, m15_bias: str, sweep_status: str, sweep_price: float, choch_status: str, choch_price: float, fvg_status: str, fvg_bounds_json: str, rejection_status: str, action: str):
-    """Upserts real-time 5-step Pure SMC telemetry for chart visualization."""
+def update_smc_telemetry(
+    symbol_pair: str,
+    m15_bias: str,
+    sweep_status: str,
+    sweep_price: float,
+    choch_status: str,
+    choch_price: float,
+    fvg_status: str,
+    fvg_bounds_json: str,
+    rejection_status: str,
+    action: str,
+    retest_status: str = "FAIL ⚪",
+    s6_status: str = "FAIL ⚪",
+    s7_status: str = "FAIL ⚪",
+    s8_status: str = "FAIL ⚪",
+    s9_status: str = "FAIL ⚪"
+):
+    """Upserts real-time 9-step Pure SMC telemetry for web dashboard HUD visualization."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO smc_telemetry (symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            INSERT INTO smc_telemetry (
+                symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, 
+                fvg_status, fvg_bounds_json, rejection_status, action, retest_status, 
+                s6_status, s7_status, s8_status, s9_status, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             ON CONFLICT (symbol_pair) DO UPDATE SET
                 m15_bias = EXCLUDED.m15_bias,
                 sweep_status = EXCLUDED.sweep_status,
@@ -981,11 +1014,20 @@ def update_smc_telemetry(symbol_pair: str, m15_bias: str, sweep_status: str, swe
                 fvg_bounds_json = EXCLUDED.fvg_bounds_json,
                 rejection_status = EXCLUDED.rejection_status,
                 action = EXCLUDED.action,
+                retest_status = EXCLUDED.retest_status,
+                s6_status = EXCLUDED.s6_status,
+                s7_status = EXCLUDED.s7_status,
+                s8_status = EXCLUDED.s8_status,
+                s9_status = EXCLUDED.s9_status,
                 updated_at = CURRENT_TIMESTAMP
-        """, (symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action))
+        """, (
+            symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, 
+            fvg_status, fvg_bounds_json, rejection_status, action, retest_status, 
+            s6_status, s7_status, s8_status, s9_status
+        ))
         conn.commit()
         cur.close()
-    except Exception as e:
+    except Exception:
         if conn:
             conn.rollback()
     finally:
@@ -993,13 +1035,15 @@ def update_smc_telemetry(symbol_pair: str, m15_bias: str, sweep_status: str, swe
             conn.close()
 
 def get_smc_telemetry(symbol_pair: str) -> dict:
-    """Fetches latest 5-step Pure SMC telemetry for chart overlay."""
+    """Fetches latest 9-step Pure SMC telemetry for chart overlay and HUD widget."""
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
-            SELECT symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action, updated_at
+            SELECT symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, 
+                   fvg_status, fvg_bounds_json, rejection_status, action, updated_at,
+                   retest_status, s6_status, s7_status, s8_status, s9_status
             FROM smc_telemetry
             WHERE symbol_pair = %s OR symbol_pair ILIKE %s
             ORDER BY updated_at DESC LIMIT 1
@@ -1007,7 +1051,9 @@ def get_smc_telemetry(symbol_pair: str) -> dict:
         row = cur.fetchone()
         if not row:
             cur.execute("""
-                SELECT symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, fvg_status, fvg_bounds_json, rejection_status, action, updated_at
+                SELECT symbol_pair, m15_bias, sweep_status, sweep_price, choch_status, choch_price, 
+                       fvg_status, fvg_bounds_json, rejection_status, action, updated_at,
+                       retest_status, s6_status, s7_status, s8_status, s9_status
                 FROM smc_telemetry
                 ORDER BY updated_at DESC LIMIT 1
             """)
@@ -1025,7 +1071,12 @@ def get_smc_telemetry(symbol_pair: str) -> dict:
                 "fvg_bounds_json": row[7] or "[]",
                 "rejection_status": row[8] or "FAIL ⚪ (Scanning)",
                 "action": row[9] or "NONE",
-                "updated_at": str(row[10]) if row[10] else ""
+                "updated_at": str(row[10]) if row[10] else "",
+                "retest_status": row[11] if len(row) > 11 and row[11] else (row[6] or "FAIL ⚪"),
+                "s6_status": row[12] if len(row) > 12 and row[12] else (row[8] or "FAIL ⚪"),
+                "s7_status": row[13] if len(row) > 13 and row[13] else "FAIL ⚪",
+                "s8_status": row[14] if len(row) > 14 and row[14] else "PASS 🟢 ($0.75 Fixed)",
+                "s9_status": row[15] if len(row) > 15 and row[15] else "FAIL ⚪ (Min 2.0R)"
             }
     except Exception:
         pass
@@ -1043,7 +1094,12 @@ def get_smc_telemetry(symbol_pair: str) -> dict:
         "fvg_bounds_json": "[]",
         "rejection_status": "FAIL ⚪ (Scanning Rejection)",
         "action": "NONE",
-        "updated_at": ""
+        "updated_at": "",
+        "retest_status": "FAIL ⚪",
+        "s6_status": "FAIL ⚪",
+        "s7_status": "FAIL ⚪",
+        "s8_status": "PASS 🟢 ($0.75 Fixed)",
+        "s9_status": "FAIL ⚪ (Min 2.0R)"
     }
 
 if __name__ == "__main__":

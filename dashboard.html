@@ -1253,9 +1253,46 @@
                 const s5El = document.getElementById('smc-s5-val');
                 const s5Sub = document.getElementById('smc-s5-sub');
                 if (s5El) {
-                    s5El.textContent = smc.rejection_status || "FAIL ⚪";
-                    s5El.style.color = (smc.rejection_status && smc.rejection_status.includes('PASS')) ? '#34d399' : '#94a3b8';
-                    s5Sub.textContent = smc.action !== 'NONE' ? `Entry Action: ${smc.action}` : 'Scanning Rejection Close';
+                    const st5 = smc.retest_status || smc.fvg_status || "FAIL ⚪";
+                    s5El.textContent = st5;
+                    s5El.style.color = st5.includes('PASS') ? '#34d399' : '#94a3b8';
+                    s5Sub.textContent = st5.includes('PASS') ? 'Price Retested FVG' : 'Scanning FVG Retest';
+                }
+
+                const s6El = document.getElementById('smc-s6-val');
+                const s6Sub = document.getElementById('smc-s6-sub');
+                if (s6El) {
+                    const st6 = smc.s6_status || smc.rejection_status || "FAIL ⚪";
+                    s6El.textContent = st6;
+                    s6El.style.color = st6.includes('PASS') ? '#34d399' : '#94a3b8';
+                    s6Sub.textContent = st6.includes('PASS') ? 'FVG Rejection Confirmed' : 'Scanning Rejection Wick';
+                }
+
+                const s7El = document.getElementById('smc-s7-val');
+                const s7Sub = document.getElementById('smc-s7-sub');
+                if (s7El) {
+                    const st7 = smc.s7_status || "FAIL ⚪";
+                    s7El.textContent = st7;
+                    s7El.style.color = st7.includes('PASS') ? '#34d399' : '#94a3b8';
+                    s7Sub.textContent = st7.includes('PASS') ? 'Closed Candle Confirmed' : 'Waiting Candle Close';
+                }
+
+                const s8El = document.getElementById('smc-s8-val');
+                const s8Sub = document.getElementById('smc-s8-sub');
+                if (s8El) {
+                    const st8 = smc.s8_status || "PASS 🟢 ($0.75 Fixed)";
+                    s8El.textContent = st8;
+                    s8El.style.color = st8.includes('PASS') ? '#34d399' : '#94a3b8';
+                    s8Sub.textContent = '$0.75 Fixed Sweep Buffer';
+                }
+
+                const s9El = document.getElementById('smc-s9-val');
+                const s9Sub = document.getElementById('smc-s9-sub');
+                if (s9El) {
+                    const st9 = smc.s9_status || "FAIL ⚪ (Min 2.0R)";
+                    s9El.textContent = st9;
+                    s9El.style.color = st9.includes('PASS') ? '#34d399' : '#94a3b8';
+                    s9Sub.textContent = st9.includes('PASS') ? 'Executing 2.0R TP' : 'Min 2.0R Target Space';
                 }
 
                 // Update Top-Left Live HUD Overlay Banner on Chart
@@ -1266,9 +1303,13 @@
                     const s2Str = smc.sweep_status || 'FAIL ⚪';
                     const s3Str = smc.choch_status || 'FAIL ⚪';
                     const s4Str = smc.fvg_status || 'FAIL ⚪';
-                    const s5Str = smc.rejection_status || 'FAIL ⚪';
+                    const s5Str = smc.retest_status || 'FAIL ⚪';
+                    const s6Str = smc.s6_status || smc.rejection_status || 'FAIL ⚪';
+                    const s7Str = smc.s7_status || 'FAIL ⚪';
+                    const s8Str = smc.s8_status || 'PASS 🟢';
+                    const s9Str = smc.s9_status || 'FAIL ⚪';
 
-                    hudBanner.innerHTML = `📊 <strong>[PURE SMC SCAN] ${pairName}</strong> | S1(Bias): <strong>${s1Str}</strong> | S2(Sweep): <strong>${s2Str}</strong> | S3(CHoCH): <strong>${s3Str}</strong> | S4(FVG): <strong>${s4Str}</strong> | S5(Candle): <strong>${s5Str}</strong>`;
+                    hudBanner.innerHTML = `📊 <strong>[PURE SMC SCAN] ${pairName}</strong> | S1(Bias): <strong>${s1Str}</strong> | S2(Sweep): <strong>${s2Str}</strong> | S3(CHoCH): <strong>${s3Str}</strong> | S4(FVG): <strong>${s4Str}</strong> | S5(Retest): <strong>${s5Str}</strong> | S6(Rej): <strong>${s6Str}</strong> | S7(Closed): <strong>${s7Str}</strong> | S8(SL): <strong>${s8Str}</strong> | S9(Target): <strong>${s9Str}</strong>`;
                 }
 
                 // Update Chart Lines for Sweep & CHoCH Levels
