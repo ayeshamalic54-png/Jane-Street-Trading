@@ -1,9 +1,74 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { tradesTable, botStateTable, fvgZonesTable, scannedAssetsTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { tradesTable, botStateTable, fvgZonesTable, scannedAssetsTable, smcTelemetryTable } from "@workspace/db";
+import { desc, eq, or, ilike } from "drizzle-orm";
 
 const router = Router();
+
+router.get("/smc_telemetry", async (req, res) => {
+  try {
+    const pair = (req.query.pair as string) || "XAUUSD/XAGUSD";
+    const rows = await db
+      .select()
+      .from(smcTelemetryTable)
+      .where(or(eq(smcTelemetryTable.symbolPair, pair), ilike(smcTelemetryTable.symbolPair, `%${pair}%`)))
+      .orderBy(desc(smcTelemetryTable.updatedAt))
+      .limit(1);
+
+    let row = rows[0];
+    if (!row) {
+      const fallbackRows = await db
+        .select()
+        .from(smcTelemetryTable)
+        .orderBy(desc(smcTelemetryTable.updatedAt))
+        .limit(1);
+      row = fallbackRows[0];
+    }
+
+    if (row) {
+      return res.json({
+        symbol_pair: row.symbolPair,
+        m15_bias: row.m15Bias || "NEUTRAL ⚪",
+        sweep_status: row.sweepStatus || "FAIL ⚪",
+        sweep_price: Number(row.sweepPrice ?? 0),
+        choch_status: row.chochStatus || "FAIL ⚪",
+        choch_price: Number(row.chochPrice ?? 0),
+        fvg_status: row.fvgStatus || "FAIL ⚪",
+        fvg_bounds_json: row.fvgBoundsJson || "[]",
+        rejection_status: row.rejectionStatus || "FAIL ⚪",
+        action: row.action || "NONE",
+        updated_at: row.updatedAt ? new Date(row.updatedAt).toISOString() : "",
+        retest_status: row.retestStatus || row.fvgStatus || "FAIL ⚪",
+        s6_status: row.s6Status || row.rejectionStatus || "FAIL ⚪",
+        s7_status: row.s7Status || "FAIL ⚪",
+        s8_status: row.s8Status || "PASS 🟢 ($0.75 Fixed)",
+        s9_status: row.s9Status || "FAIL ⚪ (Min 2.0R)",
+      });
+    }
+
+    return res.json({
+      symbol_pair: pair,
+      m15_bias: "NEUTRAL ⚪",
+      sweep_status: "FAIL ⚪",
+      sweep_price: 0,
+      choch_status: "FAIL ⚪",
+      choch_price: 0,
+      fvg_status: "FAIL ⚪",
+      fvg_bounds_json: "[]",
+      rejection_status: "FAIL ⚪",
+      action: "NONE",
+      updated_at: "",
+      retest_status: "FAIL ⚪",
+      s6_status: "FAIL ⚪",
+      s7_status: "FAIL ⚪",
+      s8_status: "PASS 🟢 ($0.75 Fixed)",
+      s9_status: "FAIL ⚪ (Min 2.0R)",
+    });
+  } catch (err) {
+    req.log?.error?.({ err }, "Failed to get SMC telemetry data");
+    return res.status(500).json({ error: "Failed to get SMC telemetry data" });
+  }
+});
 
 const ZONE_META: Record<string, { label: string; bullish: boolean }> = {
   bullish_ob:      { label: "OB",      bullish: true },

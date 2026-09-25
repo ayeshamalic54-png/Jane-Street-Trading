@@ -112,3 +112,25 @@ export const scannedAssetsTable = pgTable("scanned_assets", {
 });
 
 export type ScannedAsset = typeof scannedAssetsTable.$inferSelect;
+
+export const smcTelemetryTable = pgTable("smc_telemetry", {
+  symbolPair: varchar("symbol_pair", { length: 100 }).primaryKey(),
+  m15Bias: varchar("m15_bias", { length: 100 }),
+  sweepStatus: varchar("sweep_status", { length: 100 }),
+  sweepPrice: numeric("sweep_price", { precision: 15, scale: 5 }),
+  chochStatus: varchar("choch_status", { length: 100 }),
+  chochPrice: numeric("choch_price", { precision: 15, scale: 5 }),
+  fvgStatus: varchar("fvg_status", { length: 100 }),
+  fvgBoundsJson: text("fvg_bounds_json"),
+  rejectionStatus: varchar("rejection_status", { length: 100 }),
+  action: varchar("action", { length: 50 }),
+  retestStatus: varchar("retest_status", { length: 100 }),
+  s6Status: varchar("s6_status", { length: 100 }),
+  s7Status: varchar("s7_status", { length: 100 }),
+  s8Status: varchar("s8_status", { length: 100 }),
+  s9Status: varchar("s9_status", { length: 100 }),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type SmcTelemetry = typeof smcTelemetryTable.$inferSelect;
+
