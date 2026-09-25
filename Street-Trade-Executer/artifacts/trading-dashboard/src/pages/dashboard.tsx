@@ -342,6 +342,27 @@ export default function Dashboard() {
   const { data: wsData, wsConnected } = useLiveDashboard();
   const [pnlHistory, setPnlHistory] = useState<{ t: number; pnl: number; eq: number }[]>([]);
   const [sessionGuardOverride, setSessionGuardOverride] = useState<{ enabled?: boolean; start?: number; end?: number }>({});
+  const [smcTelemetry, setSmcTelemetry] = useState<any>(null);
+
+  useEffect(() => {
+    let active = true;
+    const fetchSmcData = async () => {
+      try {
+        const pair = selectedChartSymbol || "XAUUSD/XAGUSD";
+        const res = await fetch(`/api/smc_telemetry?pair=${encodeURIComponent(pair)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (active) setSmcTelemetry(data);
+        }
+      } catch (e) {}
+    };
+    fetchSmcData();
+    const interval = setInterval(fetchSmcData, 2000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [selectedChartSymbol]);
 
   useEffect(() => {
     if (!wsData) return;
@@ -989,53 +1010,74 @@ export default function Dashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-3 gap-2">
-                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 1: M15 Bias</div>
-                  <div className="text-xs font-bold font-mono text-emerald-400">BEARISH 🔴</div>
-                  <div className="text-[9px] text-zinc-500 mt-0.5">M15 Structure</div>
-                </div>
-                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 2: Sweep</div>
-                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
-                  <div className="text-[9px] text-zinc-500 mt-0.5">M5 Sweeps</div>
-                </div>
-                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 3: M5 CHoCH</div>
-                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
-                  <div className="text-[9px] text-zinc-500 mt-0.5">Post-Sweep CHoCH</div>
-                </div>
-                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 4: Post-CHoCH FVG</div>
-                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
-                  <div className="text-[9px] text-zinc-500 mt-0.5">New FVG Zone</div>
-                </div>
-                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 5: FVG Retest</div>
-                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
-                  <div className="text-[9px] text-zinc-500 mt-0.5">Price In Zone</div>
-                </div>
-                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 6: Rejection Wick</div>
-                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
-                  <div className="text-[9px] text-zinc-500 mt-0.5">FVG Rejection</div>
-                </div>
-                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 7: Candle Closed</div>
-                  <div className="text-xs font-bold font-mono text-zinc-400">FAIL ⚪</div>
-                  <div className="text-[9px] text-zinc-500 mt-0.5">Closed Confirmation</div>
-                </div>
-                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 8: SL Buffer</div>
-                  <div className="text-xs font-bold font-mono text-emerald-400">PASS 🟢</div>
-                  <div className="text-[9px] text-zinc-500 mt-0.5">$0.75 Fixed</div>
-                </div>
-                <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                  <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 9: M15 Target</div>
-                  <div className="text-xs font-bold font-mono text-emerald-400">PASS 🟢</div>
-                  <div className="text-[9px] text-zinc-500 mt-0.5">Executing 2.0R TP</div>
-                </div>
-              </div>
+              {(() => {
+                const s1Text = smcTelemetry?.m15_bias || "NEUTRAL ⚪";
+                const s2Text = smcTelemetry?.sweep_status || "FAIL ⚪";
+                const s3Text = smcTelemetry?.choch_status || "FAIL ⚪";
+                const s4Text = smcTelemetry?.fvg_status || "FAIL ⚪";
+                const s5Text = smcTelemetry?.retest_status || smcTelemetry?.fvg_status || "FAIL ⚪";
+                const s6Text = smcTelemetry?.s6_status || smcTelemetry?.rejection_status || "FAIL ⚪";
+                const s7Text = smcTelemetry?.s7_status || "FAIL ⚪";
+                const s8Text = smcTelemetry?.s8_status || "PASS 🟢 ($0.75 Fixed)";
+                const s9Text = smcTelemetry?.s9_status || "FAIL ⚪ (Min 2.0R)";
+
+                const getColor = (val: string) => {
+                  if (!val) return "text-zinc-400";
+                  if (val.includes("BULLISH") || val.includes("PASS 🟢")) return "text-emerald-400 font-bold";
+                  if (val.includes("BEARISH") || val.includes("PASS 🔴")) return "text-rose-400 font-bold";
+                  return "text-zinc-400 font-semibold";
+                };
+
+                return (
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 1: M15 Bias</div>
+                      <div className={cn("text-xs font-mono truncate", getColor(s1Text))}>{s1Text}</div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">M15 Structure</div>
+                    </div>
+                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 2: Sweep</div>
+                      <div className={cn("text-xs font-mono truncate", getColor(s2Text))}>{s2Text}</div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">M5 Sweeps</div>
+                    </div>
+                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 3: M5 CHoCH</div>
+                      <div className={cn("text-xs font-mono truncate", getColor(s3Text))}>{s3Text}</div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">Post-Sweep CHoCH</div>
+                    </div>
+                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 4: Post-CHoCH FVG</div>
+                      <div className={cn("text-xs font-mono truncate", getColor(s4Text))}>{s4Text}</div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">New FVG Zone</div>
+                    </div>
+                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 5: FVG Retest</div>
+                      <div className={cn("text-xs font-mono truncate", getColor(s5Text))}>{s5Text}</div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">Price In Zone</div>
+                    </div>
+                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 6: Rejection Wick</div>
+                      <div className={cn("text-xs font-mono truncate", getColor(s6Text))}>{s6Text}</div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">FVG Rejection</div>
+                    </div>
+                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 7: Candle Closed</div>
+                      <div className={cn("text-xs font-mono truncate", getColor(s7Text))}>{s7Text}</div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">Closed Confirmation</div>
+                    </div>
+                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 8: SL Buffer</div>
+                      <div className={cn("text-xs font-mono truncate", getColor(s8Text))}>{s8Text}</div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">$0.75 Fixed</div>
+                    </div>
+                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
+                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 9: M15 Target</div>
+                      <div className={cn("text-xs font-mono truncate", getColor(s9Text))}>{s9Text}</div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">Executing 2.0R TP</div>
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">
                 <div>
                   <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Max Risk Cap</div>
