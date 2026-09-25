@@ -172,18 +172,20 @@ export default function Signals() {
       return "forex";
     };
 
+    const tradesList = sig.trades ?? [];
+    const executedLot = tradesList.length > 0 && tradesList[0].lots != null ? Number(tradesList[0].lots) : (sig.totalLots !== undefined && sig.totalLots > 0 ? sig.totalLots : null);
     const category = getSymbolCategory(sig.symbolA);
-    const lotStr = (category === "metals") ? "0.07" : "0.51";
+    const lotStr = executedLot != null ? executedLot.toFixed(2) : ((category === "metals") ? "0.07" : "0.51");
     const actStr = isBuy ? "MARKET BUY 🟢" : "MARKET SELL 🔴";
 
-    const text = `📢 *PURE SMC / ICT 7-STEP SIGNAL ENGINE* 📢\n` +
+    const text = `📢 *PURE SMC / ICT 9-CONDITION SIGNAL ENGINE* 📢\n` +
       `🚀 *[ NEW OPEN POSITION ]* 🚀\n\n` +
       `🟢 *ACTION:* \`${actStr}\` (${sig.symbolA})\n` +
       `⏱ *TIME:* \`${timeStr}\` \n` +
-      `📊 *STRATEGY:* \`Pure SMC/ICT 7-Step Structure\`\n\n` +
+      `📊 *STRATEGY:* \`Strict 9-Condition Pure SMC Structure\`\n\n` +
       `📥 *ENTRY PRICE:* \`${details.entry}\` \n` +
-      `⛔ *STOP LOSS (SL):* \`${details.sl}\` *(Swing High + $0.75 Buffer)*\n` +
-      `🎯 *TAKE PROFIT (TP):* \`${details.tp2}\` *(1:1.8 RRR Target / +$91 Profit)*\n` +
+      `⛔ *STOP LOSS (SL):* \`${details.sl}\` *(Sweep High/Low + $0.75 Buffer)*\n` +
+      `🎯 *TAKE PROFIT (TP):* \`${details.tp2}\` *(Executing 2.0R TP / M15 Structural Target)*\n` +
       `📦 *LOT SIZE:* \`${lotStr} Lots\``;
 
     navigator.clipboard.writeText(text).then(() => {
@@ -204,7 +206,7 @@ export default function Signals() {
     <div className="flex flex-col h-full overflow-auto bg-background p-6 space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-foreground">Pure SMC / ICT Signal Log</h2>
-        <p className="text-sm text-muted-foreground">Automated 7-Step Pure SMC execution & telemetry log</p>
+        <p className="text-sm text-muted-foreground">Automated 9-Condition Pure SMC execution & telemetry log</p>
       </div>
 
       <Card className="bg-card border-border">
@@ -240,7 +242,8 @@ export default function Signals() {
                   const tradesList = sig.trades ?? [];
                   const totalProfitVal = sig.totalProfit;
                   const isMetals = ["XAU", "XAG", "GOLD", "SILVER"].some(x => (sig.symbolA ?? "").toUpperCase().includes(x));
-                  const displayLots = isMetals ? "0.07" : (sig.totalLots !== undefined ? sig.totalLots.toFixed(2) : "0.51");
+                  const executedLot = tradesList.length > 0 && tradesList[0].lots != null ? Number(tradesList[0].lots) : (sig.totalLots !== undefined && sig.totalLots > 0 ? sig.totalLots : null);
+                  const displayLots = executedLot != null ? executedLot.toFixed(2) : (isMetals ? "0.07" : "0.51");
                   return (
                     <TableRow key={sig.id} className="border-border hover:bg-muted/30">
                       <TableCell className="font-mono text-xs text-muted-foreground">
@@ -273,7 +276,7 @@ export default function Signals() {
                       </TableCell>
                       <TableCell className="font-mono text-right">
                         <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 font-mono text-[10px]">
-                          SMC 5/5 🟢
+                          Pure SMC 9-Condition 🟢
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
