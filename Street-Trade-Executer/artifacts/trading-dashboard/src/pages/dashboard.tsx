@@ -1168,6 +1168,7 @@ export default function Dashboard() {
                 telemetry={activeSmcTel}
                 currentPrice={Number(matchingAsset?.priceA || activeSmcTel?.sweep_price || 0)}
                 activePosition={matchingPosition}
+                activeZones={selectedAssetZones}
               />
               
               {/* Signals Timeline for selected symbol */}

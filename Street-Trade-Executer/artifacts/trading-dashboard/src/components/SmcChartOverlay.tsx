@@ -22,6 +22,7 @@ interface SmcChartOverlayProps {
   telemetry: any;
   currentPrice?: number;
   activePosition?: any;
+  activeZones?: Array<{ type: string; label: string; range: string }>;
 }
 
 let tvScriptLoadingPromise: Promise<void> | null = null;
@@ -131,6 +132,7 @@ export function SmcChartOverlay({
   telemetry,
   currentPrice,
   activePosition,
+  activeZones = [],
 }: SmcChartOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<"smc" | "tv">("smc");
@@ -368,7 +370,43 @@ export function SmcChartOverlay({
     return bars;
   }, [livePrice, sweepPrice, chochPrice, isMetals, isBullishSetup, zoomLevel]);
 
-  // FVG Bounds
+  const shouldShowTradeLevels = isTradeActive || s7Pass;
+
+  // Parsed Active SMC Zones (FVG, OB, Breaker, iFVG) from live bot scanner
+  const parsedActiveZones = useMemo(() => {
+    if (!activeZones || activeZones.length === 0) return [];
+    const list: Array<{
+      type: string;
+      name: string;
+      isBullish: boolean;
+      low: number;
+      high: number;
+      label: string;
+    }> = [];
+    for (const z of activeZones) {
+      if (!z.range) continue;
+      const parts = z.range.split(/[\u2013\-]/);
+      if (parts.length >= 2) {
+        const low = parseFloat(parts[0].trim());
+        const high = parseFloat(parts[1].trim());
+        if (!isNaN(low) && !isNaN(high) && high > low) {
+          const isBullish = z.type.toUpperCase().includes("BULLISH") || z.label.includes("🟢");
+          const name = z.type.replace("BULLISH_", "").replace("BEARISH_", "");
+          list.push({
+            type: z.type,
+            name,
+            isBullish,
+            low,
+            high,
+            label: z.label,
+          });
+        }
+      }
+    }
+    return list;
+  }, [activeZones]);
+
+  // FVG Bounds (Post-CHoCH Imbalance)
   const fvgBounds = useMemo(() => {
     try {
       const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
@@ -404,23 +442,37 @@ export function SmcChartOverlay({
 
   const minPrice = useMemo(() => {
     const lows = candles.map((c) => c.low);
-    if (slPrice > 0) lows.push(slPrice);
-    if (tpPrice > 0) lows.push(tpPrice);
-    if (entryPrice > 0) lows.push(entryPrice);
+    if (shouldShowTradeLevels) {
+      if (slPrice > 0) lows.push(slPrice);
+      if (tpPrice > 0) lows.push(tpPrice);
+      if (entryPrice > 0) lows.push(entryPrice);
+    }
     if (sweepPrice > 0) lows.push(sweepPrice);
     if (fvgBounds) lows.push(fvgBounds.low);
+    parsedActiveZones.forEach((z) => {
+      if (Math.abs(z.low - livePrice) < (isMetals ? 25 : 0.0080)) {
+        lows.push(z.low);
+      }
+    });
     return Math.min(...lows) - (isMetals ? 1.5 : 0.0008);
-  }, [candles, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, isMetals]);
+  }, [candles, shouldShowTradeLevels, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, parsedActiveZones, livePrice, isMetals]);
 
   const maxPrice = useMemo(() => {
     const highs = candles.map((c) => c.high);
-    if (slPrice > 0) highs.push(slPrice);
-    if (tpPrice > 0) highs.push(tpPrice);
-    if (entryPrice > 0) highs.push(entryPrice);
+    if (shouldShowTradeLevels) {
+      if (slPrice > 0) highs.push(slPrice);
+      if (tpPrice > 0) highs.push(tpPrice);
+      if (entryPrice > 0) highs.push(entryPrice);
+    }
     if (sweepPrice > 0) highs.push(sweepPrice);
     if (fvgBounds) highs.push(fvgBounds.high);
+    parsedActiveZones.forEach((z) => {
+      if (Math.abs(z.high - livePrice) < (isMetals ? 25 : 0.0080)) {
+        highs.push(z.high);
+      }
+    });
     return Math.max(...highs) + (isMetals ? 1.5 : 0.0008);
-  }, [candles, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, isMetals]);
+  }, [candles, shouldShowTradeLevels, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, parsedActiveZones, livePrice, isMetals]);
 
   const priceRange = maxPrice - minPrice || 1;
 
@@ -569,18 +621,30 @@ export function SmcChartOverlay({
             <div className={cn(
               "px-3 py-1 rounded font-black shadow-sm text-xs font-mono transition-all",
               isTradeActive
-                ? "bg-rose-600 text-white border border-rose-400"
-                : "bg-rose-950/50 border border-rose-800/80 text-rose-300"
+                ? "bg-rose-600 text-white border border-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.4)]"
+                : shouldShowTradeLevels
+                ? "bg-rose-950 border border-rose-500 text-rose-200"
+                : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
-              {isTradeActive ? "🔴 SL:" : "⏳ PROJ SL:"} ${slPrice.toFixed(2)}
+              {isTradeActive
+                ? `🔴 ACTIVE SL: $${slPrice.toFixed(2)} (${isMetals ? "~$52 Risk" : ""})`
+                : shouldShowTradeLevels
+                ? `🔒 SL: $${slPrice.toFixed(2)} ($${defaultBuf} Buf)`
+                : "⏳ SL: Locked on All Steps Met"}
             </div>
             <div className={cn(
               "px-3 py-1 rounded font-black shadow-sm text-xs font-mono transition-all",
               isTradeActive
-                ? "bg-emerald-600 text-white border border-emerald-400"
-                : "bg-emerald-950/50 border border-emerald-800/80 text-emerald-300"
+                ? "bg-emerald-600 text-white border border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.4)]"
+                : shouldShowTradeLevels
+                ? "bg-emerald-950 border border-emerald-500 text-emerald-200"
+                : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
-              {isTradeActive ? "🟢 TP:" : "⏳ PROJ TP:"} ${tpPrice.toFixed(2)}
+              {isTradeActive
+                ? `🟢 ACTIVE TP: $${tpPrice.toFixed(2)} (${isMetals ? "~$105 Target" : ""})`
+                : shouldShowTradeLevels
+                ? `🎯 2.0R TP: $${tpPrice.toFixed(2)}`
+                : "⏳ TP: 2.0R on All Steps Met"}
             </div>
           </div>
         </div>
@@ -686,15 +750,15 @@ export function SmcChartOverlay({
               </Badge>
             </div>
 
-            <div className="flex items-center gap-4 text-zinc-200 text-xs font-bold">
-              <span className="flex items-center gap-1.5 text-cyan-400">
-                <span className="w-3 h-1 bg-cyan-400 inline-block" /> Step 2: Sweep Line
+            <div className="flex items-center gap-4 text-xs font-bold">
+              <span className={cn("flex items-center gap-1.5 transition-colors", s2Pass ? "text-cyan-400 font-black" : "text-zinc-500")}>
+                <span className={cn("w-3 h-1 inline-block rounded-xs", s2Pass ? "bg-cyan-400 shadow-[0_0_8px_#22d3ee]" : "bg-zinc-600")} /> Step 2: Sweep {s2Pass ? "✓" : "⏳"}
               </span>
-              <span className="flex items-center gap-1.5 text-amber-400">
-                <span className="w-3 h-1 bg-amber-400 inline-block" /> Step 3: CHoCH Line
+              <span className={cn("flex items-center gap-1.5 transition-colors", s3Pass ? "text-amber-400 font-black" : "text-zinc-500")}>
+                <span className={cn("w-3 h-1 inline-block rounded-xs", s3Pass ? "bg-amber-400 shadow-[0_0_8px_#f59e0b]" : "bg-zinc-600")} /> Step 3: CHoCH {s3Pass ? "✓" : "⏳"}
               </span>
-              <span className="flex items-center gap-1.5 text-emerald-400">
-                <span className="w-3 h-3 border border-emerald-400 bg-emerald-500/30 inline-block rounded-xs" /> Step 4/5: FVG Zone
+              <span className={cn("flex items-center gap-1.5 transition-colors", s5Pass ? "text-emerald-400 font-black" : s4Pass ? "text-teal-400" : "text-zinc-500")}>
+                <span className={cn("w-3 h-3 border inline-block rounded-xs", s5Pass ? "border-emerald-400 bg-emerald-500/40 shadow-[0_0_8px_#10b981]" : s4Pass ? "border-teal-400 bg-teal-500/20" : "border-zinc-600 bg-zinc-800")} /> Step 4/5: FVG Retest {s5Pass ? "✓" : "⏳"}
               </span>
             </div>
           </div>
@@ -760,7 +824,63 @@ export function SmcChartOverlay({
                 </g>
               ))}
 
-              {/* Step 4 & 5: FVG Retest Zone Rectangle Directly Across Candles */}
+              {/* Active SMC Confluence Zones (FVG, OB, Breaker, iFVG) from Live Scanner */}
+              {parsedActiveZones.map((z, idx) => {
+                const isInside = livePrice >= z.low && livePrice <= z.high;
+                const zoneHeight = Math.max(8, Math.abs(getY(z.low) - getY(z.high)));
+                const yTop = getY(z.high);
+                const strokeCol = z.isBullish
+                  ? isInside
+                    ? "#10b981"
+                    : "#059669"
+                  : isInside
+                  ? "#ef4444"
+                  : "#dc2626";
+                const fillCol = z.isBullish
+                  ? isInside
+                    ? "rgba(16, 185, 129, 0.22)"
+                    : "rgba(16, 185, 129, 0.08)"
+                  : isInside
+                  ? "rgba(239, 68, 68, 0.22)"
+                  : "rgba(239, 68, 68, 0.08)";
+
+                return (
+                  <g key={`parsed-zone-${idx}`}>
+                    <rect
+                      x={chartLeft}
+                      y={yTop}
+                      width={plotWidth}
+                      height={zoneHeight}
+                      fill={fillCol}
+                      stroke={strokeCol}
+                      strokeWidth={isInside ? 2 : 1.2}
+                      strokeDasharray={isInside ? "none" : "4 4"}
+                    />
+                    <rect
+                      x={chartLeft + 6 + (idx % 3) * 60}
+                      y={yTop + 2}
+                      width="155"
+                      height="18"
+                      fill={z.isBullish ? "#064e3b" : "#7f1d1d"}
+                      rx="3"
+                      stroke={strokeCol}
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={chartLeft + 10 + (idx % 3) * 60}
+                      y={yTop + 14}
+                      fill="#ffffff"
+                      fontSize="9.5"
+                      fontFamily="monospace"
+                      fontWeight="800"
+                    >
+                      {z.isBullish ? "🟢" : "🔴"} {z.name} ${z.low.toFixed(2)}-${z.high.toFixed(2)}
+                    </text>
+                  </g>
+                );
+              })}
+
+              {/* Step 4 & 5: Setup Post-CHoCH FVG Retest Zone */}
               {fvgBounds && fvgBounds.high > fvgBounds.low && (
                 <g>
                   <rect
@@ -769,18 +889,19 @@ export function SmcChartOverlay({
                     width={plotWidth - candleSpacing * 8}
                     height={Math.max(10, Math.abs(getY(fvgBounds.low) - getY(fvgBounds.high)))}
                     fill="url(#fvgGradientZone)"
-                    stroke={isBullishSetup ? "#10b981" : "#f43f5e"}
-                    strokeWidth="2"
-                    strokeDasharray="4 4"
+                    stroke={s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e"}
+                    strokeWidth={s5Pass ? 2.5 : 1.5}
+                    strokeDasharray={s5Pass ? "none" : "4 4"}
+                    filter={s5Pass ? "url(#glowGreen)" : undefined}
                   />
                   <rect
                     x={chartLeft + candleSpacing * 8 + 8}
                     y={getY(fvgBounds.high) + 4}
-                    width="230"
+                    width="240"
                     height="22"
-                    fill="#064e3b"
+                    fill={s5Pass ? "#064e3b" : "#134e4a"}
                     rx="4"
-                    stroke="#10b981"
+                    stroke={s5Pass ? "#10b981" : "#14b8a6"}
                     strokeWidth="1.5"
                   />
                   <text
@@ -791,7 +912,12 @@ export function SmcChartOverlay({
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    🟢 S4/S5 FVG ZONE (${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})
+                    {s5Pass
+                      ? "🟢 S5 RETEST CONFIRMED"
+                      : s4Pass
+                      ? "⏳ S4 FVG CREATED — RETESTING"
+                      : "⏳ S4/S5 FVG RETEST ZONE"}{" "}
+                    (${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})
                   </text>
                 </g>
               )}
@@ -804,30 +930,30 @@ export function SmcChartOverlay({
                     y1={getY(sweepPrice)}
                     x2={chartRight}
                     y2={getY(sweepPrice)}
-                    stroke="#06b6d4"
-                    strokeWidth="2.5"
-                    strokeDasharray="6 3"
-                    filter="url(#glowCyan)"
+                    stroke={s2Pass ? "#06b6d4" : "#0891b2"}
+                    strokeWidth={s2Pass ? 2.5 : 1.5}
+                    strokeDasharray={s2Pass ? "none" : "6 3"}
+                    filter={s2Pass ? "url(#glowCyan)" : undefined}
                   />
                   <rect
                     x={chartRight + 6}
                     y={getY(sweepPrice) - 13}
-                    width="138"
+                    width="142"
                     height="26"
-                    fill="#0891b2"
+                    fill={s2Pass ? "#0891b2" : "#164e63"}
                     rx="5"
-                    stroke="#a5f3fc"
-                    strokeWidth="1"
+                    stroke={s2Pass ? "#a5f3fc" : "#0891b2"}
+                    strokeWidth="1.5"
                   />
                   <text
                     x={chartRight + 12}
                     y={getY(sweepPrice) + 5}
                     fill="#ffffff"
-                    fontSize="12"
+                    fontSize="11"
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    SWEEP ${sweepPrice.toFixed(2)}
+                    {s2Pass ? "⚡ SWEEP CONFIRMED" : "⏳ SWEEP"} ${sweepPrice.toFixed(2)}
                   </text>
                 </g>
               )}
@@ -840,56 +966,54 @@ export function SmcChartOverlay({
                     y1={getY(chochPrice)}
                     x2={chartRight}
                     y2={getY(chochPrice)}
-                    stroke="#f59e0b"
-                    strokeWidth="2.5"
-                    strokeDasharray="6 4"
-                    filter="url(#glowAmber)"
+                    stroke={s3Pass ? "#f59e0b" : "#d97706"}
+                    strokeWidth={s3Pass ? 2.5 : 1.5}
+                    strokeDasharray={s3Pass ? "none" : "6 4"}
+                    filter={s3Pass ? "url(#glowAmber)" : undefined}
                   />
                   <rect
                     x={chartRight + 6}
                     y={getY(chochPrice) - 13}
-                    width="138"
+                    width="142"
                     height="26"
-                    fill="#d97706"
+                    fill={s3Pass ? "#d97706" : "#78350f"}
                     rx="5"
-                    stroke="#fde68a"
-                    strokeWidth="1"
+                    stroke={s3Pass ? "#fde68a" : "#d97706"}
+                    strokeWidth="1.5"
                   />
                   <text
                     x={chartRight + 12}
                     y={getY(chochPrice) + 5}
                     fill="#ffffff"
-                    fontSize="12"
+                    fontSize="11"
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    CHOCH ${chochPrice.toFixed(2)}
+                    {s3Pass ? "⚡ CHOCH CONFIRMED" : "⏳ CHOCH"} ${chochPrice.toFixed(2)}
                   </text>
                 </g>
               )}
 
-              {/* 1. ENTRY LEVEL LINE & PILL (ALWAYS VISIBLE) */}
-              {entryPrice > 0 && (
+              {/* 1. ENTRY LEVEL LINE & PILL (ONLY WHEN ALL CONDITIONS MET OR ACTIVE TRADE) */}
+              {shouldShowTradeLevels && entryPrice > 0 && (
                 <g>
                   <line
                     x1={chartLeft}
                     y1={getY(entryPrice)}
                     x2={chartRight}
                     y2={getY(entryPrice)}
-                    stroke={isTradeActive ? "#38bdf8" : "#60a5fa"}
-                    strokeWidth={isTradeActive ? 2.5 : 1.5}
-                    strokeDasharray={isTradeActive ? "none" : "4 4"}
-                    opacity={isTradeActive ? 1 : 0.8}
-                    filter={isTradeActive ? "url(#glowBlue)" : undefined}
+                    stroke="#38bdf8"
+                    strokeWidth={2.5}
+                    filter="url(#glowBlue)"
                   />
                   <rect
                     x={chartRight + 6}
                     y={getY(entryPrice) - 13}
                     width="138"
                     height="26"
-                    fill={isTradeActive ? "#0284c7" : "#1e293b"}
+                    fill="#0284c7"
                     rx="5"
-                    stroke={isTradeActive ? "#38bdf8" : "#3b82f6"}
+                    stroke="#38bdf8"
                     strokeWidth="1.5"
                   />
                   <text
@@ -900,35 +1024,31 @@ export function SmcChartOverlay({
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    {isTradeActive
-                      ? `🔵 ENTRY $${entryPrice.toFixed(2)}`
-                      : `⏳ PROJ ENTRY $${entryPrice.toFixed(2)}`}
+                    🔵 ENTRY ${entryPrice.toFixed(2)}
                   </text>
                 </g>
               )}
 
-              {/* 2. STOP LOSS (SL) LEVEL - ANCHORED WITH EXACT $0.75 BUFFER (ALWAYS VISIBLE) */}
-              {slPrice > 0 && (
+              {/* 2. STOP LOSS (SL) LEVEL (ONLY WHEN ALL CONDITIONS MET OR ACTIVE TRADE) */}
+              {shouldShowTradeLevels && slPrice > 0 && (
                 <g>
                   <line
                     x1={chartLeft}
                     y1={getY(slPrice)}
                     x2={chartRight}
                     y2={getY(slPrice)}
-                    stroke={isTradeActive ? "#ef4444" : "#f87171"}
-                    strokeWidth={isTradeActive ? 3 : 1.5}
-                    strokeDasharray={isTradeActive ? "none" : "5 5"}
-                    opacity={isTradeActive ? 1 : 0.85}
-                    filter={isTradeActive ? "url(#glowRed)" : undefined}
+                    stroke="#ef4444"
+                    strokeWidth={3}
+                    filter="url(#glowRed)"
                   />
                   <rect
                     x={chartRight + 6}
                     y={getY(slPrice) - 13}
                     width="138"
                     height="26"
-                    fill={isTradeActive ? "#dc2626" : "#7f1d1d"}
+                    fill="#dc2626"
                     rx="5"
-                    stroke={isTradeActive ? "#fca5a5" : "#b91c1c"}
+                    stroke="#fca5a5"
                     strokeWidth="1.5"
                   />
                   <text
@@ -939,35 +1059,31 @@ export function SmcChartOverlay({
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    {isTradeActive
-                      ? `🔴 SL $${slPrice.toFixed(2)}`
-                      : `⏳ PROJ SL $${slPrice.toFixed(2)}`}
+                    🔴 SL ${slPrice.toFixed(2)}
                   </text>
                 </g>
               )}
 
-              {/* 3. TAKE PROFIT (TP) 2.0R TARGET LEVEL (ALWAYS VISIBLE) */}
-              {tpPrice > 0 && (
+              {/* 3. TAKE PROFIT (TP) 2.0R TARGET LEVEL (ONLY WHEN ALL CONDITIONS MET OR ACTIVE TRADE) */}
+              {shouldShowTradeLevels && tpPrice > 0 && (
                 <g>
                   <line
                     x1={chartLeft}
                     y1={getY(tpPrice)}
                     x2={chartRight}
                     y2={getY(tpPrice)}
-                    stroke={isTradeActive ? "#10b981" : "#34d399"}
-                    strokeWidth={isTradeActive ? 3 : 1.5}
-                    strokeDasharray={isTradeActive ? "none" : "5 5"}
-                    opacity={isTradeActive ? 1 : 0.85}
-                    filter={isTradeActive ? "url(#glowGreen)" : undefined}
+                    stroke="#10b981"
+                    strokeWidth={3}
+                    filter="url(#glowGreen)"
                   />
                   <rect
                     x={chartRight + 6}
                     y={getY(tpPrice) - 13}
                     width="138"
                     height="26"
-                    fill={isTradeActive ? "#059669" : "#064e3b"}
+                    fill="#059669"
                     rx="5"
-                    stroke={isTradeActive ? "#6ee7b7" : "#059669"}
+                    stroke="#6ee7b7"
                     strokeWidth="1.5"
                   />
                   <text
@@ -978,9 +1094,7 @@ export function SmcChartOverlay({
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    {isTradeActive
-                      ? `🟢 TP $${tpPrice.toFixed(2)}`
-                      : `⏳ PROJ TP $${tpPrice.toFixed(2)}`}
+                    🟢 TP ${tpPrice.toFixed(2)}
                   </text>
                 </g>
               )}
