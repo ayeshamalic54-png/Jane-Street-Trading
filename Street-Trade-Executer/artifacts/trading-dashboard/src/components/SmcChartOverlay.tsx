@@ -440,13 +440,15 @@ export function SmcChartOverlay({
   const plotWidth = chartRight - chartLeft;
   const plotHeight = chartBottom - chartTop;
 
+  const showSlLevel = isTradeActive || s2Pass;
+  const showTpLevel = isTradeActive || s4Pass;
+  const showEntryLevel = isTradeActive || s7Pass;
+
   const minPrice = useMemo(() => {
     const lows = candles.map((c) => c.low);
-    if (shouldShowTradeLevels) {
-      if (slPrice > 0) lows.push(slPrice);
-      if (tpPrice > 0) lows.push(tpPrice);
-      if (entryPrice > 0) lows.push(entryPrice);
-    }
+    if (showSlLevel && slPrice > 0) lows.push(slPrice);
+    if (showTpLevel && tpPrice > 0) lows.push(tpPrice);
+    if (showEntryLevel && entryPrice > 0) lows.push(entryPrice);
     if (sweepPrice > 0) lows.push(sweepPrice);
     if (fvgBounds) lows.push(fvgBounds.low);
     parsedActiveZones.forEach((z) => {
@@ -455,15 +457,13 @@ export function SmcChartOverlay({
       }
     });
     return Math.min(...lows) - (isMetals ? 1.5 : 0.0008);
-  }, [candles, shouldShowTradeLevels, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, parsedActiveZones, livePrice, isMetals]);
+  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, parsedActiveZones, livePrice, isMetals]);
 
   const maxPrice = useMemo(() => {
     const highs = candles.map((c) => c.high);
-    if (shouldShowTradeLevels) {
-      if (slPrice > 0) highs.push(slPrice);
-      if (tpPrice > 0) highs.push(tpPrice);
-      if (entryPrice > 0) highs.push(entryPrice);
-    }
+    if (showSlLevel && slPrice > 0) highs.push(slPrice);
+    if (showTpLevel && tpPrice > 0) highs.push(tpPrice);
+    if (showEntryLevel && entryPrice > 0) highs.push(entryPrice);
     if (sweepPrice > 0) highs.push(sweepPrice);
     if (fvgBounds) highs.push(fvgBounds.high);
     parsedActiveZones.forEach((z) => {
@@ -472,7 +472,7 @@ export function SmcChartOverlay({
       }
     });
     return Math.max(...highs) + (isMetals ? 1.5 : 0.0008);
-  }, [candles, shouldShowTradeLevels, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, parsedActiveZones, livePrice, isMetals]);
+  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, parsedActiveZones, livePrice, isMetals]);
 
   const priceRange = maxPrice - minPrice || 1;
 
@@ -622,29 +622,29 @@ export function SmcChartOverlay({
               "px-3 py-1 rounded font-black shadow-sm text-xs font-mono transition-all",
               isTradeActive
                 ? "bg-rose-600 text-white border border-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.4)]"
-                : shouldShowTradeLevels
+                : s2Pass
                 ? "bg-rose-950 border border-rose-500 text-rose-200"
                 : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
               {isTradeActive
                 ? `🔴 ACTIVE SL: $${slPrice.toFixed(2)} (${isMetals ? "~$52 Risk" : ""})`
-                : shouldShowTradeLevels
-                ? `🔒 SL: $${slPrice.toFixed(2)} ($${defaultBuf} Buf)`
-                : "⏳ SL: Locked on All Steps Met"}
+                : s2Pass
+                ? `🔒 SL (0.75 Buf): $${slPrice.toFixed(2)} (${isMetals ? "~$52 Risk" : ""})`
+                : "⏳ SL: Locks at Sweep (Step 2)"}
             </div>
             <div className={cn(
               "px-3 py-1 rounded font-black shadow-sm text-xs font-mono transition-all",
               isTradeActive
                 ? "bg-emerald-600 text-white border border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.4)]"
-                : shouldShowTradeLevels
+                : s4Pass
                 ? "bg-emerald-950 border border-emerald-500 text-emerald-200"
                 : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
               {isTradeActive
                 ? `🟢 ACTIVE TP: $${tpPrice.toFixed(2)} (${isMetals ? "~$105 Target" : ""})`
-                : shouldShowTradeLevels
-                ? `🎯 2.0R TP: $${tpPrice.toFixed(2)}`
-                : "⏳ TP: 2.0R on All Steps Met"}
+                : s4Pass
+                ? `🎯 2.0R TARGET: $${tpPrice.toFixed(2)} (${isMetals ? "~$105 Target" : ""})`
+                : "⏳ TP: Locks at FVG (Step 4)"}
             </div>
           </div>
         </div>
@@ -994,8 +994,8 @@ export function SmcChartOverlay({
                 </g>
               )}
 
-              {/* 1. ENTRY LEVEL LINE & PILL (ONLY WHEN ALL CONDITIONS MET OR ACTIVE TRADE) */}
-              {shouldShowTradeLevels && entryPrice > 0 && (
+              {/* 1. ENTRY LEVEL LINE & PILL (SHOWN AT STEP 7 / ACTIVE TRADE) */}
+              {(isTradeActive || s7Pass) && entryPrice > 0 && (
                 <g>
                   <line
                     x1={chartLeft}
@@ -1009,7 +1009,7 @@ export function SmcChartOverlay({
                   <rect
                     x={chartRight + 6}
                     y={getY(entryPrice) - 13}
-                    width="138"
+                    width="142"
                     height="26"
                     fill="#0284c7"
                     rx="5"
@@ -1024,13 +1024,13 @@ export function SmcChartOverlay({
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    🔵 ENTRY ${entryPrice.toFixed(2)}
+                    🔵 ACTIVE ENTRY ${entryPrice.toFixed(2)}
                   </text>
                 </g>
               )}
 
-              {/* 2. STOP LOSS (SL) LEVEL (ONLY WHEN ALL CONDITIONS MET OR ACTIVE TRADE) */}
-              {shouldShowTradeLevels && slPrice > 0 && (
+              {/* 2. STOP LOSS (SL) LEVEL - SHOWN AT STEP 2 (SWEEP) & SOLID ON ACTIVE TRADE */}
+              {(isTradeActive || s2Pass) && slPrice > 0 && (
                 <g>
                   <line
                     x1={chartLeft}
@@ -1038,34 +1038,38 @@ export function SmcChartOverlay({
                     x2={chartRight}
                     y2={getY(slPrice)}
                     stroke="#ef4444"
-                    strokeWidth={3}
-                    filter="url(#glowRed)"
+                    strokeWidth={isTradeActive ? 3 : 1.5}
+                    strokeDasharray={isTradeActive ? "none" : "5 5"}
+                    opacity={isTradeActive ? 1 : 0.85}
+                    filter={isTradeActive ? "url(#glowRed)" : undefined}
                   />
                   <rect
                     x={chartRight + 6}
                     y={getY(slPrice) - 13}
-                    width="138"
+                    width="142"
                     height="26"
-                    fill="#dc2626"
+                    fill={isTradeActive ? "#dc2626" : "#7f1d1d"}
                     rx="5"
-                    stroke="#fca5a5"
+                    stroke={isTradeActive ? "#fca5a5" : "#b91c1c"}
                     strokeWidth="1.5"
                   />
                   <text
-                    x={chartRight + 10}
+                    x={chartRight + 8}
                     y={getY(slPrice) + 5}
                     fill="#ffffff"
-                    fontSize="11.5"
+                    fontSize="11"
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    🔴 SL ${slPrice.toFixed(2)}
+                    {isTradeActive
+                      ? `🔴 ACTIVE SL $${slPrice.toFixed(2)}`
+                      : `🔒 SL (0.75 Buf) $${slPrice.toFixed(2)}`}
                   </text>
                 </g>
               )}
 
-              {/* 3. TAKE PROFIT (TP) 2.0R TARGET LEVEL (ONLY WHEN ALL CONDITIONS MET OR ACTIVE TRADE) */}
-              {shouldShowTradeLevels && tpPrice > 0 && (
+              {/* 3. TAKE PROFIT (TP) 2.0R TARGET LEVEL - SHOWN AT STEP 4 (FVG FORMED) & SOLID ON ACTIVE TRADE */}
+              {(isTradeActive || s4Pass) && tpPrice > 0 && (
                 <g>
                   <line
                     x1={chartLeft}
@@ -1073,28 +1077,32 @@ export function SmcChartOverlay({
                     x2={chartRight}
                     y2={getY(tpPrice)}
                     stroke="#10b981"
-                    strokeWidth={3}
-                    filter="url(#glowGreen)"
+                    strokeWidth={isTradeActive ? 3 : 1.5}
+                    strokeDasharray={isTradeActive ? "none" : "5 5"}
+                    opacity={isTradeActive ? 1 : 0.85}
+                    filter={isTradeActive ? "url(#glowGreen)" : undefined}
                   />
                   <rect
                     x={chartRight + 6}
                     y={getY(tpPrice) - 13}
-                    width="138"
+                    width="142"
                     height="26"
-                    fill="#059669"
+                    fill={isTradeActive ? "#059669" : "#064e3b"}
                     rx="5"
-                    stroke="#6ee7b7"
+                    stroke={isTradeActive ? "#6ee7b7" : "#059669"}
                     strokeWidth="1.5"
                   />
                   <text
-                    x={chartRight + 10}
+                    x={chartRight + 8}
                     y={getY(tpPrice) + 5}
                     fill="#ffffff"
-                    fontSize="11.5"
+                    fontSize="11"
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    🟢 TP ${tpPrice.toFixed(2)}
+                    {isTradeActive
+                      ? `🟢 ACTIVE TP $${tpPrice.toFixed(2)}`
+                      : `🎯 2.0R TARGET $${tpPrice.toFixed(2)}`}
                   </text>
                 </g>
               )}

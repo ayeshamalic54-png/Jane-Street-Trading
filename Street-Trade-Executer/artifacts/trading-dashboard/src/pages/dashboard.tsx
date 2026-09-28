@@ -1027,69 +1027,138 @@ export default function Dashboard() {
             <CardContent className="space-y-3">
               {(() => {
                 const tel = activeSmcTel;
-                const s1Text = tel?.m15_bias || "NEUTRAL ⚪";
-                const s2Text = tel?.sweep_status || "FAIL ⚪";
-                const s3Text = tel?.choch_status || "FAIL ⚪";
-                const s4Text = tel?.fvg_status || "FAIL ⚪";
-                const s5Text = tel?.retest_status || tel?.fvg_status || "FAIL ⚪";
-                const s6Text = tel?.s6_status || tel?.rejection_status || "FAIL ⚪";
-                const s7Text = tel?.s7_status || "FAIL ⚪";
-                const s8Text = tel?.s8_status || "PASS 🟢 ($0.75 Fixed)";
-                const s9Text = tel?.s9_status || "PASS 🟢 (2.0R Target Space)";
+                const isPassText = (val: string) =>
+                  typeof val === "string" && (val.includes("PASS") || val.includes("🟢"));
 
-                const getColor = (val: string) => {
-                  if (!val) return "text-zinc-400";
-                  if (val.includes("BULLISH") || val.includes("PASS 🟢")) return "text-emerald-400 font-bold";
-                  if (val.includes("BEARISH") || val.includes("PASS 🔴")) return "text-rose-400 font-bold";
-                  return "text-zinc-400 font-semibold";
+                const s1Text = tel?.m15_bias || "NEUTRAL ⚪";
+                const isM15Bull = s1Text.includes("BULLISH");
+                const isM15Bear = s1Text.includes("BEARISH");
+                const s1Valid = (isM15Bull || isM15Bear) && !s1Text.includes("NEUTRAL");
+
+                const s2Valid = s1Valid && isPassText(tel?.sweep_status);
+                const s3Valid = s2Valid && isPassText(tel?.choch_status);
+                const s4Valid = s3Valid && isPassText(tel?.fvg_status);
+                const s5Valid = s4Valid && isPassText(tel?.retest_status || tel?.fvg_status);
+                const s6Valid = s5Valid && isPassText(tel?.s6_status || tel?.rejection_status);
+                const s7Valid = s6Valid && isPassText(tel?.s7_status);
+                const s8Valid = s2Valid; // SL Buffer locks when Sweep is confirmed
+                const s9Valid = s7Valid || hasActivePosition; // 2.0R Target activates when trade triggers
+
+                const getBoxClass = (isValid: boolean, isCurrent: boolean) => {
+                  if (isValid) {
+                    return "p-2 rounded-lg border text-center transition-all duration-300 bg-emerald-950/40 border-emerald-500/80 shadow-[0_0_12px_rgba(16,185,129,0.18)]";
+                  }
+                  if (isCurrent) {
+                    return "p-2 rounded-lg border text-center transition-all duration-300 bg-amber-950/25 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.15)] animate-pulse";
+                  }
+                  return "p-2 rounded-lg border text-center transition-all duration-300 bg-zinc-950/60 border-zinc-800/80 opacity-60";
+                };
+
+                const getTextColor = (isValid: boolean, isCurrent: boolean) => {
+                  if (isValid) return "text-emerald-400 font-black";
+                  if (isCurrent) return "text-amber-400 font-bold";
+                  return "text-zinc-500 font-medium";
                 };
 
                 return (
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 1: M15 Bias</div>
-                      <div className={cn("text-xs font-mono truncate", getColor(s1Text))}>{s1Text}</div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">M15 Structure</div>
+                  <div className="grid grid-cols-3 gap-2 font-mono">
+                    {/* Step 1 */}
+                    <div className={getBoxClass(s1Valid, !s1Valid)}>
+                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 1: M15 Bias</div>
+                      <div className={cn("text-xs truncate", getTextColor(s1Valid, !s1Valid))}>
+                        {s1Valid ? (isM15Bull ? "BULLISH 🟢" : "BEARISH 🔴") : "NEUTRAL ⚪"}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                        {s1Valid ? "HTF Structure Set" : "Awaiting Trend Confirmation"}
+                      </div>
                     </div>
-                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 2: Sweep</div>
-                      <div className={cn("text-xs font-mono truncate", getColor(s2Text))}>{s2Text}</div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">M5 Sweeps</div>
+
+                    {/* Step 2 */}
+                    <div className={getBoxClass(s2Valid, s1Valid && !s2Valid)}>
+                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 2: Sweep</div>
+                      <div className={cn("text-xs truncate", getTextColor(s2Valid, s1Valid && !s2Valid))}>
+                        {s2Valid ? "PASS 🟢 (Wick Sweep)" : s1Valid ? "SCANNING ⏳" : "WAITING ⚪"}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                        {s2Valid ? `Sweep Price: $${Number(tel?.sweep_price ?? 0).toFixed(2)}` : "Awaiting Liquidity Wick"}
+                      </div>
                     </div>
-                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 3: M5 CHoCH</div>
-                      <div className={cn("text-xs font-mono truncate", getColor(s3Text))}>{s3Text}</div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">Post-Sweep CHoCH</div>
+
+                    {/* Step 3 */}
+                    <div className={getBoxClass(s3Valid, s2Valid && !s3Valid)}>
+                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 3: M5 CHoCH</div>
+                      <div className={cn("text-xs truncate", getTextColor(s3Valid, s2Valid && !s3Valid))}>
+                        {s3Valid ? "PASS 🟢 (Break)" : s2Valid ? "SCANNING ⏳" : "WAITING ⚪"}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                        {s3Valid ? `CHoCH: $${Number(tel?.choch_price ?? 0).toFixed(2)}` : "Awaiting Structure Break"}
+                      </div>
                     </div>
-                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 4: Post-CHoCH FVG</div>
-                      <div className={cn("text-xs font-mono truncate", getColor(s4Text))}>{s4Text}</div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">New FVG Zone</div>
+
+                    {/* Step 4 */}
+                    <div className={getBoxClass(s4Valid, s3Valid && !s4Valid)}>
+                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 4: Post-CHoCH FVG</div>
+                      <div className={cn("text-xs truncate", getTextColor(s4Valid, s3Valid && !s4Valid))}>
+                        {s4Valid ? "PASS 🟢 (Created)" : s3Valid ? "SCANNING ⏳" : "WAITING ⚪"}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                        {s4Valid ? "New FVG Zone Ready" : "Awaiting 3-Bar Imbalance"}
+                      </div>
                     </div>
-                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 5: FVG Retest</div>
-                      <div className={cn("text-xs font-mono truncate", getColor(s5Text))}>{s5Text}</div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">Price In Zone</div>
+
+                    {/* Step 5 */}
+                    <div className={getBoxClass(s5Valid, s4Valid && !s5Valid)}>
+                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 5: FVG Retest</div>
+                      <div className={cn("text-xs truncate", getTextColor(s5Valid, s4Valid && !s5Valid))}>
+                        {s5Valid ? "PASS 🟢 (Retested)" : s4Valid ? "AWAITING RETEST ⏳" : "WAITING ⚪"}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                        {s5Valid ? "Price Dipped in FVG" : "Waiting Pullback to FVG"}
+                      </div>
                     </div>
-                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 6: Rejection Wick</div>
-                      <div className={cn("text-xs font-mono truncate", getColor(s6Text))}>{s6Text}</div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">FVG Rejection</div>
+
+                    {/* Step 6 */}
+                    <div className={getBoxClass(s6Valid, s5Valid && !s6Valid)}>
+                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 6: Rejection Wick</div>
+                      <div className={cn("text-xs truncate", getTextColor(s6Valid, s5Valid && !s6Valid))}>
+                        {s6Valid ? "PASS 🟢 (Rejection)" : s5Valid ? "AWAITING REJECTION ⏳" : "WAITING ⚪"}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                        {s6Valid ? "Institutional Rejection" : "Waiting FVG Rejection"}
+                      </div>
                     </div>
-                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 7: Candle Closed</div>
-                      <div className={cn("text-xs font-mono truncate", getColor(s7Text))}>{s7Text}</div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">Closed Confirmation</div>
+
+                    {/* Step 7 */}
+                    <div className={getBoxClass(s7Valid, s6Valid && !s7Valid)}>
+                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 7: Candle Closed</div>
+                      <div className={cn("text-xs truncate", getTextColor(s7Valid, s6Valid && !s7Valid))}>
+                        {s7Valid ? "PASS 🟢 (Confirmed)" : s6Valid ? "AWAITING CLOSE ⏳" : "WAITING ⚪"}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                        {s7Valid ? "M5 Bar Confirmed" : "Waiting Final Bar Close"}
+                      </div>
                     </div>
-                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 8: SL Buffer</div>
-                      <div className={cn("text-xs font-mono truncate", getColor(s8Text))}>{s8Text}</div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">$0.75 Fixed</div>
+
+                    {/* Step 8 (SL Buffer) - Activates at Step 2 (Sweep) */}
+                    <div className={getBoxClass(s8Valid, false)}>
+                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 8: SL Buffer</div>
+                      <div className={cn("text-xs truncate", getTextColor(s8Valid, false))}>
+                        {s8Valid ? "LOCKED 🔒 ($0.75 Buffer)" : "WAITING SWEEP ⚪"}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                        {s8Valid ? "Locked at Sweep ± $0.75" : "Locks at Sweep (Step 2)"}
+                      </div>
                     </div>
-                    <div className="p-2 bg-zinc-950 rounded border border-zinc-800 text-center">
-                      <div className="text-[10px] text-zinc-400 uppercase font-mono mb-1">Step 9: M15 Target</div>
-                      <div className={cn("text-xs font-mono truncate", getColor(s9Text))}>{s9Text}</div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">Executing 2.0R TP</div>
+
+                    {/* Step 9 (M15 Target) - Activates at Step 7/Entry */}
+                    <div className={getBoxClass(s9Valid, false)}>
+                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 9: M15 Target</div>
+                      <div className={cn("text-xs truncate", getTextColor(s9Valid, false))}>
+                        {s9Valid ? "ACTIVE 🎯 (2.0R Target)" : "WAITING ENTRY ⚪"}
+                      </div>
+                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                        {s9Valid ? "Executing 2.0R Target" : "Locks on Entry (Step 7)"}
+                      </div>
                     </div>
                   </div>
                 );
