@@ -82,13 +82,12 @@ function TradingViewEmbedded({ symbol }: { symbol: string }) {
         const widgetId = `tv_chart_embed_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
         const widgetEl = document.createElement("div");
         widgetEl.id = widgetId;
-        widgetEl.style.height = "520px";
+        widgetEl.style.height = "560px";
         widgetEl.style.width = "100%";
         containerRef.current.appendChild(widgetEl);
 
         new (window as any).TradingView.widget({
-          width: "100%",
-          height: 520,
+          autosize: true,
           symbol: tvSymbol,
           interval: "5",
           timezone: "Etc/UTC",
@@ -107,8 +106,8 @@ function TradingViewEmbedded({ symbol }: { symbol: string }) {
   }, [symbol, tvSymbol]);
 
   return (
-    <div className="w-full bg-[#070a12] p-1 border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
-      <div ref={containerRef} className="h-[520px] w-full" />
+    <div className="w-full bg-[#070a12] overflow-hidden">
+      <div ref={containerRef} className="h-[560px] w-full" />
     </div>
   );
 }
@@ -135,7 +134,7 @@ export function SmcChartOverlay({
   activeZones = [],
 }: SmcChartOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<"smc" | "tv">("smc");
+  const [activeTab, setActiveTab] = useState<"smc" | "tv">("tv");
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredCandle, setHoveredCandle] = useState<Candle | null>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(1.0);
@@ -677,20 +676,6 @@ export function SmcChartOverlay({
         <div className="flex items-center gap-2">
           <Button
             size="sm"
-            variant={activeTab === "smc" ? "default" : "outline"}
-            className={cn(
-              "h-8 px-3 text-xs font-mono font-bold transition-all",
-              activeTab === "smc"
-                ? "bg-emerald-600 text-white hover:bg-emerald-500 shadow-md"
-                : "bg-zinc-900 border-zinc-700 text-zinc-300 hover:text-white"
-            )}
-            onClick={() => setActiveTab("smc")}
-          >
-            <BarChart2 className="w-3.5 h-3.5 mr-1.5 text-white" /> 🎯 Pure SMC Visual Levels (On Candles)
-          </Button>
-
-          <Button
-            size="sm"
             variant={activeTab === "tv" ? "default" : "outline"}
             className={cn(
               "h-8 px-3 text-xs font-mono font-bold transition-all",
@@ -700,7 +685,21 @@ export function SmcChartOverlay({
             )}
             onClick={() => setActiveTab("tv")}
           >
-            <Tv className="w-3.5 h-3.5 mr-1.5" /> 📈 TradingView Pro (External Feed)
+            <Tv className="w-3.5 h-3.5 mr-1.5" /> 📈 Real TradingView Pro Chart (Full M5 Feed)
+          </Button>
+
+          <Button
+            size="sm"
+            variant={activeTab === "smc" ? "default" : "outline"}
+            className={cn(
+              "h-8 px-3 text-xs font-mono font-bold transition-all",
+              activeTab === "smc"
+                ? "bg-emerald-600 text-white hover:bg-emerald-500 shadow-md"
+                : "bg-zinc-900 border-zinc-700 text-zinc-300 hover:text-white"
+            )}
+            onClick={() => setActiveTab("smc")}
+          >
+            <BarChart2 className="w-3.5 h-3.5 mr-1.5 text-white" /> 🎯 SMC Diagram Canvas
           </Button>
         </div>
 
@@ -741,17 +740,13 @@ export function SmcChartOverlay({
         )}
       </div>
 
-      {/* 3. CHART CONTAINER */}
-      {activeTab === "tv" ? (
-        <TradingViewEmbedded symbol={symbol} />
-      ) : (
-        /* PURE SMC CANDLESTICK CHART WITH HIGH CONTRAST DIGITS & LIVE CURSOR TRACKING */
-        <div
-          ref={containerRef}
-          className="relative w-full bg-[#070a12] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl"
-        >
-          {/* TOP SMC STRUCTURE SEQUENCE BAR (INSIDE THE CHART CONTAINER) */}
-          <div className="px-3 py-2.5 bg-[#090d18] border-b border-zinc-800 text-xs font-mono">
+      {/* 3. MAIN CHART CONTAINER (ALWAYS HOUSES 7-STEP SMC RIBBON ON TOP) */}
+      <div
+        ref={containerRef}
+        className="relative w-full bg-[#070a12] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl"
+      >
+        {/* TOP SMC STRUCTURE SEQUENCE BAR (INSIDE THE CHART CONTAINER - ALWAYS VISIBLE) */}
+        <div className="px-3 py-2.5 bg-[#090d18] border-b border-zinc-800 text-xs font-mono">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-white tracking-wider flex items-center gap-1.5 text-xs">
@@ -888,7 +883,11 @@ export function SmcChartOverlay({
             </div>
           </div>
 
-          {/* SVG Canvas with Crisp Rendering and Real-time Cursor Tracking */}
+        {/* ACTIVE CHART DISPLAY: REAL TRADINGVIEW M5 (DEFAULT) OR SMC DIAGRAM CANVAS */}
+        {activeTab === "tv" ? (
+          <TradingViewEmbedded symbol={symbol} />
+        ) : (
+          /* SVG Canvas with Crisp Rendering and Real-time Cursor Tracking */
           <div className="relative w-full h-[460px]">
             <svg
               viewBox={`0 0 ${svgWidth} ${svgHeight}`}
@@ -1466,8 +1465,8 @@ export function SmcChartOverlay({
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 4. PURE SMC STRICT 9-STEP VERIFICATION STATUS PIPELINE */}
       <div className="space-y-2">
