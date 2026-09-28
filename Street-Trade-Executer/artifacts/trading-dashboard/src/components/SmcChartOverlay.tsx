@@ -622,8 +622,15 @@ export function SmcChartOverlay({
 
         {/* Live Metrics Pills - Clean, High Contrast */}
         <div className="flex flex-wrap items-center gap-2 self-end md:self-center font-mono text-xs">
-          <div className="px-3 py-1 rounded bg-zinc-900 border border-zinc-700 text-white font-bold shadow-sm">
-            Live: <span className="text-emerald-400 font-black">${livePrice.toFixed(2)}</span>
+          {isMetals && new Date().getUTCHours() === 21 && (
+            <div className="px-3 py-1 rounded bg-amber-950/90 border border-amber-400 text-amber-200 font-bold shadow-sm flex items-center gap-1.5 animate-pulse text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <span>⏸️ Market Rollover Break (Resumes 03:00 PKT / 22:00 UTC)</span>
+            </div>
+          )}
+
+          <div className="px-3 py-1 rounded bg-zinc-900 border border-zinc-700 text-white font-bold shadow-sm" title="Exact MT5 Broker Midpoint (Bid+Ask)/2">
+            MT5 Broker: <span className="text-emerald-400 font-black">${livePrice.toFixed(2)}</span>
           </div>
 
           {sweepPrice > 0 && (
