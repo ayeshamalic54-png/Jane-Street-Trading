@@ -1046,117 +1046,117 @@ export default function Dashboard() {
 
                 const getBoxClass = (isValid: boolean, isCurrent: boolean) => {
                   if (isValid) {
-                    return "p-2 rounded-lg border text-center transition-all duration-300 bg-emerald-950/40 border-emerald-500/80 shadow-[0_0_12px_rgba(16,185,129,0.18)]";
+                    return "p-2.5 rounded-lg border-2 text-center transition-all duration-300 bg-emerald-950/80 border-emerald-400 text-emerald-200 shadow-[0_0_14px_rgba(16,185,129,0.3)]";
                   }
                   if (isCurrent) {
-                    return "p-2 rounded-lg border text-center transition-all duration-300 bg-amber-950/25 border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.15)] animate-pulse";
+                    return "p-2.5 rounded-lg border-2 text-center transition-all duration-300 bg-amber-950/70 border-amber-400 text-amber-200 shadow-[0_0_14px_rgba(245,158,11,0.3)] animate-pulse";
                   }
-                  return "p-2 rounded-lg border text-center transition-all duration-300 bg-zinc-950/60 border-zinc-800/80 opacity-60";
+                  return "p-2.5 rounded-lg border-2 text-center transition-all duration-300 bg-slate-900 border-slate-600 shadow-sm";
                 };
 
                 const getTextColor = (isValid: boolean, isCurrent: boolean) => {
-                  if (isValid) return "text-emerald-400 font-black";
-                  if (isCurrent) return "text-amber-400 font-bold";
-                  return "text-zinc-500 font-medium";
+                  if (isValid) return "text-emerald-300 font-black";
+                  if (isCurrent) return "text-amber-300 font-black";
+                  return "text-white font-bold";
                 };
 
                 return (
                   <div className="grid grid-cols-3 gap-2 font-mono">
                     {/* Step 1 */}
                     <div className={getBoxClass(s1Valid, !s1Valid)}>
-                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 1: M15 Bias</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 1: M15 Bias</div>
                       <div className={cn("text-xs truncate", getTextColor(s1Valid, !s1Valid))}>
                         {s1Valid ? (isM15Bull ? "BULLISH 🟢" : "BEARISH 🔴") : "NEUTRAL ⚪"}
                       </div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
                         {s1Valid ? "HTF Structure Set" : "Awaiting Trend Confirmation"}
                       </div>
                     </div>
 
                     {/* Step 2 */}
                     <div className={getBoxClass(s2Valid, s1Valid && !s2Valid)}>
-                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 2: Sweep</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 2: Sweep</div>
                       <div className={cn("text-xs truncate", getTextColor(s2Valid, s1Valid && !s2Valid))}>
                         {s2Valid ? "PASS 🟢 (Wick Sweep)" : s1Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
                         {s2Valid ? `Sweep Price: $${Number(tel?.sweep_price ?? 0).toFixed(2)}` : "Awaiting Liquidity Wick"}
                       </div>
                     </div>
 
                     {/* Step 3 */}
                     <div className={getBoxClass(s3Valid, s2Valid && !s3Valid)}>
-                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 3: M5 CHoCH</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 3: M5 CHoCH</div>
                       <div className={cn("text-xs truncate", getTextColor(s3Valid, s2Valid && !s3Valid))}>
                         {s3Valid ? "PASS 🟢 (Break)" : s2Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
                         {s3Valid ? `CHoCH: $${Number(tel?.choch_price ?? 0).toFixed(2)}` : "Awaiting Structure Break"}
                       </div>
                     </div>
 
                     {/* Step 4 */}
                     <div className={getBoxClass(s4Valid, s3Valid && !s4Valid)}>
-                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 4: Post-CHoCH FVG</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 4: Post-CHoCH FVG</div>
                       <div className={cn("text-xs truncate", getTextColor(s4Valid, s3Valid && !s4Valid))}>
                         {s4Valid ? "PASS 🟢 (Created)" : s3Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
                         {s4Valid ? "New FVG Zone Ready" : "Awaiting 3-Bar Imbalance"}
                       </div>
                     </div>
 
                     {/* Step 5 */}
                     <div className={getBoxClass(s5Valid, s4Valid && !s5Valid)}>
-                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 5: FVG Retest</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 5: FVG Retest</div>
                       <div className={cn("text-xs truncate", getTextColor(s5Valid, s4Valid && !s5Valid))}>
                         {s5Valid ? "PASS 🟢 (Retested)" : s4Valid ? "AWAITING RETEST ⏳" : "WAITING ⚪"}
                       </div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
                         {s5Valid ? "Price Dipped in FVG" : "Waiting Pullback to FVG"}
                       </div>
                     </div>
 
                     {/* Step 6 */}
                     <div className={getBoxClass(s6Valid, s5Valid && !s6Valid)}>
-                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 6: Rejection Wick</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 6: Rejection Wick</div>
                       <div className={cn("text-xs truncate", getTextColor(s6Valid, s5Valid && !s6Valid))}>
                         {s6Valid ? "PASS 🟢 (Rejection)" : s5Valid ? "AWAITING REJECTION ⏳" : "WAITING ⚪"}
                       </div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
                         {s6Valid ? "Institutional Rejection" : "Waiting FVG Rejection"}
                       </div>
                     </div>
 
                     {/* Step 7 */}
                     <div className={getBoxClass(s7Valid, s6Valid && !s7Valid)}>
-                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 7: Candle Closed</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 7: Candle Closed</div>
                       <div className={cn("text-xs truncate", getTextColor(s7Valid, s6Valid && !s7Valid))}>
                         {s7Valid ? "PASS 🟢 (Confirmed)" : s6Valid ? "AWAITING CLOSE ⏳" : "WAITING ⚪"}
                       </div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
                         {s7Valid ? "M5 Bar Confirmed" : "Waiting Final Bar Close"}
                       </div>
                     </div>
 
                     {/* Step 8 (SL Buffer) - Activates at Step 2 (Sweep) */}
                     <div className={getBoxClass(s8Valid, false)}>
-                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 8: SL Buffer</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 8: SL Buffer</div>
                       <div className={cn("text-xs truncate", getTextColor(s8Valid, false))}>
                         {s8Valid ? "LOCKED 🔒 ($0.75 Buffer)" : "WAITING SWEEP ⚪"}
                       </div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
                         {s8Valid ? "Locked at Sweep ± $0.75" : "Locks at Sweep (Step 2)"}
                       </div>
                     </div>
 
                     {/* Step 9 (M15 Target) - Activates at Step 7/Entry */}
                     <div className={getBoxClass(s9Valid, false)}>
-                      <div className="text-[10px] text-zinc-400 uppercase mb-1">Step 9: M15 Target</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 9: M15 Target</div>
                       <div className={cn("text-xs truncate", getTextColor(s9Valid, false))}>
                         {s9Valid ? "ACTIVE 🎯 (2.0R Target)" : "WAITING ENTRY ⚪"}
                       </div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
                         {s9Valid ? "Executing 2.0R Target" : "Locks on Entry (Step 7)"}
                       </div>
                     </div>

@@ -797,103 +797,103 @@ export function SmcChartOverlay({
             <div className="grid grid-cols-7 gap-1.5 text-[10px]">
               {/* S1: M15 Bias */}
               <div className={cn(
-                "p-1.5 rounded border text-center transition-all",
+                "p-1.5 rounded-lg border-2 text-center transition-all",
                 s1Pass
-                  ? "bg-emerald-950/70 border-emerald-500 text-emerald-300 font-bold shadow-[0_0_8px_rgba(16,185,129,0.2)]"
-                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-zinc-400 uppercase font-semibold">1. M15 Bias</div>
-                <div className="truncate font-bold mt-0.5">
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">1. M15 Bias</div>
+                <div className="truncate font-black mt-0.5">
                   {s1Pass ? (isM15Bullish ? "BULLISH 🟢" : "BEARISH 🔴") : "NEUTRAL ⚪"}
                 </div>
               </div>
 
               {/* S2: Sweep */}
               <div className={cn(
-                "p-1.5 rounded border text-center transition-all",
+                "p-1.5 rounded-lg border-2 text-center transition-all",
                 s2Pass
-                  ? "bg-cyan-950/70 border-cyan-500 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.25)]"
+                  ? "bg-cyan-950/80 border-cyan-400 text-cyan-200 font-black shadow-[0_0_10px_rgba(6,182,212,0.3)]"
                   : s1Pass
-                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
-                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-zinc-400 uppercase font-semibold">2. Sweep</div>
-                <div className="truncate font-bold mt-0.5">
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">2. Sweep</div>
+                <div className="truncate font-black mt-0.5">
                   {s2Pass ? "SWEEP 🟢" : s1Pass ? "SCANNING ⏳" : "WAITING ⚪"}
                 </div>
               </div>
 
               {/* S3: CHoCH */}
               <div className={cn(
-                "p-1.5 rounded border text-center transition-all",
+                "p-1.5 rounded-lg border-2 text-center transition-all",
                 s3Pass
-                  ? "bg-amber-950/70 border-amber-500 text-amber-300 font-bold shadow-[0_0_8px_rgba(245,158,11,0.25)]"
+                  ? "bg-amber-950/80 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)]"
                   : s2Pass
-                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
-                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-zinc-400 uppercase font-semibold">3. CHoCH</div>
-                <div className="truncate font-bold mt-0.5">
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">3. CHoCH</div>
+                <div className="truncate font-black mt-0.5">
                   {s3Pass ? "CHOCH 🟢" : s2Pass ? "SCANNING ⏳" : "WAITING ⚪"}
                 </div>
               </div>
 
               {/* S4: FVG Creation */}
               <div className={cn(
-                "p-1.5 rounded border text-center transition-all",
+                "p-1.5 rounded-lg border-2 text-center transition-all",
                 s4Pass
-                  ? "bg-teal-950/70 border-teal-500 text-teal-300 font-bold shadow-[0_0_8px_rgba(20,184,166,0.2)]"
+                  ? "bg-teal-950/80 border-teal-400 text-teal-200 font-black shadow-[0_0_10px_rgba(20,184,166,0.3)]"
                   : s3Pass
-                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
-                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-zinc-400 uppercase font-semibold">4. FVG Form</div>
-                <div className="truncate font-bold mt-0.5">
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">4. FVG Form</div>
+                <div className="truncate font-black mt-0.5">
                   {s4Pass ? "FVG 🟢" : s3Pass ? "SCANNING ⏳" : "WAITING ⚪"}
                 </div>
               </div>
 
               {/* S5: FVG Retest */}
               <div className={cn(
-                "p-1.5 rounded border text-center transition-all",
+                "p-1.5 rounded-lg border-2 text-center transition-all",
                 s5Pass
-                  ? "bg-emerald-950/70 border-emerald-500 text-emerald-300 font-bold shadow-[0_0_8px_rgba(16,185,129,0.25)]"
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
                   : s4Pass
-                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
-                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-zinc-400 uppercase font-semibold">5. Retest</div>
-                <div className="truncate font-bold mt-0.5">
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">5. Retest</div>
+                <div className="truncate font-black mt-0.5">
                   {s5Pass ? "RETESTED 🟢" : s4Pass ? "AWAITING ⏳" : "WAITING ⚪"}
                 </div>
               </div>
 
               {/* S6: Rejection */}
               <div className={cn(
-                "p-1.5 rounded border text-center transition-all",
+                "p-1.5 rounded-lg border-2 text-center transition-all",
                 s6Pass
-                  ? "bg-emerald-950/70 border-emerald-500 text-emerald-300 font-bold shadow-[0_0_8px_rgba(16,185,129,0.2)]"
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
                   : s5Pass
-                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
-                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-zinc-400 uppercase font-semibold">6. Rejection</div>
-                <div className="truncate font-bold mt-0.5">
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">6. Rejection</div>
+                <div className="truncate font-black mt-0.5">
                   {s6Pass ? "REJECTED 🟢" : s5Pass ? "AWAITING ⏳" : "WAITING ⚪"}
                 </div>
               </div>
 
               {/* S7: Confirmation Close */}
               <div className={cn(
-                "p-1.5 rounded border text-center transition-all",
+                "p-1.5 rounded-lg border-2 text-center transition-all",
                 s7Pass
-                  ? "bg-emerald-950/70 border-emerald-500 text-emerald-300 font-bold shadow-[0_0_8px_rgba(16,185,129,0.25)]"
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
                   : s6Pass
-                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
-                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-zinc-400 uppercase font-semibold">7. Close</div>
-                <div className="truncate font-bold mt-0.5">
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">7. Close</div>
+                <div className="truncate font-black mt-0.5">
                   {s7Pass ? "CONFIRMED 🟢" : s6Pass ? "AWAITING ⏳" : "WAITING ⚪"}
                 </div>
               </div>
