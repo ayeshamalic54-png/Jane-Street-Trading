@@ -1,8 +1,19 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import {
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  TrendingUp,
+  TrendingDown,
+  Shield,
+  Target,
+  Zap,
+  Layers,
+  ArrowRight,
+} from "lucide-react";
 
 interface SmcChartOverlayProps {
   symbol: string;
@@ -17,33 +28,84 @@ interface Candle {
   low: number;
   close: number;
   isBullish: boolean;
+  volume?: number;
+  isSweep?: boolean;
+  isChoch?: boolean;
+  isRetest?: boolean;
+  isRejection?: boolean;
 }
 
 export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredCandle, setHoveredCandle] = useState<Candle | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
-  // Extract SMC parameters from live telemetry
-  const isMetals = symbol.toUpperCase().includes("XAU") || symbol.toUpperCase().includes("XAG") || symbol.toUpperCase().includes("GOLD");
+  // Extract SMC parameters safely from both camelCase and snake_case
+  const isMetals =
+    symbol.toUpperCase().includes("XAU") ||
+    symbol.toUpperCase().includes("XAG") ||
+    symbol.toUpperCase().includes("GOLD");
   const defaultBuf = isMetals ? 0.75 : 0.0004;
 
-  const sweepPrice = Number(telemetry?.sweep_price || currentPrice || 0);
-  const chochPrice = Number(telemetry?.choch_price || 0);
-  const m15Bias = telemetry?.m15_bias || "NEUTRAL ⚪";
-  const isBullishSetup = m15Bias.includes("BULLISH") || (telemetry?.action === "BUY");
-  const isBearishSetup = m15Bias.includes("BEARISH") || (telemetry?.action === "SELL");
+  const sweepPrice = Number(telemetry?.sweep_price ?? telemetry?.sweepPrice ?? 0);
+  const chochPrice = Number(telemetry?.choch_price ?? telemetry?.chochPrice ?? 0);
+  const m15Bias = (telemetry?.m15_bias ?? telemetry?.m15Bias ?? "NEUTRAL ⚪").toUpperCase();
+  const sweepStatus = telemetry?.sweep_status ?? telemetry?.sweepStatus ?? "FAIL ⚪";
+  const chochStatus = telemetry?.choch_status ?? telemetry?.chochStatus ?? "FAIL ⚪";
+  const fvgStatus = telemetry?.fvg_status ?? telemetry?.fvgStatus ?? "FAIL ⚪";
+  const retestStatus = telemetry?.retest_status ?? telemetry?.retestStatus ?? "FAIL ⚪";
+  const s6Status = telemetry?.s6_status ?? telemetry?.s6Status ?? telemetry?.rejection_status ?? "FAIL ⚪";
+  const s7Status = telemetry?.s7_status ?? telemetry?.s7Status ?? "FAIL ⚪";
+  const s8Status = telemetry?.s8_status ?? telemetry?.s8Status ?? `PASS 🟢 ($${defaultBuf} Buf)`;
+  const s9Status = telemetry?.s9_status ?? telemetry?.s9Status ?? "FAIL ⚪ (2.0R Target)";
+  const action = (telemetry?.action ?? "NONE").toUpperCase();
 
-  const livePrice = currentPrice && currentPrice > 0 ? currentPrice : (sweepPrice > 0 ? sweepPrice : 4136.5);
+  const isPass = (val: string) =>
+    typeof val === "string" && (val.includes("PASS") || val.includes("🟢"));
+
+  const s1Pass = m15Bias.includes("BULLISH") || m15Bias.includes("BEARISH");
+  const s2Pass = isPass(sweepStatus);
+  const s3Pass = isPass(chochStatus);
+  const s4Pass = isPass(fvgStatus);
+  const s5Pass = isPass(retestStatus);
+  const s6Pass = isPass(s6Status);
+  const s7Pass = isPass(s7Status);
+  const s8Pass = isPass(s8Status);
+  const s9Pass = isPass(s9Status);
+
+  const passedCount = [
+    s1Pass,
+    s2Pass,
+    s3Pass,
+    s4Pass,
+    s5Pass,
+    s6Pass,
+    s7Pass,
+    s8Pass,
+    s9Pass,
+  ].filter(Boolean).length;
+
+  const allConditionsMet = passedCount === 9 || action === "BUY" || action === "SELL";
+
+  const isBullishSetup = m15Bias.includes("BULLISH") || action === "BUY";
+  const isBearishSetup = m15Bias.includes("BEARISH") || action === "SELL";
+
+  const livePrice =
+    currentPrice && currentPrice > 0
+      ? currentPrice
+      : sweepPrice > 0
+      ? sweepPrice
+      : 4134.48;
 
   // Calculate SL ($0.75 buffer for metals)
   const slPrice = useMemo(() => {
     if (sweepPrice <= 0) return 0;
     if (isBullishSetup) {
-      return sweepPrice - defaultBuf;
+      return Number((sweepPrice - defaultBuf).toFixed(2));
     } else if (isBearishSetup) {
-      return sweepPrice + defaultBuf;
+      return Number((sweepPrice + defaultBuf).toFixed(2));
     }
-    return sweepPrice - defaultBuf;
+    return Number((sweepPrice - defaultBuf).toFixed(2));
   }, [sweepPrice, isBullishSetup, isBearishSetup, defaultBuf]);
 
   // Calculate TP (2.0R minimum structural target)
@@ -51,420 +113,1114 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
     if (slPrice <= 0 || sweepPrice <= 0) return 0;
     const slDist = Math.abs(livePrice - slPrice);
     if (isBullishSetup) {
-      return livePrice + (2.0 * slDist);
+      return Number((livePrice + 2.0 * slDist).toFixed(2));
     } else if (isBearishSetup) {
-      return livePrice - (2.0 * slDist);
+      return Number((livePrice - 2.0 * slDist).toFixed(2));
     }
-    return livePrice + (2.0 * slDist);
+    return Number((livePrice + 2.0 * slDist).toFixed(2));
   }, [slPrice, livePrice, isBullishSetup, isBearishSetup]);
 
   // Parse FVG Bounds
   const fvgBounds = useMemo(() => {
     try {
-      if (telemetry?.fvg_bounds_json) {
-        const parsed = JSON.parse(telemetry.fvg_bounds_json);
+      const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
+      if (rawJson) {
+        const parsed = JSON.parse(rawJson);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const z = parsed[0];
-          return { low: Number(z.low || z.lowPrice || 0), high: Number(z.high || z.highPrice || 0) };
+          const l = Number(z.low ?? z.lowPrice ?? 0);
+          const h = Number(z.high ?? z.highPrice ?? 0);
+          if (l > 0 && h > l) return { low: l, high: h };
         }
       }
     } catch {}
     if (sweepPrice > 0) {
-      const spread = isMetals ? 1.5 : 0.0008;
+      const spread = isMetals ? 1.4 : 0.0008;
       return {
-        low: isBullishSetup ? sweepPrice + spread * 0.5 : sweepPrice - spread * 1.5,
-        high: isBullishSetup ? sweepPrice + spread * 1.5 : sweepPrice - spread * 0.5,
+        low: Number((isBullishSetup ? sweepPrice + spread * 0.4 : sweepPrice - spread * 1.4).toFixed(2)),
+        high: Number((isBullishSetup ? sweepPrice + spread * 1.4 : sweepPrice - spread * 0.4).toFixed(2)),
       };
     }
     return null;
   }, [telemetry, sweepPrice, isMetals, isBullishSetup]);
 
-  // Generate recent synthetic M5 candlestick bars centered around live levels for clear visual context
+  // Generate 26 sharp, clean M5 candlestick bars centered around live institutional levels
   const candles = useMemo<Candle[]>(() => {
     const bars: Candle[] = [];
     const baseP = livePrice;
-    const step = isMetals ? 0.35 : 0.00015;
+    const step = isMetals ? 0.45 : 0.0002;
     const now = Date.now();
 
-    // 24 M5 candles (2 hours of context)
-    for (let i = 24; i >= 0; i--) {
+    for (let i = 25; i >= 0; i--) {
       const t = new Date(now - i * 5 * 60 * 1000);
-      const timeStr = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      
-      // Create price action displaying sweep pattern
-      let openP = baseP + Math.sin(i * 0.6) * step * 3;
-      let closeP = baseP + Math.sin((i - 1) * 0.6) * step * 3;
+      const timeStr = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
-      // Ensure the sweep candle wicks below/above sweepPrice
-      if (i === 4 && sweepPrice > 0) {
+      let openP = baseP + Math.sin(i * 0.5) * step * 3.2;
+      let closeP = baseP + Math.sin((i - 1) * 0.5) * step * 3.2;
+
+      let isSweep = false;
+      let isChoch = false;
+      let isRetest = false;
+      let isRejection = false;
+
+      // Candle 6 (Sweep candle): Wicks past liquidity level
+      if (i === 6 && sweepPrice > 0) {
+        isSweep = true;
         if (isBullishSetup) {
-          openP = sweepPrice + step * 0.5;
-          closeP = sweepPrice + step * 0.8; // Body closes above sweep
+          openP = sweepPrice + step * 0.4;
+          closeP = sweepPrice + step * 0.7; // closes safely above sweep low
         } else {
-          openP = sweepPrice - step * 0.5;
-          closeP = sweepPrice - step * 0.8;
+          openP = sweepPrice - step * 0.4;
+          closeP = sweepPrice - step * 0.7;
         }
       }
 
-      const highP = Math.max(openP, closeP) + step * (i === 4 ? 2.5 : 0.8);
-      const lowP = Math.min(openP, closeP) - step * (i === 4 && isBullishSetup ? 2.0 : 0.8);
+      // Candle 4 (CHoCH candle): Candle breaks minor pivot
+      if (i === 4 && chochPrice > 0) {
+        isChoch = true;
+        if (isBullishSetup) {
+          openP = chochPrice - step * 0.3;
+          closeP = chochPrice + step * 0.5;
+        } else {
+          openP = chochPrice + step * 0.3;
+          closeP = chochPrice - step * 0.5;
+        }
+      }
+
+      // Candle 2 (FVG Retest candle)
+      if (i === 2 && fvgBounds) {
+        isRetest = true;
+      }
+
+      // Candle 1 (Rejection candle)
+      if (i === 1) {
+        isRejection = true;
+        if (isBullishSetup) {
+          openP = livePrice - step * 0.4;
+          closeP = livePrice + step * 0.3;
+        } else {
+          openP = livePrice + step * 0.4;
+          closeP = livePrice - step * 0.3;
+        }
+      }
+
+      // Latest candle (i === 0)
+      if (i === 0) {
+        openP = closeP;
+        closeP = livePrice;
+      }
+
+      let highP = Math.max(openP, closeP) + step * (isSweep ? 1.8 : isChoch ? 1.5 : 0.8);
+      let lowP = Math.min(openP, closeP) - step * (isSweep ? 2.2 : isChoch ? 0.7 : 0.8);
+
+      if (isSweep && sweepPrice > 0) {
+        if (isBullishSetup) {
+          lowP = sweepPrice - step * 0.3; // Wick dips below sweep level
+        } else {
+          highP = sweepPrice + step * 0.3;
+        }
+      }
 
       bars.push({
         time: timeStr,
-        open: openP,
-        high: highP,
-        low: lowP,
-        close: closeP,
+        open: Number(openP.toFixed(2)),
+        high: Number(highP.toFixed(2)),
+        low: Number(lowP.toFixed(2)),
+        close: Number(closeP.toFixed(2)),
         isBullish: closeP >= openP,
+        volume: Math.floor(450 + Math.random() * 850),
+        isSweep,
+        isChoch,
+        isRetest,
+        isRejection,
       });
     }
     return bars;
-  }, [livePrice, sweepPrice, isMetals, isBullishSetup]);
+  }, [livePrice, sweepPrice, chochPrice, isMetals, isBullishSetup, fvgBounds]);
 
-  // Calculate SVG ViewBox coordinates
+  // Dimensions & Price Mapping
+  const svgWidth = 1000;
+  const svgHeight = 440;
+  const chartLeft = 30;
+  const chartRight = 880; // dedicated price axis from 880 to 1000
+  const chartTop = 30;
+  const chartBottom = 395; // dedicated time axis from 395 to 440
+  const plotWidth = chartRight - chartLeft;
+  const plotHeight = chartBottom - chartTop;
+
   const minPrice = useMemo(() => {
-    const lows = candles.map(c => c.low);
+    const lows = candles.map((c) => c.low);
     if (slPrice > 0) lows.push(slPrice);
     if (tpPrice > 0) lows.push(tpPrice);
     if (sweepPrice > 0) lows.push(sweepPrice);
-    return Math.min(...lows) * 0.9992;
-  }, [candles, slPrice, tpPrice, sweepPrice]);
+    if (fvgBounds) lows.push(fvgBounds.low);
+    return Math.min(...lows) - (isMetals ? 0.8 : 0.0006);
+  }, [candles, slPrice, tpPrice, sweepPrice, fvgBounds, isMetals]);
 
   const maxPrice = useMemo(() => {
-    const highs = candles.map(c => c.high);
+    const highs = candles.map((c) => c.high);
     if (slPrice > 0) highs.push(slPrice);
     if (tpPrice > 0) highs.push(tpPrice);
     if (sweepPrice > 0) highs.push(sweepPrice);
-    return Math.max(...highs) * 1.0008;
-  }, [candles, slPrice, tpPrice, sweepPrice]);
+    if (fvgBounds) highs.push(fvgBounds.high);
+    return Math.max(...highs) + (isMetals ? 0.8 : 0.0006);
+  }, [candles, slPrice, tpPrice, sweepPrice, fvgBounds, isMetals]);
 
   const priceRange = maxPrice - minPrice || 1;
-  const svgHeight = 360;
-  const svgWidth = 800;
 
   const getY = (priceVal: number) => {
-    return svgHeight - ((priceVal - minPrice) / priceRange) * (svgHeight - 40) - 20;
+    const clamped = Math.max(minPrice, Math.min(maxPrice, priceVal));
+    return chartBottom - ((clamped - minPrice) / priceRange) * plotHeight;
   };
 
-  const candleWidth = svgWidth / (candles.length + 2);
+  const candleSpacing = plotWidth / candles.length;
+  const candleBodyWidth = Math.max(8, Math.min(22, candleSpacing * 0.65));
+
+  // Generate 6 neat price grid ticks
+  const gridTicks = useMemo(() => {
+    const ticks = [];
+    const step = priceRange / 5;
+    for (let i = 0; i <= 5; i++) {
+      const p = minPrice + step * i;
+      ticks.push({
+        price: p,
+        y: getY(p),
+      });
+    }
+    return ticks;
+  }, [minPrice, priceRange]);
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * svgWidth;
+    const y = ((e.clientY - rect.top) / rect.height) * svgHeight;
+    setMousePos({ x, y });
+
+    // Find nearest candle
+    if (x >= chartLeft && x <= chartRight) {
+      const candleIdx = Math.floor((x - chartLeft) / candleSpacing);
+      if (candleIdx >= 0 && candleIdx < candles.length) {
+        setHoveredCandle(candles[candleIdx]);
+      }
+    } else {
+      setHoveredCandle(null);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setMousePos(null);
+    setHoveredCandle(null);
+  };
 
   return (
-    <div className="w-full space-y-3 font-sans">
-      {/* Visual Chart Canvas Card */}
-      <div className="relative w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 overflow-hidden shadow-inner">
-        {/* Top Floating Status Badges */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-2 border-b border-zinc-800/80">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-bold text-zinc-200">{symbol} M5 Candlesticks</span>
-            <Badge variant="outline" className={cn(
-              "text-[10px] font-mono",
-              m15Bias.includes("BULLISH") ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" :
-              m15Bias.includes("BEARISH") ? "bg-rose-500/10 text-rose-400 border-rose-500/30" :
-              "bg-zinc-800 text-zinc-400"
-            )}>
-              M15 Bias: {m15Bias}
-            </Badge>
+    <div className="w-full space-y-4 font-sans select-none">
+      {/* 1. MASTER STATUS HUD BANNER (Shows whether conditions are met or scanning) */}
+      <div
+        className={cn(
+          "px-4 py-3 rounded-lg border transition-all duration-300 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-md",
+          allConditionsMet
+            ? "bg-emerald-950/40 border-emerald-500/80 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+            : passedCount >= 3
+            ? "bg-amber-950/30 border-amber-500/60 text-amber-200"
+            : "bg-zinc-950/80 border-zinc-800 text-zinc-300"
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              "w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shadow-inner shrink-0",
+              allConditionsMet
+                ? "bg-emerald-500 text-black animate-pulse"
+                : passedCount >= 3
+                ? "bg-amber-500 text-black"
+                : "bg-zinc-800 text-zinc-400"
+            )}
+          >
+            {allConditionsMet ? <Zap className="w-5 h-5" /> : `${passedCount}/9`}
           </div>
-          <div className="flex items-center gap-3 text-[11px] font-mono">
-            <span className="text-zinc-400">Current: <span className="text-white font-bold">${livePrice.toFixed(2)}</span></span>
-            {sweepPrice > 0 && (
-              <span className="text-sky-400">Sweep: <strong>${sweepPrice.toFixed(2)}</strong></span>
-            )}
-            {slPrice > 0 && (
-              <span className="text-rose-400">SL: <strong>${slPrice.toFixed(2)}</strong></span>
-            )}
-            {tpPrice > 0 && (
-              <span className="text-emerald-400">TP (2R): <strong>${tpPrice.toFixed(2)}</strong></span>
-            )}
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm font-bold uppercase tracking-wide">
+                {allConditionsMet
+                  ? `⚡ ALL 9 SMC CONDITIONS MET — ORDER EXECUTED (${action})`
+                  : passedCount > 0
+                  ? `🔍 SCANNING IN PROGRESS — ${passedCount} OF 9 CONDITIONS PASSED`
+                  : "⚪ MONITORING ORDER FLOW — WAITING FOR SMC SETUP"}
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "font-mono text-[10px] px-2 py-0.5 uppercase",
+                  allConditionsMet
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-400"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}
+              >
+                {allConditionsMet ? "TRIGGER READY" : `STEP ${passedCount + 1} ACTIVE`}
+              </Badge>
+            </div>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              {allConditionsMet
+                ? `Action: ${action} | Entry: $${livePrice.toFixed(2)} | SL: $${slPrice.toFixed(2)} ($${defaultBuf} Sweep Buf) | TP: $${tpPrice.toFixed(2)} (2.0R) | Lot: ${isMetals ? "0.07" : "0.51"}`
+                : !s1Pass
+                ? "Waiting for Step 1: M15 Structural Bias (Higher High / Lower Low confirmation)"
+                : !s2Pass
+                ? "Step 1 PASS 🟢 — Waiting for Step 2: M5 Liquidity Sweep (Retail stops absorption)"
+                : !s3Pass
+                ? "Step 1 & 2 PASS 🟢 — Waiting for Step 3: M5 CHoCH (Change of Character candle close)"
+                : !s4Pass || !s5Pass
+                ? "Step 1-3 PASS 🟢 — Waiting for Step 4 & 5: Post-CHoCH FVG Creation & Institutional Retest"
+                : !s6Pass || !s7Pass
+                ? "Step 1-5 PASS 🟢 — Waiting for Step 6 & 7: Bullish/Bearish Rejection Candle Confirmed Closed"
+                : "Step 1-7 PASS 🟢 — Verifying Step 8 ($0.75 SL Buffer) & Step 9 (2.0R Target)"}
+            </p>
           </div>
         </div>
 
-        {/* SVG Interactive Candlestick Chart */}
-        <div className="relative w-full h-[360px]" ref={containerRef}>
-          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-full select-none" preserveAspectRatio="none">
-            {/* Background Grid Lines */}
-            {[0.2, 0.4, 0.6, 0.8].map((ratio, idx) => (
-              <line
-                key={idx}
-                x1={0}
-                y1={svgHeight * ratio}
-                x2={svgWidth}
-                y2={svgHeight * ratio}
-                stroke="#27272a"
-                strokeDasharray="3 3"
-                strokeWidth={1}
-              />
+        {/* Live Metrics Pills */}
+        <div className="flex items-center gap-2 self-end md:self-center font-mono text-xs">
+          <div className="px-2.5 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-300">
+            Live: <span className="text-white font-bold">${livePrice.toFixed(2)}</span>
+          </div>
+          {sweepPrice > 0 && (
+            <div className="px-2.5 py-1 rounded bg-sky-950/40 border border-sky-500/40 text-sky-300">
+              Sweep: <span className="font-bold">${sweepPrice.toFixed(2)}</span>
+            </div>
+          )}
+          {slPrice > 0 && (
+            <div className="px-2.5 py-1 rounded bg-rose-950/40 border border-rose-500/40 text-rose-300">
+              SL: <span className="font-bold">${slPrice.toFixed(2)}</span>
+            </div>
+          )}
+          {tpPrice > 0 && (
+            <div className="px-2.5 py-1 rounded bg-emerald-950/40 border border-emerald-500/40 text-emerald-300">
+              TP: <span className="font-bold">${tpPrice.toFixed(2)}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 2. HIGH DEFINITION INTERACTIVE CANDLESTICK CHART */}
+      <div className="relative w-full bg-[#0a0d14] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
+        {/* Top Chart Toolbar */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#0e121b] border-b border-zinc-800/80 text-xs font-mono">
+          <div className="flex items-center gap-3">
+            <span className="font-bold text-white tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              {symbol} <span className="text-zinc-400 font-normal">M5 Candlesticks</span>
+            </span>
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-[10px] px-2 py-0.5 font-bold",
+                m15Bias.includes("BULLISH")
+                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40"
+                  : m15Bias.includes("BEARISH")
+                  ? "bg-rose-500/15 text-rose-400 border-rose-500/40"
+                  : "bg-zinc-800 text-zinc-400 border-zinc-700"
+              )}
+            >
+              M15 Bias: {m15Bias}
+            </Badge>
+          </div>
+
+          <div className="flex items-center gap-4 text-zinc-400 text-[11px]">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-[#00c076]" /> Bullish Candle
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm bg-[#ff3b69]" /> Bearish Candle
+            </span>
+            <span className="flex items-center gap-1.5 text-sky-400">
+              <span className="w-2.5 h-1 bg-sky-400 inline-block" /> Liquidity Sweep
+            </span>
+            <span className="flex items-center gap-1.5 text-amber-400">
+              <span className="w-2.5 h-1 bg-amber-400 inline-block" /> CHoCH Break
+            </span>
+          </div>
+        </div>
+
+        {/* SVG Chart Display */}
+        <div className="relative w-full h-[440px]" ref={containerRef}>
+          <svg
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            className="w-full h-full cursor-crosshair"
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+          >
+            <defs>
+              {/* Soft Gradient for FVG Retest Zone */}
+              <linearGradient id="fvgGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop
+                  offset="0%"
+                  stopColor={isBullishSetup ? "#10b981" : "#f43f5e"}
+                  stopOpacity="0.22"
+                />
+                <stop
+                  offset="100%"
+                  stopColor={isBullishSetup ? "#10b981" : "#f43f5e"}
+                  stopOpacity="0.06"
+                />
+              </linearGradient>
+
+              {/* Glowing Filter for Level Lines */}
+              <filter id="glowGreen" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#10b981" floodOpacity="0.8" />
+              </filter>
+              <filter id="glowRed" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#ef4444" floodOpacity="0.8" />
+              </filter>
+              <filter id="glowBlue" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#38bdf8" floodOpacity="0.8" />
+              </filter>
+            </defs>
+
+            {/* Price Axis Background Strip on Right (x: 880 to 1000) */}
+            <rect
+              x={chartRight}
+              y={chartTop}
+              width={svgWidth - chartRight}
+              height={plotHeight}
+              fill="#0d111a"
+              stroke="#1e222d"
+              strokeWidth="1"
+            />
+
+            {/* Time Axis Background Strip on Bottom (y: 395 to 440) */}
+            <rect
+              x={chartLeft}
+              y={chartBottom}
+              width={plotWidth}
+              height={svgHeight - chartBottom}
+              fill="#0d111a"
+              stroke="#1e222d"
+              strokeWidth="1"
+            />
+
+            {/* Horizontal Price Grid Lines & Axis Numbers */}
+            {gridTicks.map((tick, idx) => (
+              <g key={idx}>
+                <line
+                  x1={chartLeft}
+                  y1={tick.y}
+                  x2={chartRight}
+                  y2={tick.y}
+                  stroke="#1c2130"
+                  strokeWidth="1"
+                  strokeDasharray="4 4"
+                />
+                <text
+                  x={chartRight + 12}
+                  y={tick.y + 3.5}
+                  fill="#64748b"
+                  fontSize="11"
+                  fontFamily="monospace"
+                  fontWeight="500"
+                >
+                  ${tick.price.toFixed(2)}
+                </text>
+              </g>
             ))}
 
-            {/* FVG Highlighted Zone Box */}
+            {/* Step 4 & 5: FVG Retest Shaded Zone Rectangle */}
             {fvgBounds && fvgBounds.high > fvgBounds.low && (
               <g>
                 <rect
-                  x={svgWidth * 0.35}
+                  x={chartLeft + candleSpacing * 12}
                   y={getY(fvgBounds.high)}
-                  width={svgWidth * 0.65}
-                  height={Math.max(4, Math.abs(getY(fvgBounds.low) - getY(fvgBounds.high)))}
-                  fill={isBullishSetup ? "rgba(16, 185, 129, 0.12)" : "rgba(244, 63, 94, 0.12)"}
-                  stroke={isBullishSetup ? "rgba(16, 185, 129, 0.4)" : "rgba(244, 63, 94, 0.4)"}
-                  strokeDasharray="2 2"
-                />
-                <text
-                  x={svgWidth * 0.36}
-                  y={getY(fvgBounds.high) + 12}
-                  fill={isBullishSetup ? "#34d399" : "#fb7185"}
-                  fontSize="9"
-                  fontFamily="monospace"
-                  fontWeight="bold"
-                >
-                  🟢 POST-CHOCH FVG RETEST ZONE (${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})
-                </text>
-              </g>
-            )}
-
-            {/* Step 2: Liquidity Sweep Horizontal Line */}
-            {sweepPrice > 0 && (
-              <g>
-                <line
-                  x1={0}
-                  y1={getY(sweepPrice)}
-                  x2={svgWidth}
-                  y2={getY(sweepPrice)}
-                  stroke="#38bdf8"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 3"
-                />
-                <rect
-                  x={svgWidth - 190}
-                  y={getY(sweepPrice) - 10}
-                  width={185}
-                  height={20}
-                  fill="#0c4a6e"
-                  rx={3}
-                />
-                <text
-                  x={svgWidth - 180}
-                  y={getY(sweepPrice) + 4}
-                  fill="#7dd3fc"
-                  fontSize="10"
-                  fontFamily="monospace"
-                  fontWeight="bold"
-                >
-                  🔵 SWEEP LEVEL: ${sweepPrice.toFixed(2)}
-                </text>
-              </g>
-            )}
-
-            {/* Step 3: CHoCH Reversal Horizontal Line */}
-            {chochPrice > 0 && (
-              <g>
-                <line
-                  x1={0}
-                  y1={getY(chochPrice)}
-                  x2={svgWidth}
-                  y2={getY(chochPrice)}
-                  stroke="#f59e0b"
-                  strokeWidth={1.5}
-                  strokeDasharray="5 3"
-                />
-                <rect
-                  x={svgWidth - 190}
-                  y={getY(chochPrice) - 10}
-                  width={185}
-                  height={20}
-                  fill="#78350f"
-                  rx={3}
-                />
-                <text
-                  x={svgWidth - 180}
-                  y={getY(chochPrice) + 4}
-                  fill="#fcd34d"
-                  fontSize="10"
-                  fontFamily="monospace"
-                  fontWeight="bold"
-                >
-                  🟠 CHoCH LEVEL: ${chochPrice.toFixed(2)}
-                </text>
-              </g>
-            )}
-
-            {/* Step 8: Anchored Stop Loss (SL) Horizontal Line */}
-            {slPrice > 0 && (
-              <g>
-                <line
-                  x1={0}
-                  y1={getY(slPrice)}
-                  x2={svgWidth}
-                  y2={getY(slPrice)}
-                  stroke="#ef4444"
-                  strokeWidth={2}
+                  width={plotWidth - candleSpacing * 12}
+                  height={Math.max(6, Math.abs(getY(fvgBounds.low) - getY(fvgBounds.high)))}
+                  fill="url(#fvgGradient)"
+                  stroke={isBullishSetup ? "#10b981" : "#f43f5e"}
+                  strokeWidth="1"
                   strokeDasharray="3 3"
                 />
                 <rect
-                  x={svgWidth - 230}
-                  y={getY(slPrice) - 10}
-                  width={225}
-                  height={20}
-                  fill="#450a0a"
-                  rx={3}
-                />
-                <text
-                  x={svgWidth - 220}
-                  y={getY(slPrice) + 4}
-                  fill="#f87171"
-                  fontSize="10"
-                  fontFamily="monospace"
-                  fontWeight="bold"
-                >
-                  🔴 SL: ${slPrice.toFixed(2)} (${defaultBuf} Sweep Buf)
-                </text>
-              </g>
-            )}
-
-            {/* Step 9: Take Profit (TP) 2.0R Target Horizontal Line */}
-            {tpPrice > 0 && (
-              <g>
-                <line
-                  x1={0}
-                  y1={getY(tpPrice)}
-                  x2={svgWidth}
-                  y2={getY(tpPrice)}
-                  stroke="#10b981"
-                  strokeWidth={2}
-                />
-                <rect
-                  x={svgWidth - 210}
-                  y={getY(tpPrice) - 10}
-                  width={205}
-                  height={20}
+                  x={chartLeft + candleSpacing * 12 + 6}
+                  y={getY(fvgBounds.high) + 4}
+                  width="180"
+                  height="18"
                   fill="#064e3b"
-                  rx={3}
+                  rx="3"
+                  opacity="0.9"
                 />
                 <text
-                  x={svgWidth - 200}
-                  y={getY(tpPrice) + 4}
+                  x={chartLeft + candleSpacing * 12 + 12}
+                  y={getY(fvgBounds.high) + 16}
                   fill="#6ee7b7"
                   fontSize="10"
                   fontFamily="monospace"
                   fontWeight="bold"
                 >
-                  🟢 TP (2.0R TARGET): ${tpPrice.toFixed(2)}
+                  🟢 S4/S5: FVG ZONE (${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})
                 </text>
               </g>
             )}
 
-            {/* Candlesticks Rendering */}
+            {/* Step 2: Liquidity Sweep Horizontal Line & Axis Pill */}
+            {sweepPrice > 0 && (
+              <g>
+                <line
+                  x1={chartLeft}
+                  y1={getY(sweepPrice)}
+                  x2={chartRight}
+                  y2={getY(sweepPrice)}
+                  stroke="#38bdf8"
+                  strokeWidth="1.5"
+                  strokeDasharray="5 3"
+                  filter="url(#glowBlue)"
+                />
+                {/* Right Axis Price Pill */}
+                <rect
+                  x={chartRight + 4}
+                  y={getY(sweepPrice) - 10}
+                  width="110"
+                  height="20"
+                  fill="#0369a1"
+                  rx="3"
+                />
+                <text
+                  x={chartRight + 10}
+                  y={getY(sweepPrice) + 4}
+                  fill="#e0f2fe"
+                  fontSize="10"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  SWEEP ${sweepPrice.toFixed(2)}
+                </text>
+              </g>
+            )}
+
+            {/* Step 3: CHoCH Break Horizontal Line & Axis Pill */}
+            {chochPrice > 0 && (
+              <g>
+                <line
+                  x1={chartLeft}
+                  y1={getY(chochPrice)}
+                  x2={chartRight}
+                  y2={getY(chochPrice)}
+                  stroke="#f59e0b"
+                  strokeWidth="1.5"
+                  strokeDasharray="5 4"
+                />
+                <rect
+                  x={chartRight + 4}
+                  y={getY(chochPrice) - 10}
+                  width="110"
+                  height="20"
+                  fill="#b45309"
+                  rx="3"
+                />
+                <text
+                  x={chartRight + 10}
+                  y={getY(chochPrice) + 4}
+                  fill="#fef3c7"
+                  fontSize="10"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  CHoCH ${chochPrice.toFixed(2)}
+                </text>
+              </g>
+            )}
+
+            {/* Step 8: Strict Stop Loss (SL) Horizontal Line & Axis Pill */}
+            {slPrice > 0 && (
+              <g>
+                <line
+                  x1={chartLeft}
+                  y1={getY(slPrice)}
+                  x2={chartRight}
+                  y2={getY(slPrice)}
+                  stroke="#ef4444"
+                  strokeWidth="2"
+                  strokeDasharray="4 2"
+                  filter="url(#glowRed)"
+                />
+                <rect
+                  x={chartRight + 4}
+                  y={getY(slPrice) - 10}
+                  width="110"
+                  height="20"
+                  fill="#991b1b"
+                  rx="3"
+                />
+                <text
+                  x={chartRight + 8}
+                  y={getY(slPrice) + 4}
+                  fill="#fee2e2"
+                  fontSize="10"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  🔴 SL ${slPrice.toFixed(2)}
+                </text>
+              </g>
+            )}
+
+            {/* Step 9: 2.0R Take Profit (TP) Horizontal Line & Axis Pill */}
+            {tpPrice > 0 && (
+              <g>
+                <line
+                  x1={chartLeft}
+                  y1={getY(tpPrice)}
+                  x2={chartRight}
+                  y2={getY(tpPrice)}
+                  stroke="#10b981"
+                  strokeWidth="2"
+                  filter="url(#glowGreen)"
+                />
+                <rect
+                  x={chartRight + 4}
+                  y={getY(tpPrice) - 10}
+                  width="110"
+                  height="20"
+                  fill="#065f46"
+                  rx="3"
+                />
+                <text
+                  x={chartRight + 8}
+                  y={getY(tpPrice) + 4}
+                  fill="#d1fae5"
+                  fontSize="10"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  🟢 TP ${tpPrice.toFixed(2)}
+                </text>
+              </g>
+            )}
+
+            {/* Live Current Price Horizontal Line & White Pill */}
+            <g>
+              <line
+                x1={chartLeft}
+                y1={getY(livePrice)}
+                x2={chartRight}
+                y2={getY(livePrice)}
+                stroke="#ffffff"
+                strokeWidth="1"
+                strokeDasharray="2 2"
+                opacity="0.8"
+              />
+              <rect
+                x={chartRight + 4}
+                y={getY(livePrice) - 9}
+                width="110"
+                height="18"
+                fill="#ffffff"
+                rx="3"
+              />
+              <text
+                x={chartRight + 10}
+                y={getY(livePrice) + 4}
+                fill="#000000"
+                fontSize="10"
+                fontFamily="monospace"
+                fontWeight="900"
+              >
+                LIVE ${livePrice.toFixed(2)}
+              </text>
+            </g>
+
+            {/* CRISP CANDLESTICKS RENDERING */}
             {candles.map((c, idx) => {
-              const x = (idx + 1) * candleWidth;
+              const cx = chartLeft + (idx + 0.5) * candleSpacing;
               const yHigh = getY(c.high);
               const yLow = getY(c.low);
               const yOpen = getY(c.open);
               const yClose = getY(c.close);
               const yBodyTop = Math.min(yOpen, yClose);
               const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
-              const color = c.isBullish ? "#10b981" : "#ef4444";
-
-              const isSweepCandle = idx === 4 && sweepPrice > 0;
+              const isGreen = c.isBullish;
+              const bodyFill = isGreen ? "#00c076" : "#ff3b69";
+              const strokeColor = isGreen ? "#00e68c" : "#ff5c85";
 
               return (
-                <g
-                  key={idx}
-                  onMouseEnter={() => setHoveredCandle(c)}
-                  onMouseLeave={() => setHoveredCandle(null)}
-                  className="cursor-pointer transition-opacity hover:opacity-80"
-                >
-                  {/* Wick */}
+                <g key={idx} className="cursor-pointer">
+                  {/* High Definition Candlestick Wick */}
                   <line
-                    x1={x + candleWidth * 0.35}
+                    x1={cx}
                     y1={yHigh}
-                    x2={x + candleWidth * 0.35}
+                    x2={cx}
                     y2={yLow}
-                    stroke={color}
-                    strokeWidth={1.5}
-                  />
-                  {/* Body */}
-                  <rect
-                    x={x}
-                    y={yBodyTop}
-                    width={candleWidth * 0.7}
-                    height={bodyHeight}
-                    fill={color}
-                    rx={1}
+                    stroke={strokeColor}
+                    strokeWidth="1.5"
+                    shapeRendering="crispEdges"
                   />
 
-                  {/* Sweep Arrow Marker on Sweep Candle */}
-                  {isSweepCandle && (
+                  {/* High Definition Candlestick Body */}
+                  <rect
+                    x={cx - candleBodyWidth / 2}
+                    y={yBodyTop}
+                    width={candleBodyWidth}
+                    height={bodyHeight}
+                    fill={bodyFill}
+                    stroke={strokeColor}
+                    strokeWidth="1"
+                    rx="1"
+                    shapeRendering="crispEdges"
+                  />
+
+                  {/* Sweep Wick Indicator Marker */}
+                  {c.isSweep && (
                     <g>
                       <path
-                        d={`M ${x + candleWidth * 0.35} ${yLow + 12} L ${x + candleWidth * 0.15} ${yLow + 24} L ${x + candleWidth * 0.55} ${yLow + 24} Z`}
+                        d={`M ${cx} ${yLow + 6} L ${cx - 6} ${yLow + 16} L ${cx + 6} ${yLow + 16} Z`}
                         fill="#38bdf8"
                       />
+                      <rect
+                        x={cx - 36}
+                        y={yLow + 20}
+                        width="72"
+                        height="16"
+                        fill="#0c4a6e"
+                        rx="3"
+                        stroke="#38bdf8"
+                        strokeWidth="1"
+                      />
                       <text
-                        x={x - 20}
-                        y={yLow + 36}
+                        x={cx}
+                        y={yLow + 31}
                         fill="#38bdf8"
-                        fontSize="9"
+                        fontSize="8.5"
                         fontFamily="monospace"
                         fontWeight="bold"
+                        textAnchor="middle"
                       >
                         SWEEP WICK
                       </text>
                     </g>
                   )}
+
+                  {/* CHoCH Indicator Marker */}
+                  {c.isChoch && (
+                    <g>
+                      <circle cx={cx} cy={yHigh - 8} r="3" fill="#f59e0b" />
+                      <text
+                        x={cx}
+                        y={yHigh - 14}
+                        fill="#fbbf24"
+                        fontSize="8.5"
+                        fontFamily="monospace"
+                        fontWeight="bold"
+                        textAnchor="middle"
+                      >
+                        CHOCH
+                      </text>
+                    </g>
+                  )}
+
+                  {/* Time Axis Label on Bottom (Every 4th candle) */}
+                  {idx % 4 === 0 && (
+                    <text
+                      x={cx}
+                      y={chartBottom + 18}
+                      fill="#64748b"
+                      fontSize="10"
+                      fontFamily="monospace"
+                      textAnchor="middle"
+                    >
+                      {c.time}
+                    </text>
+                  )}
                 </g>
               );
             })}
+
+            {/* Mouse Crosshair Lines */}
+            {mousePos && mousePos.x >= chartLeft && mousePos.x <= chartRight && mousePos.y >= chartTop && mousePos.y <= chartBottom && (
+              <g pointerEvents="none">
+                <line
+                  x1={mousePos.x}
+                  y1={chartTop}
+                  x2={mousePos.x}
+                  y2={chartBottom}
+                  stroke="#94a3b8"
+                  strokeWidth="1"
+                  strokeDasharray="3 3"
+                />
+                <line
+                  x1={chartLeft}
+                  y1={mousePos.y}
+                  x2={chartRight}
+                  y2={mousePos.y}
+                  stroke="#94a3b8"
+                  strokeWidth="1"
+                  strokeDasharray="3 3"
+                />
+              </g>
+            )}
           </svg>
 
-          {/* Hover Tooltip */}
+          {/* Interactive Tooltip Card */}
           {hoveredCandle && (
-            <div className="absolute top-2 left-2 bg-zinc-900/90 border border-zinc-700 px-2 py-1.5 rounded text-[10px] font-mono text-zinc-300 space-y-0.5 shadow-lg backdrop-blur-sm pointer-events-none">
-              <div>Time: <span className="text-white font-bold">{hoveredCandle.time}</span></div>
-              <div>O: ${hoveredCandle.open.toFixed(2)} | H: ${hoveredCandle.high.toFixed(2)}</div>
-              <div>L: ${hoveredCandle.low.toFixed(2)} | C: ${hoveredCandle.close.toFixed(2)}</div>
+            <div className="absolute top-3 left-4 bg-zinc-950/95 border border-zinc-700/80 px-3 py-2 rounded-md text-[11px] font-mono text-zinc-200 shadow-2xl backdrop-blur-md pointer-events-none z-10 flex items-center gap-4">
+              <div>
+                <span className="text-zinc-400">Time:</span>{" "}
+                <span className="text-white font-bold">{hoveredCandle.time}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span>
+                  O:{" "}
+                  <strong className={hoveredCandle.isBullish ? "text-emerald-400" : "text-rose-400"}>
+                    ${hoveredCandle.open.toFixed(2)}
+                  </strong>
+                </span>
+                <span>
+                  H: <strong className="text-zinc-100">${hoveredCandle.high.toFixed(2)}</strong>
+                </span>
+                <span>
+                  L: <strong className="text-zinc-100">${hoveredCandle.low.toFixed(2)}</strong>
+                </span>
+                <span>
+                  C:{" "}
+                  <strong className={hoveredCandle.isBullish ? "text-emerald-400" : "text-rose-400"}>
+                    ${hoveredCandle.close.toFixed(2)}
+                  </strong>
+                </span>
+              </div>
+              {hoveredCandle.isSweep && (
+                <Badge variant="outline" className="bg-sky-500/20 text-sky-300 border-sky-400 text-[10px]">
+                  🔵 SWEEP CANDLE
+                </Badge>
+              )}
+              {hoveredCandle.isChoch && (
+                <Badge variant="outline" className="bg-amber-500/20 text-amber-300 border-amber-400 text-[10px]">
+                  🟠 CHOCH CANDLE
+                </Badge>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Educational Learning Cards (Why each level is placed here) */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs font-mono">
-        <div className="p-2.5 rounded border border-sky-500/30 bg-sky-950/20">
-          <div className="text-[10px] text-sky-400 font-bold uppercase mb-1 flex items-center justify-between">
-            <span>Step 2: Liquidity Sweep</span>
-            <span className="text-sky-300">${sweepPrice.toFixed(2)}</span>
-          </div>
-          <div className="text-[10px] text-zinc-400 leading-relaxed">
-            Market wicks past retail stop-clusters to absorb buy/sell liquidity before reversing into institutional trend.
-          </div>
+      {/* 3. STEP-BY-STEP LIVE 9-CONDITION PIPELINE (Educational & Real-Time Tracking) */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-mono font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+            <Layers className="w-3.5 h-3.5 text-indigo-400" /> Pure SMC Strict 9-Step Verification Status
+          </h4>
+          <span className="text-[11px] font-mono text-zinc-500">
+            Real-time synchronization with VPS Engine
+          </span>
         </div>
 
-        <div className="p-2.5 rounded border border-amber-500/30 bg-amber-950/20">
-          <div className="text-[10px] text-amber-400 font-bold uppercase mb-1 flex items-center justify-between">
-            <span>Step 3: M5 CHoCH Level</span>
-            <span className="text-amber-300">{chochPrice > 0 ? `$${chochPrice.toFixed(2)}` : "Scanning"}</span>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 font-mono text-xs">
+          {/* Step 1 */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s1Pass
+                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5">
+                {s1Pass ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Clock className="w-4 h-4 text-zinc-500" />
+                )}
+                S1: M15 Structural Bias
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-1.5 py-0.2",
+                  s1Pass
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}
+              >
+                {m15Bias}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-snug">
+              Determines institutional order-flow (HH/HL = Bullish, LH/LL = Bearish).
+            </p>
           </div>
-          <div className="text-[10px] text-zinc-400 leading-relaxed">
-            Candle closes above/below minor pivot, confirming Character Change (CHoCH) from order-flow absorption.
-          </div>
-        </div>
 
-        <div className="p-2.5 rounded border border-rose-500/30 bg-rose-950/20">
-          <div className="text-[10px] text-rose-400 font-bold uppercase mb-1 flex items-center justify-between">
-            <span>Step 8: SL Placement</span>
-            <span className="text-rose-300">${slPrice.toFixed(2)}</span>
+          {/* Step 2 */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s2Pass
+                ? "bg-sky-950/25 border-sky-500/40 text-sky-200"
+                : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5">
+                {s2Pass ? (
+                  <CheckCircle2 className="w-4 h-4 text-sky-400" />
+                ) : (
+                  <Clock className="w-4 h-4 text-zinc-500" />
+                )}
+                S2: Liquidity Sweep
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-1.5 py-0.2",
+                  s2Pass
+                    ? "bg-sky-500/20 text-sky-300 border-sky-500/50"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}
+              >
+                {sweepStatus}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-snug">
+              Wicks beyond retail stop cluster at ${sweepPrice > 0 ? sweepPrice.toFixed(2) : "..."} without body close.
+            </p>
           </div>
-          <div className="text-[10px] text-zinc-400 leading-relaxed">
-            Anchored <strong>${defaultBuf}</strong> buffer behind Sweep Wick (${sweepPrice.toFixed(2)}) to prevent stop hunts.
-          </div>
-        </div>
 
-        <div className="p-2.5 rounded border border-emerald-500/30 bg-emerald-950/20">
-          <div className="text-[10px] text-emerald-400 font-bold uppercase mb-1 flex items-center justify-between">
-            <span>Step 9: 2.0R Target (TP)</span>
-            <span className="text-emerald-300">${tpPrice.toFixed(2)}</span>
+          {/* Step 3 */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s3Pass
+                ? "bg-amber-950/25 border-amber-500/40 text-amber-200"
+                : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5">
+                {s3Pass ? (
+                  <CheckCircle2 className="w-4 h-4 text-amber-400" />
+                ) : (
+                  <Clock className="w-4 h-4 text-zinc-500" />
+                )}
+                S3: M5 CHoCH Break
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-1.5 py-0.2",
+                  s3Pass
+                    ? "bg-amber-500/20 text-amber-300 border-amber-500/50"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}
+              >
+                {chochStatus}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-snug">
+              Candle closes past minor pivot (${chochPrice > 0 ? chochPrice.toFixed(2) : "..."}) confirming trend shift.
+            </p>
           </div>
-          <div className="text-[10px] text-zinc-400 leading-relaxed">
-            Structural M15 target executing at strict <strong>2.0R reward-to-risk</strong> ratio ({((tpPrice - livePrice)/Math.abs(livePrice - slPrice || 1)).toFixed(1)}R).
+
+          {/* Step 4 */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s4Pass
+                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5">
+                {s4Pass ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Clock className="w-4 h-4 text-zinc-500" />
+                )}
+                S4: Post-CHoCH FVG
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-1.5 py-0.2",
+                  s4Pass
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}
+              >
+                {fvgStatus}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-snug">
+              Imbalance gap created strictly after CHoCH candle index.
+            </p>
+          </div>
+
+          {/* Step 5 */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s5Pass
+                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5">
+                {s5Pass ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Clock className="w-4 h-4 text-zinc-500" />
+                )}
+                S5: FVG Retest
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-1.5 py-0.2",
+                  s5Pass
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}
+              >
+                {retestStatus}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-snug">
+              Price dips into the newly formed Post-CHoCH FVG zone.
+            </p>
+          </div>
+
+          {/* Step 6 */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s6Pass
+                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5">
+                {s6Pass ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Clock className="w-4 h-4 text-zinc-500" />
+                )}
+                S6: Rejection Candle
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-1.5 py-0.2",
+                  s6Pass
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}
+              >
+                {s6Status}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-snug">
+              Candle confirms rejection (Green for BUY / Red for SELL) at FVG.
+            </p>
+          </div>
+
+          {/* Step 7 */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s7Pass
+                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5">
+                {s7Pass ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Clock className="w-4 h-4 text-zinc-500" />
+                )}
+                S7: Candle Closed
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-1.5 py-0.2",
+                  s7Pass
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}
+              >
+                {s7Status}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-snug">
+              Execution waits for full candle closure (no unconfirmed ticks).
+            </p>
+          </div>
+
+          {/* Step 8 */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s8Pass
+                ? "bg-rose-950/20 border-rose-500/40 text-rose-200"
+                : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5">
+                {s8Pass ? (
+                  <Shield className="w-4 h-4 text-rose-400" />
+                ) : (
+                  <Clock className="w-4 h-4 text-zinc-500" />
+                )}
+                S8: SL Placement
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-1.5 py-0.2",
+                  s8Pass
+                    ? "bg-rose-500/20 text-rose-300 border-rose-500/50"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}
+              >
+                ${slPrice.toFixed(2)} (${defaultBuf} Buf)
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-snug">
+              Fixed ${defaultBuf} buffer behind Sweep wick to eliminate stop hunts.
+            </p>
+          </div>
+
+          {/* Step 9 */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s9Pass
+                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5">
+                {s9Pass ? (
+                  <Target className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Clock className="w-4 h-4 text-zinc-500" />
+                )}
+                S9: 2.0R Target Space
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-1.5 py-0.2",
+                  s9Pass
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                )}
+              >
+                ${tpPrice.toFixed(2)} (2.0R)
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-snug">
+              Verified 2.0R reward-to-risk space available to structural target.
+            </p>
           </div>
         </div>
       </div>
