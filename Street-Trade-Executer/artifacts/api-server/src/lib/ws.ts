@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type http from "http";
 import { db } from "@workspace/db";
-import { botStateTable, tradesTable, fvgZonesTable, scannedAssetsTable } from "@workspace/db";
+import { botStateTable, tradesTable, fvgZonesTable, scannedAssetsTable, smcTelemetryTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { logger } from "./logger";
 
@@ -53,11 +53,32 @@ async function buildDashboardPayload() {
     lastZonesFetch = now;
   }
 
-  // Bot state is always fetched fresh (every 1s) to show live Z-score
-  const [botStateRows, scannedAssetsRows] = await Promise.all([
+  // Bot state & SMC Telemetry fetched fresh (every 1s)
+  const [botStateRows, scannedAssetsRows, smcTelRows] = await Promise.all([
     db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
     db.select().from(scannedAssetsTable).orderBy(desc(scannedAssetsTable.winRate)),
+    db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt)).limit(1),
   ]);
+
+  const telRow = smcTelRows[0];
+  const smcTelemetryPayload = telRow ? {
+    symbol_pair: telRow.symbolPair,
+    m15_bias: telRow.m15Bias || "NEUTRAL ⚪",
+    sweep_status: telRow.sweepStatus || "FAIL ⚪",
+    sweep_price: Number(telRow.sweepPrice ?? 0),
+    choch_status: telRow.chochStatus || "FAIL ⚪",
+    choch_price: Number(telRow.chochPrice ?? 0),
+    fvg_status: telRow.fvgStatus || "FAIL ⚪",
+    fvg_bounds_json: telRow.fvgBoundsJson || "[]",
+    rejection_status: telRow.rejectionStatus || "FAIL ⚪",
+    action: telRow.action || "NONE",
+    updated_at: telRow.updatedAt ? new Date(telRow.updatedAt).toISOString() : "",
+    retest_status: telRow.retestStatus || telRow.fvgStatus || "FAIL ⚪",
+    s6_status: telRow.s6Status || telRow.rejectionStatus || "FAIL ⚪",
+    s7_status: telRow.s7Status || "FAIL ⚪",
+    s8_status: telRow.s8Status || "PASS 🟢 ($0.75 Fixed)",
+    s9_status: telRow.s9Status || "FAIL ⚪ (Min 2.0R)",
+  } : null;
 
   const botState = botStateRows[0];
   const isOnline =
@@ -171,6 +192,7 @@ async function buildDashboardPayload() {
     session_guard_enabled: Boolean(botState?.sessionGuardEnabled ?? (botState as any)?.session_guard_enabled ?? false),
     session_start_hour: Number(botState?.sessionStartHour ?? (botState as any)?.session_start_hour ?? 12.5),
     session_end_hour: Number(botState?.sessionEndHour ?? (botState as any)?.session_end_hour ?? 2.0),
+    smcTelemetry: smcTelemetryPayload,
   };
 }
 

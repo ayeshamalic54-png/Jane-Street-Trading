@@ -715,6 +715,18 @@ def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, c
         ))
         conn.commit()
         cur.close()
+
+        # Send Discord OPEN position notification
+        time_str = entry_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(entry_time, 'strftime') else str(entry_time)
+        open_msg = (
+            f"🚀 **JANE STREET POSITION OPENED** 🚀\n\n"
+            f"🎫 **Ticket:** `{ticket}`\n"
+            f"💱 **Symbol:** `{symbol}` ({order_type} {float(lots):.2f} lots)\n"
+            f"📥 **Entry Price:** `{float(entry_price):.5f}`\n"
+            f"⏱ **Open Time:** `{time_str}`\n"
+            f"📝 **Comment:** `{comment}`\n"
+        )
+        send_discord_message(open_msg)
     except Exception as e:
         print(f"Error logging trade entry: {e}")
     finally:

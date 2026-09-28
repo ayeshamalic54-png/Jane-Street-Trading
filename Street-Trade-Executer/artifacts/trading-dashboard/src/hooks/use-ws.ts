@@ -64,6 +64,7 @@ export interface WsDashboardData {
   session_guard_enabled?: boolean;
   session_start_hour?: number;
   session_end_hour?: number;
+  smcTelemetry?: any;
 }
 
 export function useLiveDashboard() {

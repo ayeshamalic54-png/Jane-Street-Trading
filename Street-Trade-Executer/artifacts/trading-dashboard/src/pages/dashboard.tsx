@@ -1011,15 +1011,16 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-3">
               {(() => {
-                const s1Text = smcTelemetry?.m15_bias || "NEUTRAL ⚪";
-                const s2Text = smcTelemetry?.sweep_status || "FAIL ⚪";
-                const s3Text = smcTelemetry?.choch_status || "FAIL ⚪";
-                const s4Text = smcTelemetry?.fvg_status || "FAIL ⚪";
-                const s5Text = smcTelemetry?.retest_status || smcTelemetry?.fvg_status || "FAIL ⚪";
-                const s6Text = smcTelemetry?.s6_status || smcTelemetry?.rejection_status || "FAIL ⚪";
-                const s7Text = smcTelemetry?.s7_status || "FAIL ⚪";
-                const s8Text = smcTelemetry?.s8_status || "PASS 🟢 ($0.75 Fixed)";
-                const s9Text = smcTelemetry?.s9_status || "FAIL ⚪ (Min 2.0R)";
+                const tel = wsData?.smcTelemetry || smcTelemetry;
+                const s1Text = tel?.m15_bias || "NEUTRAL ⚪";
+                const s2Text = tel?.sweep_status || "FAIL ⚪";
+                const s3Text = tel?.choch_status || "FAIL ⚪";
+                const s4Text = tel?.fvg_status || "FAIL ⚪";
+                const s5Text = tel?.retest_status || tel?.fvg_status || "FAIL ⚪";
+                const s6Text = tel?.s6_status || tel?.rejection_status || "FAIL ⚪";
+                const s7Text = tel?.s7_status || "FAIL ⚪";
+                const s8Text = tel?.s8_status || "PASS 🟢 ($0.75 Fixed)";
+                const s9Text = tel?.s9_status || "FAIL ⚪ (Min 2.0R)";
 
                 const getColor = (val: string) => {
                   if (!val) return "text-zinc-400";
