@@ -224,29 +224,32 @@ export function SmcChartOverlay({
     return livePrice;
   }, [hasActivePosition, activePosition, livePrice]);
 
-  // Strict SL: exact $0.75 buffer behind sweep
+  // Strict SL: anchored to sweep with exact $0.75 buffer (or institutional baseline ~$7.50 distance / $52.50 USD risk on 0.07 lots)
   const effectiveSlPrice = useMemo(() => {
     if (hasActivePosition && activePosition.sl) {
       return Number(activePosition.sl);
     }
-    if (sweepPrice > 0) {
+    const minSweepDist = isMetals ? 3.0 : 0.0010;
+    if (sweepPrice > 0 && Math.abs(livePrice - sweepPrice) >= minSweepDist) {
       return isBearishSetup
         ? Number((sweepPrice + defaultBuf).toFixed(2))
         : Number((sweepPrice - defaultBuf).toFixed(2));
     }
-    // Pre-sweep estimated structural SL buffer level
-    const estSweep = isBearishSetup ? livePrice + (isMetals ? 1.5 : 0.0015) : livePrice - (isMetals ? 1.5 : 0.0015);
+    // Baseline institutional SMC structural risk:
+    // For Gold (0.07 lots): $7.50 distance equals exact $52.50 USD risk (matching the user's $50 target)
+    // For Forex (0.51 lots): 0.0020 (20 pips) equals exact $102 USD risk
+    const defaultSlDist = isMetals ? 7.50 : 0.0020;
     return isBearishSetup
-      ? Number((estSweep + defaultBuf).toFixed(2))
-      : Number((estSweep - defaultBuf).toFixed(2));
+      ? Number((livePrice + defaultSlDist).toFixed(2))
+      : Number((livePrice - defaultSlDist).toFixed(2));
   }, [hasActivePosition, activePosition, sweepPrice, isBearishSetup, defaultBuf, livePrice, isMetals]);
 
-  // Strict TP: exact 2.0R target
+  // Strict TP: exact 2.0R target (Reward of $105 USD on 0.07 lots, matching user's $97-$112 range)
   const effectiveTpPrice = useMemo(() => {
     if (hasActivePosition && activePosition.tp) {
       return Number(activePosition.tp);
     }
-    const slDist = Math.max(isMetals ? 0.75 : 0.0004, Math.abs(effectiveEntryPrice - effectiveSlPrice));
+    const slDist = Math.max(isMetals ? 6.0 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
     return isBearishSetup
       ? Number((effectiveEntryPrice - 2.0 * slDist).toFixed(2))
       : Number((effectiveEntryPrice + 2.0 * slDist).toFixed(2));
@@ -401,21 +404,23 @@ export function SmcChartOverlay({
 
   const minPrice = useMemo(() => {
     const lows = candles.map((c) => c.low);
-    if (slPrice > 0 && (isTradeActive || s2Pass)) lows.push(slPrice);
-    if (tpPrice > 0 && isTradeActive) lows.push(tpPrice);
+    if (slPrice > 0) lows.push(slPrice);
+    if (tpPrice > 0) lows.push(tpPrice);
+    if (entryPrice > 0) lows.push(entryPrice);
     if (sweepPrice > 0) lows.push(sweepPrice);
     if (fvgBounds) lows.push(fvgBounds.low);
     return Math.min(...lows) - (isMetals ? 1.5 : 0.0008);
-  }, [candles, slPrice, tpPrice, sweepPrice, fvgBounds, isMetals, isTradeActive, s2Pass]);
+  }, [candles, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, isMetals]);
 
   const maxPrice = useMemo(() => {
     const highs = candles.map((c) => c.high);
-    if (slPrice > 0 && (isTradeActive || s2Pass)) highs.push(slPrice);
-    if (tpPrice > 0 && isTradeActive) highs.push(tpPrice);
+    if (slPrice > 0) highs.push(slPrice);
+    if (tpPrice > 0) highs.push(tpPrice);
+    if (entryPrice > 0) highs.push(entryPrice);
     if (sweepPrice > 0) highs.push(sweepPrice);
     if (fvgBounds) highs.push(fvgBounds.high);
     return Math.max(...highs) + (isMetals ? 1.5 : 0.0008);
-  }, [candles, slPrice, tpPrice, sweepPrice, fvgBounds, isMetals, isTradeActive, s2Pass]);
+  }, [candles, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, isMetals]);
 
   const priceRange = maxPrice - minPrice || 1;
 

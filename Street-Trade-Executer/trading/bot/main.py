@@ -2658,6 +2658,8 @@ def main():
                     s7_st = "FAIL ⚪"
                     s8_st = "PASS 🟢 ($0.75 Fixed)"
                     s9_st = "FAIL ⚪ (Min 2.0R)"
+                    sweep_p_val = 0.0
+                    choch_p_val = 0.0
 
                     if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason:
                         if "BUY" in vid_reason:
@@ -2668,6 +2670,8 @@ def main():
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
                                 "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 2.0R TP)"
                             )
+                        if smc_sl is not None:
+                            sweep_p_val = float(smc_sl) + (0.75 if "BUY" in vid_reason else -0.75)
                     elif "S1(" in vid_reason or "Scanning Strict" in vid_reason:
                         parts = vid_reason.split("|")
                         for p in parts:
@@ -2690,10 +2694,20 @@ def main():
                                 s8_st = p_str.split(":", 1)[1].strip()
                             elif p_str.startswith("S9("):
                                 s9_st = p_str.split(":", 1)[1].strip()
+                            elif p_str.startswith("SweepPrice:"):
+                                try:
+                                    sweep_p_val = float(p_str.split(":", 1)[1].strip())
+                                except Exception:
+                                    pass
+                            elif p_str.startswith("ChochPrice:"):
+                                try:
+                                    choch_p_val = float(p_str.split(":", 1)[1].strip())
+                                except Exception:
+                                    pass
 
                     fvg_json = json.dumps(SMC_ZONES_CACHE.get(s_a_resolved, {})) if s_a_resolved in SMC_ZONES_CACHE else "[]"
                     update_smc_telemetry(
-                        pk, m15_b, s2_st, float(p_a), s3_st, float(p_a), 
+                        pk, m15_b, s2_st, float(sweep_p_val), s3_st, float(choch_p_val), 
                         s4_st, fvg_json, s6_st, smc_sig,
                         retest_status=s5_st, s6_status=s6_st, s7_status=s7_st, s8_status=s8_st, s9_status=s9_st
                     )
