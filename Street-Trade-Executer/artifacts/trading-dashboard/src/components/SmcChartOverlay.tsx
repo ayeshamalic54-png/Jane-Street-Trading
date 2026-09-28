@@ -407,16 +407,32 @@ export function SmcChartOverlay({
   }, [activeZones]);
 
   // FVG Bounds (Post-CHoCH Imbalance)
+  // FVG Bounds (Post-CHoCH Imbalance)
   const fvgBounds = useMemo(() => {
     try {
       const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
       if (rawJson) {
-        const parsed = JSON.parse(rawJson);
+        const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+        // Case 1: Array of objects [{ low, high }]
         if (Array.isArray(parsed) && parsed.length > 0) {
           const z = parsed[0];
           const l = Number(z.low ?? z.lowPrice ?? 0);
           const h = Number(z.high ?? z.highPrice ?? 0);
           if (l > 0 && h > l) return { low: l, high: h };
+        }
+        // Case 2: Object { bullish_fvg: [[low, high]], bearish_fvg: [...] }
+        if (typeof parsed === "object" && parsed !== null) {
+          const list = isBullishSetup
+            ? parsed.bullish_fvg || parsed.bullish_ob || []
+            : parsed.bearish_fvg || parsed.bearish_ob || [];
+          if (Array.isArray(list) && list.length > 0) {
+            const first = list[0];
+            if (Array.isArray(first) && first.length >= 2) {
+              const l = Number(first[0]);
+              const h = Number(first[1]);
+              if (l > 0 && h > l) return { low: l, high: h };
+            }
+          }
         }
       }
     } catch {}
@@ -429,6 +445,34 @@ export function SmcChartOverlay({
     }
     return null;
   }, [telemetry, sweepPrice, isMetals, isBullishSetup]);
+
+  // Institutional Swing Structure Levels (Buy-Side & Sell-Side Liquidity + CHoCH)
+  const swingStructure = useMemo(() => {
+    if (!candles || candles.length < 5) {
+      return { swingHigh: 0, swingLow: 0, chochLvl: 0 };
+    }
+    const completed = candles.slice(0, -1);
+    const highs = completed.map((c) => c.high);
+    const lows = completed.map((c) => c.low);
+
+    const highest = Math.max(...highs);
+    const lowest = Math.min(...lows);
+
+    const swingHigh = sweepPrice > 0 && isBearishSetup ? sweepPrice : highest;
+    const swingLow = sweepPrice > 0 && isBullishSetup ? sweepPrice : lowest;
+    const chochLvl =
+      chochPrice > 0
+        ? chochPrice
+        : isBullishSetup
+        ? Number((swingLow + (highest - swingLow) * 0.45).toFixed(2))
+        : Number((swingHigh - (swingHigh - lowest) * 0.45).toFixed(2));
+
+    return {
+      swingHigh: Number(swingHigh.toFixed(2)),
+      swingLow: Number(swingLow.toFixed(2)),
+      chochLvl: Number(chochLvl.toFixed(2)),
+    };
+  }, [candles, sweepPrice, chochPrice, isBullishSetup, isBearishSetup]);
 
   // Dimensions & Price Mapping
   const svgWidth = 1000;
@@ -449,20 +493,20 @@ export function SmcChartOverlay({
     if (showSlLevel && slPrice > 0) lows.push(slPrice);
     if (showTpLevel && tpPrice > 0) lows.push(tpPrice);
     if (showEntryLevel && entryPrice > 0) lows.push(entryPrice);
-    if (sweepPrice > 0) lows.push(sweepPrice);
+    if (swingStructure.swingLow > 0) lows.push(swingStructure.swingLow);
     if (fvgBounds) lows.push(fvgBounds.low);
     return Math.min(...lows) - (isMetals ? 1.5 : 0.0008);
-  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, isMetals]);
+  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, swingStructure.swingLow, fvgBounds, isMetals]);
 
   const maxPrice = useMemo(() => {
     const highs = candles.map((c) => c.high);
     if (showSlLevel && slPrice > 0) highs.push(slPrice);
     if (showTpLevel && tpPrice > 0) highs.push(tpPrice);
     if (showEntryLevel && entryPrice > 0) highs.push(entryPrice);
-    if (sweepPrice > 0) highs.push(sweepPrice);
+    if (swingStructure.swingHigh > 0) highs.push(swingStructure.swingHigh);
     if (fvgBounds) highs.push(fvgBounds.high);
     return Math.max(...highs) + (isMetals ? 1.5 : 0.0008);
-  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, isMetals]);
+  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, swingStructure.swingHigh, fvgBounds, isMetals]);
 
   const priceRange = maxPrice - minPrice || 1;
 
@@ -959,58 +1003,97 @@ export function SmcChartOverlay({
                 </g>
               )}
 
-              {/* Step 2: Liquidity Sweep Horizontal Line & High-Contrast Tag */}
-              {sweepPrice > 0 && (
+              {/* Step 2A: Swing High (Buy-Side Liquidity Level) - Visible Pre-Trade & Color Changes on Sweep */}
+              {swingStructure.swingHigh > 0 && (
                 <g>
                   <line
                     x1={chartLeft}
-                    y1={getY(sweepPrice)}
+                    y1={getY(swingStructure.swingHigh)}
                     x2={chartRight}
-                    y2={getY(sweepPrice)}
-                    stroke={s2Pass ? "#06b6d4" : "#0891b2"}
-                    strokeWidth={s2Pass ? 2.5 : 1.5}
-                    strokeDasharray={s2Pass ? "none" : "6 3"}
-                    filter={s2Pass ? "url(#glowCyan)" : undefined}
+                    y2={getY(swingStructure.swingHigh)}
+                    stroke={(s2Pass && isBearishSetup) ? "#06b6d4" : "#0891b2"}
+                    strokeWidth={(s2Pass && isBearishSetup) ? 2.5 : 1.5}
+                    strokeDasharray={(s2Pass && isBearishSetup) ? "none" : "6 4"}
+                    opacity={(s2Pass && isBearishSetup) ? 1 : 0.75}
+                    filter={(s2Pass && isBearishSetup) ? "url(#glowCyan)" : undefined}
                   />
                   <rect
                     x={chartRight + 6}
-                    y={getY(sweepPrice) - 13}
+                    y={getY(swingStructure.swingHigh) - 13}
                     width="142"
                     height="26"
-                    fill={s2Pass ? "#0891b2" : "#164e63"}
+                    fill={(s2Pass && isBearishSetup) ? "#0891b2" : "#164e63"}
                     rx="5"
-                    stroke={s2Pass ? "#a5f3fc" : "#0891b2"}
+                    stroke={(s2Pass && isBearishSetup) ? "#a5f3fc" : "#0891b2"}
                     strokeWidth="1.5"
                   />
                   <text
-                    x={chartRight + 12}
-                    y={getY(sweepPrice) + 5}
+                    x={chartRight + 10}
+                    y={getY(swingStructure.swingHigh) + 5}
                     fill="#ffffff"
-                    fontSize="11"
+                    fontSize="10.5"
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    {s2Pass ? "⚡ SWEEP CONFIRMED" : "⏳ SWEEP"} ${sweepPrice.toFixed(2)}
+                    {(s2Pass && isBearishSetup) ? "⚡ BUY-SIDE SWEPT 🟢" : "⏳ SWING HIGH (Buy Liq)"} ${swingStructure.swingHigh.toFixed(2)}
                   </text>
                 </g>
               )}
 
-              {/* Step 3: CHoCH Break Horizontal Line & High-Contrast Tag */}
-              {chochPrice > 0 && (
+              {/* Step 2B: Swing Low (Sell-Side Liquidity Level) - Visible Pre-Trade & Color Changes on Sweep */}
+              {swingStructure.swingLow > 0 && (
                 <g>
                   <line
                     x1={chartLeft}
-                    y1={getY(chochPrice)}
+                    y1={getY(swingStructure.swingLow)}
                     x2={chartRight}
-                    y2={getY(chochPrice)}
+                    y2={getY(swingStructure.swingLow)}
+                    stroke={(s2Pass && isBullishSetup) ? "#06b6d4" : "#0891b2"}
+                    strokeWidth={(s2Pass && isBullishSetup) ? 2.5 : 1.5}
+                    strokeDasharray={(s2Pass && isBullishSetup) ? "none" : "6 4"}
+                    opacity={(s2Pass && isBullishSetup) ? 1 : 0.75}
+                    filter={(s2Pass && isBullishSetup) ? "url(#glowCyan)" : undefined}
+                  />
+                  <rect
+                    x={chartRight + 6}
+                    y={getY(swingStructure.swingLow) - 13}
+                    width="142"
+                    height="26"
+                    fill={(s2Pass && isBullishSetup) ? "#0891b2" : "#164e63"}
+                    rx="5"
+                    stroke={(s2Pass && isBullishSetup) ? "#a5f3fc" : "#0891b2"}
+                    strokeWidth="1.5"
+                  />
+                  <text
+                    x={chartRight + 10}
+                    y={getY(swingStructure.swingLow) + 5}
+                    fill="#ffffff"
+                    fontSize="10.5"
+                    fontFamily="monospace"
+                    fontWeight="900"
+                  >
+                    {(s2Pass && isBullishSetup) ? "⚡ SELL-SIDE SWEPT 🟢" : "⏳ SWING LOW (Sell Liq)"} ${swingStructure.swingLow.toFixed(2)}
+                  </text>
+                </g>
+              )}
+
+              {/* Step 3: CHoCH (Structure Shift Level) - Visible Pre-Trade & Color Changes on Confirmation */}
+              {swingStructure.chochLvl > 0 && (
+                <g>
+                  <line
+                    x1={chartLeft}
+                    y1={getY(swingStructure.chochLvl)}
+                    x2={chartRight}
+                    y2={getY(swingStructure.chochLvl)}
                     stroke={s3Pass ? "#f59e0b" : "#d97706"}
                     strokeWidth={s3Pass ? 2.5 : 1.5}
                     strokeDasharray={s3Pass ? "none" : "6 4"}
+                    opacity={s3Pass ? 1 : 0.75}
                     filter={s3Pass ? "url(#glowAmber)" : undefined}
                   />
                   <rect
                     x={chartRight + 6}
-                    y={getY(chochPrice) - 13}
+                    y={getY(swingStructure.chochLvl) - 13}
                     width="142"
                     height="26"
                     fill={s3Pass ? "#d97706" : "#78350f"}
@@ -1019,14 +1102,14 @@ export function SmcChartOverlay({
                     strokeWidth="1.5"
                   />
                   <text
-                    x={chartRight + 12}
-                    y={getY(chochPrice) + 5}
+                    x={chartRight + 10}
+                    y={getY(swingStructure.chochLvl) + 5}
                     fill="#ffffff"
-                    fontSize="11"
+                    fontSize="10.5"
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    {s3Pass ? "⚡ CHOCH CONFIRMED" : "⏳ CHOCH"} ${chochPrice.toFixed(2)}
+                    {s3Pass ? "⚡ CHOCH CONFIRMED 🟢" : "⏳ CHOCH LEVEL"} ${swingStructure.chochLvl.toFixed(2)}
                   </text>
                 </g>
               )}
