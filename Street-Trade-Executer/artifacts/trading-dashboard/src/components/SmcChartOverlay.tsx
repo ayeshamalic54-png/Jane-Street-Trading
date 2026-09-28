@@ -179,6 +179,8 @@ export function SmcChartOverlay({
     activePosition && (activePosition.ticket || activePosition.entryPrice)
   );
   const isSignalFired = (action === "BUY" || action === "SELL") && s7Pass;
+  const isTradeActive = hasActivePosition || isSignalFired;
+
   const s8Pass = isPassText(s8Status) || (s2Pass && isTradeActive);
   const s9Pass = isPassText(s9Status) || (s7Pass && isTradeActive);
 
@@ -214,34 +216,45 @@ export function SmcChartOverlay({
       ? sweepPrice
       : 4138.99;
 
-  const entryPrice = hasActivePosition
-    ? Number(activePosition.entryPrice)
-    : sweepPrice > 0
-    ? sweepPrice
-    : livePrice;
+  // Reliable Projected / Active Entry Price
+  const effectiveEntryPrice = useMemo(() => {
+    if (hasActivePosition && activePosition.entryPrice) {
+      return Number(activePosition.entryPrice);
+    }
+    return livePrice;
+  }, [hasActivePosition, activePosition, livePrice]);
 
   // Strict SL: exact $0.75 buffer behind sweep
-  const slPrice = useMemo(() => {
-    if (sweepPrice <= 0) return 0;
-    if (isBullishSetup) {
-      return Number((sweepPrice - defaultBuf).toFixed(2));
-    } else if (isBearishSetup) {
-      return Number((sweepPrice + defaultBuf).toFixed(2));
+  const effectiveSlPrice = useMemo(() => {
+    if (hasActivePosition && activePosition.sl) {
+      return Number(activePosition.sl);
     }
-    return Number((sweepPrice - defaultBuf).toFixed(2));
-  }, [sweepPrice, isBullishSetup, isBearishSetup, defaultBuf]);
+    if (sweepPrice > 0) {
+      return isBearishSetup
+        ? Number((sweepPrice + defaultBuf).toFixed(2))
+        : Number((sweepPrice - defaultBuf).toFixed(2));
+    }
+    // Pre-sweep estimated structural SL buffer level
+    const estSweep = isBearishSetup ? livePrice + (isMetals ? 1.5 : 0.0015) : livePrice - (isMetals ? 1.5 : 0.0015);
+    return isBearishSetup
+      ? Number((estSweep + defaultBuf).toFixed(2))
+      : Number((estSweep - defaultBuf).toFixed(2));
+  }, [hasActivePosition, activePosition, sweepPrice, isBearishSetup, defaultBuf, livePrice, isMetals]);
 
   // Strict TP: exact 2.0R target
-  const tpPrice = useMemo(() => {
-    if (slPrice <= 0 || sweepPrice <= 0) return 0;
-    const slDist = Math.abs(entryPrice - slPrice);
-    if (isBullishSetup) {
-      return Number((entryPrice + 2.0 * slDist).toFixed(2));
-    } else if (isBearishSetup) {
-      return Number((entryPrice - 2.0 * slDist).toFixed(2));
+  const effectiveTpPrice = useMemo(() => {
+    if (hasActivePosition && activePosition.tp) {
+      return Number(activePosition.tp);
     }
-    return Number((entryPrice + 2.0 * slDist).toFixed(2));
-  }, [slPrice, entryPrice, isBullishSetup, isBearishSetup]);
+    const slDist = Math.max(isMetals ? 0.75 : 0.0004, Math.abs(effectiveEntryPrice - effectiveSlPrice));
+    return isBearishSetup
+      ? Number((effectiveEntryPrice - 2.0 * slDist).toFixed(2))
+      : Number((effectiveEntryPrice + 2.0 * slDist).toFixed(2));
+  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isMetals]);
+
+  const entryPrice = effectiveEntryPrice;
+  const slPrice = effectiveSlPrice;
+  const tpPrice = effectiveTpPrice;
 
   // ATTACH NATIVE NON-PASSIVE WHEEL LISTENER FOR SMOOTH CURSOR ZOOMING
   useEffect(() => {
@@ -547,24 +560,24 @@ export function SmcChartOverlay({
             </div>
           )}
 
-          {isTradeActive ? (
-            <>
-              <div className="px-3 py-1 rounded bg-rose-600 text-white font-black shadow-sm">
-                SL: ${slPrice.toFixed(2)}
-              </div>
-              <div className="px-3 py-1 rounded bg-emerald-600 text-white font-black shadow-sm">
-                TP: ${tpPrice.toFixed(2)}
-              </div>
-            </>
-          ) : s2Pass ? (
-            <div className="px-3 py-1 rounded bg-zinc-900 border border-zinc-700 text-zinc-300 text-xs">
-              Proj SL: <span className="text-rose-400 font-bold">${slPrice.toFixed(2)}</span>
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              "px-3 py-1 rounded font-black shadow-sm text-xs font-mono transition-all",
+              isTradeActive
+                ? "bg-rose-600 text-white border border-rose-400"
+                : "bg-rose-950/50 border border-rose-800/80 text-rose-300"
+            )}>
+              {isTradeActive ? "🔴 SL:" : "⏳ PROJ SL:"} ${slPrice.toFixed(2)}
             </div>
-          ) : (
-            <div className="px-2.5 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 text-[11px]">
-              SL & TP: <span className="text-zinc-300 font-medium">Locked on Sweep & Entry</span>
+            <div className={cn(
+              "px-3 py-1 rounded font-black shadow-sm text-xs font-mono transition-all",
+              isTradeActive
+                ? "bg-emerald-600 text-white border border-emerald-400"
+                : "bg-emerald-950/50 border border-emerald-800/80 text-emerald-300"
+            )}>
+              {isTradeActive ? "🟢 TP:" : "⏳ PROJ TP:"} ${tpPrice.toFixed(2)}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -850,8 +863,47 @@ export function SmcChartOverlay({
                 </g>
               )}
 
-              {/* STOP LOSS (SL) LEVEL - ONLY SHOWN WHEN SWEEP OCCURS OR TRADE IS ACTIVE */}
-              {slPrice > 0 && (isTradeActive || s2Pass) && (
+              {/* 1. ENTRY LEVEL LINE & PILL (ALWAYS VISIBLE) */}
+              {entryPrice > 0 && (
+                <g>
+                  <line
+                    x1={chartLeft}
+                    y1={getY(entryPrice)}
+                    x2={chartRight}
+                    y2={getY(entryPrice)}
+                    stroke={isTradeActive ? "#38bdf8" : "#60a5fa"}
+                    strokeWidth={isTradeActive ? 2.5 : 1.5}
+                    strokeDasharray={isTradeActive ? "none" : "4 4"}
+                    opacity={isTradeActive ? 1 : 0.8}
+                    filter={isTradeActive ? "url(#glowBlue)" : undefined}
+                  />
+                  <rect
+                    x={chartRight + 6}
+                    y={getY(entryPrice) - 13}
+                    width="138"
+                    height="26"
+                    fill={isTradeActive ? "#0284c7" : "#1e293b"}
+                    rx="5"
+                    stroke={isTradeActive ? "#38bdf8" : "#3b82f6"}
+                    strokeWidth="1.5"
+                  />
+                  <text
+                    x={chartRight + 10}
+                    y={getY(entryPrice) + 5}
+                    fill="#ffffff"
+                    fontSize="11.5"
+                    fontFamily="monospace"
+                    fontWeight="900"
+                  >
+                    {isTradeActive
+                      ? `🔵 ENTRY $${entryPrice.toFixed(2)}`
+                      : `⏳ PROJ ENTRY $${entryPrice.toFixed(2)}`}
+                  </text>
+                </g>
+              )}
+
+              {/* 2. STOP LOSS (SL) LEVEL - ANCHORED WITH EXACT $0.75 BUFFER (ALWAYS VISIBLE) */}
+              {slPrice > 0 && (
                 <g>
                   <line
                     x1={chartLeft}
@@ -861,7 +913,7 @@ export function SmcChartOverlay({
                     stroke={isTradeActive ? "#ef4444" : "#f87171"}
                     strokeWidth={isTradeActive ? 3 : 1.5}
                     strokeDasharray={isTradeActive ? "none" : "5 5"}
-                    opacity={isTradeActive ? 1 : 0.75}
+                    opacity={isTradeActive ? 1 : 0.85}
                     filter={isTradeActive ? "url(#glowRed)" : undefined}
                   />
                   <rect
@@ -871,8 +923,8 @@ export function SmcChartOverlay({
                     height="26"
                     fill={isTradeActive ? "#dc2626" : "#7f1d1d"}
                     rx="5"
-                    stroke="#fca5a5"
-                    strokeWidth="1"
+                    stroke={isTradeActive ? "#fca5a5" : "#b91c1c"}
+                    strokeWidth="1.5"
                   />
                   <text
                     x={chartRight + 10}
@@ -889,27 +941,29 @@ export function SmcChartOverlay({
                 </g>
               )}
 
-              {/* TAKE PROFIT (TP) 2.0R LEVEL - ONLY SHOWN WHEN TRADE IS ACTIVE */}
-              {tpPrice > 0 && isTradeActive && (
+              {/* 3. TAKE PROFIT (TP) 2.0R TARGET LEVEL (ALWAYS VISIBLE) */}
+              {tpPrice > 0 && (
                 <g>
                   <line
                     x1={chartLeft}
                     y1={getY(tpPrice)}
                     x2={chartRight}
                     y2={getY(tpPrice)}
-                    stroke="#10b981"
-                    strokeWidth={3}
-                    filter="url(#glowGreen)"
+                    stroke={isTradeActive ? "#10b981" : "#34d399"}
+                    strokeWidth={isTradeActive ? 3 : 1.5}
+                    strokeDasharray={isTradeActive ? "none" : "5 5"}
+                    opacity={isTradeActive ? 1 : 0.85}
+                    filter={isTradeActive ? "url(#glowGreen)" : undefined}
                   />
                   <rect
                     x={chartRight + 6}
                     y={getY(tpPrice) - 13}
                     width="138"
                     height="26"
-                    fill="#059669"
+                    fill={isTradeActive ? "#059669" : "#064e3b"}
                     rx="5"
-                    stroke="#6ee7b7"
-                    strokeWidth="1"
+                    stroke={isTradeActive ? "#6ee7b7" : "#059669"}
+                    strokeWidth="1.5"
                   />
                   <text
                     x={chartRight + 10}
@@ -919,7 +973,9 @@ export function SmcChartOverlay({
                     fontFamily="monospace"
                     fontWeight="900"
                   >
-                    🟢 TP ${tpPrice.toFixed(2)}
+                    {isTradeActive
+                      ? `🟢 TP $${tpPrice.toFixed(2)}`
+                      : `⏳ PROJ TP $${tpPrice.toFixed(2)}`}
                   </text>
                 </g>
               )}

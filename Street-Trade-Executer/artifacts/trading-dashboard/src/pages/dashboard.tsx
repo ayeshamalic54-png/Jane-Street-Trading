@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Activity, Wifi, WifiOff, Send, Zap, ZapOff } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -370,7 +370,7 @@ export default function Dashboard() {
     const chartSym = (selectedChartSymbol || "").toUpperCase();
     const wsPair = (wsData?.smcTelemetry?.symbol_pair || "").toUpperCase();
     if (wsPair && (wsPair.includes(chartSym) || chartSym.includes(wsPair.split("/")[0]))) {
-      return wsData.smcTelemetry;
+      return wsData?.smcTelemetry;
     }
     const polledPair = (smcTelemetry?.symbol_pair || "").toUpperCase();
     if (polledPair && (polledPair.includes(chartSym) || chartSym.includes(polledPair.split("/")[0]))) {
@@ -393,7 +393,7 @@ export default function Dashboard() {
     const forexOn = dbData.forexEnabled ?? true;
     const metalsOn = dbData.metalsEnabled ?? true;
     const indicesOn = dbData.indicesEnabled ?? true;
-    const stocksOn = dbData.stocksEnabled ?? true;
+    const stocksOn = (dbData as any).stocksEnabled ?? true;
 
     const isSymEnabled = (sym: string) => {
       const s = (sym || "").toUpperCase();
