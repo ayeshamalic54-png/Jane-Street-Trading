@@ -1124,11 +1124,15 @@ def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_pri
         sl_str = f"`{sl_price:.{digits_a}f}`" if sl_price > 0 else "`N/A`"
         tp_str = f"`{tp_price:.{digits_a}f}`" if tp_price > 0 else "`N/A`"
         
+        cat = get_symbol_category(symbol_a)
+        lot_val = 0.07 if (cat == "metals" or "XAU" in symbol_a.upper() or "XAG" in symbol_a.upper()) else 0.51
+
         message = (
             f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
             f"🚫 **[ SIGNAL DISCARDED / BLOCKED ]** 🚫\n\n"
             f"📊 **SIGNAL:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
+            f"📦 **TARGET LOT SIZE:** `{lot_val:.2f} Lots`\n"
             f"🛑 **DISCARD REASON:** `{reason}`\n"
             f"⛔ **ESTIMATED SL:** {sl_str}\n"
             f"🎯 **ESTIMATED TP:** {tp_str}\n"
