@@ -1155,9 +1155,6 @@ export default function Dashboard() {
                 telemetry={wsData?.smcTelemetry || smcTelemetry}
                 currentPrice={Number(matchingAsset?.priceA || (wsData?.smcTelemetry || smcTelemetry)?.sweep_price || 0)}
                 activePosition={matchingPosition}
-                chartViewMode={chartViewMode}
-                onToggleViewMode={setChartViewMode}
-                tradingViewWidget={<TradingViewWidget symbol={selectedChartSymbol} />}
               />
               
               {/* Signals Timeline for selected symbol */}

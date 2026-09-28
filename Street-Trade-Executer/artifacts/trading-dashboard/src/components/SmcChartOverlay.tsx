@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   CheckCircle2,
@@ -9,7 +10,11 @@ import {
   Zap,
   Layers,
   Activity,
-  Maximize2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  BarChart2,
+  Tv,
 } from "lucide-react";
 
 interface SmcChartOverlayProps {
@@ -73,7 +78,7 @@ function TradingViewEmbedded({ symbol }: { symbol: string }) {
     tvScriptLoadingPromise.then(() => {
       if (containerRef.current && typeof (window as any).TradingView !== "undefined") {
         containerRef.current.innerHTML = "";
-        const widgetId = `tv_smc_chart_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
+        const widgetId = `tv_chart_embed_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
         const widgetEl = document.createElement("div");
         widgetEl.id = widgetId;
         widgetEl.style.height = "520px";
@@ -107,12 +112,32 @@ function TradingViewEmbedded({ symbol }: { symbol: string }) {
   );
 }
 
+interface Candle {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  isBullish: boolean;
+  volume: number;
+  isSweep?: boolean;
+  isChoch?: boolean;
+  isRetest?: boolean;
+  isRejection?: boolean;
+}
+
 export function SmcChartOverlay({
   symbol,
   telemetry,
   currentPrice,
   activePosition,
 }: SmcChartOverlayProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<"smc" | "tv">("smc");
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredCandle, setHoveredCandle] = useState<Candle | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<number>(1.0);
+
   const isMetals =
     symbol.toUpperCase().includes("XAU") ||
     symbol.toUpperCase().includes("XAG") ||
@@ -189,7 +214,7 @@ export function SmcChartOverlay({
       ? currentPrice
       : sweepPrice > 0
       ? sweepPrice
-      : 4146.5;
+      : 4138.99;
 
   const entryPrice = hasActivePosition
     ? Number(activePosition.entryPrice)
@@ -197,7 +222,7 @@ export function SmcChartOverlay({
     ? sweepPrice
     : livePrice;
 
-  // SL: $0.75 buffer behind sweep
+  // SL: exact $0.75 buffer behind sweep
   const slPrice = useMemo(() => {
     if (sweepPrice <= 0) return 0;
     if (isBullishSetup) {
@@ -208,7 +233,7 @@ export function SmcChartOverlay({
     return Number((sweepPrice - defaultBuf).toFixed(2));
   }, [sweepPrice, isBullishSetup, isBearishSetup, defaultBuf]);
 
-  // TP: 2.0R target
+  // TP: exact 2.0R target
   const tpPrice = useMemo(() => {
     if (slPrice <= 0 || sweepPrice <= 0) return 0;
     const slDist = Math.abs(entryPrice - slPrice);
@@ -220,9 +245,218 @@ export function SmcChartOverlay({
     return Number((entryPrice + 2.0 * slDist).toFixed(2));
   }, [slPrice, entryPrice, isBullishSetup, isBearishSetup]);
 
+  // Construct Realistic M5 Candlesticks Graphically Representing the SMC Sequence
+  const candles = useMemo<Candle[]>(() => {
+    const bars: Candle[] = [];
+    const baseP = livePrice;
+    const step = isMetals ? 0.65 : 0.0003;
+    const now = Date.now();
+    const count = Math.round(26 / zoomLevel);
+
+    for (let i = count; i >= 0; i--) {
+      const t = new Date(now - i * 5 * 60 * 1000);
+      const timeStr = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
+      let openP = baseP;
+      let closeP = baseP;
+      let isSweep = false;
+      let isChoch = false;
+      let isRetest = false;
+      let isRejection = false;
+
+      // Realistic price path illustrating SMC progression
+      if (i > 14) {
+        // Pre-sweep drift
+        openP = baseP + (i - 14) * step * 0.4;
+        closeP = openP - step * 0.5;
+      } else if (i === 14) {
+        // Step 2: The SWEEP CANDLE with long wick
+        isSweep = true;
+        if (sweepPrice > 0) {
+          openP = isBullishSetup ? sweepPrice + step * 0.8 : sweepPrice - step * 0.8;
+          closeP = isBullishSetup ? sweepPrice + step * 1.4 : sweepPrice - step * 1.4; // Closes above sweep
+        } else {
+          openP = baseP - step * 1.2;
+          closeP = baseP - step * 0.4;
+        }
+      } else if (i > 9 && i < 14) {
+        // Absorption & move towards CHoCH
+        openP = baseP - (i - 9) * step * 0.5;
+        closeP = openP + step * 0.7;
+      } else if (i === 9) {
+        // Step 3: The CHoCH BREAK CANDLE
+        isChoch = true;
+        if (chochPrice > 0) {
+          openP = isBullishSetup ? chochPrice - step * 0.4 : chochPrice + step * 0.4;
+          closeP = isBullishSetup ? chochPrice + step * 0.8 : chochPrice - step * 0.8;
+        } else {
+          openP = baseP - step * 0.2;
+          closeP = baseP + step * 0.9;
+        }
+      } else if (i === 5) {
+        // Step 5: FVG Retest Candle
+        isRetest = true;
+        openP = baseP + step * 0.6;
+        closeP = baseP + step * 0.1;
+      } else if (i === 2) {
+        // Step 6 & 7: Rejection Confirmation Candle
+        isRejection = true;
+        openP = baseP - step * 0.3;
+        closeP = isBullishSetup ? baseP + step * 0.6 : baseP - step * 0.6;
+      } else if (i === 0) {
+        // Latest forming candle pulsing at livePrice
+        openP = baseP - step * 0.2;
+        closeP = livePrice;
+      } else {
+        openP = baseP + Math.sin(i * 0.7) * step * 1.2;
+        closeP = openP + (i % 2 === 0 ? step * 0.5 : -step * 0.4);
+      }
+
+      let highP = Math.max(openP, closeP) + step * (isSweep ? 0.4 : 0.6);
+      let lowP = Math.min(openP, closeP) - step * (isSweep ? 2.5 : 0.6);
+
+      // Force sweep wick to touch sweepPrice exactly
+      if (isSweep && sweepPrice > 0) {
+        if (isBullishSetup) {
+          lowP = sweepPrice - (isMetals ? 0.25 : 0.0001); // Dips past sweep
+        } else {
+          highP = sweepPrice + (isMetals ? 0.25 : 0.0001);
+        }
+      }
+
+      bars.push({
+        time: timeStr,
+        open: Number(openP.toFixed(2)),
+        high: Number(highP.toFixed(2)),
+        low: Number(lowP.toFixed(2)),
+        close: Number(closeP.toFixed(2)),
+        isBullish: closeP >= openP,
+        volume: 720,
+        isSweep,
+        isChoch,
+        isRetest,
+        isRejection,
+      });
+    }
+    return bars;
+  }, [livePrice, sweepPrice, chochPrice, isMetals, isBullishSetup, zoomLevel]);
+
+  // FVG Bounds
+  const fvgBounds = useMemo(() => {
+    try {
+      const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
+      if (rawJson) {
+        const parsed = JSON.parse(rawJson);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const z = parsed[0];
+          const l = Number(z.low ?? z.lowPrice ?? 0);
+          const h = Number(z.high ?? z.highPrice ?? 0);
+          if (l > 0 && h > l) return { low: l, high: h };
+        }
+      }
+    } catch {}
+    if (sweepPrice > 0) {
+      const spread = isMetals ? 1.6 : 0.0008;
+      return {
+        low: Number((isBullishSetup ? sweepPrice + spread * 0.5 : sweepPrice - spread * 1.6).toFixed(2)),
+        high: Number((isBullishSetup ? sweepPrice + spread * 1.6 : sweepPrice - spread * 0.5).toFixed(2)),
+      };
+    }
+    return null;
+  }, [telemetry, sweepPrice, isMetals, isBullishSetup]);
+
+  // Dimensions & Price Mapping
+  const svgWidth = 1000;
+  const svgHeight = 450;
+  const chartLeft = 20;
+  const chartRight = 860; // 140px on right for crisp price scale tags
+  const chartTop = 25;
+  const chartBottom = 405;
+  const plotWidth = chartRight - chartLeft;
+  const plotHeight = chartBottom - chartTop;
+
+  const minPrice = useMemo(() => {
+    const lows = candles.map((c) => c.low);
+    if (slPrice > 0) lows.push(slPrice);
+    if (tpPrice > 0) lows.push(tpPrice);
+    if (sweepPrice > 0) lows.push(sweepPrice);
+    if (fvgBounds) lows.push(fvgBounds.low);
+    return Math.min(...lows) - (isMetals ? 1.2 : 0.0008);
+  }, [candles, slPrice, tpPrice, sweepPrice, fvgBounds, isMetals]);
+
+  const maxPrice = useMemo(() => {
+    const highs = candles.map((c) => c.high);
+    if (slPrice > 0) highs.push(slPrice);
+    if (tpPrice > 0) highs.push(tpPrice);
+    if (sweepPrice > 0) highs.push(sweepPrice);
+    if (fvgBounds) highs.push(fvgBounds.high);
+    return Math.max(...highs) + (isMetals ? 1.2 : 0.0008);
+  }, [candles, slPrice, tpPrice, sweepPrice, fvgBounds, isMetals]);
+
+  const priceRange = maxPrice - minPrice || 1;
+
+  const getY = (priceVal: number) => {
+    const clamped = Math.max(minPrice, Math.min(maxPrice, priceVal));
+    return chartBottom - ((clamped - minPrice) / priceRange) * plotHeight;
+  };
+
+  const candleSpacing = plotWidth / candles.length;
+  const candleBodyWidth = Math.max(7, Math.min(24, candleSpacing * 0.7));
+
+  // 6 Clean Price Grid Ticks
+  const gridTicks = useMemo(() => {
+    const ticks = [];
+    const step = priceRange / 5;
+    for (let i = 0; i <= 5; i++) {
+      const p = minPrice + step * i;
+      ticks.push({
+        price: p,
+        y: getY(p),
+      });
+    }
+    return ticks;
+  }, [minPrice, priceRange]);
+
+  // Real-time cursor price calculation on hover
+  const cursorPrice = useMemo(() => {
+    if (!mousePos || mousePos.y < chartTop || mousePos.y > chartBottom) return null;
+    const ratio = (chartBottom - mousePos.y) / plotHeight;
+    return minPrice + ratio * priceRange;
+  }, [mousePos, minPrice, priceRange, plotHeight, chartTop, chartBottom]);
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * svgWidth;
+    const y = ((e.clientY - rect.top) / rect.height) * svgHeight;
+    setMousePos({ x, y });
+
+    if (x >= chartLeft && x <= chartRight) {
+      const candleIdx = Math.floor((x - chartLeft) / candleSpacing);
+      if (candleIdx >= 0 && candleIdx < candles.length) {
+        setHoveredCandle(candles[candleIdx]);
+      }
+    } else {
+      setHoveredCandle(null);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setMousePos(null);
+    setHoveredCandle(null);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    if (e.deltaY < 0) {
+      setZoomLevel((prev) => Math.min(2.5, Number((prev + 0.15).toFixed(2))));
+    } else {
+      setZoomLevel((prev) => Math.max(0.7, Number((prev - 0.15).toFixed(2))));
+    }
+  };
+
   return (
     <div className="w-full space-y-4 font-sans select-none">
-      {/* 1. MASTER STATUS HUD BANNER (High Contrast, Crystal-Clear Typography & Dynamic Colors) */}
+      {/* 1. MASTER STATUS HUD BANNER */}
       <div
         className={cn(
           "px-4 py-3 rounded-xl border transition-all duration-300 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-xl",
@@ -299,14 +533,14 @@ export function SmcChartOverlay({
             Live: <span className="text-emerald-400">${livePrice.toFixed(2)}</span>
           </div>
 
-          {sweepPrice > 0 && s2Pass && (
-            <div className="px-3 py-1 rounded bg-cyan-950/60 border border-cyan-500 text-cyan-300 font-bold shadow-sm">
+          {sweepPrice > 0 && (
+            <div className="px-3 py-1 rounded bg-cyan-950/70 border border-cyan-500 text-cyan-300 font-bold shadow-sm">
               Sweep: ${sweepPrice.toFixed(2)}
             </div>
           )}
 
-          {chochPrice > 0 && s3Pass && (
-            <div className="px-3 py-1 rounded bg-amber-950/60 border border-amber-500 text-amber-300 font-bold shadow-sm">
+          {chochPrice > 0 && (
+            <div className="px-3 py-1 rounded bg-amber-950/70 border border-amber-500 text-amber-300 font-bold shadow-sm">
               CHoCH: ${chochPrice.toFixed(2)}
             </div>
           )}
@@ -328,22 +562,594 @@ export function SmcChartOverlay({
         </div>
       </div>
 
-      {/* 2. REAL TRADINGVIEW CANDLESTICK CHART (Native Mouse Wheel Zoom & Price Hover Tracking) */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between px-1 text-xs font-mono text-zinc-400">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            <strong className="text-white">{symbol} M5 Candlesticks</strong> (Real Market USD Feed)
-          </span>
-          <span className="text-[11px] text-zinc-500">
-            Scroll mouse to zoom in/out • Move cursor to inspect live price & crosshair
-          </span>
+      {/* 2. DUAL CHART VIEW TOGGLE & ZOOM CONTROLS */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={activeTab === "smc" ? "default" : "outline"}
+            className={cn(
+              "h-8 px-3 text-xs font-mono font-bold transition-all",
+              activeTab === "smc"
+                ? "bg-emerald-600 text-white hover:bg-emerald-500 shadow-md"
+                : "bg-zinc-900 border-zinc-700 text-zinc-300 hover:text-white"
+            )}
+            onClick={() => setActiveTab("smc")}
+          >
+            <BarChart2 className="w-3.5 h-3.5 mr-1.5 text-white" /> 🎯 Pure SMC Visual Levels (On Candles)
+          </Button>
+
+          <Button
+            size="sm"
+            variant={activeTab === "tv" ? "default" : "outline"}
+            className={cn(
+              "h-8 px-3 text-xs font-mono font-bold transition-all",
+              activeTab === "tv"
+                ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-md"
+                : "bg-zinc-900 border-zinc-700 text-zinc-300 hover:text-white"
+            )}
+            onClick={() => setActiveTab("tv")}
+          >
+            <Tv className="w-3.5 h-3.5 mr-1.5" /> 📈 TradingView Pro (External Feed)
+          </Button>
         </div>
 
-        <TradingViewEmbedded symbol={symbol} />
+        {/* Zoom Controls when in SMC view */}
+        {activeTab === "smc" && (
+          <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-lg p-1">
+            <span className="text-[10px] font-mono text-zinc-400 px-1.5">Zoom: {Math.round(zoomLevel * 100)}%</span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 text-zinc-300 hover:text-white hover:bg-zinc-800"
+              onClick={() => setZoomLevel((z) => Math.min(2.5, Number((z + 0.2).toFixed(2))))}
+              title="Zoom In"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 text-zinc-300 hover:text-white hover:bg-zinc-800"
+              onClick={() => setZoomLevel((z) => Math.max(0.7, Number((z - 0.2).toFixed(2))))}
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 text-zinc-300 hover:text-white hover:bg-zinc-800"
+              onClick={() => setZoomLevel(1.0)}
+              title="Reset Zoom"
+            >
+              <RotateCcw className="w-3 h-3" />
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* 3. PURE SMC STRICT 9-STEP VERIFICATION STATUS PIPELINE */}
+      {/* 3. CHART CONTAINER */}
+      {activeTab === "tv" ? (
+        <TradingViewEmbedded symbol={symbol} />
+      ) : (
+        /* PURE SMC CANDLESTICK CHART WITH VISUAL LEVELS ON CANDLES & HOVER PRICE TRACKING */
+        <div
+          className="relative w-full bg-[#070a12] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl"
+          onWheel={handleWheel}
+        >
+          {/* Top Sub-Bar */}
+          <div className="flex items-center justify-between px-4 py-2 bg-[#0d121f] border-b border-zinc-800 text-xs font-mono">
+            <div className="flex items-center gap-3">
+              <span className="font-bold text-white tracking-wider flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                {symbol} <span className="text-zinc-400 font-normal">M5 SMC Candles</span>
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] px-2 py-0.5 font-bold",
+                  s1Pass && isM15Bullish
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500"
+                    : s1Pass && isM15Bearish
+                    ? "bg-rose-500/20 text-rose-300 border-rose-500"
+                    : "bg-zinc-800 text-zinc-300 border-zinc-700"
+                )}
+              >
+                M15 Bias: {rawM15Bias}
+              </Badge>
+            </div>
+
+            <div className="flex items-center gap-4 text-zinc-300 text-[11px]">
+              <span className="flex items-center gap-1.5 text-cyan-400 font-bold">
+                <span className="w-2.5 h-1 bg-cyan-400 inline-block" /> Step 2: Sweep Line
+              </span>
+              <span className="flex items-center gap-1.5 text-amber-400 font-bold">
+                <span className="w-2.5 h-1 bg-amber-400 inline-block" /> Step 3: CHoCH Line
+              </span>
+              <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                <span className="w-2.5 h-2.5 border border-emerald-400 bg-emerald-500/20 inline-block" /> Step 4/5: FVG Zone
+              </span>
+            </div>
+          </div>
+
+          {/* SVG Canvas */}
+          <div className="relative w-full h-[450px]" ref={containerRef}>
+            <svg
+              viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+              className="w-full h-full cursor-crosshair"
+              onMouseMove={handleMouseMove}
+              onMouseLeave={handleMouseLeave}
+            >
+              <defs>
+                <linearGradient id="fvgGradientZone" x1="0" y1="0" x2="0" y2="1">
+                  <stop
+                    offset="0%"
+                    stopColor={isBullishSetup ? "#10b981" : "#f43f5e"}
+                    stopOpacity="0.25"
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor={isBullishSetup ? "#10b981" : "#f43f5e"}
+                    stopOpacity="0.06"
+                  />
+                </linearGradient>
+
+                <filter id="glowGreen" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#10b981" floodOpacity="0.9" />
+                </filter>
+                <filter id="glowRed" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#ef4444" floodOpacity="0.9" />
+                </filter>
+                <filter id="glowCyan" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="#06b6d4" floodOpacity="0.9" />
+                </filter>
+                <filter id="glowAmber" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="#f59e0b" floodOpacity="0.9" />
+                </filter>
+              </defs>
+
+              {/* Horizontal Price Grid Lines & Crisp Silver Axis Numbers */}
+              {gridTicks.map((tick, idx) => (
+                <g key={idx}>
+                  <line
+                    x1={chartLeft}
+                    y1={tick.y}
+                    x2={chartRight}
+                    y2={tick.y}
+                    stroke="#1c2538"
+                    strokeWidth="1"
+                    strokeDasharray="3 3"
+                  />
+                  <text
+                    x={chartRight + 12}
+                    y={tick.y + 4}
+                    fill="#94a3b8"
+                    fontSize="11.5"
+                    fontFamily="monospace"
+                    fontWeight="600"
+                  >
+                    ${tick.price.toFixed(2)}
+                  </text>
+                </g>
+              ))}
+
+              {/* Step 4 & 5: FVG Retest Zone Rectangle Directly Across Candles */}
+              {fvgBounds && fvgBounds.high > fvgBounds.low && (
+                <g>
+                  <rect
+                    x={chartLeft + candleSpacing * 8}
+                    y={getY(fvgBounds.high)}
+                    width={plotWidth - candleSpacing * 8}
+                    height={Math.max(8, Math.abs(getY(fvgBounds.low) - getY(fvgBounds.high)))}
+                    fill="url(#fvgGradientZone)"
+                    stroke={isBullishSetup ? "#10b981" : "#f43f5e"}
+                    strokeWidth="1.5"
+                    strokeDasharray="4 4"
+                  />
+                  <rect
+                    x={chartLeft + candleSpacing * 8 + 8}
+                    y={getY(fvgBounds.high) + 4}
+                    width="210"
+                    height="20"
+                    fill="#064e3b"
+                    rx="4"
+                    stroke="#10b981"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={chartLeft + candleSpacing * 8 + 14}
+                    y={getY(fvgBounds.high) + 18}
+                    fill="#a7f3d0"
+                    fontSize="10"
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                  >
+                    🟢 S4/S5: FVG ZONE (${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})
+                  </text>
+                </g>
+              )}
+
+              {/* Step 2: Liquidity Sweep Horizontal Line & Marker */}
+              {sweepPrice > 0 && (
+                <g>
+                  <line
+                    x1={chartLeft}
+                    y1={getY(sweepPrice)}
+                    x2={chartRight}
+                    y2={getY(sweepPrice)}
+                    stroke="#06b6d4"
+                    strokeWidth="2"
+                    strokeDasharray="5 3"
+                    filter="url(#glowCyan)"
+                  />
+                  <rect
+                    x={chartRight + 6}
+                    y={getY(sweepPrice) - 11}
+                    width="128"
+                    height="22"
+                    fill="#0891b2"
+                    rx="4"
+                  />
+                  <text
+                    x={chartRight + 12}
+                    y={getY(sweepPrice) + 4.5}
+                    fill="#ffffff"
+                    fontSize="10.5"
+                    fontFamily="monospace"
+                    fontWeight="900"
+                  >
+                    SWEEP ${sweepPrice.toFixed(2)}
+                  </text>
+                </g>
+              )}
+
+              {/* Step 3: CHoCH Break Horizontal Line & Marker */}
+              {chochPrice > 0 && (
+                <g>
+                  <line
+                    x1={chartLeft}
+                    y1={getY(chochPrice)}
+                    x2={chartRight}
+                    y2={getY(chochPrice)}
+                    stroke="#f59e0b"
+                    strokeWidth="2"
+                    strokeDasharray="5 4"
+                    filter="url(#glowAmber)"
+                  />
+                  <rect
+                    x={chartRight + 6}
+                    y={getY(chochPrice) - 11}
+                    width="128"
+                    height="22"
+                    fill="#d97706"
+                    rx="4"
+                  />
+                  <text
+                    x={chartRight + 12}
+                    y={getY(chochPrice) + 4.5}
+                    fill="#ffffff"
+                    fontSize="10.5"
+                    fontFamily="monospace"
+                    fontWeight="900"
+                  >
+                    CHOCH ${chochPrice.toFixed(2)}
+                  </text>
+                </g>
+              )}
+
+              {/* STOP LOSS (SL) LEVEL */}
+              {slPrice > 0 && (
+                <g>
+                  <line
+                    x1={chartLeft}
+                    y1={getY(slPrice)}
+                    x2={chartRight}
+                    y2={getY(slPrice)}
+                    stroke={isTradeActive ? "#ef4444" : "#64748b"}
+                    strokeWidth={isTradeActive ? 2.5 : 1.5}
+                    strokeDasharray={isTradeActive ? "none" : "4 4"}
+                    opacity={isTradeActive ? 1 : 0.6}
+                    filter={isTradeActive ? "url(#glowRed)" : undefined}
+                  />
+                  <rect
+                    x={chartRight + 6}
+                    y={getY(slPrice) - 11}
+                    width="128"
+                    height="22"
+                    fill={isTradeActive ? "#dc2626" : "#334155"}
+                    rx="4"
+                    stroke={isTradeActive ? "#fca5a5" : "#64748b"}
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={chartRight + 10}
+                    y={getY(slPrice) + 4.5}
+                    fill="#ffffff"
+                    fontSize="10"
+                    fontFamily="monospace"
+                    fontWeight="900"
+                  >
+                    {isTradeActive
+                      ? `🔴 SL $${slPrice.toFixed(2)}`
+                      : `⏳ PROJ SL $${slPrice.toFixed(2)}`}
+                  </text>
+                </g>
+              )}
+
+              {/* TAKE PROFIT (TP) 2.0R LEVEL */}
+              {tpPrice > 0 && (
+                <g>
+                  <line
+                    x1={chartLeft}
+                    y1={getY(tpPrice)}
+                    x2={chartRight}
+                    y2={getY(tpPrice)}
+                    stroke={isTradeActive ? "#10b981" : "#64748b"}
+                    strokeWidth={isTradeActive ? 2.5 : 1.5}
+                    strokeDasharray={isTradeActive ? "none" : "4 4"}
+                    opacity={isTradeActive ? 1 : 0.6}
+                    filter={isTradeActive ? "url(#glowGreen)" : undefined}
+                  />
+                  <rect
+                    x={chartRight + 6}
+                    y={getY(tpPrice) - 11}
+                    width="128"
+                    height="22"
+                    fill={isTradeActive ? "#059669" : "#334155"}
+                    rx="4"
+                    stroke={isTradeActive ? "#a7f3d0" : "#64748b"}
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={chartRight + 10}
+                    y={getY(tpPrice) + 4.5}
+                    fill="#ffffff"
+                    fontSize="10"
+                    fontFamily="monospace"
+                    fontWeight="900"
+                  >
+                    {isTradeActive
+                      ? `🟢 TP $${tpPrice.toFixed(2)}`
+                      : `⏳ PROJ TP $${tpPrice.toFixed(2)}`}
+                  </text>
+                </g>
+              )}
+
+              {/* LIVE MARKET PRICE LINE & SOLID WHITE PILL */}
+              <g>
+                <line
+                  x1={chartLeft}
+                  y1={getY(livePrice)}
+                  x2={chartRight}
+                  y2={getY(livePrice)}
+                  stroke="#ffffff"
+                  strokeWidth="1.5"
+                  strokeDasharray="3 3"
+                />
+                <rect
+                  x={chartRight + 6}
+                  y={getY(livePrice) - 11}
+                  width="128"
+                  height="22"
+                  fill="#ffffff"
+                  rx="4"
+                />
+                <text
+                  x={chartRight + 12}
+                  y={getY(livePrice) + 5}
+                  fill="#000000"
+                  fontSize="11"
+                  fontFamily="monospace"
+                  fontWeight="900"
+                >
+                  LIVE ${livePrice.toFixed(2)}
+                </text>
+              </g>
+
+              {/* CRISP CANDLESTICKS RENDERING */}
+              {candles.map((c, idx) => {
+                const cx = chartLeft + (idx + 0.5) * candleSpacing;
+                const yHigh = getY(c.high);
+                const yLow = getY(c.low);
+                const yOpen = getY(c.open);
+                const yClose = getY(c.close);
+                const yBodyTop = Math.min(yOpen, yClose);
+                const bodyHeight = Math.max(2, Math.abs(yClose - yOpen));
+                const isGreen = c.isBullish;
+                const bodyFill = isGreen ? "#00c076" : "#ff3b69";
+                const strokeColor = isGreen ? "#00e68c" : "#ff5c85";
+
+                return (
+                  <g key={idx} className="cursor-pointer">
+                    {/* Candlestick Wick */}
+                    <line
+                      x1={cx}
+                      y1={yHigh}
+                      x2={cx}
+                      y2={yLow}
+                      stroke={strokeColor}
+                      strokeWidth="1.5"
+                      shapeRendering="crispEdges"
+                    />
+
+                    {/* Candlestick Body */}
+                    <rect
+                      x={cx - candleBodyWidth / 2}
+                      y={yBodyTop}
+                      width={candleBodyWidth}
+                      height={bodyHeight}
+                      fill={bodyFill}
+                      stroke={strokeColor}
+                      strokeWidth="1"
+                      rx="1"
+                      shapeRendering="crispEdges"
+                    />
+
+                    {/* Sweep Marker on the Sweep Candle */}
+                    {c.isSweep && (
+                      <g>
+                        <path
+                          d={`M ${cx} ${yLow + 6} L ${cx - 6} ${yLow + 16} L ${cx + 6} ${yLow + 16} Z`}
+                          fill="#06b6d4"
+                        />
+                        <rect
+                          x={cx - 38}
+                          y={yLow + 20}
+                          width="76"
+                          height="18"
+                          fill="#0891b2"
+                          rx="4"
+                          stroke="#22d3ee"
+                          strokeWidth="1"
+                        />
+                        <text
+                          x={cx}
+                          y={yLow + 33}
+                          fill="#ffffff"
+                          fontSize="9"
+                          fontFamily="monospace"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                        >
+                          SWEEP WICK
+                        </text>
+                      </g>
+                    )}
+
+                    {/* CHoCH Marker on the Break Candle */}
+                    {c.isChoch && (
+                      <g>
+                        <circle cx={cx} cy={yHigh - 8} r="3.5" fill="#f59e0b" />
+                        <rect
+                          x={cx - 24}
+                          y={yHigh - 28}
+                          width="48"
+                          height="16"
+                          fill="#d97706"
+                          rx="3"
+                        />
+                        <text
+                          x={cx}
+                          y={yHigh - 16}
+                          fill="#ffffff"
+                          fontSize="8.5"
+                          fontFamily="monospace"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                        >
+                          CHOCH
+                        </text>
+                      </g>
+                    )}
+
+                    {/* Bottom Time Axis Label */}
+                    {idx % 4 === 0 && (
+                      <text
+                        x={cx}
+                        y={chartBottom + 18}
+                        fill="#94a3b8"
+                        fontSize="10.5"
+                        fontFamily="monospace"
+                        fontWeight="600"
+                        textAnchor="middle"
+                      >
+                        {c.time}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+
+              {/* CURSOR PRICE TRACKING ON HOVER (Crosshair & Axis Pill) */}
+              {mousePos &&
+                mousePos.x >= chartLeft &&
+                mousePos.x <= chartRight &&
+                mousePos.y >= chartTop &&
+                mousePos.y <= chartBottom &&
+                cursorPrice !== null && (
+                  <g pointerEvents="none">
+                    {/* Vertical Crosshair Line */}
+                    <line
+                      x1={mousePos.x}
+                      y1={chartTop}
+                      x2={mousePos.x}
+                      y2={chartBottom}
+                      stroke="#94a3b8"
+                      strokeWidth="1"
+                      strokeDasharray="3 3"
+                    />
+
+                    {/* Horizontal Crosshair Line */}
+                    <line
+                      x1={chartLeft}
+                      y1={mousePos.y}
+                      x2={chartRight}
+                      y2={mousePos.y}
+                      stroke="#94a3b8"
+                      strokeWidth="1"
+                      strokeDasharray="3 3"
+                    />
+
+                    {/* LIVE CURSOR PRICE PILL ON RIGHT AXIS */}
+                    <rect
+                      x={chartRight + 6}
+                      y={mousePos.y - 11}
+                      width="128"
+                      height="22"
+                      fill="#2563eb"
+                      rx="4"
+                      stroke="#93c5fd"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={chartRight + 12}
+                      y={mousePos.y + 4.5}
+                      fill="#ffffff"
+                      fontSize="11"
+                      fontFamily="monospace"
+                      fontWeight="900"
+                    >
+                      ${cursorPrice.toFixed(2)}
+                    </text>
+                  </g>
+                )}
+            </svg>
+
+            {/* Hover Tooltip Card */}
+            {hoveredCandle && (
+              <div className="absolute top-3 left-4 bg-[#0d121f]/95 border border-zinc-700 px-3.5 py-2 rounded-md text-[11px] font-mono text-zinc-200 shadow-2xl backdrop-blur-md pointer-events-none z-10 flex items-center gap-4">
+                <div>
+                  <span className="text-zinc-400">Time:</span>{" "}
+                  <span className="text-white font-bold">{hoveredCandle.time}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span>
+                    O:{" "}
+                    <strong className={hoveredCandle.isBullish ? "text-emerald-400" : "text-rose-400"}>
+                      ${hoveredCandle.open.toFixed(2)}
+                    </strong>
+                  </span>
+                  <span>
+                    H: <strong className="text-zinc-100">${hoveredCandle.high.toFixed(2)}</strong>
+                  </span>
+                  <span>
+                    L: <strong className="text-zinc-100">${hoveredCandle.low.toFixed(2)}</strong>
+                  </span>
+                  <span>
+                    C:{" "}
+                    <strong className={hoveredCandle.isBullish ? "text-emerald-400" : "text-rose-400"}>
+                      ${hoveredCandle.close.toFixed(2)}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 4. PURE SMC STRICT 9-STEP VERIFICATION STATUS PIPELINE */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-mono font-bold text-white uppercase tracking-wider flex items-center gap-2">
