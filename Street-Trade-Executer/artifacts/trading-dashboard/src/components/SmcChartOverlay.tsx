@@ -407,44 +407,34 @@ export function SmcChartOverlay({
   }, [activeZones]);
 
   // FVG Bounds (Post-CHoCH Imbalance)
-  // FVG Bounds (Post-CHoCH Imbalance)
+  // FVG Bounds: Strictly for the CURRENT active setup (Step 4 & 5). Never grab far-away historical zones!
   const fvgBounds = useMemo(() => {
+    // Only resolve FVG when Step 4 (Post-CHoCH FVG) or Step 5 (Retest) is reached or trade is active!
+    if (!s4Pass && !s5Pass && !isTradeActive) return null;
     try {
       const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
       if (rawJson) {
         const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
-        // Case 1: Array of objects [{ low, high }]
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const z = parsed[0];
-          const l = Number(z.low ?? z.lowPrice ?? 0);
-          const h = Number(z.high ?? z.highPrice ?? 0);
-          if (l > 0 && h > l) return { low: l, high: h };
-        }
-        // Case 2: Object { bullish_fvg: [[low, high]], bearish_fvg: [...] }
         if (typeof parsed === "object" && parsed !== null) {
           const list = isBullishSetup
-            ? parsed.bullish_fvg || parsed.bullish_ob || []
-            : parsed.bearish_fvg || parsed.bearish_ob || [];
-          if (Array.isArray(list) && list.length > 0) {
-            const first = list[0];
-            if (Array.isArray(first) && first.length >= 2) {
-              const l = Number(first[0]);
-              const h = Number(first[1]);
-              if (l > 0 && h > l) return { low: l, high: h };
+            ? parsed.bullish_fvg || []
+            : parsed.bearish_fvg || [];
+          // Pick only FVG within immediate proximity of live price (max $8 / 0.0040 away)
+          for (const item of list) {
+            if (Array.isArray(item) && item.length >= 2) {
+              const l = Number(item[0]);
+              const h = Number(item[1]);
+              const avg = (l + h) / 2;
+              if (Math.abs(avg - livePrice) <= (isMetals ? 8.0 : 0.0040) && h > l) {
+                return { low: l, high: h };
+              }
             }
           }
         }
       }
     } catch {}
-    if (sweepPrice > 0) {
-      const spread = isMetals ? 1.6 : 0.0008;
-      return {
-        low: Number((isBullishSetup ? sweepPrice + spread * 0.5 : sweepPrice - spread * 1.6).toFixed(2)),
-        high: Number((isBullishSetup ? sweepPrice + spread * 1.6 : sweepPrice - spread * 0.5).toFixed(2)),
-      };
-    }
     return null;
-  }, [telemetry, sweepPrice, isMetals, isBullishSetup]);
+  }, [telemetry, livePrice, isMetals, isBullishSetup, s4Pass, s5Pass, isTradeActive]);
 
   // Institutional Swing Structure Levels (Buy-Side & Sell-Side Liquidity + CHoCH)
   const swingStructure = useMemo(() => {
@@ -474,13 +464,13 @@ export function SmcChartOverlay({
     };
   }, [candles, sweepPrice, chochPrice, isBullishSetup, isBearishSetup]);
 
-  // Dimensions & Price Mapping
+  // Dimensions & Price Mapping (Full-Height TradingView Candlestick Proportions)
   const svgWidth = 1000;
   const svgHeight = 460;
   const chartLeft = 20;
   const chartRight = 850; // 150px reserved on right for ultra-crisp readable price tags
-  const chartTop = 30;
-  const chartBottom = 410;
+  const chartTop = 25;
+  const chartBottom = 425;
   const plotWidth = chartRight - chartLeft;
   const plotHeight = chartBottom - chartTop;
 
@@ -488,25 +478,22 @@ export function SmcChartOverlay({
   const showTpLevel = isTradeActive || s4Pass;
   const showEntryLevel = isTradeActive || s7Pass;
 
+  // AUTO-SCALE STRICTLY TO CANDLES - Candles will fill 85% of chart height!
   const minPrice = useMemo(() => {
     const lows = candles.map((c) => c.low);
-    if (showSlLevel && slPrice > 0) lows.push(slPrice);
-    if (showTpLevel && tpPrice > 0) lows.push(tpPrice);
+    if (showSlLevel && slPrice > 0 && Math.abs(slPrice - livePrice) < 20) lows.push(slPrice);
     if (showEntryLevel && entryPrice > 0) lows.push(entryPrice);
-    if (swingStructure.swingLow > 0) lows.push(swingStructure.swingLow);
-    if (fvgBounds) lows.push(fvgBounds.low);
-    return Math.min(...lows) - (isMetals ? 1.5 : 0.0008);
-  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, swingStructure.swingLow, fvgBounds, isMetals]);
+    const rawMin = Math.min(...lows);
+    return Number((rawMin - (isMetals ? 0.60 : 0.0003)).toFixed(2));
+  }, [candles, showSlLevel, showEntryLevel, slPrice, entryPrice, livePrice, isMetals]);
 
   const maxPrice = useMemo(() => {
     const highs = candles.map((c) => c.high);
-    if (showSlLevel && slPrice > 0) highs.push(slPrice);
-    if (showTpLevel && tpPrice > 0) highs.push(tpPrice);
+    if (showTpLevel && tpPrice > 0 && Math.abs(tpPrice - livePrice) < 25) highs.push(tpPrice);
     if (showEntryLevel && entryPrice > 0) highs.push(entryPrice);
-    if (swingStructure.swingHigh > 0) highs.push(swingStructure.swingHigh);
-    if (fvgBounds) highs.push(fvgBounds.high);
-    return Math.max(...highs) + (isMetals ? 1.5 : 0.0008);
-  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, swingStructure.swingHigh, fvgBounds, isMetals]);
+    const rawMax = Math.max(...highs);
+    return Number((rawMax + (isMetals ? 0.60 : 0.0003)).toFixed(2));
+  }, [candles, showTpLevel, showEntryLevel, tpPrice, entryPrice, livePrice, isMetals]);
 
   const priceRange = maxPrice - minPrice || 1;
 
@@ -516,7 +503,8 @@ export function SmcChartOverlay({
   };
 
   const candleSpacing = plotWidth / candles.length;
-  const candleBodyWidth = Math.max(7, Math.min(24, candleSpacing * 0.7));
+  // Thick, bold, high-visibility TradingView-like candlesticks
+  const candleBodyWidth = Math.max(12, Math.min(28, candleSpacing * 0.78));
 
   // 6 Clean Price Grid Ticks
   const gridTicks = useMemo(() => {
@@ -936,6 +924,23 @@ export function SmcChartOverlay({
                 </filter>
               </defs>
 
+              {/* TradingView Right Price Scale Panel Background */}
+              <rect
+                x={chartRight}
+                y={chartTop}
+                width={svgWidth - chartRight}
+                height={plotHeight}
+                fill="#080c16"
+              />
+              <line
+                x1={chartRight}
+                y1={chartTop}
+                x2={chartRight}
+                y2={chartBottom}
+                stroke="#1e293b"
+                strokeWidth="1.5"
+              />
+
               {/* Horizontal Price Grid Lines & High Contrast Silver Numbers */}
               {gridTicks.map((tick, idx) => (
                 <g key={idx}>
@@ -949,20 +954,20 @@ export function SmcChartOverlay({
                     strokeDasharray="4 4"
                   />
                   <text
-                    x={chartRight + 12}
+                    x={chartRight + 14}
                     y={tick.y + 4.5}
-                    fill="#e2e8f0"
-                    fontSize="12.5"
+                    fill="#cbd5e1"
+                    fontSize="13"
                     fontFamily="monospace"
-                    fontWeight="700"
+                    fontWeight="800"
                   >
                     ${tick.price.toFixed(2)}
                   </text>
                 </g>
               ))}
 
-              {/* Step 4 & 5: Setup Post-CHoCH FVG Retest Zone */}
-              {fvgBounds && fvgBounds.high > fvgBounds.low && (
+              {/* Step 4 & 5: Setup Post-CHoCH FVG Retest Zone (Render ONLY when Step 4 created or trade active) */}
+              {fvgBounds && fvgBounds.high > fvgBounds.low && (s4Pass || s5Pass || isTradeActive) && (
                 <g>
                   <rect
                     x={chartLeft + candleSpacing * 8}
