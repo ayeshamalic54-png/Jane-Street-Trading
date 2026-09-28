@@ -344,7 +344,7 @@ export default function Dashboard() {
   const [pnlHistory, setPnlHistory] = useState<{ t: number; pnl: number; eq: number }[]>([]);
   const [sessionGuardOverride, setSessionGuardOverride] = useState<{ enabled?: boolean; start?: number; end?: number }>({});
   const [smcTelemetry, setSmcTelemetry] = useState<any>(null);
-  const [chartViewMode, setChartViewMode] = useState<"smc" | "tv">("smc");
+  const [chartViewMode, setChartViewMode] = useState<"smc" | "tv">("tv");
 
   useEffect(() => {
     let active = true;
@@ -1143,41 +1143,22 @@ export default function Dashboard() {
           <Card className="lg:col-span-2 bg-card border-border border-t-2 border-t-indigo-500/70 hover:border-indigo-500/40 transition-all rounded-md shadow-[0_4px_20px_rgba(99,102,241,0.03)]">
             <CardHeader className="pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
-                <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider font-mono">Live Market Chart</CardTitle>
+                <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider font-mono">Live Market Chart & Pure SMC Structure</CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Interactive real-time charting for: <span className="font-mono font-bold text-indigo-400">{selectedChartSymbol}</span> (Click on any asset below to view its chart)
+                  Institutional real-time charting for: <span className="font-mono font-bold text-indigo-400">{selectedChartSymbol}</span> (Click on any asset below to view its chart)
                 </p>
-              </div>
-              <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded p-0.5">
-                <Button
-                  size="sm"
-                  variant={chartViewMode === "smc" ? "default" : "ghost"}
-                  className={cn("h-7 px-2.5 text-[10px] font-mono", chartViewMode === "smc" && "bg-emerald-600 text-white hover:bg-emerald-500")}
-                  onClick={() => setChartViewMode("smc")}
-                >
-                  🟢 SMC Institutional View
-                </Button>
-                <Button
-                  size="sm"
-                  variant={chartViewMode === "tv" ? "default" : "ghost"}
-                  className="h-7 px-2.5 text-[10px] font-mono text-zinc-400"
-                  onClick={() => setChartViewMode("tv")}
-                >
-                  TradingView Pro
-                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              {chartViewMode === "smc" ? (
-                <SmcChartOverlay
-                  symbol={selectedChartSymbol}
-                  telemetry={wsData?.smcTelemetry || smcTelemetry}
-                  currentPrice={Number(matchingAsset?.priceA || (wsData?.smcTelemetry || smcTelemetry)?.sweep_price || 0)}
-                  activePosition={matchingPosition}
-                />
-              ) : (
-                <TradingViewWidget symbol={selectedChartSymbol} />
-              )}
+              <SmcChartOverlay
+                symbol={selectedChartSymbol}
+                telemetry={wsData?.smcTelemetry || smcTelemetry}
+                currentPrice={Number(matchingAsset?.priceA || (wsData?.smcTelemetry || smcTelemetry)?.sweep_price || 0)}
+                activePosition={matchingPosition}
+                chartViewMode={chartViewMode}
+                onToggleViewMode={setChartViewMode}
+                tradingViewWidget={<TradingViewWidget symbol={selectedChartSymbol} />}
+              />
               
               {/* Signals Timeline for selected symbol */}
               <div className="p-3 bg-zinc-950 border border-zinc-900 rounded-md">
