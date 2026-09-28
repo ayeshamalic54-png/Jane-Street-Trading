@@ -1173,6 +1173,7 @@ export default function Dashboard() {
                   symbol={selectedChartSymbol}
                   telemetry={wsData?.smcTelemetry || smcTelemetry}
                   currentPrice={Number(matchingAsset?.priceA || (wsData?.smcTelemetry || smcTelemetry)?.sweep_price || 0)}
+                  activePosition={matchingPosition}
                 />
               ) : (
                 <TradingViewWidget symbol={selectedChartSymbol} />

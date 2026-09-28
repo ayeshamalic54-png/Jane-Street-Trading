@@ -1,24 +1,24 @@
 import React, { useState, useMemo, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
   CheckCircle2,
   Clock,
-  AlertCircle,
   TrendingUp,
   TrendingDown,
   Shield,
   Target,
   Zap,
   Layers,
-  ArrowRight,
+  Activity,
+  Crosshair,
 } from "lucide-react";
 
 interface SmcChartOverlayProps {
   symbol: string;
   telemetry: any;
   currentPrice?: number;
+  activePosition?: any;
 }
 
 interface Candle {
@@ -35,43 +35,61 @@ interface Candle {
   isRejection?: boolean;
 }
 
-export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOverlayProps) {
+export function SmcChartOverlay({
+  symbol,
+  telemetry,
+  currentPrice,
+  activePosition,
+}: SmcChartOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredCandle, setHoveredCandle] = useState<Candle | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
-  // Extract SMC parameters safely from both camelCase and snake_case
   const isMetals =
     symbol.toUpperCase().includes("XAU") ||
     symbol.toUpperCase().includes("XAG") ||
     symbol.toUpperCase().includes("GOLD");
   const defaultBuf = isMetals ? 0.75 : 0.0004;
 
+  // Extract SMC parameters safely
   const sweepPrice = Number(telemetry?.sweep_price ?? telemetry?.sweepPrice ?? 0);
   const chochPrice = Number(telemetry?.choch_price ?? telemetry?.chochPrice ?? 0);
-  const m15Bias = (telemetry?.m15_bias ?? telemetry?.m15Bias ?? "NEUTRAL ⚪").toUpperCase();
+  const rawM15Bias = (telemetry?.m15_bias ?? telemetry?.m15Bias ?? "NEUTRAL ⚪").toUpperCase();
   const sweepStatus = telemetry?.sweep_status ?? telemetry?.sweepStatus ?? "FAIL ⚪";
   const chochStatus = telemetry?.choch_status ?? telemetry?.chochStatus ?? "FAIL ⚪";
   const fvgStatus = telemetry?.fvg_status ?? telemetry?.fvgStatus ?? "FAIL ⚪";
   const retestStatus = telemetry?.retest_status ?? telemetry?.retestStatus ?? "FAIL ⚪";
-  const s6Status = telemetry?.s6_status ?? telemetry?.s6Status ?? telemetry?.rejection_status ?? "FAIL ⚪";
+  const s6Status =
+    telemetry?.s6_status ?? telemetry?.s6Status ?? telemetry?.rejection_status ?? "FAIL ⚪";
   const s7Status = telemetry?.s7_status ?? telemetry?.s7Status ?? "FAIL ⚪";
-  const s8Status = telemetry?.s8_status ?? telemetry?.s8Status ?? `PASS 🟢 ($${defaultBuf} Buf)`;
-  const s9Status = telemetry?.s9_status ?? telemetry?.s9Status ?? "FAIL ⚪ (2.0R Target)";
+  const s8Status = telemetry?.s8_status ?? telemetry?.s8Status ?? "";
+  const s9Status = telemetry?.s9_status ?? telemetry?.s9Status ?? "";
   const action = (telemetry?.action ?? "NONE").toUpperCase();
 
-  const isPass = (val: string) =>
+  const isPassText = (val: string) =>
     typeof val === "string" && (val.includes("PASS") || val.includes("🟢"));
 
-  const s1Pass = m15Bias.includes("BULLISH") || m15Bias.includes("BEARISH");
-  const s2Pass = isPass(sweepStatus);
-  const s3Pass = isPass(chochStatus);
-  const s4Pass = isPass(fvgStatus);
-  const s5Pass = isPass(retestStatus);
-  const s6Pass = isPass(s6Status);
-  const s7Pass = isPass(s7Status);
-  const s8Pass = isPass(s8Status);
-  const s9Pass = isPass(s9Status);
+  // Check Step 1 (M15 Bias)
+  const isM15Bullish = rawM15Bias.includes("BULLISH");
+  const isM15Bearish = rawM15Bias.includes("BEARISH");
+  const s1Pass = (isM15Bullish || isM15Bearish) && !rawM15Bias.includes("NEUTRAL");
+
+  // Sequential Condition Verifications (Conditions only pass if prerequisite passed)
+  const s2Pass = s1Pass && isPassText(sweepStatus);
+  const s3Pass = s2Pass && isPassText(chochStatus);
+  const s4Pass = s3Pass && isPassText(fvgStatus);
+  const s5Pass = s4Pass && isPassText(retestStatus);
+  const s6Pass = s5Pass && isPassText(s6Status);
+  const s7Pass = s6Pass && isPassText(s7Status);
+
+  // Check if MT5 position is live OR if execution signal triggered
+  const hasActivePosition = Boolean(activePosition && (activePosition.ticket || activePosition.entryPrice));
+  const isSignalFired = (action === "BUY" || action === "SELL") && s7Pass;
+  const isTradeActive = hasActivePosition || isSignalFired;
+
+  // Step 8 & 9 are only considered FULL PASS when setup is valid and execution ready or active
+  const s8Pass = s2Pass && (isTradeActive || (s7Pass && isPassText(s8Status)));
+  const s9Pass = s7Pass && (isTradeActive || isPassText(s9Status));
 
   const passedCount = [
     s1Pass,
@@ -85,10 +103,20 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
     s9Pass,
   ].filter(Boolean).length;
 
-  const allConditionsMet = passedCount === 9 || action === "BUY" || action === "SELL";
+  const allConditionsMet = passedCount === 9 || isTradeActive;
 
-  const isBullishSetup = m15Bias.includes("BULLISH") || action === "BUY";
-  const isBearishSetup = m15Bias.includes("BEARISH") || action === "SELL";
+  const tradeDirection = hasActivePosition
+    ? (activePosition.orderType || (activePosition.type === 0 ? "BUY" : "SELL")).toUpperCase()
+    : action !== "NONE"
+    ? action
+    : isM15Bullish
+    ? "BUY"
+    : isM15Bearish
+    ? "SELL"
+    : "NONE";
+
+  const isBullishSetup = tradeDirection === "BUY" || isM15Bullish;
+  const isBearishSetup = tradeDirection === "SELL" || isM15Bearish;
 
   const livePrice =
     currentPrice && currentPrice > 0
@@ -97,7 +125,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
       ? sweepPrice
       : 4134.48;
 
-  // Calculate SL ($0.75 buffer for metals)
+  const entryPrice = hasActivePosition
+    ? Number(activePosition.entryPrice)
+    : sweepPrice > 0
+    ? sweepPrice
+    : livePrice;
+
+  // SL: $0.75 buffer behind sweep
   const slPrice = useMemo(() => {
     if (sweepPrice <= 0) return 0;
     if (isBullishSetup) {
@@ -108,17 +142,17 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
     return Number((sweepPrice - defaultBuf).toFixed(2));
   }, [sweepPrice, isBullishSetup, isBearishSetup, defaultBuf]);
 
-  // Calculate TP (2.0R minimum structural target)
+  // TP: 2.0R minimum structural target
   const tpPrice = useMemo(() => {
     if (slPrice <= 0 || sweepPrice <= 0) return 0;
-    const slDist = Math.abs(livePrice - slPrice);
+    const slDist = Math.abs(entryPrice - slPrice);
     if (isBullishSetup) {
-      return Number((livePrice + 2.0 * slDist).toFixed(2));
+      return Number((entryPrice + 2.0 * slDist).toFixed(2));
     } else if (isBearishSetup) {
-      return Number((livePrice - 2.0 * slDist).toFixed(2));
+      return Number((entryPrice - 2.0 * slDist).toFixed(2));
     }
-    return Number((livePrice + 2.0 * slDist).toFixed(2));
-  }, [slPrice, livePrice, isBullishSetup, isBearishSetup]);
+    return Number((entryPrice + 2.0 * slDist).toFixed(2));
+  }, [slPrice, entryPrice, isBullishSetup, isBearishSetup]);
 
   // Parse FVG Bounds
   const fvgBounds = useMemo(() => {
@@ -134,7 +168,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
         }
       }
     } catch {}
-    if (sweepPrice > 0) {
+    if (sweepPrice > 0 && s4Pass) {
       const spread = isMetals ? 1.4 : 0.0008;
       return {
         low: Number((isBullishSetup ? sweepPrice + spread * 0.4 : sweepPrice - spread * 1.4).toFixed(2)),
@@ -142,9 +176,9 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
       };
     }
     return null;
-  }, [telemetry, sweepPrice, isMetals, isBullishSetup]);
+  }, [telemetry, sweepPrice, isMetals, isBullishSetup, s4Pass]);
 
-  // Generate 26 sharp, clean M5 candlestick bars centered around live institutional levels
+  // Generate 26 clean M5 candlestick bars centered around live institutional levels
   const candles = useMemo<Candle[]>(() => {
     const bars: Candle[] = [];
     const baseP = livePrice;
@@ -163,20 +197,20 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
       let isRetest = false;
       let isRejection = false;
 
-      // Candle 6 (Sweep candle): Wicks past liquidity level
-      if (i === 6 && sweepPrice > 0) {
+      // Candle 6: Sweep candle
+      if (i === 6 && sweepPrice > 0 && s2Pass) {
         isSweep = true;
         if (isBullishSetup) {
           openP = sweepPrice + step * 0.4;
-          closeP = sweepPrice + step * 0.7; // closes safely above sweep low
+          closeP = sweepPrice + step * 0.7;
         } else {
           openP = sweepPrice - step * 0.4;
           closeP = sweepPrice - step * 0.7;
         }
       }
 
-      // Candle 4 (CHoCH candle): Candle breaks minor pivot
-      if (i === 4 && chochPrice > 0) {
+      // Candle 4: CHoCH candle
+      if (i === 4 && chochPrice > 0 && s3Pass) {
         isChoch = true;
         if (isBullishSetup) {
           openP = chochPrice - step * 0.3;
@@ -187,13 +221,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
         }
       }
 
-      // Candle 2 (FVG Retest candle)
-      if (i === 2 && fvgBounds) {
+      // Candle 2: Retest
+      if (i === 2 && fvgBounds && s5Pass) {
         isRetest = true;
       }
 
-      // Candle 1 (Rejection candle)
-      if (i === 1) {
+      // Candle 1: Rejection
+      if (i === 1 && s6Pass) {
         isRejection = true;
         if (isBullishSetup) {
           openP = livePrice - step * 0.4;
@@ -204,7 +238,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
         }
       }
 
-      // Latest candle (i === 0)
+      // Latest candle
       if (i === 0) {
         openP = closeP;
         closeP = livePrice;
@@ -215,7 +249,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
 
       if (isSweep && sweepPrice > 0) {
         if (isBullishSetup) {
-          lowP = sweepPrice - step * 0.3; // Wick dips below sweep level
+          lowP = sweepPrice - step * 0.3;
         } else {
           highP = sweepPrice + step * 0.3;
         }
@@ -236,15 +270,15 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
       });
     }
     return bars;
-  }, [livePrice, sweepPrice, chochPrice, isMetals, isBullishSetup, fvgBounds]);
+  }, [livePrice, sweepPrice, chochPrice, isMetals, isBullishSetup, fvgBounds, s2Pass, s3Pass, s5Pass, s6Pass]);
 
   // Dimensions & Price Mapping
   const svgWidth = 1000;
   const svgHeight = 440;
   const chartLeft = 30;
-  const chartRight = 880; // dedicated price axis from 880 to 1000
+  const chartRight = 870; // dedicated price axis from 870 to 1000
   const chartTop = 30;
-  const chartBottom = 395; // dedicated time axis from 395 to 440
+  const chartBottom = 395;
   const plotWidth = chartRight - chartLeft;
   const plotHeight = chartBottom - chartTop;
 
@@ -276,7 +310,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
   const candleSpacing = plotWidth / candles.length;
   const candleBodyWidth = Math.max(8, Math.min(22, candleSpacing * 0.65));
 
-  // Generate 6 neat price grid ticks
+  // 6 neat price grid ticks
   const gridTicks = useMemo(() => {
     const ticks = [];
     const step = priceRange / 5;
@@ -296,7 +330,6 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
     const y = ((e.clientY - rect.top) / rect.height) * svgHeight;
     setMousePos({ x, y });
 
-    // Find nearest candle
     if (x >= chartLeft && x <= chartRight) {
       const candleIdx = Math.floor((x - chartLeft) / candleSpacing);
       if (candleIdx >= 0 && candleIdx < candles.length) {
@@ -314,65 +347,73 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
 
   return (
     <div className="w-full space-y-4 font-sans select-none">
-      {/* 1. MASTER STATUS HUD BANNER (Shows whether conditions are met or scanning) */}
+      {/* 1. MASTER STATUS HUD BANNER (Distinct Colors: Waiting/Scanning vs Active Trade) */}
       <div
         className={cn(
           "px-4 py-3 rounded-lg border transition-all duration-300 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-md",
-          allConditionsMet
-            ? "bg-emerald-950/40 border-emerald-500/80 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
-            : passedCount >= 3
-            ? "bg-amber-950/30 border-amber-500/60 text-amber-200"
-            : "bg-zinc-950/80 border-zinc-800 text-zinc-300"
+          isTradeActive
+            ? "bg-emerald-950/40 border-emerald-500/80 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.25)]"
+            : s1Pass
+            ? "bg-slate-900/80 border-slate-700/80 text-slate-300"
+            : "bg-zinc-950/90 border-zinc-800 text-zinc-400"
         )}
       >
         <div className="flex items-center gap-3">
           <div
             className={cn(
               "w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shadow-inner shrink-0",
-              allConditionsMet
+              isTradeActive
                 ? "bg-emerald-500 text-black animate-pulse"
-                : passedCount >= 3
-                ? "bg-amber-500 text-black"
-                : "bg-zinc-800 text-zinc-400"
+                : s1Pass
+                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                : "bg-zinc-800 text-zinc-400 border border-zinc-700"
             )}
           >
-            {allConditionsMet ? <Zap className="w-5 h-5" /> : `${passedCount}/9`}
+            {isTradeActive ? (
+              <Zap className="w-5 h-5" />
+            ) : (
+              <Activity className="w-4 h-4 text-zinc-400" />
+            )}
           </div>
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-sm font-bold uppercase tracking-wide">
-                {allConditionsMet
-                  ? `⚡ ALL 9 SMC CONDITIONS MET — ORDER EXECUTED (${action})`
-                  : passedCount > 0
-                  ? `🔍 SCANNING IN PROGRESS — ${passedCount} OF 9 CONDITIONS PASSED`
-                  : "⚪ MONITORING ORDER FLOW — WAITING FOR SMC SETUP"}
+                {isTradeActive
+                  ? `⚡ TRADE ACTIVE: ${tradeDirection} EXECUTED @ $${entryPrice.toFixed(2)}`
+                  : s1Pass
+                  ? `🔍 SETUP SCANNING — ${passedCount} OF 9 CONDITIONS VERIFIED`
+                  : "⚪ ORDER FLOW MONITORING — NO ACTIVE TRADE"}
               </span>
               <Badge
                 variant="outline"
                 className={cn(
                   "font-mono text-[10px] px-2 py-0.5 uppercase",
-                  allConditionsMet
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-400"
+                  isTradeActive
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-400 animate-pulse"
+                    : s1Pass
+                    ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {allConditionsMet ? "TRIGGER READY" : `STEP ${passedCount + 1} ACTIVE`}
+                {isTradeActive ? "TRADE ACTIVE" : "AWAITING CONFIRMATION"}
               </Badge>
             </div>
             <p className="text-xs text-zinc-400 mt-0.5">
-              {allConditionsMet
-                ? `Action: ${action} | Entry: $${livePrice.toFixed(2)} | SL: $${slPrice.toFixed(2)} ($${defaultBuf} Sweep Buf) | TP: $${tpPrice.toFixed(2)} (2.0R) | Lot: ${isMetals ? "0.07" : "0.51"}`
+              {isTradeActive
+                ? `Running ${tradeDirection} on ${symbol} | Lot: ${isMetals ? "0.07" : "0.51"} | SL: $${slPrice.toFixed(2)} ($${defaultBuf} Buf) | TP: $${tpPrice.toFixed(2)} (2.0R Target) ${
+                    hasActivePosition && activePosition.profit !== undefined
+                      ? `| Float P&L: $${Number(activePosition.profit).toFixed(2)}`
+                      : ""
+                  }`
                 : !s1Pass
-                ? "Waiting for Step 1: M15 Structural Bias (Higher High / Lower Low confirmation)"
+                ? "Step 1 PENDING ⚪: M15 Structure is Neutral (Waiting for confirmed Higher High / Lower Low)"
                 : !s2Pass
-                ? "Step 1 PASS 🟢 — Waiting for Step 2: M5 Liquidity Sweep (Retail stops absorption)"
+                ? "Step 1 PASS 🟢 — Step 2 PENDING ⚪: Waiting for M5 Liquidity Sweep wick"
                 : !s3Pass
-                ? "Step 1 & 2 PASS 🟢 — Waiting for Step 3: M5 CHoCH (Change of Character candle close)"
+                ? "Step 1 & 2 PASS 🟢 — Step 3 PENDING ⚪: Waiting for M5 CHoCH candle close break"
                 : !s4Pass || !s5Pass
-                ? "Step 1-3 PASS 🟢 — Waiting for Step 4 & 5: Post-CHoCH FVG Creation & Institutional Retest"
-                : !s6Pass || !s7Pass
-                ? "Step 1-5 PASS 🟢 — Waiting for Step 6 & 7: Bullish/Bearish Rejection Candle Confirmed Closed"
-                : "Step 1-7 PASS 🟢 — Verifying Step 8 ($0.75 SL Buffer) & Step 9 (2.0R Target)"}
+                ? "Step 1-3 PASS 🟢 — Step 4 & 5 PENDING ⚪: Waiting for Post-CHoCH FVG Creation & Retest"
+                : "Step 1-5 PASS 🟢 — Waiting for Final Rejection & Candle Close confirmation"}
             </p>
           </div>
         </div>
@@ -380,48 +421,58 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
         {/* Live Metrics Pills */}
         <div className="flex items-center gap-2 self-end md:self-center font-mono text-xs">
           <div className="px-2.5 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-300">
-            Live: <span className="text-white font-bold">${livePrice.toFixed(2)}</span>
+            Market: <span className="text-white font-bold">${livePrice.toFixed(2)}</span>
           </div>
-          {sweepPrice > 0 && (
-            <div className="px-2.5 py-1 rounded bg-sky-950/40 border border-sky-500/40 text-sky-300">
-              Sweep: <span className="font-bold">${sweepPrice.toFixed(2)}</span>
-            </div>
-          )}
-          {slPrice > 0 && (
-            <div className="px-2.5 py-1 rounded bg-rose-950/40 border border-rose-500/40 text-rose-300">
-              SL: <span className="font-bold">${slPrice.toFixed(2)}</span>
-            </div>
-          )}
-          {tpPrice > 0 && (
-            <div className="px-2.5 py-1 rounded bg-emerald-950/40 border border-emerald-500/40 text-emerald-300">
-              TP: <span className="font-bold">${tpPrice.toFixed(2)}</span>
+          {isTradeActive ? (
+            <>
+              <div className="px-2.5 py-1 rounded bg-rose-950/40 border border-rose-500/50 text-rose-300">
+                SL: <span className="font-bold">${slPrice.toFixed(2)}</span>
+              </div>
+              <div className="px-2.5 py-1 rounded bg-emerald-950/40 border border-emerald-500/50 text-emerald-300">
+                TP: <span className="font-bold">${tpPrice.toFixed(2)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="px-2.5 py-1 rounded bg-zinc-900/80 border border-zinc-800 text-zinc-500 italic">
+              SL & TP: <span className="text-zinc-400">Locked on Execution</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* 2. HIGH DEFINITION INTERACTIVE CANDLESTICK CHART */}
+      {/* 2. HIGH DEFINITION CANDLESTICK CHART */}
       <div className="relative w-full bg-[#0a0d14] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl">
         {/* Top Chart Toolbar */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-[#0e121b] border-b border-zinc-800/80 text-xs font-mono">
           <div className="flex items-center gap-3">
             <span className="font-bold text-white tracking-wider flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <span
+                className={cn(
+                  "w-2 h-2 rounded-full",
+                  isTradeActive ? "bg-emerald-400 animate-ping" : "bg-zinc-500"
+                )}
+              />
               {symbol} <span className="text-zinc-400 font-normal">M5 Candlesticks</span>
             </span>
             <Badge
               variant="outline"
               className={cn(
                 "text-[10px] px-2 py-0.5 font-bold",
-                m15Bias.includes("BULLISH")
+                s1Pass && isM15Bullish
                   ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40"
-                  : m15Bias.includes("BEARISH")
+                  : s1Pass && isM15Bearish
                   ? "bg-rose-500/15 text-rose-400 border-rose-500/40"
-                  : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                  : "bg-zinc-800/80 text-zinc-400 border-zinc-700"
               )}
             >
-              M15 Bias: {m15Bias}
+              M15 Bias: {rawM15Bias}
             </Badge>
+
+            {isTradeActive && (
+              <Badge className="bg-emerald-600 text-white font-bold text-[10px] px-2">
+                ACTIVE POSITION
+              </Badge>
+            )}
           </div>
 
           <div className="flex items-center gap-4 text-zinc-400 text-[11px]">
@@ -431,12 +482,16 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-sm bg-[#ff3b69]" /> Bearish Candle
             </span>
-            <span className="flex items-center gap-1.5 text-sky-400">
-              <span className="w-2.5 h-1 bg-sky-400 inline-block" /> Liquidity Sweep
-            </span>
-            <span className="flex items-center gap-1.5 text-amber-400">
-              <span className="w-2.5 h-1 bg-amber-400 inline-block" /> CHoCH Break
-            </span>
+            {s2Pass && (
+              <span className="flex items-center gap-1.5 text-sky-400">
+                <span className="w-2.5 h-1 bg-sky-400 inline-block" /> Sweep Level
+              </span>
+            )}
+            {s3Pass && (
+              <span className="flex items-center gap-1.5 text-amber-400">
+                <span className="w-2.5 h-1 bg-amber-400 inline-block" /> CHoCH Level
+              </span>
+            )}
           </div>
         </div>
 
@@ -449,8 +504,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             onMouseLeave={handleMouseLeave}
           >
             <defs>
-              {/* Soft Gradient for FVG Retest Zone */}
-              <linearGradient id="fvgGradient" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id="fvgGradientActive" x1="0" y1="0" x2="0" y2="1">
                 <stop
                   offset="0%"
                   stopColor={isBullishSetup ? "#10b981" : "#f43f5e"}
@@ -459,23 +513,25 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                 <stop
                   offset="100%"
                   stopColor={isBullishSetup ? "#10b981" : "#f43f5e"}
-                  stopOpacity="0.06"
+                  stopOpacity="0.05"
                 />
               </linearGradient>
 
-              {/* Glowing Filter for Level Lines */}
               <filter id="glowGreen" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#10b981" floodOpacity="0.8" />
+                <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="#10b981" floodOpacity="0.9" />
               </filter>
               <filter id="glowRed" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#ef4444" floodOpacity="0.8" />
+                <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="#ef4444" floodOpacity="0.9" />
               </filter>
               <filter id="glowBlue" x="-20%" y="-20%" width="140%" height="140%">
                 <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#38bdf8" floodOpacity="0.8" />
               </filter>
+              <filter id="glowGold" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#fbbf24" floodOpacity="0.9" />
+              </filter>
             </defs>
 
-            {/* Price Axis Background Strip on Right (x: 880 to 1000) */}
+            {/* Price Axis Background Strip on Right (x: 870 to 1000) */}
             <rect
               x={chartRight}
               y={chartTop}
@@ -522,7 +578,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
               </g>
             ))}
 
-            {/* Step 4 & 5: FVG Retest Shaded Zone Rectangle */}
+            {/* Step 4 & 5: FVG Retest Zone (Only shown if S4 is verified or setup in progress) */}
             {fvgBounds && fvgBounds.high > fvgBounds.low && (
               <g>
                 <rect
@@ -530,35 +586,35 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                   y={getY(fvgBounds.high)}
                   width={plotWidth - candleSpacing * 12}
                   height={Math.max(6, Math.abs(getY(fvgBounds.low) - getY(fvgBounds.high)))}
-                  fill="url(#fvgGradient)"
-                  stroke={isBullishSetup ? "#10b981" : "#f43f5e"}
+                  fill={s5Pass ? "url(#fvgGradientActive)" : "rgba(100, 116, 139, 0.08)"}
+                  stroke={s5Pass ? (isBullishSetup ? "#10b981" : "#f43f5e") : "#475569"}
                   strokeWidth="1"
-                  strokeDasharray="3 3"
+                  strokeDasharray={s5Pass ? "none" : "3 3"}
                 />
                 <rect
                   x={chartLeft + candleSpacing * 12 + 6}
                   y={getY(fvgBounds.high) + 4}
                   width="180"
                   height="18"
-                  fill="#064e3b"
+                  fill={s5Pass ? "#064e3b" : "#1e293b"}
                   rx="3"
                   opacity="0.9"
                 />
                 <text
                   x={chartLeft + candleSpacing * 12 + 12}
                   y={getY(fvgBounds.high) + 16}
-                  fill="#6ee7b7"
+                  fill={s5Pass ? "#6ee7b7" : "#94a3b8"}
                   fontSize="10"
                   fontFamily="monospace"
                   fontWeight="bold"
                 >
-                  🟢 S4/S5: FVG ZONE (${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})
+                  {s5Pass ? "🟢 S4/S5: FVG RETEST PASS" : "⏳ S4: POTENTIAL FVG ZONE"}
                 </text>
               </g>
             )}
 
-            {/* Step 2: Liquidity Sweep Horizontal Line & Axis Pill */}
-            {sweepPrice > 0 && (
+            {/* Step 2: Liquidity Sweep Horizontal Line (Active Blue if passed, faint muted if pending) */}
+            {sweepPrice > 0 && s2Pass && (
               <g>
                 <line
                   x1={chartLeft}
@@ -566,21 +622,20 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                   x2={chartRight}
                   y2={getY(sweepPrice)}
                   stroke="#38bdf8"
-                  strokeWidth="1.5"
+                  strokeWidth={1.5}
                   strokeDasharray="5 3"
                   filter="url(#glowBlue)"
                 />
-                {/* Right Axis Price Pill */}
                 <rect
                   x={chartRight + 4}
                   y={getY(sweepPrice) - 10}
-                  width="110"
+                  width="120"
                   height="20"
                   fill="#0369a1"
                   rx="3"
                 />
                 <text
-                  x={chartRight + 10}
+                  x={chartRight + 8}
                   y={getY(sweepPrice) + 4}
                   fill="#e0f2fe"
                   fontSize="10"
@@ -592,8 +647,8 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
               </g>
             )}
 
-            {/* Step 3: CHoCH Break Horizontal Line & Axis Pill */}
-            {chochPrice > 0 && (
+            {/* Step 3: CHoCH Break Horizontal Line (Active Amber if passed) */}
+            {chochPrice > 0 && s3Pass && (
               <g>
                 <line
                   x1={chartLeft}
@@ -601,19 +656,19 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                   x2={chartRight}
                   y2={getY(chochPrice)}
                   stroke="#f59e0b"
-                  strokeWidth="1.5"
+                  strokeWidth={1.5}
                   strokeDasharray="5 4"
                 />
                 <rect
                   x={chartRight + 4}
                   y={getY(chochPrice) - 10}
-                  width="110"
+                  width="120"
                   height="20"
                   fill="#b45309"
                   rx="3"
                 />
                 <text
-                  x={chartRight + 10}
+                  x={chartRight + 8}
                   y={getY(chochPrice) + 4}
                   fill="#fef3c7"
                   fontSize="10"
@@ -625,7 +680,48 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
               </g>
             )}
 
-            {/* Step 8: Strict Stop Loss (SL) Horizontal Line & Axis Pill */}
+            {/* ======================================================== */}
+            {/* DYNAMIC COLOR SHIFT: ENTRY, SL, AND TP LEVELS           */}
+            {/* When Trade is Active: VIBRANT SOLID GLOWING COLORS       */}
+            {/* When Trade is Pending: SUBTLE MUTED DASHED GHOST LINES  */}
+            {/* ======================================================== */}
+
+            {/* ENTRY PRICE LEVEL */}
+            {isTradeActive && (
+              <g>
+                <line
+                  x1={chartLeft}
+                  y1={getY(entryPrice)}
+                  x2={chartRight}
+                  y2={getY(entryPrice)}
+                  stroke="#fbbf24"
+                  strokeWidth="2"
+                  filter="url(#glowGold)"
+                />
+                <rect
+                  x={chartRight + 4}
+                  y={getY(entryPrice) - 10}
+                  width="120"
+                  height="20"
+                  fill="#78350f"
+                  rx="3"
+                  stroke="#fbbf24"
+                  strokeWidth="1"
+                />
+                <text
+                  x={chartRight + 8}
+                  y={getY(entryPrice) + 4}
+                  fill="#fef3c7"
+                  fontSize="10"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  🎯 ENTRY ${entryPrice.toFixed(2)}
+                </text>
+              </g>
+            )}
+
+            {/* STOP LOSS (SL) LEVEL */}
             {slPrice > 0 && (
               <g>
                 <line
@@ -633,33 +729,38 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                   y1={getY(slPrice)}
                   x2={chartRight}
                   y2={getY(slPrice)}
-                  stroke="#ef4444"
-                  strokeWidth="2"
-                  strokeDasharray="4 2"
-                  filter="url(#glowRed)"
+                  stroke={isTradeActive ? "#ef4444" : "#475569"}
+                  strokeWidth={isTradeActive ? 2 : 1}
+                  strokeDasharray={isTradeActive ? "none" : "4 4"}
+                  opacity={isTradeActive ? 1 : 0.45}
+                  filter={isTradeActive ? "url(#glowRed)" : undefined}
                 />
                 <rect
                   x={chartRight + 4}
                   y={getY(slPrice) - 10}
-                  width="110"
+                  width="120"
                   height="20"
-                  fill="#991b1b"
+                  fill={isTradeActive ? "#991b1b" : "#1e293b"}
                   rx="3"
+                  stroke={isTradeActive ? "#ef4444" : "#334155"}
+                  strokeWidth="1"
                 />
                 <text
                   x={chartRight + 8}
                   y={getY(slPrice) + 4}
-                  fill="#fee2e2"
+                  fill={isTradeActive ? "#fee2e2" : "#94a3b8"}
                   fontSize="10"
                   fontFamily="monospace"
                   fontWeight="bold"
                 >
-                  🔴 SL ${slPrice.toFixed(2)}
+                  {isTradeActive
+                    ? `🔴 ACTIVE SL $${slPrice.toFixed(2)}`
+                    : `⏳ PROJ SL $${slPrice.toFixed(2)}`}
                 </text>
               </g>
             )}
 
-            {/* Step 9: 2.0R Take Profit (TP) Horizontal Line & Axis Pill */}
+            {/* TAKE PROFIT (TP) 2.0R LEVEL */}
             {tpPrice > 0 && (
               <g>
                 <line
@@ -667,32 +768,38 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                   y1={getY(tpPrice)}
                   x2={chartRight}
                   y2={getY(tpPrice)}
-                  stroke="#10b981"
-                  strokeWidth="2"
-                  filter="url(#glowGreen)"
+                  stroke={isTradeActive ? "#10b981" : "#475569"}
+                  strokeWidth={isTradeActive ? 2 : 1}
+                  strokeDasharray={isTradeActive ? "none" : "4 4"}
+                  opacity={isTradeActive ? 1 : 0.45}
+                  filter={isTradeActive ? "url(#glowGreen)" : undefined}
                 />
                 <rect
                   x={chartRight + 4}
                   y={getY(tpPrice) - 10}
-                  width="110"
+                  width="120"
                   height="20"
-                  fill="#065f46"
+                  fill={isTradeActive ? "#065f46" : "#1e293b"}
                   rx="3"
+                  stroke={isTradeActive ? "#10b981" : "#334155"}
+                  strokeWidth="1"
                 />
                 <text
                   x={chartRight + 8}
                   y={getY(tpPrice) + 4}
-                  fill="#d1fae5"
+                  fill={isTradeActive ? "#d1fae5" : "#94a3b8"}
                   fontSize="10"
                   fontFamily="monospace"
                   fontWeight="bold"
                 >
-                  🟢 TP ${tpPrice.toFixed(2)}
+                  {isTradeActive
+                    ? `🟢 ACTIVE TP $${tpPrice.toFixed(2)}`
+                    : `⏳ PROJ TP $${tpPrice.toFixed(2)}`}
                 </text>
               </g>
             )}
 
-            {/* Live Current Price Horizontal Line & White Pill */}
+            {/* LIVE MARKET PRICE LINE */}
             <g>
               <line
                 x1={chartLeft}
@@ -707,7 +814,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
               <rect
                 x={chartRight + 4}
                 y={getY(livePrice) - 9}
-                width="110"
+                width="120"
                 height="18"
                 fill="#ffffff"
                 rx="3"
@@ -763,8 +870,8 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     shapeRendering="crispEdges"
                   />
 
-                  {/* Sweep Wick Indicator Marker */}
-                  {c.isSweep && (
+                  {/* Sweep Wick Indicator Marker (Only if Sweep Passed) */}
+                  {c.isSweep && s2Pass && (
                     <g>
                       <path
                         d={`M ${cx} ${yLow + 6} L ${cx - 6} ${yLow + 16} L ${cx + 6} ${yLow + 16} Z`}
@@ -794,8 +901,8 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     </g>
                   )}
 
-                  {/* CHoCH Indicator Marker */}
-                  {c.isChoch && (
+                  {/* CHoCH Indicator Marker (Only if CHoCH Passed) */}
+                  {c.isChoch && s3Pass && (
                     <g>
                       <circle cx={cx} cy={yHigh - 8} r="3" fill="#f59e0b" />
                       <text
@@ -812,7 +919,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     </g>
                   )}
 
-                  {/* Time Axis Label on Bottom (Every 4th candle) */}
+                  {/* Time Axis Label on Bottom */}
                   {idx % 4 === 0 && (
                     <text
                       x={cx}
@@ -830,28 +937,32 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             })}
 
             {/* Mouse Crosshair Lines */}
-            {mousePos && mousePos.x >= chartLeft && mousePos.x <= chartRight && mousePos.y >= chartTop && mousePos.y <= chartBottom && (
-              <g pointerEvents="none">
-                <line
-                  x1={mousePos.x}
-                  y1={chartTop}
-                  x2={mousePos.x}
-                  y2={chartBottom}
-                  stroke="#94a3b8"
-                  strokeWidth="1"
-                  strokeDasharray="3 3"
-                />
-                <line
-                  x1={chartLeft}
-                  y1={mousePos.y}
-                  x2={chartRight}
-                  y2={mousePos.y}
-                  stroke="#94a3b8"
-                  strokeWidth="1"
-                  strokeDasharray="3 3"
-                />
-              </g>
-            )}
+            {mousePos &&
+              mousePos.x >= chartLeft &&
+              mousePos.x <= chartRight &&
+              mousePos.y >= chartTop &&
+              mousePos.y <= chartBottom && (
+                <g pointerEvents="none">
+                  <line
+                    x1={mousePos.x}
+                    y1={chartTop}
+                    x2={mousePos.x}
+                    y2={chartBottom}
+                    stroke="#94a3b8"
+                    strokeWidth="1"
+                    strokeDasharray="3 3"
+                  />
+                  <line
+                    x1={chartLeft}
+                    y1={mousePos.y}
+                    x2={chartRight}
+                    y2={mousePos.y}
+                    stroke="#94a3b8"
+                    strokeWidth="1"
+                    strokeDasharray="3 3"
+                  />
+                </g>
+              )}
           </svg>
 
           {/* Interactive Tooltip Card */}
@@ -881,12 +992,12 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                   </strong>
                 </span>
               </div>
-              {hoveredCandle.isSweep && (
+              {hoveredCandle.isSweep && s2Pass && (
                 <Badge variant="outline" className="bg-sky-500/20 text-sky-300 border-sky-400 text-[10px]">
                   🔵 SWEEP CANDLE
                 </Badge>
               )}
-              {hoveredCandle.isChoch && (
+              {hoveredCandle.isChoch && s3Pass && (
                 <Badge variant="outline" className="bg-amber-500/20 text-amber-300 border-amber-400 text-[10px]">
                   🟠 CHOCH CANDLE
                 </Badge>
@@ -896,7 +1007,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
         </div>
       </div>
 
-      {/* 3. STEP-BY-STEP LIVE 9-CONDITION PIPELINE (Educational & Real-Time Tracking) */}
+      {/* 3. STEP-BY-STEP LIVE 9-CONDITION PIPELINE (Dynamic Status Colors) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-mono font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-2">
@@ -913,7 +1024,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             className={cn(
               "p-3 rounded-lg border transition-all",
               s1Pass
-                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                ? "bg-emerald-950/25 border-emerald-500/40 text-emerald-200"
                 : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
             )}
           >
@@ -935,11 +1046,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {m15Bias}
+                {s1Pass ? rawM15Bias : "NEUTRAL ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-400 leading-snug">
-              Determines institutional order-flow (HH/HL = Bullish, LH/LL = Bearish).
+              {s1Pass
+                ? `M15 order flow confirmed ${rawM15Bias.includes("BULLISH") ? "Bullish (HH/HL)" : "Bearish (LH/LL)"}.`
+                : "Scanning M15 fractal swing structure (waiting for directional trend)."}
             </p>
           </div>
 
@@ -948,7 +1061,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             className={cn(
               "p-3 rounded-lg border transition-all",
               s2Pass
-                ? "bg-sky-950/25 border-sky-500/40 text-sky-200"
+                ? "bg-sky-950/30 border-sky-500/40 text-sky-200"
                 : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
             )}
           >
@@ -970,11 +1083,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {sweepStatus}
+                {s2Pass ? sweepStatus : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-400 leading-snug">
-              Wicks beyond retail stop cluster at ${sweepPrice > 0 ? sweepPrice.toFixed(2) : "..."} without body close.
+              {s2Pass
+                ? `Absorbed retail stops at $${sweepPrice.toFixed(2)} via wick rejection.`
+                : "Waiting for candle wick to sweep previous M5 swing high/low."}
             </p>
           </div>
 
@@ -983,7 +1098,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             className={cn(
               "p-3 rounded-lg border transition-all",
               s3Pass
-                ? "bg-amber-950/25 border-amber-500/40 text-amber-200"
+                ? "bg-amber-950/30 border-amber-500/40 text-amber-200"
                 : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
             )}
           >
@@ -1005,11 +1120,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {chochStatus}
+                {s3Pass ? chochStatus : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-400 leading-snug">
-              Candle closes past minor pivot (${chochPrice > 0 ? chochPrice.toFixed(2) : "..."}) confirming trend shift.
+              {s3Pass
+                ? `Confirmed trend change by closing past $${chochPrice.toFixed(2)}.`
+                : "Waiting for candle body close beyond the minor pivot point."}
             </p>
           </div>
 
@@ -1018,7 +1135,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             className={cn(
               "p-3 rounded-lg border transition-all",
               s4Pass
-                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                ? "bg-emerald-950/25 border-emerald-500/40 text-emerald-200"
                 : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
             )}
           >
@@ -1040,11 +1157,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {fvgStatus}
+                {s4Pass ? fvgStatus : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-400 leading-snug">
-              Imbalance gap created strictly after CHoCH candle index.
+              {s4Pass
+                ? "Imbalance gap formed strictly after CHoCH candle index."
+                : "Waiting for 3-candle imbalance (Fair Value Gap) after CHoCH."}
             </p>
           </div>
 
@@ -1053,7 +1172,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             className={cn(
               "p-3 rounded-lg border transition-all",
               s5Pass
-                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                ? "bg-emerald-950/25 border-emerald-500/40 text-emerald-200"
                 : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
             )}
           >
@@ -1075,11 +1194,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {retestStatus}
+                {s5Pass ? retestStatus : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-400 leading-snug">
-              Price dips into the newly formed Post-CHoCH FVG zone.
+              {s5Pass
+                ? "Price dipped into confirmed Post-CHoCH FVG zone."
+                : "Waiting for subsequent candle to retest the FVG zone."}
             </p>
           </div>
 
@@ -1088,7 +1209,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             className={cn(
               "p-3 rounded-lg border transition-all",
               s6Pass
-                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                ? "bg-emerald-950/25 border-emerald-500/40 text-emerald-200"
                 : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
             )}
           >
@@ -1110,11 +1231,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {s6Status}
+                {s6Pass ? s6Status : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-400 leading-snug">
-              Candle confirms rejection (Green for BUY / Red for SELL) at FVG.
+              {s6Pass
+                ? "Confirmed directional rejection candle inside the FVG."
+                : "Waiting for directional rejection candle at zone."}
             </p>
           </div>
 
@@ -1123,7 +1246,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             className={cn(
               "p-3 rounded-lg border transition-all",
               s7Pass
-                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                ? "bg-emerald-950/25 border-emerald-500/40 text-emerald-200"
                 : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
             )}
           >
@@ -1145,11 +1268,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {s7Status}
+                {s7Pass ? s7Status : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-400 leading-snug">
-              Execution waits for full candle closure (no unconfirmed ticks).
+              {s7Pass
+                ? "Confirmed full candle closure (no unconfirmed ticks)."
+                : "Execution strictly waits for full candle closure."}
             </p>
           </div>
 
@@ -1158,7 +1283,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             className={cn(
               "p-3 rounded-lg border transition-all",
               s8Pass
-                ? "bg-rose-950/20 border-rose-500/40 text-rose-200"
+                ? "bg-rose-950/30 border-rose-500/50 text-rose-200"
                 : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
             )}
           >
@@ -1180,11 +1305,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                ${slPrice.toFixed(2)} (${defaultBuf} Buf)
+                {s8Pass ? `PASS 🟢 ($${defaultBuf} Buf)` : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-400 leading-snug">
-              Fixed ${defaultBuf} buffer behind Sweep wick to eliminate stop hunts.
+              {s8Pass
+                ? `Locked exact $${defaultBuf} buffer behind Sweep wick ($${slPrice.toFixed(2)}).`
+                : `Will anchor $${defaultBuf} behind Sweep wick upon trade execution.`}
             </p>
           </div>
 
@@ -1193,7 +1320,7 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
             className={cn(
               "p-3 rounded-lg border transition-all",
               s9Pass
-                ? "bg-emerald-950/20 border-emerald-500/40 text-emerald-200"
+                ? "bg-emerald-950/25 border-emerald-500/40 text-emerald-200"
                 : "bg-zinc-900/60 border-zinc-800 text-zinc-400"
             )}
           >
@@ -1215,11 +1342,13 @@ export function SmcChartOverlay({ symbol, telemetry, currentPrice }: SmcChartOve
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                ${tpPrice.toFixed(2)} (2.0R)
+                {s9Pass ? "PASS 🟢 (2.0R Space)" : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-400 leading-snug">
-              Verified 2.0R reward-to-risk space available to structural target.
+              {s9Pass
+                ? `Verified minimum 2.0R structural target space available ($${tpPrice.toFixed(2)}).`
+                : "Calculates 2.0R structural target space once entry triggers."}
             </p>
           </div>
         </div>
