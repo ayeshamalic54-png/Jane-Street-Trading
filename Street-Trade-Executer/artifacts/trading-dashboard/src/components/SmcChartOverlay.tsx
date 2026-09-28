@@ -451,13 +451,8 @@ export function SmcChartOverlay({
     if (showEntryLevel && entryPrice > 0) lows.push(entryPrice);
     if (sweepPrice > 0) lows.push(sweepPrice);
     if (fvgBounds) lows.push(fvgBounds.low);
-    parsedActiveZones.forEach((z) => {
-      if (Math.abs(z.low - livePrice) < (isMetals ? 25 : 0.0080)) {
-        lows.push(z.low);
-      }
-    });
     return Math.min(...lows) - (isMetals ? 1.5 : 0.0008);
-  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, parsedActiveZones, livePrice, isMetals]);
+  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, isMetals]);
 
   const maxPrice = useMemo(() => {
     const highs = candles.map((c) => c.high);
@@ -466,13 +461,8 @@ export function SmcChartOverlay({
     if (showEntryLevel && entryPrice > 0) highs.push(entryPrice);
     if (sweepPrice > 0) highs.push(sweepPrice);
     if (fvgBounds) highs.push(fvgBounds.high);
-    parsedActiveZones.forEach((z) => {
-      if (Math.abs(z.high - livePrice) < (isMetals ? 25 : 0.0080)) {
-        highs.push(z.high);
-      }
-    });
     return Math.max(...highs) + (isMetals ? 1.5 : 0.0008);
-  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, parsedActiveZones, livePrice, isMetals]);
+  }, [candles, showSlLevel, showTpLevel, showEntryLevel, slPrice, tpPrice, entryPrice, sweepPrice, fvgBounds, isMetals]);
 
   const priceRange = maxPrice - minPrice || 1;
 
@@ -728,38 +718,141 @@ export function SmcChartOverlay({
           ref={containerRef}
           className="relative w-full bg-[#070a12] border border-zinc-800 rounded-xl overflow-hidden shadow-2xl"
         >
-          {/* Top Sub-Bar */}
-          <div className="flex items-center justify-between px-4 py-2 bg-[#0d121f] border-b border-zinc-800 text-xs font-mono">
-            <div className="flex items-center gap-3">
-              <span className="font-bold text-white tracking-wider flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                {symbol} <span className="text-zinc-400 font-normal">M5 SMC Candles</span>
-              </span>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] px-2 py-0.5 font-bold",
-                  s1Pass && isM15Bullish
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500"
-                    : s1Pass && isM15Bearish
-                    ? "bg-rose-500/20 text-rose-300 border-rose-500"
-                    : "bg-zinc-800 text-zinc-300 border-zinc-700"
-                )}
-              >
-                M15 Bias: {rawM15Bias}
-              </Badge>
+          {/* TOP SMC STRUCTURE SEQUENCE BAR (INSIDE THE CHART CONTAINER) */}
+          <div className="px-3 py-2.5 bg-[#090d18] border-b border-zinc-800 text-xs font-mono">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white tracking-wider flex items-center gap-1.5 text-xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  {symbol} <span className="text-zinc-400 font-normal">Pure SMC Structure Sequence</span>
+                </span>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-[10px] px-2 py-0.5 font-bold",
+                    s1Pass && isM15Bullish
+                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500"
+                      : s1Pass && isM15Bearish
+                      ? "bg-rose-500/20 text-rose-300 border-rose-500"
+                      : "bg-zinc-800 text-zinc-300 border-zinc-700"
+                  )}
+                >
+                  HTF Bias: {rawM15Bias}
+                </Badge>
+              </div>
+
+              <div className="flex items-center gap-2 text-[11px]">
+                <span className="text-zinc-400 font-bold">Sequence Progress:</span>
+                <span className="font-black px-2 py-0.5 rounded bg-zinc-800 text-emerald-400 border border-zinc-700">
+                  {passedCount} / 7 Steps Verified
+                </span>
+              </div>
             </div>
 
-            <div className="flex items-center gap-4 text-xs font-bold">
-              <span className={cn("flex items-center gap-1.5 transition-colors", s2Pass ? "text-cyan-400 font-black" : "text-zinc-500")}>
-                <span className={cn("w-3 h-1 inline-block rounded-xs", s2Pass ? "bg-cyan-400 shadow-[0_0_8px_#22d3ee]" : "bg-zinc-600")} /> Step 2: Sweep {s2Pass ? "✓" : "⏳"}
-              </span>
-              <span className={cn("flex items-center gap-1.5 transition-colors", s3Pass ? "text-amber-400 font-black" : "text-zinc-500")}>
-                <span className={cn("w-3 h-1 inline-block rounded-xs", s3Pass ? "bg-amber-400 shadow-[0_0_8px_#f59e0b]" : "bg-zinc-600")} /> Step 3: CHoCH {s3Pass ? "✓" : "⏳"}
-              </span>
-              <span className={cn("flex items-center gap-1.5 transition-colors", s5Pass ? "text-emerald-400 font-black" : s4Pass ? "text-teal-400" : "text-zinc-500")}>
-                <span className={cn("w-3 h-3 border inline-block rounded-xs", s5Pass ? "border-emerald-400 bg-emerald-500/40 shadow-[0_0_8px_#10b981]" : s4Pass ? "border-teal-400 bg-teal-500/20" : "border-zinc-600 bg-zinc-800")} /> Step 4/5: FVG Retest {s5Pass ? "✓" : "⏳"}
-              </span>
+            {/* 7-Step Sequential Micro-Grid Directly Inside Chart */}
+            <div className="grid grid-cols-7 gap-1.5 text-[10px]">
+              {/* S1: M15 Bias */}
+              <div className={cn(
+                "p-1.5 rounded border text-center transition-all",
+                s1Pass
+                  ? "bg-emerald-950/70 border-emerald-500 text-emerald-300 font-bold shadow-[0_0_8px_rgba(16,185,129,0.2)]"
+                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+              )}>
+                <div className="text-[9px] text-zinc-400 uppercase font-semibold">1. M15 Bias</div>
+                <div className="truncate font-bold mt-0.5">
+                  {s1Pass ? (isM15Bullish ? "BULLISH 🟢" : "BEARISH 🔴") : "NEUTRAL ⚪"}
+                </div>
+              </div>
+
+              {/* S2: Sweep */}
+              <div className={cn(
+                "p-1.5 rounded border text-center transition-all",
+                s2Pass
+                  ? "bg-cyan-950/70 border-cyan-500 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.25)]"
+                  : s1Pass
+                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
+                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+              )}>
+                <div className="text-[9px] text-zinc-400 uppercase font-semibold">2. Sweep</div>
+                <div className="truncate font-bold mt-0.5">
+                  {s2Pass ? "SWEEP 🟢" : s1Pass ? "SCANNING ⏳" : "WAITING ⚪"}
+                </div>
+              </div>
+
+              {/* S3: CHoCH */}
+              <div className={cn(
+                "p-1.5 rounded border text-center transition-all",
+                s3Pass
+                  ? "bg-amber-950/70 border-amber-500 text-amber-300 font-bold shadow-[0_0_8px_rgba(245,158,11,0.25)]"
+                  : s2Pass
+                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
+                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+              )}>
+                <div className="text-[9px] text-zinc-400 uppercase font-semibold">3. CHoCH</div>
+                <div className="truncate font-bold mt-0.5">
+                  {s3Pass ? "CHOCH 🟢" : s2Pass ? "SCANNING ⏳" : "WAITING ⚪"}
+                </div>
+              </div>
+
+              {/* S4: FVG Creation */}
+              <div className={cn(
+                "p-1.5 rounded border text-center transition-all",
+                s4Pass
+                  ? "bg-teal-950/70 border-teal-500 text-teal-300 font-bold shadow-[0_0_8px_rgba(20,184,166,0.2)]"
+                  : s3Pass
+                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
+                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+              )}>
+                <div className="text-[9px] text-zinc-400 uppercase font-semibold">4. FVG Form</div>
+                <div className="truncate font-bold mt-0.5">
+                  {s4Pass ? "FVG 🟢" : s3Pass ? "SCANNING ⏳" : "WAITING ⚪"}
+                </div>
+              </div>
+
+              {/* S5: FVG Retest */}
+              <div className={cn(
+                "p-1.5 rounded border text-center transition-all",
+                s5Pass
+                  ? "bg-emerald-950/70 border-emerald-500 text-emerald-300 font-bold shadow-[0_0_8px_rgba(16,185,129,0.25)]"
+                  : s4Pass
+                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
+                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+              )}>
+                <div className="text-[9px] text-zinc-400 uppercase font-semibold">5. Retest</div>
+                <div className="truncate font-bold mt-0.5">
+                  {s5Pass ? "RETESTED 🟢" : s4Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                </div>
+              </div>
+
+              {/* S6: Rejection */}
+              <div className={cn(
+                "p-1.5 rounded border text-center transition-all",
+                s6Pass
+                  ? "bg-emerald-950/70 border-emerald-500 text-emerald-300 font-bold shadow-[0_0_8px_rgba(16,185,129,0.2)]"
+                  : s5Pass
+                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
+                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+              )}>
+                <div className="text-[9px] text-zinc-400 uppercase font-semibold">6. Rejection</div>
+                <div className="truncate font-bold mt-0.5">
+                  {s6Pass ? "REJECTED 🟢" : s5Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                </div>
+              </div>
+
+              {/* S7: Confirmation Close */}
+              <div className={cn(
+                "p-1.5 rounded border text-center transition-all",
+                s7Pass
+                  ? "bg-emerald-950/70 border-emerald-500 text-emerald-300 font-bold shadow-[0_0_8px_rgba(16,185,129,0.25)]"
+                  : s6Pass
+                  ? "bg-amber-950/30 border-amber-500/60 text-amber-300 animate-pulse"
+                  : "bg-zinc-900/60 border-zinc-800 text-zinc-500"
+              )}>
+                <div className="text-[9px] text-zinc-400 uppercase font-semibold">7. Close</div>
+                <div className="truncate font-bold mt-0.5">
+                  {s7Pass ? "CONFIRMED 🟢" : s6Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -823,62 +916,6 @@ export function SmcChartOverlay({
                   </text>
                 </g>
               ))}
-
-              {/* Active SMC Confluence Zones (FVG, OB, Breaker, iFVG) from Live Scanner */}
-              {parsedActiveZones.map((z, idx) => {
-                const isInside = livePrice >= z.low && livePrice <= z.high;
-                const zoneHeight = Math.max(8, Math.abs(getY(z.low) - getY(z.high)));
-                const yTop = getY(z.high);
-                const strokeCol = z.isBullish
-                  ? isInside
-                    ? "#10b981"
-                    : "#059669"
-                  : isInside
-                  ? "#ef4444"
-                  : "#dc2626";
-                const fillCol = z.isBullish
-                  ? isInside
-                    ? "rgba(16, 185, 129, 0.22)"
-                    : "rgba(16, 185, 129, 0.08)"
-                  : isInside
-                  ? "rgba(239, 68, 68, 0.22)"
-                  : "rgba(239, 68, 68, 0.08)";
-
-                return (
-                  <g key={`parsed-zone-${idx}`}>
-                    <rect
-                      x={chartLeft}
-                      y={yTop}
-                      width={plotWidth}
-                      height={zoneHeight}
-                      fill={fillCol}
-                      stroke={strokeCol}
-                      strokeWidth={isInside ? 2 : 1.2}
-                      strokeDasharray={isInside ? "none" : "4 4"}
-                    />
-                    <rect
-                      x={chartLeft + 6 + (idx % 3) * 60}
-                      y={yTop + 2}
-                      width="155"
-                      height="18"
-                      fill={z.isBullish ? "#064e3b" : "#7f1d1d"}
-                      rx="3"
-                      stroke={strokeCol}
-                      strokeWidth="1"
-                    />
-                    <text
-                      x={chartLeft + 10 + (idx % 3) * 60}
-                      y={yTop + 14}
-                      fill="#ffffff"
-                      fontSize="9.5"
-                      fontFamily="monospace"
-                      fontWeight="800"
-                    >
-                      {z.isBullish ? "🟢" : "🔴"} {z.name} ${z.low.toFixed(2)}-${z.high.toFixed(2)}
-                    </text>
-                  </g>
-                );
-              })}
 
               {/* Step 4 & 5: Setup Post-CHoCH FVG Retest Zone */}
               {fvgBounds && fvgBounds.high > fvgBounds.low && (
