@@ -29,9 +29,7 @@ export default defineConfig({
         ]
       : []),
   ],
-  optimizeDeps: {
-    include: ["recharts", "lucide-react"],
-  },
+
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
