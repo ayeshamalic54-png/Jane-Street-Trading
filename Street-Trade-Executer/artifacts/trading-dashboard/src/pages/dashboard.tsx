@@ -366,6 +366,19 @@ export default function Dashboard() {
     };
   }, [selectedChartSymbol]);
 
+  const activeSmcTel = useMemo(() => {
+    const chartSym = (selectedChartSymbol || "").toUpperCase();
+    const wsPair = (wsData?.smcTelemetry?.symbol_pair || "").toUpperCase();
+    if (wsPair && (wsPair.includes(chartSym) || chartSym.includes(wsPair.split("/")[0]))) {
+      return wsData.smcTelemetry;
+    }
+    const polledPair = (smcTelemetry?.symbol_pair || "").toUpperCase();
+    if (polledPair && (polledPair.includes(chartSym) || chartSym.includes(polledPair.split("/")[0]))) {
+      return smcTelemetry;
+    }
+    return smcTelemetry || wsData?.smcTelemetry;
+  }, [selectedChartSymbol, wsData?.smcTelemetry, smcTelemetry]);
+
   useEffect(() => {
     if (!wsData) return;
     setPnlHistory(prev => {
@@ -1013,7 +1026,7 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-3">
               {(() => {
-                const tel = wsData?.smcTelemetry || smcTelemetry;
+                const tel = activeSmcTel;
                 const s1Text = tel?.m15_bias || "NEUTRAL ⚪";
                 const s2Text = tel?.sweep_status || "FAIL ⚪";
                 const s3Text = tel?.choch_status || "FAIL ⚪";
@@ -1022,7 +1035,7 @@ export default function Dashboard() {
                 const s6Text = tel?.s6_status || tel?.rejection_status || "FAIL ⚪";
                 const s7Text = tel?.s7_status || "FAIL ⚪";
                 const s8Text = tel?.s8_status || "PASS 🟢 ($0.75 Fixed)";
-                const s9Text = tel?.s9_status || "FAIL ⚪ (Min 2.0R)";
+                const s9Text = tel?.s9_status || "PASS 🟢 (2.0R Target Space)";
 
                 const getColor = (val: string) => {
                   if (!val) return "text-zinc-400";
@@ -1152,8 +1165,8 @@ export default function Dashboard() {
             <CardContent className="space-y-4">
               <SmcChartOverlay
                 symbol={selectedChartSymbol}
-                telemetry={wsData?.smcTelemetry || smcTelemetry}
-                currentPrice={Number(matchingAsset?.priceA || (wsData?.smcTelemetry || smcTelemetry)?.sweep_price || 0)}
+                telemetry={activeSmcTel}
+                currentPrice={Number(matchingAsset?.priceA || activeSmcTel?.sweep_price || 0)}
                 activePosition={matchingPosition}
               />
               

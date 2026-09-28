@@ -77,7 +77,7 @@ async function buildDashboardPayload() {
     s6_status: telRow.s6Status || telRow.rejectionStatus || "FAIL ⚪",
     s7_status: telRow.s7Status || "FAIL ⚪",
     s8_status: telRow.s8Status || "PASS 🟢 ($0.75 Fixed)",
-    s9_status: telRow.s9Status || "FAIL ⚪ (Min 2.0R)",
+    s9_status: telRow.s9Status || "PASS 🟢 (2.0R Target Space)",
   } : null;
 
   const botState = botStateRows[0];

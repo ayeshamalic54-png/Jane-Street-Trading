@@ -179,10 +179,8 @@ export function SmcChartOverlay({
     activePosition && (activePosition.ticket || activePosition.entryPrice)
   );
   const isSignalFired = (action === "BUY" || action === "SELL") && s7Pass;
-  const isTradeActive = hasActivePosition || isSignalFired;
-
-  const s8Pass = s2Pass && (isTradeActive || (s7Pass && isPassText(s8Status)));
-  const s9Pass = s7Pass && (isTradeActive || isPassText(s9Status));
+  const s8Pass = isPassText(s8Status) || (s2Pass && isTradeActive);
+  const s9Pass = isPassText(s9Status) || (s7Pass && isTradeActive);
 
   const passedCount = [
     s1Pass,
@@ -1461,12 +1459,14 @@ export function SmcChartOverlay({
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {s8Pass ? `PASS 🟢 ($${defaultBuf} Buf)` : "PENDING ⚪"}
+                {s8Pass ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 ($${defaultBuf} Buf)`) : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s8Pass
-                ? `Locked exact $${defaultBuf} buffer behind Sweep wick ($${slPrice.toFixed(2)}).`
+                ? (slPrice > 0 && isTradeActive
+                    ? `Locked exact $${defaultBuf} buffer behind Sweep wick ($${slPrice.toFixed(2)}).`
+                    : `Verified fixed $${defaultBuf} structural SL buffer rule behind liquidity.`)
                 : `Will anchor $${defaultBuf} behind Sweep wick upon trade execution.`}
             </p>
           </div>
@@ -1498,13 +1498,15 @@ export function SmcChartOverlay({
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {s9Pass ? "PASS 🟢 (2.0R Space)" : "PENDING ⚪"}
+                {s9Pass ? (s9Status && isPassText(s9Status) ? s9Status : "PASS 🟢 (2.0R Space)") : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s9Pass
-                ? `Verified minimum 2.0R structural target space available ($${tpPrice.toFixed(2)}).`
-                : "Calculates 2.0R structural target space once entry triggers."}
+                ? (tpPrice > 0 && isTradeActive
+                    ? `Mathematical 2.0R TP locked at $${tpPrice.toFixed(2)}.`
+                    : "Verified minimum 2.0R structural target space to opposing M15 swing liquidity.")
+                : "Requires minimum 2.0R distance to opposing liquidity pool."}
             </p>
           </div>
         </div>

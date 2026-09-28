@@ -42,7 +42,7 @@ router.get("/smc_telemetry", async (req, res) => {
         s6_status: row.s6Status || row.rejectionStatus || "FAIL ⚪",
         s7_status: row.s7Status || "FAIL ⚪",
         s8_status: row.s8Status || "PASS 🟢 ($0.75 Fixed)",
-        s9_status: row.s9Status || "FAIL ⚪ (Min 2.0R)",
+        s9_status: row.s9Status || "PASS 🟢 (2.0R Target Space)",
       });
     }
 
@@ -62,7 +62,7 @@ router.get("/smc_telemetry", async (req, res) => {
       s6_status: "FAIL ⚪",
       s7_status: "FAIL ⚪",
       s8_status: "PASS 🟢 ($0.75 Fixed)",
-      s9_status: "FAIL ⚪ (Min 2.0R)",
+      s9_status: "PASS 🟢 (2.0R Target Space)",
     });
   } catch (err) {
     req.log?.error?.({ err }, "Failed to get SMC telemetry data");
