@@ -292,11 +292,11 @@ export function SmcChartOverlay({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      const zoomStep = 0.15;
+      const zoomStep = 0.25;
       if (e.deltaY < 0) {
-        setZoomLevel((prev) => Math.min(3.0, Number((prev + zoomStep).toFixed(2))));
+        setZoomLevel((prev) => Math.min(3.5, Number((prev + zoomStep).toFixed(2))));
       } else {
-        setZoomLevel((prev) => Math.max(0.6, Number((prev - zoomStep).toFixed(2))));
+        setZoomLevel((prev) => Math.max(0.4, Number((prev - zoomStep).toFixed(2))));
       }
     };
 
@@ -312,8 +312,8 @@ export function SmcChartOverlay({
     const step = isMetals ? 0.65 : 0.0003;
     const now = Date.now();
     const count = isMobile
-      ? Math.max(14, Math.min(24, Math.round(18 / zoomLevel)))
-      : Math.max(18, Math.min(40, Math.round(28 / zoomLevel)));
+      ? Math.max(8, Math.min(36, Math.round(18 / zoomLevel)))
+      : Math.max(8, Math.min(60, Math.round(28 / zoomLevel)));
 
     // Reference SMC anchor levels
     const swP =
@@ -499,11 +499,9 @@ export function SmcChartOverlay({
     return list;
   }, [activeZones]);
 
-  // FVG Bounds (Post-CHoCH Imbalance)
-  // FVG Bounds: Strictly for the CURRENT active setup (Step 4 & 5). Never grab far-away historical zones!
+  // FVG Bounds: Resolved from bot telemetry, activeZones, or structural displacement
   const fvgBounds = useMemo(() => {
-    // Only resolve FVG when Step 4 (Post-CHoCH FVG) or Step 5 (Retest) is reached or trade is active!
-    if (!s4Pass && !s5Pass && !isTradeActive) return null;
+    // 1. Check telemetry JSON for exact FVG bounds
     try {
       const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
       if (rawJson) {
@@ -512,22 +510,39 @@ export function SmcChartOverlay({
           const list = isBullishSetup
             ? parsed.bullish_fvg || []
             : parsed.bearish_fvg || [];
-          // Pick only FVG within immediate proximity of live price (max $8 / 0.0040 away)
           for (const item of list) {
             if (Array.isArray(item) && item.length >= 2) {
               const l = Number(item[0]);
               const h = Number(item[1]);
               const avg = (l + h) / 2;
-              if (Math.abs(avg - livePrice) <= (isMetals ? 8.0 : 0.0040) && h > l) {
-                return { low: l, high: h };
+              if (Math.abs(avg - livePrice) <= (isMetals ? 15.0 : 0.0080) && h > l) {
+                return { low: l, high: h, label: "BOT DETECTED FVG" };
               }
             }
           }
         }
       }
     } catch {}
+
+    // 2. Check activeZones from bot scanner
+    if (parsedActiveZones && parsedActiveZones.length > 0) {
+      const fvgZone = parsedActiveZones.find((z) => z.type.toUpperCase().includes("FVG"));
+      if (fvgZone && fvgZone.high > fvgZone.low) {
+        return { low: fvgZone.low, high: fvgZone.high, label: fvgZone.label || "ACTIVE FVG" };
+      }
+    }
+
+    // 3. Fallback: Structural displacement FVG on the SMC Diagram
+    const swP = sweepPrice > 0 ? sweepPrice : (isBullishSetup ? livePrice - (isMetals ? 5.5 : 0.003) : livePrice + (isMetals ? 5.5 : 0.003));
+    const chP = chochPrice > 0 ? chochPrice : (isBullishSetup ? swP + (isMetals ? 3.8 : 0.002) : swP - (isMetals ? 3.8 : 0.002));
+    const low = isBullishSetup ? Number((swP + (chP - swP) * 0.35).toFixed(2)) : Number((chP + (swP - chP) * 0.35).toFixed(2));
+    const high = isBullishSetup ? Number((swP + (chP - swP) * 0.65).toFixed(2)) : Number((chP + (swP - chP) * 0.65).toFixed(2));
+    if (high > low) {
+      return { low: Math.min(low, high), high: Math.max(low, high), label: s4Pass ? "S4 POST-CHOCH FVG" : "DISPLACEMENT FVG" };
+    }
+
     return null;
-  }, [telemetry, livePrice, isMetals, isBullishSetup, s4Pass, s5Pass, isTradeActive]);
+  }, [telemetry, parsedActiveZones, livePrice, sweepPrice, chochPrice, isMetals, isBullishSetup, s4Pass]);
 
   // Institutional Swing Structure Levels (Buy-Side & Sell-Side Liquidity + CHoCH)
   const swingStructure = useMemo(() => {
@@ -572,28 +587,43 @@ export function SmcChartOverlay({
   const showTpLevel = isTradeActive || s4Pass;
   const showEntryLevel = isTradeActive || s7Pass;
 
-  // AUTO-SCALE STRICTLY TO CANDLES & ACTIVE SMC LEVELS
+  // STRICT M5 SCALPING SCALING: Scale to VISIBLE CANDLESTICKS so candles are tall, bold, and dynamic!
+  const rawCandleLows = useMemo(() => candles.map((c) => c.low), [candles]);
+  const rawCandleHighs = useMemo(() => candles.map((c) => c.high), [candles]);
+  const candleMin = Math.min(...rawCandleLows, livePrice);
+  const candleMax = Math.max(...rawCandleHighs, livePrice);
+  const candleSpan = candleMax - candleMin || 1;
+  const vertPad = Math.max(isMetals ? 0.90 : 0.0005, candleSpan * 0.16);
+
   const minPrice = useMemo(() => {
-    const lows = candles.map((c) => c.low);
-    lows.push(livePrice);
-    if (showSlLevel && effectiveSlPrice > 0 && Math.abs(effectiveSlPrice - livePrice) < 30) lows.push(effectiveSlPrice);
-    if (showEntryLevel && effectiveEntryPrice > 0) lows.push(effectiveEntryPrice);
-    if (swingStructure.swingLow > 0 && Math.abs(swingStructure.swingLow - livePrice) < 30) lows.push(swingStructure.swingLow);
-    if (fvgBounds && fvgBounds.low > 0) lows.push(fvgBounds.low);
-    const rawMin = Math.min(...lows);
-    return Number((rawMin - (isMetals ? 0.60 : 0.0003)).toFixed(2));
-  }, [candles, showSlLevel, showEntryLevel, effectiveSlPrice, effectiveEntryPrice, livePrice, swingStructure.swingLow, fvgBounds, isMetals]);
+    let min = candleMin - vertPad;
+    // Include nearby levels without allowing distant SL to squash the candles
+    if (showSlLevel && effectiveSlPrice > 0 && candleMin - effectiveSlPrice <= candleSpan * 1.2) {
+      min = Math.min(min, effectiveSlPrice - (isMetals ? 0.40 : 0.0002));
+    }
+    if (swingStructure.swingLow > 0 && candleMin - swingStructure.swingLow <= candleSpan * 1.2) {
+      min = Math.min(min, swingStructure.swingLow - (isMetals ? 0.40 : 0.0002));
+    }
+    if (fvgBounds && fvgBounds.low > 0 && candleMin - fvgBounds.low <= candleSpan * 1.2) {
+      min = Math.min(min, fvgBounds.low - (isMetals ? 0.40 : 0.0002));
+    }
+    return Number(min.toFixed(2));
+  }, [candleMin, vertPad, candleSpan, showSlLevel, effectiveSlPrice, swingStructure.swingLow, fvgBounds, isMetals]);
 
   const maxPrice = useMemo(() => {
-    const highs = candles.map((c) => c.high);
-    highs.push(livePrice);
-    if (showTpLevel && effectiveTpPrice > 0 && Math.abs(effectiveTpPrice - livePrice) < 35) highs.push(effectiveTpPrice);
-    if (showEntryLevel && effectiveEntryPrice > 0) highs.push(effectiveEntryPrice);
-    if (swingStructure.swingHigh > 0 && Math.abs(swingStructure.swingHigh - livePrice) < 30) highs.push(swingStructure.swingHigh);
-    if (fvgBounds && fvgBounds.high > 0) highs.push(fvgBounds.high);
-    const rawMax = Math.max(...highs);
-    return Number((rawMax + (isMetals ? 0.60 : 0.0003)).toFixed(2));
-  }, [candles, showTpLevel, showEntryLevel, effectiveTpPrice, effectiveEntryPrice, livePrice, swingStructure.swingHigh, fvgBounds, isMetals]);
+    let max = candleMax + vertPad;
+    // Include nearby levels without allowing distant TP to squash the candles
+    if (showTpLevel && effectiveTpPrice > 0 && effectiveTpPrice - candleMax <= candleSpan * 1.2) {
+      max = Math.max(max, effectiveTpPrice + (isMetals ? 0.40 : 0.0002));
+    }
+    if (swingStructure.swingHigh > 0 && swingStructure.swingHigh - candleMax <= candleSpan * 1.2) {
+      max = Math.max(max, swingStructure.swingHigh + (isMetals ? 0.40 : 0.0002));
+    }
+    if (fvgBounds && fvgBounds.high > 0 && fvgBounds.high - candleMax <= candleSpan * 1.2) {
+      max = Math.max(max, fvgBounds.high + (isMetals ? 0.40 : 0.0002));
+    }
+    return Number(max.toFixed(2));
+  }, [candleMax, vertPad, candleSpan, showTpLevel, effectiveTpPrice, swingStructure.swingHigh, fvgBounds, isMetals]);
 
   const priceRange = maxPrice - minPrice || 1;
 
@@ -603,8 +633,103 @@ export function SmcChartOverlay({
   };
 
   const candleSpacing = plotWidth / candles.length;
-  // Thick, bold, high-visibility TradingView-like candlesticks
-  const candleBodyWidth = Math.max(isMobile ? 8 : 12, Math.min(isMobile ? 18 : 28, candleSpacing * 0.78));
+  // Thick, bold, high-visibility TradingView-like candlesticks that enlarge when zoomed in!
+  const candleBodyWidth = Math.max(isMobile ? 10 : 14, Math.min(isMobile ? 26 : 42, candleSpacing * 0.76));
+
+  // Market Structure Zigzag Path & Fractal Swing Points
+  const marketStructure = useMemo(() => {
+    if (!candles || candles.length < 5) return { swings: [], path: "" };
+
+    const swings: Array<{
+      idx: number;
+      price: number;
+      type: "HH" | "HL" | "LH" | "LL";
+      x: number;
+      y: number;
+      label: string;
+      isHigh: boolean;
+    }> = [];
+
+    // Find fractal swing peaks & valleys
+    for (let i = 1; i < candles.length - 1; i++) {
+      const prev = candles[i - 1];
+      const curr = candles[i];
+      const next = candles[i + 1];
+
+      const cx = chartLeft + (i + 0.5) * candleSpacing;
+
+      const isFractalHigh = curr.high >= prev.high && curr.high >= next.high;
+      const isFractalLow = curr.low <= prev.low && curr.low <= next.low;
+
+      if (isFractalHigh && !isFractalLow) {
+        const lastSwing = swings[swings.length - 1];
+        if (lastSwing && lastSwing.isHigh) {
+          if (curr.high > lastSwing.price) {
+            const prevHigh = [...swings.slice(0, -1)].reverse().find((s) => s.isHigh);
+            const tag: "HH" | "LH" = prevHigh ? (curr.high >= prevHigh.price ? "HH" : "LH") : (isBullishSetup ? "HH" : "LH");
+            swings[swings.length - 1] = {
+              idx: i,
+              price: curr.high,
+              type: tag,
+              x: cx,
+              y: getY(curr.high),
+              label: tag,
+              isHigh: true,
+            };
+          }
+        } else {
+          const prevHigh = [...swings].reverse().find((s) => s.isHigh);
+          const tag: "HH" | "LH" = prevHigh ? (curr.high >= prevHigh.price ? "HH" : "LH") : (isBullishSetup ? "HH" : "LH");
+          swings.push({
+            idx: i,
+            price: curr.high,
+            type: tag,
+            x: cx,
+            y: getY(curr.high),
+            label: tag,
+            isHigh: true,
+          });
+        }
+      } else if (isFractalLow && !isFractalHigh) {
+        const lastSwing = swings[swings.length - 1];
+        if (lastSwing && !lastSwing.isHigh) {
+          if (curr.low < lastSwing.price) {
+            const prevLow = [...swings.slice(0, -1)].reverse().find((s) => !s.isHigh);
+            const tag: "HL" | "LL" = prevLow ? (curr.low <= prevLow.price ? "LL" : "HL") : (isBullishSetup ? "HL" : "LL");
+            swings[swings.length - 1] = {
+              idx: i,
+              price: curr.low,
+              type: tag,
+              x: cx,
+              y: getY(curr.low),
+              label: tag,
+              isHigh: false,
+            };
+          }
+        } else {
+          const prevLow = [...swings].reverse().find((s) => !s.isHigh);
+          const tag: "HL" | "LL" = prevLow ? (curr.low <= prevLow.price ? "LL" : "HL") : (isBullishSetup ? "HL" : "LL");
+          swings.push({
+            idx: i,
+            price: curr.low,
+            type: tag,
+            x: cx,
+            y: getY(curr.low),
+            label: tag,
+            isHigh: false,
+          });
+        }
+      }
+    }
+
+    // Polyline path connecting the structural swings
+    let path = "";
+    if (swings.length >= 2) {
+      path = swings.map((s, idx) => `${idx === 0 ? "M" : "L"} ${s.x.toFixed(1)} ${s.y.toFixed(1)}`).join(" ");
+    }
+
+    return { swings, path };
+  }, [candles, candleSpacing, chartLeft, isBullishSetup, minPrice, maxPrice, priceRange, plotHeight, chartBottom]);
 
   // Anti-Collision Right Axis Tags Algorithm
   interface RightAxisTag {
@@ -1036,8 +1161,8 @@ export function SmcChartOverlay({
               size="icon"
               variant="ghost"
               className="h-7 w-7 text-zinc-200 hover:text-white hover:bg-zinc-800 font-bold"
-              onClick={() => setZoomLevel((z) => Math.min(3.0, Number((z + 0.25).toFixed(2))))}
-              title="Zoom In"
+              onClick={() => setZoomLevel((z) => Math.min(3.5, Number((z + 0.35).toFixed(2))))}
+              title="Zoom In (Enlarge Scalping Candles)"
             >
               <ZoomIn className="w-4 h-4" />
             </Button>
@@ -1045,8 +1170,8 @@ export function SmcChartOverlay({
               size="icon"
               variant="ghost"
               className="h-7 w-7 text-zinc-200 hover:text-white hover:bg-zinc-800 font-bold"
-              onClick={() => setZoomLevel((z) => Math.max(0.6, Number((z - 0.25).toFixed(2))))}
-              title="Zoom Out"
+              onClick={() => setZoomLevel((z) => Math.max(0.4, Number((z - 0.35).toFixed(2))))}
+              title="Zoom Out (Show More Structure)"
             >
               <ZoomOut className="w-4 h-4" />
             </Button>
@@ -1288,35 +1413,36 @@ export function SmcChartOverlay({
                 </g>
               ))}
 
-              {/* Step 4 & 5: Setup Post-CHoCH FVG Retest Zone (Render ONLY when Step 4 created or trade active) */}
-              {fvgBounds && fvgBounds.high > fvgBounds.low && (s4Pass || s5Pass || isTradeActive) && (
+              {/* Step 4 & 5: Setup Post-CHoCH FVG Retest Zone — Rendered with Full High-Visibility */}
+              {fvgBounds && fvgBounds.high > fvgBounds.low && (
                 <g>
                   <rect
-                    x={chartLeft + candleSpacing * 8}
+                    x={chartLeft + candleSpacing * 3}
                     y={getY(fvgBounds.high)}
-                    width={plotWidth - candleSpacing * 8}
+                    width={plotWidth - candleSpacing * 3}
                     height={Math.max(10, Math.abs(getY(fvgBounds.low) - getY(fvgBounds.high)))}
                     fill="url(#fvgGradientZone)"
                     stroke={s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e"}
                     strokeWidth={s5Pass ? 2.5 : 1.5}
                     strokeDasharray={s5Pass ? "none" : "4 4"}
+                    opacity={s5Pass ? 1 : 0.85}
                     filter={s5Pass ? "url(#glowGreen)" : undefined}
                   />
                   <rect
-                    x={chartLeft + candleSpacing * 8 + 8}
+                    x={chartLeft + candleSpacing * 3 + 8}
                     y={getY(fvgBounds.high) + 4}
-                    width="240"
-                    height="22"
-                    fill={s5Pass ? "#064e3b" : "#134e4a"}
+                    width={isMobile ? 190 : 260}
+                    height="20"
+                    fill={s5Pass ? "#064e3b" : s4Pass ? "#134e4a" : "#0f172a"}
                     rx="4"
-                    stroke={s5Pass ? "#10b981" : "#14b8a6"}
-                    strokeWidth="1.5"
+                    stroke={s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e"}
+                    strokeWidth="1.2"
                   />
                   <text
-                    x={chartLeft + candleSpacing * 8 + 14}
-                    y={getY(fvgBounds.high) + 19}
+                    x={chartLeft + candleSpacing * 3 + 14}
+                    y={getY(fvgBounds.high) + 18}
                     fill="#ffffff"
-                    fontSize="11"
+                    fontSize={isMobile ? "9" : "10.5"}
                     fontFamily="monospace"
                     fontWeight="900"
                   >
@@ -1324,11 +1450,72 @@ export function SmcChartOverlay({
                       ? "🟢 S5 RETEST CONFIRMED"
                       : s4Pass
                       ? "⏳ S4 FVG CREATED — RETESTING"
-                      : "⏳ S4/S5 FVG RETEST ZONE"}{" "}
+                      : isBullishSetup
+                      ? "🟢 BULLISH FVG ZONE"
+                      : "🔴 BEARISH FVG ZONE"}{" "}
                     (${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})
                   </text>
                 </g>
               )}
+
+              {/* Bot-Detected Active SMC Zones (Order Blocks, Breakers, iFVG) */}
+              {parsedActiveZones.map((zone, zIdx) => {
+                if (fvgBounds && Math.abs(fvgBounds.low - zone.low) < 0.05 && Math.abs(fvgBounds.high - zone.high) < 0.05) {
+                  return null;
+                }
+                const isOB = zone.type.toUpperCase().includes("OB");
+                const isBreaker = zone.type.toUpperCase().includes("BREAKER");
+
+                const boxFill = isOB
+                  ? zone.isBullish ? "rgba(59, 130, 246, 0.16)" : "rgba(168, 85, 247, 0.16)"
+                  : isBreaker
+                  ? "rgba(245, 158, 11, 0.16)"
+                  : "rgba(6, 182, 212, 0.16)";
+
+                const boxStroke = isOB
+                  ? zone.isBullish ? "#3b82f6" : "#a855f7"
+                  : isBreaker
+                  ? "#f59e0b"
+                  : "#06b6d4";
+
+                const zTop = getY(zone.high);
+                const zHeight = Math.max(8, Math.abs(getY(zone.low) - zTop));
+
+                return (
+                  <g key={`parsed-zone-${zIdx}`}>
+                    <rect
+                      x={chartLeft + candleSpacing * 2}
+                      y={zTop}
+                      width={plotWidth - candleSpacing * 2}
+                      height={zHeight}
+                      fill={boxFill}
+                      stroke={boxStroke}
+                      strokeWidth="1.2"
+                      strokeDasharray="4 3"
+                    />
+                    <rect
+                      x={chartLeft + candleSpacing * 2 + 6}
+                      y={zTop + 3}
+                      width={isMobile ? 130 : 170}
+                      height="17"
+                      fill="#0f172a"
+                      rx="3"
+                      stroke={boxStroke}
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={chartLeft + candleSpacing * 2 + 10}
+                      y={zTop + 15}
+                      fill={boxStroke}
+                      fontSize={isMobile ? "8.5" : "9.5"}
+                      fontFamily="monospace"
+                      fontWeight="800"
+                    >
+                      {zone.label || zone.name}
+                    </text>
+                  </g>
+                );
+              })}
 
               {/* Step 2A: Swing High (Buy-Side Liquidity Level Line) */}
               {swingStructure.swingHigh > 0 && (
@@ -1415,6 +1602,18 @@ export function SmcChartOverlay({
                   strokeDasharray={isTradeActive ? "none" : "5 5"}
                   opacity={isTradeActive ? 1 : 0.85}
                   filter={isTradeActive ? "url(#glowGreen)" : undefined}
+                />
+              )}
+
+              {/* MARKET STRUCTURE ZIGZAG PATH (Order Flow Connecting Fractal Swings) */}
+              {marketStructure.path && (
+                <path
+                  d={marketStructure.path}
+                  fill="none"
+                  stroke="#818cf8"
+                  strokeWidth="2.2"
+                  strokeDasharray="5 3"
+                  opacity="0.85"
                 />
               )}
 
@@ -1541,6 +1740,56 @@ export function SmcChartOverlay({
                         {c.time}
                       </text>
                     )}
+                  </g>
+                );
+              })}
+
+              {/* MARKET STRUCTURE FRACTAL SWING LABELS (HH / HL / LH / LL) */}
+              {marketStructure.swings.map((swing, sIdx) => {
+                const isHH = swing.type === "HH";
+                const isHL = swing.type === "HL";
+
+                const badgeBg = isHH || isHL ? "#064e3b" : "#450a0a";
+                const badgeBorder = isHH || isHL ? "#10b981" : "#ef4444";
+                const badgeText = isHH || isHL ? "#34d399" : "#f87171";
+
+                const tagY = swing.isHigh
+                  ? Math.max(chartTop + 4, swing.y - 18)
+                  : Math.min(chartBottom - 18, swing.y + 7);
+
+                return (
+                  <g key={`ms-swing-${sIdx}`}>
+                    {/* Circle marker at fractal tip */}
+                    <circle
+                      cx={swing.x}
+                      cy={swing.y}
+                      r="3.5"
+                      fill={badgeBorder}
+                      stroke="#ffffff"
+                      strokeWidth="1.2"
+                    />
+                    {/* Tag badge */}
+                    <rect
+                      x={swing.x - 14}
+                      y={tagY}
+                      width="28"
+                      height="15"
+                      rx="3"
+                      fill={badgeBg}
+                      stroke={badgeBorder}
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={swing.x}
+                      y={tagY + 11}
+                      fill={badgeText}
+                      fontSize="9"
+                      fontFamily="monospace"
+                      fontWeight="900"
+                      textAnchor="middle"
+                    >
+                      {swing.type}
+                    </text>
                   </g>
                 );
               })}
