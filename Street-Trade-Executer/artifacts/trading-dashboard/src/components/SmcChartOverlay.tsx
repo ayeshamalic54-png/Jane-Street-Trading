@@ -267,15 +267,15 @@ export function SmcChartOverlay({
       : Number((effectiveEntryPrice - defaultSlDist).toFixed(2));
   }, [hasActivePosition, activePosition, sweepPrice, isBearishSetup, defaultBuf, effectiveEntryPrice, isMetals]);
 
-  // Strict TP: exact 2.0R target (Reward of $105 USD on 0.07 lots, matching user's $97-$112 range)
+  // Strict TP: baseline 1.8R target ($95-$110 USD reward on 0.07 lots, with Order Block shield)
   const effectiveTpPrice = useMemo(() => {
     if (hasActivePosition && activePosition && (Number(activePosition.tp) > 0 || Number(activePosition.tpPrice) > 0)) {
       return Number(activePosition.tp || activePosition.tpPrice);
     }
     const slDist = Math.max(isMetals ? 3.0 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
     return isBearishSetup
-      ? Number((effectiveEntryPrice - 2.0 * slDist).toFixed(2))
-      : Number((effectiveEntryPrice + 2.0 * slDist).toFixed(2));
+      ? Number((effectiveEntryPrice - 1.8 * slDist).toFixed(2))
+      : Number((effectiveEntryPrice + 1.8 * slDist).toFixed(2));
   }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isMetals]);
 
   const entryPrice = effectiveEntryPrice;
@@ -2263,7 +2263,7 @@ export function SmcChartOverlay({
                 ) : (
                   <Clock className="w-4 h-4 text-zinc-500" />
                 )}
-                S9: 2.0R Target Space
+                S9: 1.8R Target Space
               </span>
               <Badge
                 variant="outline"
@@ -2274,15 +2274,15 @@ export function SmcChartOverlay({
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {s9Pass ? (s9Status && isPassText(s9Status) ? s9Status : "PASS 🟢 (2.0R Space)") : "PENDING ⚪"}
+                {s9Pass ? (s9Status && isPassText(s9Status) ? s9Status : "PASS 🟢 (1.8R Space)") : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s9Pass
                 ? (tpPrice > 0 && isTradeActive
-                    ? `Mathematical 2.0R TP locked at $${tpPrice.toFixed(2)}.`
-                    : "Verified minimum 2.0R structural target space to opposing M15 swing liquidity.")
-                : "Requires minimum 2.0R distance to opposing liquidity pool."}
+                    ? `Mathematical 1.8R TP locked at $${tpPrice.toFixed(2)}.`
+                    : "Verified minimum 1.5R structural target space to opposing M15 swing liquidity.")
+                : "Requires minimum 1.5R distance to opposing liquidity pool."}
             </p>
           </div>
         </div>

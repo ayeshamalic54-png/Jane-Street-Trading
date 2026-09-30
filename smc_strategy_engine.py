@@ -84,15 +84,15 @@ def evaluate_smc_strategy_signal(
         sl_price = sweep_low_price - buf
         sl_dist = max(min_dist, price - sl_price)
 
-        # Condition 9: Identify next M15 structural target high above entry
+        # Condition 9: Identify next M15 structural target high above entry (Requires min 1.5R space, baseline 1.8R)
         from smc_indicators import get_swing_points
         m15_sh, _ = get_swing_points(df_m15, n_left=2, n_right=2)
         m15_targets = [p for p, _ in m15_sh if p > price]
         if not m15_targets:
-            target_high = price + 3.0 * sl_dist
-            avail_rrr = 3.0
+            target_high = price + 2.5 * sl_dist
+            avail_rrr = 2.5
         else:
-            valid_targets = [p for p in m15_targets if (p - price) / sl_dist >= 2.0]
+            valid_targets = [p for p in m15_targets if (p - price) / sl_dist >= 1.5]
             if valid_targets:
                 target_high = min(valid_targets)
                 avail_rrr = (target_high - price) / sl_dist
@@ -100,17 +100,37 @@ def evaluate_smc_strategy_signal(
                 target_high = max(m15_targets)
                 avail_rrr = (target_high - price) / sl_dist
 
-        if avail_rrr < 2.0 and not bypass_filters:
-            return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 2.0R Requirement)"
+        if avail_rrr < 1.5 and not bypass_filters:
+            return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 1.5R Requirement)"
 
-        target_rrr = 2.0  # Execute at 2.0R (Max 3.0R space requirement)
+        target_rrr = 1.8  # Baseline 1.8R Target ($95-$110 USD profit on 0.07 lot)
         tp_price = price + (target_rrr * sl_dist)
+
+        # Smart Order Block Shield: Front-run opposing Bearish OB only if profit >= 1.45R ($95+ USD)
+        try:
+            all_zones = detect_smc_zones(eval_df, min_idx=0)
+            opp_obs = all_zones.get('bearish_ob', []) + all_zones.get('bearish_breaker', [])
+            ob_buf = 0.50 if is_metals else 0.00020
+            ob_targets = []
+            for low_b, high_b in opp_obs:
+                ob_front = float(low_b) - ob_buf
+                if ob_front > price and ob_front < tp_price:
+                    ob_rrr = (ob_front - price) / sl_dist
+                    if ob_rrr >= 1.40:
+                        ob_targets.append((ob_front, ob_rrr))
+            if ob_targets:
+                best_ob_front, best_ob_rrr = min(ob_targets, key=lambda x: x[0])
+                tp_price = best_ob_front
+                target_rrr = best_ob_rrr
+                logger.info(f"🛡️ [TP SHIELD] Front-running opposing Bearish Order Block @ {tp_price:.2f} ({target_rrr:.2f}R / $95+ profit lock)")
+        except Exception:
+            pass
 
         reason = f"🟢 STRICT SMC PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) + CHoCH ({bull_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.1f}R)"
         logger.info("================================================================================")
         logger.info(f"🟢 [STRICT SMC BUY SIGNAL EXECUTED] 🚀")
         logger.info(f"🟢 Condition 8 (Structural SL): Sweep Low ({sweep_low_price:.2f}) - 0.75 = {sl_price:.2f} 🟢")
-        logger.info(f"🟢 Condition 9 (Target TP): M15 Target ({target_high:.2f}) -> Executing 2.0R TP @ {tp_price:.2f} 🟢")
+        logger.info(f"🟢 Condition 9 (Target TP): M15 Target ({target_high:.2f}) -> Executing {target_rrr:.2f}R TP @ {tp_price:.2f} 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
@@ -121,15 +141,15 @@ def evaluate_smc_strategy_signal(
         sl_price = sweep_high_price + buf
         sl_dist = max(min_dist, sl_price - price)
 
-        # Condition 9: Identify next M15 structural target low below entry
+        # Condition 9: Identify next M15 structural target low below entry (Requires min 1.5R space, baseline 1.8R)
         from smc_indicators import get_swing_points
         _, m15_sl = get_swing_points(df_m15, n_left=2, n_right=2)
         m15_targets = [p for p, _ in m15_sl if p < price]
         if not m15_targets:
-            target_low = price - 3.0 * sl_dist
-            avail_rrr = 3.0
+            target_low = price - 2.5 * sl_dist
+            avail_rrr = 2.5
         else:
-            valid_targets = [p for p in m15_targets if (price - p) / sl_dist >= 2.0]
+            valid_targets = [p for p in m15_targets if (price - p) / sl_dist >= 1.5]
             if valid_targets:
                 target_low = max(valid_targets)
                 avail_rrr = (price - target_low) / sl_dist
@@ -137,17 +157,37 @@ def evaluate_smc_strategy_signal(
                 target_low = min(m15_targets)
                 avail_rrr = (price - target_low) / sl_dist
 
-        if avail_rrr < 2.0 and not bypass_filters:
-            return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 2.0R Requirement)"
+        if avail_rrr < 1.5 and not bypass_filters:
+            return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 1.5R Requirement)"
 
-        target_rrr = 2.0  # Execute at 2.0R (Max 3.0R space requirement)
+        target_rrr = 1.8  # Baseline 1.8R Target ($95-$110 USD profit on 0.07 lot)
         tp_price = price - (target_rrr * sl_dist)
+
+        # Smart Order Block Shield: Front-run opposing Bullish OB only if profit >= 1.45R ($95+ USD)
+        try:
+            all_zones = detect_smc_zones(eval_df, min_idx=0)
+            opp_obs = all_zones.get('bullish_ob', []) + all_zones.get('bullish_breaker', [])
+            ob_buf = 0.50 if is_metals else 0.00020
+            ob_targets = []
+            for low_b, high_b in opp_obs:
+                ob_front = float(high_b) + ob_buf
+                if ob_front < price and ob_front > tp_price:
+                    ob_rrr = (price - ob_front) / sl_dist
+                    if ob_rrr >= 1.40:
+                        ob_targets.append((ob_front, ob_rrr))
+            if ob_targets:
+                best_ob_front, best_ob_rrr = max(ob_targets, key=lambda x: x[0])
+                tp_price = best_ob_front
+                target_rrr = best_ob_rrr
+                logger.info(f"🛡️ [TP SHIELD] Front-running opposing Bullish Order Block @ {tp_price:.2f} ({target_rrr:.2f}R / $95+ profit lock)")
+        except Exception:
+            pass
 
         reason = f"🔴 STRICT SMC PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) + CHoCH ({bear_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.1f}R)"
         logger.info("================================================================================")
         logger.info(f"🔴 [STRICT SMC SELL SIGNAL EXECUTED] 🚀")
         logger.info(f"🔴 Condition 8 (Structural SL): Sweep High ({sweep_high_price:.2f}) + 0.75 = {sl_price:.2f} 🔴")
-        logger.info(f"🔴 Condition 9 (Target TP): M15 Target ({target_low:.2f}) -> Executing 2.0R TP @ {tp_price:.2f} 🔴")
+        logger.info(f"🔴 Condition 9 (Target TP): M15 Target ({target_low:.2f}) -> Executing {target_rrr:.2f}R TP @ {tp_price:.2f} 🔴")
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
@@ -189,9 +229,9 @@ def evaluate_smc_strategy_signal(
             m15_sh, _ = get_swing_points(df_m15, n_left=2, n_right=2)
             m15_targets = [p for p, _ in m15_sh if p > price]
             if not m15_targets:
-                scan_rrr = 3.0
+                scan_rrr = 2.5
             else:
-                valid_targets = [p for p in m15_targets if (p - price) / sl_d_check >= 2.0]
+                valid_targets = [p for p in m15_targets if (p - price) / sl_d_check >= 1.5]
                 target_high = min(valid_targets) if valid_targets else max(m15_targets)
                 scan_rrr = (target_high - price) / sl_d_check
         elif is_m15_bearish:
@@ -200,20 +240,20 @@ def evaluate_smc_strategy_signal(
             _, m15_sl = get_swing_points(df_m15, n_left=2, n_right=2)
             m15_targets = [p for p, _ in m15_sl if p < price]
             if not m15_targets:
-                scan_rrr = 3.0
+                scan_rrr = 2.5
             else:
-                valid_targets = [p for p in m15_targets if (price - p) / sl_d_check >= 2.0]
+                valid_targets = [p for p in m15_targets if (price - p) / sl_d_check >= 1.5]
                 target_low = max(valid_targets) if valid_targets else min(m15_targets)
                 scan_rrr = (price - target_low) / sl_d_check
         else:
-            scan_rrr = 2.0
+            scan_rrr = 1.8
 
-        if scan_rrr >= 2.0:
-            step9_s = f"PASS 🟢 ({scan_rrr:.1f}R Target Space -> Executing 2.0R TP)"
+        if scan_rrr >= 1.5:
+            step9_s = f"PASS 🟢 ({scan_rrr:.1f}R Target Space -> Executing 1.8R TP)"
         else:
-            step9_s = f"FAIL 🔴 ({scan_rrr:.1f}R Target Space < 2.0R Min)"
+            step9_s = f"FAIL 🔴 ({scan_rrr:.1f}R Target Space < 1.5R Min)"
     except Exception:
-        step9_s = "PASS 🟢 (M15 Target Min 2.0R / Preferred 3.0R)"
+        step9_s = "PASS 🟢 (M15 Target Min 1.5R / Preferred 1.8R)"
 
     actual_sweep_p = sweep_low_price if has_sell_sweep else (sweep_high_price if has_buy_sweep else 0.0)
     actual_choch_p = bull_choch_lvl if has_bull_choch else (bear_choch_lvl if has_bear_choch else 0.0)
