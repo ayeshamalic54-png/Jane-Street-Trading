@@ -175,7 +175,8 @@ export default function Signals() {
     const tradesList = sig.trades ?? [];
     const executedLot = tradesList.length > 0 && tradesList[0].lots != null ? Number(tradesList[0].lots) : (sig.totalLots !== undefined && sig.totalLots > 0 ? sig.totalLots : null);
     const category = getSymbolCategory(sig.symbolA);
-    const lotStr = executedLot != null ? executedLot.toFixed(2) : ((category === "metals") ? "0.07" : "0.51");
+    const isMetals = category === "metals" || ["XAU", "XAG", "GOLD", "SILVER"].some(x => (sig.symbolA ?? "").toUpperCase().includes(x));
+    const lotStr = isMetals ? "0.07" : (executedLot != null ? executedLot.toFixed(2) : "0.51");
     const actStr = isBuy ? "MARKET BUY 🟢" : "MARKET SELL 🔴";
 
     const text = `📢 *PURE SMC / ICT 9-CONDITION SIGNAL ENGINE* 📢\n` +
@@ -243,7 +244,7 @@ export default function Signals() {
                   const totalProfitVal = sig.totalProfit;
                   const isMetals = ["XAU", "XAG", "GOLD", "SILVER"].some(x => (sig.symbolA ?? "").toUpperCase().includes(x));
                   const executedLot = tradesList.length > 0 && tradesList[0].lots != null ? Number(tradesList[0].lots) : (sig.totalLots !== undefined && sig.totalLots > 0 ? sig.totalLots : null);
-                  const displayLots = executedLot != null ? executedLot.toFixed(2) : (isMetals ? "0.07" : "0.51");
+                  const displayLots = isMetals ? "0.07" : (executedLot != null ? executedLot.toFixed(2) : "0.51");
                   return (
                     <TableRow key={sig.id} className="border-border hover:bg-muted/30">
                       <TableCell className="font-mono text-xs text-muted-foreground">

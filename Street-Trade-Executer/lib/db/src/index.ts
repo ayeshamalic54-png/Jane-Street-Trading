@@ -63,6 +63,8 @@ export const tradesTable = pgTable("trades", {
   status: varchar("status", { length: 20 }).default("OPEN"),
   comment: varchar("comment", { length: 100 }),
   signalId: integer("signal_id"),
+  sl: numeric("sl", { precision: 15, scale: 5 }),
+  tp: numeric("tp", { precision: 15, scale: 5 }),
 });
 
 export const signalsTable = pgTable("signals", {

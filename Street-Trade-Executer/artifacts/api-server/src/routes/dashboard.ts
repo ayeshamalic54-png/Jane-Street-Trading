@@ -102,9 +102,12 @@ router.get("/dashboard", async (req, res) => {
       type: t.orderType,
       lots: Number(t.lots),
       entry: Number(t.entryPrice),
+      entryPrice: Number(t.entryPrice),
       current: Number(t.closePrice ?? t.entryPrice),
       profit: Number(t.profit ?? 0),
       comment: t.comment ?? "",
+      sl: t.sl != null ? Number(t.sl) : 0,
+      tp: t.tp != null ? Number(t.tp) : 0,
     }));
 
     const recentClosedTrades = recentClosedTradesRows.map((t) => ({

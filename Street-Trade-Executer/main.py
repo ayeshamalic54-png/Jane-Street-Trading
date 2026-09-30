@@ -601,29 +601,11 @@ LEVERAGE_FACTORS = {
 
 def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Dynamic Prop Firm Lot Sizing Engine:
-    Calculates exact lot size for 0.5% Account Risk ($49.73 USD on $9,947 Account).
-    If sl_dist_price is not provided, defaults to 0.07 Lots for Metals / 0.51 Lots for Forex.
+    Fixed Institutional Prop Firm Lot Sizing Engine:
+    Strictly 0.07 Lots for Metals (XAUUSD / XAGUSD), 0.51 Lots for Forex.
     """
     sym_upper = symbol.upper()
-    try:
-        acc_info = mt5.account_info()
-        equity = acc_info.equity if (acc_info and acc_info.equity > 0) else 9947.0
-    except Exception:
-        equity = 9947.0
-
-    risk_pct = float(os.getenv("RISK_PER_TRADE_PCT", "0.5")) / 100.0
-    risk_usd = equity * risk_pct
-
-    if sl_dist_price > 0:
-        if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
-            lots = risk_usd / (sl_dist_price * 100.0)
-            return round(max(0.01, min(lots, 0.50)), 2)
-        elif category == "forex":
-            lots = risk_usd / (sl_dist_price * 100000.0)
-            return round(max(0.01, min(lots, 2.00)), 2)
-
-    if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
+    if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper or "GOLD" in sym_upper or "SILVER" in sym_upper:
         return 0.07
     return 0.51
 
@@ -922,7 +904,7 @@ def sync_mt5_open_positions_with_db():
         for p in positions:
             if p.ticket not in db_tickets:
                 dir_str = "BUY" if p.type == mt5.ORDER_TYPE_BUY else "SELL"
-                log_trade_entry(p.ticket, p.symbol, dir_str, float(p.volume), float(p.price_open), datetime.datetime.now(), "MT5_AUTO_IMPORTED")
+                log_trade_entry(p.ticket, p.symbol, dir_str, float(p.volume), float(p.price_open), datetime.datetime.now(), "MT5_AUTO_IMPORTED", sl=float(p.sl), tp=float(p.tp))
                 logger.info(f"📥 [MT5 AUTO-IMPORT] Active MT5 Ticket #{p.ticket} ({p.symbol} {dir_str} {p.volume} lots @ {p.price_open}) auto-imported to DB & Dashboard!")
 
         for ticket, symbol, lots, entry_price, order_type, entry_time in db_open_trades:
@@ -930,11 +912,11 @@ def sync_mt5_open_positions_with_db():
                 continue
 
             if ticket in active_tickets:
-                # Ticket is active in MT5 — update live floating PnL in DB for signals sidebar
+                # Ticket is active in MT5 — update live floating PnL, SL, and TP in DB for dashboard & chart
                 pos = next((p for p in positions if p.ticket == ticket), None)
                 if pos:
                     try:
-                        cur.execute("UPDATE trades SET profit = %s WHERE ticket = %s", (float(pos.profit), ticket))
+                        cur.execute("UPDATE trades SET profit = %s, sl = %s, tp = %s WHERE ticket = %s", (float(pos.profit), float(pos.sl), float(pos.tp), ticket))
                         conn.commit()
                     except Exception:
                         pass
@@ -1105,16 +1087,29 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
     except Exception as e:
         logger.error(f"Error sending Discord close notification: {e}")
 
+_DISCARD_ALERT_CACHE = {}
+
 def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_price=0.0, tp_price=0.0):
     """Sends a Discord webhook notification when a valid 9-Condition SMC signal is discarded or blocked."""
     import os
     import requests
+    import time
     
+    # Throttle: Only send each discard reason once every 30 minutes (or once per active block session)
+    clean_reason = reason.split("(")[0].strip()
+    throttle_key = f"{symbol_a}_{clean_reason}"
+    now_ts = time.time()
+    last_ts = _DISCARD_ALERT_CACHE.get(throttle_key, 0)
+    if now_ts - last_ts < 1800:
+        logger.info(f"🛡️ [DISCORD THROTTLE] Suppressed repeat discard notification for {symbol_a} ({clean_reason}) - already sent recently.")
+        return
+
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
         return
         
     try:
+        _DISCARD_ALERT_CACHE[throttle_key] = now_ts
         now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
         act_str = "BUY 🟢" if "BUY" in str(action).upper() else "SELL 🔴"
         

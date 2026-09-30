@@ -243,38 +243,36 @@ export function SmcChartOverlay({
 
   // Reliable Projected / Active Entry Price
   const effectiveEntryPrice = useMemo(() => {
-    if (hasActivePosition && activePosition.entryPrice) {
-      return Number(activePosition.entryPrice);
+    if (hasActivePosition && (activePosition.entryPrice || activePosition.entry)) {
+      return Number(activePosition.entryPrice || activePosition.entry);
     }
     return livePrice;
   }, [hasActivePosition, activePosition, livePrice]);
 
   // Strict SL: anchored to sweep with exact $0.75 buffer (or institutional baseline ~$7.50 distance / $52.50 USD risk on 0.07 lots)
   const effectiveSlPrice = useMemo(() => {
-    if (hasActivePosition && activePosition.sl) {
-      return Number(activePosition.sl);
+    if (hasActivePosition && activePosition && (Number(activePosition.sl) > 0 || Number(activePosition.slPrice) > 0)) {
+      return Number(activePosition.sl || activePosition.slPrice);
     }
     const minSweepDist = isMetals ? 3.0 : 0.0010;
-    if (sweepPrice > 0 && Math.abs(livePrice - sweepPrice) >= minSweepDist) {
+    if (sweepPrice > 0 && Math.abs(effectiveEntryPrice - sweepPrice) >= minSweepDist) {
       return isBearishSetup
         ? Number((sweepPrice + defaultBuf).toFixed(2))
         : Number((sweepPrice - defaultBuf).toFixed(2));
     }
     // Baseline institutional SMC structural risk:
-    // For Gold (0.07 lots): $7.50 distance equals exact $52.50 USD risk (matching the user's $50 target)
-    // For Forex (0.51 lots): 0.0020 (20 pips) equals exact $102 USD risk
     const defaultSlDist = isMetals ? 7.50 : 0.0020;
     return isBearishSetup
-      ? Number((livePrice + defaultSlDist).toFixed(2))
-      : Number((livePrice - defaultSlDist).toFixed(2));
-  }, [hasActivePosition, activePosition, sweepPrice, isBearishSetup, defaultBuf, livePrice, isMetals]);
+      ? Number((effectiveEntryPrice + defaultSlDist).toFixed(2))
+      : Number((effectiveEntryPrice - defaultSlDist).toFixed(2));
+  }, [hasActivePosition, activePosition, sweepPrice, isBearishSetup, defaultBuf, effectiveEntryPrice, isMetals]);
 
   // Strict TP: exact 2.0R target (Reward of $105 USD on 0.07 lots, matching user's $97-$112 range)
   const effectiveTpPrice = useMemo(() => {
-    if (hasActivePosition && activePosition.tp) {
-      return Number(activePosition.tp);
+    if (hasActivePosition && activePosition && (Number(activePosition.tp) > 0 || Number(activePosition.tpPrice) > 0)) {
+      return Number(activePosition.tp || activePosition.tpPrice);
     }
-    const slDist = Math.max(isMetals ? 6.0 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
+    const slDist = Math.max(isMetals ? 3.0 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
     return isBearishSetup
       ? Number((effectiveEntryPrice - 2.0 * slDist).toFixed(2))
       : Number((effectiveEntryPrice + 2.0 * slDist).toFixed(2));
@@ -385,12 +383,12 @@ export function SmcChartOverlay({
         closeP = isBullishSetup ? chP + step * 0.45 : chP - step * 0.45;
       } else if (k > chochIdx && k < retestIdx) {
         // Phase 5: Post-CHoCH peak / transition to pullback
-        const fvgMid = isBullishSetup ? (swP + chP) * 0.52 : (swP + chP) * 0.48;
+        const fvgMid = (swP + chP) * 0.5;
         closeP = (openP + fvgMid) * 0.5;
       } else if (k === retestIdx) {
         // Phase 6: Retest candle dipping into FVG zone
         isRetest = s5Pass;
-        const fvgMid = isBullishSetup ? (swP + chP) * 0.52 : (swP + chP) * 0.48;
+        const fvgMid = (swP + chP) * 0.5;
         closeP = isBullishSetup ? fvgMid + step * 0.15 : fvgMid - step * 0.15;
       } else if (k === rejectionIdx) {
         // Phase 7: Rejection candle pushing away from FVG in setup direction
@@ -422,7 +420,7 @@ export function SmcChartOverlay({
         lowP = Math.min(openP, livePrice) - (livePrice <= openP ? step * 0.2 : step * 0.08);
       } else if (k === rejectionIdx) {
         // Rejection candle: long wick testing into FVG
-        const fvgMid = isBullishSetup ? (swP + chP) * 0.52 : (swP + chP) * 0.48;
+        const fvgMid = (swP + chP) * 0.5;
         if (isBullishSetup) {
           lowP = Math.min(lowP, fvgMid - step * 0.3);
         } else {
@@ -1219,7 +1217,7 @@ export function SmcChartOverlay({
               <div className="flex items-center gap-2 text-[11px]">
                 <span className="text-zinc-400 font-bold">Sequence Progress:</span>
                 <span className="font-black px-2 py-0.5 rounded bg-zinc-800 text-emerald-400 border border-zinc-700">
-                  {passedCount} / 7 Steps Verified
+                  {isTradeActive ? "TRADE ACTIVE 🟢 (In Profit)" : `${Math.min(7, passedCount)} / 7 Steps Verified`}
                 </span>
               </div>
             </div>
@@ -1416,45 +1414,55 @@ export function SmcChartOverlay({
               {/* Step 4 & 5: Setup Post-CHoCH FVG Retest Zone — Rendered with Full High-Visibility */}
               {fvgBounds && fvgBounds.high > fvgBounds.low && (
                 <g>
-                  <rect
-                    x={chartLeft + candleSpacing * 3}
-                    y={getY(fvgBounds.high)}
-                    width={plotWidth - candleSpacing * 3}
-                    height={Math.max(10, Math.abs(getY(fvgBounds.low) - getY(fvgBounds.high)))}
-                    fill="url(#fvgGradientZone)"
-                    stroke={s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e"}
-                    strokeWidth={s5Pass ? 2.5 : 1.5}
-                    strokeDasharray={s5Pass ? "none" : "4 4"}
-                    opacity={s5Pass ? 1 : 0.85}
-                    filter={s5Pass ? "url(#glowGreen)" : undefined}
-                  />
-                  <rect
-                    x={chartLeft + candleSpacing * 3 + 8}
-                    y={getY(fvgBounds.high) + 4}
-                    width={isMobile ? 190 : 260}
-                    height="20"
-                    fill={s5Pass ? "#064e3b" : s4Pass ? "#134e4a" : "#0f172a"}
-                    rx="4"
-                    stroke={s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e"}
-                    strokeWidth="1.2"
-                  />
-                  <text
-                    x={chartLeft + candleSpacing * 3 + 14}
-                    y={getY(fvgBounds.high) + 18}
-                    fill="#ffffff"
-                    fontSize={isMobile ? "9" : "10.5"}
-                    fontFamily="monospace"
-                    fontWeight="900"
-                  >
-                    {s5Pass
-                      ? "🟢 S5 RETEST CONFIRMED"
-                      : s4Pass
-                      ? "⏳ S4 FVG CREATED — RETESTING"
-                      : isBullishSetup
-                      ? "🟢 BULLISH FVG ZONE"
-                      : "🔴 BEARISH FVG ZONE"}{" "}
-                    (${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})
-                  </text>
+                  {(() => {
+                    const topY = getY(fvgBounds.high);
+                    const botY = getY(fvgBounds.low);
+                    const zH = Math.max(12, Math.abs(botY - topY));
+                    const badgeY = Math.min(chartBottom - 26, Math.max(chartTop + 4, topY + 3));
+                    return (
+                      <>
+                        <rect
+                          x={chartLeft + candleSpacing * 3}
+                          y={topY}
+                          width={plotWidth - candleSpacing * 3}
+                          height={zH}
+                          fill="url(#fvgGradientZone)"
+                          stroke={s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e"}
+                          strokeWidth={s5Pass ? 2.5 : 1.5}
+                          strokeDasharray={s5Pass ? "none" : "4 4"}
+                          opacity={s5Pass ? 1 : 0.85}
+                          filter={s5Pass ? "url(#glowGreen)" : undefined}
+                        />
+                        <rect
+                          x={chartLeft + candleSpacing * 3 + 8}
+                          y={badgeY}
+                          width={isMobile ? 190 : 260}
+                          height="20"
+                          fill={s5Pass ? "#064e3b" : s4Pass ? "#134e4a" : "#0f172a"}
+                          rx="4"
+                          stroke={s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e"}
+                          strokeWidth="1.2"
+                        />
+                        <text
+                          x={chartLeft + candleSpacing * 3 + 14}
+                          y={badgeY + 14}
+                          fill="#ffffff"
+                          fontSize={isMobile ? "9" : "10.5"}
+                          fontFamily="monospace"
+                          fontWeight="900"
+                        >
+                          {s5Pass
+                            ? "🟢 S5 RETEST CONFIRMED"
+                            : s4Pass
+                            ? "⏳ S4 FVG CREATED — RETESTING"
+                            : isBullishSetup
+                            ? "🟢 BULLISH FVG ZONE"
+                            : "🔴 BEARISH FVG ZONE"}{" "}
+                          (${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})
+                        </text>
+                      </>
+                    );
+                  })()}
                 </g>
               )}
 
