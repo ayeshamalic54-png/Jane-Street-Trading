@@ -547,6 +547,9 @@ def log_fvg_zones(symbol, zones_dict):
     zones_dict: output of detect_smc_zones() — dict of zone_type -> [(low, high), ...]
     Called every 10 loops (~20s) when SMC scan updates.
     """
+    if not symbol or "USDT" in str(symbol).upper():
+        return
+
     zone_type_map = {
         'bullish_ob':      'bullish_ob',
         'bearish_ob':      'bearish_ob',
@@ -592,6 +595,9 @@ def purge_disabled_category_zones(forex_enabled=True, metals_enabled=True, indic
     try:
         conn = get_connection()
         cur = conn.cursor()
+
+        # Always purge any crypto USDT from Forex/Metals fvg_zones
+        cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%USDT%'")
 
         if not forex_enabled:
             cur.execute("""

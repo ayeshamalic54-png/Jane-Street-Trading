@@ -475,7 +475,7 @@ export function SmcChartOverlay({
       label: string;
     }> = [];
     for (const z of activeZones) {
-      if (!z.range) continue;
+      if (!z.range || (z.label && z.label.toUpperCase().includes("USDT")) || (z.type && z.type.toUpperCase().includes("USDT"))) continue;
       const parts = z.range.split(/[\u2013\-]/);
       if (parts.length >= 2) {
         const low = parseFloat(parts[0].trim());

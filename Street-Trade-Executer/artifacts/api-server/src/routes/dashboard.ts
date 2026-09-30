@@ -130,7 +130,8 @@ router.get("/dashboard", async (req, res) => {
     const stocksOn = botState?.stocksEnabled ?? true;
 
     const isSymbolEnabled = (sym: string) => {
-      const s = sym.toUpperCase();
+      const s = (sym || "").toUpperCase();
+      if (s.includes("USDT")) return false; // Strictly exclude crypto USDT from this Metals/Forex dashboard
       if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
       if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
       if (s.includes("US30") || s.includes("NAS100") || s.includes("US500") || s.includes("GER30") || s.includes("UK100") || s.includes("USTEC")) return indicesOn;

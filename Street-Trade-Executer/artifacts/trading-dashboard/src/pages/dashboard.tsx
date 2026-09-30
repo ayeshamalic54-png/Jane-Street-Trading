@@ -477,9 +477,13 @@ export default function Dashboard() {
   const hasActivePosition = matchingPosition != null;
   const activePositionType = matchingPosition?.type ?? "BUY";
 
-  const selectedAssetZones = dashboard.activeZones?.filter(
-    (z: any) => z.label.includes(selectedChartSymbol)
-  ) ?? [];
+  const selectedAssetZones = dashboard.activeZones?.filter((z: any) => {
+    if (!z || !z.label) return false;
+    if (z.label.toUpperCase().includes("USDT") || (z.type && z.type.toUpperCase().includes("USDT"))) return false;
+    const labelUpper = z.label.toUpperCase();
+    const chartUpper = selectedChartSymbol.toUpperCase();
+    return labelUpper.includes(`· ${chartUpper}`) || labelUpper.includes(` ${chartUpper} `) || labelUpper.endsWith(chartUpper);
+  }) ?? [];
 
   const getStatusColor = (status: string) => {
     if (status.startsWith("RUNNING")) return "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]";

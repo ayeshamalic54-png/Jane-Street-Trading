@@ -547,6 +547,9 @@ def log_fvg_zones(symbol, zones_dict):
     zones_dict: output of detect_smc_zones() — dict of zone_type -> [(low, high), ...]
     Called every 10 loops (~20s) when SMC scan updates.
     """
+    if not symbol or "USDT" in str(symbol).upper():
+        return
+
     zone_type_map = {
         'bullish_ob':      'bullish_ob',
         'bearish_ob':      'bearish_ob',
@@ -592,6 +595,9 @@ def purge_disabled_category_zones(forex_enabled=True, metals_enabled=True, indic
     try:
         conn = get_connection()
         cur = conn.cursor()
+
+        # Always purge any crypto USDT from Forex/Metals fvg_zones
+        cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%USDT%'")
 
         if not forex_enabled:
             cur.execute("""
@@ -690,18 +696,20 @@ def send_discord_message(content):
         print(f"Error sending general Discord notification: {e}")
         return False
 
-def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, comment="", signal_id=None):
+def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, comment="", signal_id=None, sl=0.0, tp=0.0):
     """Logs the entry of a trade."""
     query = """
-        INSERT INTO trades (ticket, symbol, order_type, lots, entry_price, entry_time, status, comment, signal_id)
-        VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', %s, %s)
+        INSERT INTO trades (ticket, symbol, order_type, lots, entry_price, entry_time, status, comment, signal_id, sl, tp)
+        VALUES (%s, %s, %s, %s, %s, %s, 'OPEN', %s, %s, %s, %s)
         ON CONFLICT (ticket) DO UPDATE 
         SET status = 'OPEN',
             lots = EXCLUDED.lots,
             entry_price = EXCLUDED.entry_price,
             entry_time = EXCLUDED.entry_time,
             comment = EXCLUDED.comment,
-            signal_id = COALESCE(EXCLUDED.signal_id, trades.signal_id)
+            signal_id = COALESCE(EXCLUDED.signal_id, trades.signal_id),
+            sl = COALESCE(NULLIF(EXCLUDED.sl, 0), trades.sl),
+            tp = COALESCE(NULLIF(EXCLUDED.tp, 0), trades.tp)
     """
 
     conn = None
@@ -711,7 +719,9 @@ def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, c
         cur.execute(query, (
             int(ticket), symbol, order_type,
             float(lots), float(entry_price), entry_time, comment,
-            int(signal_id) if signal_id is not None else None
+            int(signal_id) if signal_id is not None else None,
+            float(sl) if sl else None,
+            float(tp) if tp else None
         ))
         conn.commit()
         cur.close()
