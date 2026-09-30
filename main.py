@@ -1581,27 +1581,22 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 except Exception as ex_dd:
                     logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
 
-            # ── Breakeven Risk-Free Protection Guard (Shift SL to Breakeven +$5.00 Profit Lock at +$65.00 USD) ──
+            # ── Breakeven Risk-Free Protection Guard (Shift SL to Breakeven Entry Price at +$35.00 USD) ──
             if has_positions:
                 if floating_profit > peak_floating_profit:
                     peak_floating_profit = floating_profit
 
                 import risk_safeguards
                 is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', True)
-                be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 65.0)
+                be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 35.0)
 
                 should_close_trail = False
                 trail_close_reason = ""
 
-                if is_be_enabled and peak_floating_profit >= be_trigger_usd and (int(time.time()) % 20 == 0):
-                    logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVE 🟢] Peak PnL: +${peak_floating_profit:.2f} USD >= +${be_trigger_usd:.2f} USD. SL shifted to Breakeven (+ $5.00 USD profit lock). Trade running to Full TP (+ $91.00 USD)!")
+                if is_be_enabled and (floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd) and (int(time.time()) % 20 == 0):
+                    logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVE 🟢] Profit: +${floating_profit:.2f} (Peak +${peak_floating_profit:.2f}) >= +${be_trigger_usd:.2f} USD. SL shifted to Entry Price (Breakeven). Trade running to Target!")
 
                 from execution_bot import modify_position_sl
-                pip_unit = 0.01 if "JPY" in sym_a.upper() else 0.0001
-                if any(x in sym_a.upper() for x in ["XAU", "XAG"]):
-                    pip_unit = 0.10
-                elif any(x in sym_a.upper() for x in ["US30", "NAS100", "US500"]):
-                    pip_unit = 1.0
 
                 for t_a in open_leg_a_trades:
                     entry_p = t_a.get("entry_price")
@@ -1615,19 +1610,17 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                         curr_sl = pos_info[0].sl
 
                         if pos_type == "BUY":
-                            pips_profit = (curr_p - entry_p) / pip_unit
-                            if is_be_enabled and (peak_floating_profit >= be_trigger_usd or pips_profit >= 9.0):
-                                target_sl = entry_p + (7.1 * pip_unit)
-                                if curr_sl < target_sl:
+                            if is_be_enabled and (floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd):
+                                target_sl = float(entry_p)
+                                if curr_sl < target_sl - 0.01 or curr_sl == 0.0:
                                     modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Breakeven profit lock ({target_sl:.5f})!")
+                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Entry Price ({target_sl:.5f})!")
                         elif pos_type == "SELL":
-                            pips_profit = (entry_p - curr_p) / pip_unit
-                            if is_be_enabled and (peak_floating_profit >= be_trigger_usd or pips_profit >= 9.0):
-                                target_sl = entry_p - (7.1 * pip_unit)
-                                if curr_sl == 0.0 or curr_sl > target_sl:
+                            if is_be_enabled and (floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd):
+                                target_sl = float(entry_p)
+                                if curr_sl > target_sl + 0.01 or curr_sl == 0.0:
                                     modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Breakeven profit lock ({target_sl:.5f})!")
+                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Entry Price ({target_sl:.5f})!")
 
 
 
@@ -2398,6 +2391,8 @@ def main():
                     floating_profit += sum(p.profit for p in active_js_positions)
                     if len(active_js_positions) > 0:
                         has_positions = True
+                        if floating_profit > peak_floating_profit:
+                            peak_floating_profit = floating_profit
                     else:
                         peak_floating_profit = 0.0
                 else:
@@ -3129,42 +3124,44 @@ def main():
                                 logger.info("================================================================================")
                     invalidate_trades_cache()
 
-            # Three-Step Sequential Exit Pipeline
-            best_cat_a_check = get_symbol_category(S_A)
-            if best_cat_a_check != "crypto" and len(active_js_positions) > 0:
-                leg_a_parts = [p for p in active_js_positions if p.symbol == S_A_resolved]
-                if leg_a_parts:
-                    try:
-                        # Step 1: Move SL of ALL 3 Leg A parts to Entry Price ONLY when PnL >= +$56.00 USD (0.56% Equity Gain)
-                        acc_check = mt5.account_info()
-                        eq_base = acc_check.equity if acc_check else 10000.0
-                        be_target_pnl = max(56.0, eq_base * 0.0056)
+            # ── BREAKEVEN RISK-FREE PROTECTION GUARD (+ $35.00 USD TRIGGER) ──
+            # Only activates when trade profit reaches >= +$35.00 USD.
+            # Shifts Stop Loss directly to Entry Price (price_open) so trade is 100% risk-free.
+            # If price reverses, trade exits at entry price (0 loss, capital safe).
+            if len(active_js_positions) > 0:
+                try:
+                    import risk_safeguards
+                    is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', True)
+                    be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 35.0)
 
-                        pnl_at_target = floating_profit >= be_target_pnl
+                    for p in active_js_positions:
+                        pos_cat = get_symbol_category(p.symbol)
+                        if pos_cat == "crypto":
+                            continue
 
-                        if pnl_at_target:
-                            trig_reason = f"PnL ${floating_profit:.2f} >= ${be_target_pnl:.2f} (0.56% Equity Gain)"
+                        pos_profit = float(p.profit)
+                        # Breakeven triggers when this position's profit or total basket reaches >= $35 USD
+                        if is_be_enabled and (pos_profit >= be_trigger_usd or floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd):
+                            entry_price = float(p.price_open)
+                            curr_sl = float(getattr(p, 'sl', 0.0))
+                            pos_type = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
 
-                            for p in leg_a_parts:
-                                if getattr(p, 'sl', 0.0) != leg_a_parts[0].price_open:
-                                    modify_position_sl(p.ticket, S_A_resolved, leg_a_parts[0].price_open)
-                                    logger.info(f"🛡️ [STEP 1 BREAKEVEN ACTIVATED] Triggered by {trig_reason}! Moved SL for ticket #{p.ticket} ({S_A_resolved}) to Entry Price ${leg_a_parts[0].price_open:.5f} (All 3 Parts Open)")
+                            should_modify = False
+                            if pos_type == "BUY":
+                                # For BUY: move SL up to entry price if it's below entry price
+                                if curr_sl < entry_price - 0.01 or curr_sl == 0.0:
+                                    should_modify = True
+                            elif pos_type == "SELL":
+                                # For SELL: move SL down to entry price if it's above entry price
+                                if curr_sl > entry_price + 0.01 or curr_sl == 0.0:
+                                    should_modify = True
 
-
-
-
-
-
-
-                        
-                        # Step 2: Mean Reversion auto-close at Z=0.00 is DISABLED (Trades run to SL/TP)
-                        pass
-                    except Exception as ex_sl:
-                        logger.error(f"Error evaluating 3-step exit pipeline: {ex_sl}")
-
-
-
-
+                            if should_modify:
+                                trig_reason = f"Profit ${pos_profit:.2f} (Peak ${peak_floating_profit:.2f}) >= ${be_trigger_usd:.2f} USD"
+                                modify_position_sl(p.ticket, p.symbol, entry_price)
+                                logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVATED 🟢] Triggered by {trig_reason}! Shifted SL for ticket #{p.ticket} ({p.symbol}) to Entry Price ${entry_price:.5f} (Risk-Free Mode Active) 🛡️")
+                except Exception as ex_sl:
+                    logger.error(f"Error evaluating breakeven guard: {ex_sl}")
 
             # Update dashboard status
             if is_news_halted or should_close_news:
@@ -3172,14 +3169,10 @@ def main():
                 status_str = f"HALTED (News: {msg})"
             elif low_correlation_warning:
                 status_str = "RUNNING (Warning: Low Correlation)"
-            elif has_positions and (peak_floating_profit >= 185.0 or floating_profit >= 185.0):
-                status_str = f"RUNNING (Trail Active Tier 4: Peak ${peak_floating_profit:.2f} | Floor $155.00)"
-            elif has_positions and (peak_floating_profit >= 142.0 or floating_profit >= 142.0):
-                status_str = f"RUNNING (Trail Active Tier 3: Peak ${peak_floating_profit:.2f} | Floor $120.00)"
-            elif has_positions and (peak_floating_profit >= 99.0 or floating_profit >= 99.0):
-                status_str = f"RUNNING (Trail Active Tier 2: Peak ${peak_floating_profit:.2f} | Floor $80.00)"
-            elif has_positions and (peak_floating_profit >= 67.0 or floating_profit >= 67.0):
-                status_str = f"RUNNING (Trail Active Tier 1: Peak ${peak_floating_profit:.2f} | Floor $53.00)"
+            elif has_positions and (peak_floating_profit >= 35.0 or floating_profit >= 35.0):
+                status_str = f"RUNNING (Breakeven Active 🛡️ | SL @ Entry | Profit ${floating_profit:.2f})"
+            elif has_positions:
+                status_str = f"RUNNING (In Trade | PnL ${floating_profit:.2f} | Target 1:1.85)"
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"
             

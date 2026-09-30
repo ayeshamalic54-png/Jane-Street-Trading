@@ -791,7 +791,9 @@ export function SmcChartOverlay({
         textColor: "#ffffff",
         fontSize: isMobile ? "9.5" : "10.5",
         label: isTradeActive
-          ? `🔴 SL $${effectiveSlPrice.toFixed(2)}`
+          ? Math.abs(effectiveSlPrice - effectiveEntryPrice) < 0.20
+            ? `🛡️ BREAKEVEN $${effectiveSlPrice.toFixed(2)}`
+            : `🔴 SL $${effectiveSlPrice.toFixed(2)}`
           : `🔒 SL (0.75) $${effectiveSlPrice.toFixed(2)}`,
         priority: 85,
       });
@@ -1041,7 +1043,9 @@ export function SmcChartOverlay({
             </div>
             <p className="text-xs text-zinc-300 mt-0.5">
               {isTradeActive
-                ? `Running ${tradeDirection} on ${symbol} | Lot: ${isMetals ? "0.07" : "0.51"} | SL: $${slPrice.toFixed(2)} ($${defaultBuf} Buf) | TP: $${tpPrice.toFixed(2)} (1:1.85 Target) ${
+                ? `Running ${tradeDirection} on ${symbol} | Lot: ${isMetals ? "0.07" : "0.51"} | SL: $${slPrice.toFixed(2)} ${
+                    Math.abs(slPrice - entryPrice) < 0.20 ? "(Breakeven 🛡️)" : `($${defaultBuf} Buf)`
+                  } | TP: $${tpPrice.toFixed(2)} (1:1.85 Target) ${
                     hasActivePosition && activePosition.profit !== undefined
                       ? `| Float P&L: $${Number(activePosition.profit).toFixed(2)}`
                       : ""
@@ -1094,7 +1098,9 @@ export function SmcChartOverlay({
                 : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
               {isTradeActive
-                ? `🔴 ACTIVE SL: $${slPrice.toFixed(2)} (${isMetals ? "~$52 Risk" : ""})`
+                ? Math.abs(slPrice - entryPrice) < 0.20
+                  ? `🛡️ BREAKEVEN SL: $${slPrice.toFixed(2)} (Risk-Free)`
+                  : `🔴 ACTIVE SL: $${slPrice.toFixed(2)} (${isMetals ? "~$52 Risk" : ""})`
                 : s2Pass
                 ? `🔒 SL (0.75 Buf): $${slPrice.toFixed(2)} (${isMetals ? "~$52 Risk" : ""})`
                 : "⏳ SL: Locks at Sweep (Step 2)"}
