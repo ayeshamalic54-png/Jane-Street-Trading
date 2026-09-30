@@ -729,6 +729,298 @@ export function SmcChartOverlay({
     return { swings, path };
   }, [candles, candleSpacing, chartLeft, isBullishSetup, minPrice, maxPrice, priceRange, plotHeight, chartBottom]);
 
+  // Key milestone candle indices across the SMC sequence
+  const candleMilestones = useMemo(() => {
+    const count = candles.length;
+    const defaultSweep = Math.max(2, Math.floor(count * 0.35));
+    const defaultChoch = Math.max(defaultSweep + 2, Math.floor(count * 0.55));
+    const defaultRetest = Math.max(defaultChoch + 2, Math.floor(count * 0.72));
+    const defaultRejection = Math.max(defaultRetest + 1, Math.min(count - 2, Math.floor(count * 0.86)));
+
+    const sIdx = candles.findIndex((c) => c.isSweep);
+    const cIdx = candles.findIndex((c) => c.isChoch);
+    const rIdx = candles.findIndex((c) => c.isRetest);
+    const jIdx = candles.findIndex((c) => c.isRejection);
+
+    const sweep = sIdx >= 0 ? sIdx : defaultSweep;
+    const choch = cIdx >= 0 ? cIdx : defaultChoch;
+    const retest = rIdx >= 0 ? rIdx : defaultRetest;
+    const rejection = jIdx >= 0 ? jIdx : defaultRejection;
+    const entry = isTradeActive || s7Pass ? rejection : (s5Pass ? retest : choch);
+
+    return { sweep, choch, retest, rejection, entry };
+  }, [candles, isTradeActive, s7Pass, s5Pass]);
+
+  interface RenderedZone {
+    id: string;
+    type: "FVG" | "OB" | "BREAKER" | "IFVG" | "OTHER";
+    name: string;
+    low: number;
+    high: number;
+    originIdx: number;
+    originX: number;
+    originAnchorY: number;
+    originLabel: string;
+    topY: number;
+    botY: number;
+    boxHeight: number;
+    boxWidth: number;
+    badgeX: number;
+    badgeY: number;
+    badgeWidth: number;
+    badgeHeight: number;
+    badgeBg: string;
+    badgeStroke: string;
+    badgeTextColor: string;
+    boxFill: string;
+    boxStroke: string;
+    strokeDash: string;
+    strokeWidth: number;
+    glowFilter?: string;
+    badgeTitle: string;
+    badgeSub: string;
+    isPrimaryFvg: boolean;
+  }
+
+  // Institutional SMC Zones with Precise Origin Candlestick Anchoring & Collision Prevention
+  const renderedSmcZones = useMemo<RenderedZone[]>(() => {
+    if (!candles || candles.length === 0) return [];
+    const list: RenderedZone[] = [];
+    const candleCount = candles.length;
+
+    // Helper: find originating candle for a zone
+    const findOrigin = (zLow: number, zHigh: number, type: string) => {
+      const uType = type.toUpperCase();
+      let bestIdx = -1;
+
+      // 1. Structural window search based on SMC type
+      if (uType.includes("BREAKER")) {
+        // Breaker was an old swing high/low broken during displacement (between sweep and choch)
+        for (let k = Math.max(0, candleMilestones.sweep - 2); k <= Math.min(candleCount - 1, candleMilestones.choch); k++) {
+          const c = candles[k];
+          if (c && c.high >= zLow && c.low <= zHigh) return k;
+        }
+        bestIdx = Math.max(1, candleMilestones.sweep - 1);
+      } else if (uType.includes("OB")) {
+        // Order Block is the last opposing bar before sweep/displacement
+        for (let k = Math.max(0, candleMilestones.sweep - 2); k <= candleMilestones.sweep; k++) {
+          const c = candles[k];
+          if (c && c.high >= zLow && c.low <= zHigh) return k;
+        }
+        bestIdx = Math.max(0, candleMilestones.sweep - 1);
+      } else if (uType.includes("IFVG")) {
+        // Inversion FVG created near sweep/choch
+        for (let k = candleMilestones.sweep; k <= candleMilestones.choch; k++) {
+          const c = candles[k];
+          if (c && c.high >= zLow && c.low <= zHigh) return k;
+        }
+        bestIdx = Math.min(candleCount - 2, candleMilestones.sweep + 1);
+      } else {
+        // Standard FVG displacement around CHoCH
+        for (let k = Math.max(0, candleMilestones.choch - 1); k <= Math.min(candleCount - 2, candleMilestones.choch + 1); k++) {
+          const c = candles[k];
+          if (c && c.high >= zLow && c.low <= zHigh) return k;
+        }
+        bestIdx = Math.min(candleCount - 2, candleMilestones.choch);
+      }
+
+      // 2. Global candle overlap scan if specific window didn't intersect
+      for (let k = 0; k < candleCount - 1; k++) {
+        const c = candles[k];
+        if (c.high >= zLow && c.low <= zHigh) {
+          return k;
+        }
+      }
+
+      return Math.max(0, Math.min(candleCount - 2, bestIdx));
+    };
+
+    // 1. Primary Setup Post-CHoCH FVG (fvgBounds)
+    if (fvgBounds && fvgBounds.high > fvgBounds.low) {
+      const originIdx = findOrigin(fvgBounds.low, fvgBounds.high, "FVG");
+      const originX = chartLeft + (originIdx + 0.5) * candleSpacing;
+      const topY = getY(fvgBounds.high);
+      const botY = getY(fvgBounds.low);
+      const boxHeight = Math.max(12, Math.abs(botY - topY));
+      const boxWidth = Math.max(candleSpacing * 2.5, chartRight - originX);
+      const originCandle = candles[originIdx];
+      const candleCenterY = originCandle ? getY((originCandle.open + originCandle.close) / 2) : topY + boxHeight / 2;
+
+      const fvgTitle = s5Pass
+        ? "🟢 S5 RETEST CONFIRMED"
+        : s4Pass
+        ? "⏳ S4 FVG CREATED — RETESTING"
+        : isBullishSetup
+        ? "🟢 BULLISH FVG ZONE"
+        : "🔴 BEARISH FVG ZONE";
+
+      list.push({
+        id: "fvg-primary",
+        type: "FVG",
+        name: "S4/S5 Post-CHoCH FVG",
+        low: fvgBounds.low,
+        high: fvgBounds.high,
+        originIdx,
+        originX,
+        originAnchorY: candleCenterY,
+        originLabel: `⚓ C#${originIdx + 1} FVG ORIGIN`,
+        topY,
+        botY,
+        boxHeight,
+        boxWidth,
+        badgeX: originX + 8,
+        badgeY: Math.min(chartBottom - 26, Math.max(chartTop + 4, topY + 3)),
+        badgeWidth: isMobile ? 185 : 255,
+        badgeHeight: 20,
+        badgeBg: s5Pass ? "#064e3b" : s4Pass ? "#134e4a" : "#0f172a",
+        badgeStroke: s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e",
+        badgeTextColor: "#ffffff",
+        boxFill: "url(#fvgGradientZone)",
+        boxStroke: s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e",
+        strokeDash: s5Pass ? "none" : "4 4",
+        strokeWidth: s5Pass ? 2.5 : 1.5,
+        glowFilter: s5Pass ? "url(#glowGreen)" : undefined,
+        badgeTitle: fvgTitle,
+        badgeSub: `(${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})`,
+        isPrimaryFvg: true,
+      });
+    }
+
+    // 2. Active Zones (Order Blocks, Breakers, iFVG)
+    parsedActiveZones.forEach((z, idx) => {
+      // Exclude if identical to fvgBounds
+      if (fvgBounds && Math.abs(fvgBounds.low - z.low) < 0.05 && Math.abs(fvgBounds.high - z.high) < 0.05) {
+        return;
+      }
+
+      const isOB = z.type.toUpperCase().includes("OB");
+      const isBreaker = z.type.toUpperCase().includes("BREAKER");
+      const isIFVG = z.type.toUpperCase().includes("IFVG") || z.name.toUpperCase().includes("IFVG");
+
+      const zoneType: "FVG" | "OB" | "BREAKER" | "IFVG" | "OTHER" = isOB
+        ? "OB"
+        : isBreaker
+        ? "BREAKER"
+        : isIFVG
+        ? "IFVG"
+        : "FVG";
+
+      const originIdx = findOrigin(z.low, z.high, z.type);
+      const originX = chartLeft + (originIdx + 0.5) * candleSpacing;
+      const topY = getY(z.high);
+      const botY = getY(z.low);
+      const boxHeight = Math.max(9, Math.abs(botY - topY));
+      const boxWidth = Math.max(candleSpacing * 2.5, chartRight - originX);
+      const originCandle = candles[originIdx];
+      const candleCenterY = originCandle ? getY((originCandle.open + originCandle.close) / 2) : topY + boxHeight / 2;
+
+      let boxFill = "rgba(6, 182, 212, 0.16)";
+      let boxStroke = "#06b6d4";
+      let badgeBg = "#083344";
+      let badgeStroke = "#06b6d4";
+      let strokeDash = "4 3";
+      let strokeWidth = 1.3;
+
+      if (isOB) {
+        boxFill = z.isBullish ? "rgba(59, 130, 246, 0.16)" : "rgba(168, 85, 247, 0.16)";
+        boxStroke = z.isBullish ? "#3b82f6" : "#a855f7";
+        badgeBg = z.isBullish ? "#172554" : "#3b0764";
+        badgeStroke = boxStroke;
+        strokeDash = "none";
+        strokeWidth = 1.5;
+      } else if (isBreaker) {
+        boxFill = "rgba(245, 158, 11, 0.16)";
+        boxStroke = "#f59e0b";
+        badgeBg = "#451a03";
+        badgeStroke = "#f59e0b";
+        strokeDash = "5 3";
+        strokeWidth = 1.5;
+      } else if (isIFVG) {
+        boxFill = "rgba(6, 182, 212, 0.16)";
+        boxStroke = "#06b6d4";
+        badgeBg = "#083344";
+        badgeStroke = "#06b6d4";
+        strokeDash = "3 3";
+      }
+
+      const shortName = isOB ? "OB" : isBreaker ? "BREAKER" : isIFVG ? "iFVG" : "ZONE";
+
+      list.push({
+        id: `parsed-zone-${idx}`,
+        type: zoneType,
+        name: z.label || z.name,
+        low: z.low,
+        high: z.high,
+        originIdx,
+        originX,
+        originAnchorY: candleCenterY,
+        originLabel: `⚓ C#${originIdx + 1} ${shortName}`,
+        topY,
+        botY,
+        boxHeight,
+        boxWidth,
+        badgeX: originX + 6,
+        badgeY: Math.min(chartBottom - 26, Math.max(chartTop + 4, topY + 3)),
+        badgeWidth: isMobile ? 140 : 180,
+        badgeHeight: 18,
+        badgeBg,
+        badgeStroke,
+        badgeTextColor: boxStroke,
+        boxFill,
+        boxStroke,
+        strokeDash,
+        strokeWidth,
+        badgeTitle: z.label || z.name,
+        badgeSub: `(${z.low.toFixed(2)} - ${z.high.toFixed(2)})`,
+        isPrimaryFvg: false,
+      });
+    });
+
+    // 3. Dynamic Anti-Collision Pass for Zone Badges
+    for (let i = 0; i < list.length; i++) {
+      for (let j = 0; j < i; j++) {
+        const prev = list[j];
+        const curr = list[i];
+
+        const xDist = Math.abs(curr.badgeX - prev.badgeX);
+        const yDist = Math.abs(curr.badgeY - prev.badgeY);
+
+        if (xDist < prev.badgeWidth + 12 && yDist < 22) {
+          const candidateX = prev.badgeX + prev.badgeWidth + 12;
+          if (candidateX + curr.badgeWidth <= chartRight - 8) {
+            curr.badgeX = candidateX;
+          } else {
+            if (prev.badgeY + 24 <= chartBottom - 26) {
+              curr.badgeY = prev.badgeY + 24;
+            } else {
+              curr.badgeY = Math.max(chartTop + 4, prev.badgeY - 24);
+            }
+          }
+        }
+      }
+    }
+
+    return list;
+  }, [
+    candles,
+    candleMilestones,
+    fvgBounds,
+    parsedActiveZones,
+    chartLeft,
+    chartRight,
+    chartTop,
+    chartBottom,
+    candleSpacing,
+    isMobile,
+    isBullishSetup,
+    s4Pass,
+    s5Pass,
+    minPrice,
+    maxPrice,
+    priceRange,
+    plotHeight,
+  ]);
+
   // Anti-Collision Right Axis Tags Algorithm
   interface RightAxisTag {
     id: string;
@@ -1373,6 +1665,9 @@ export function SmcChartOverlay({
                 <filter id="glowAmber" x="-20%" y="-20%" width="140%" height="140%">
                   <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="#f59e0b" floodOpacity="0.9" />
                 </filter>
+                <filter id="glowBlue" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor="#38bdf8" floodOpacity="0.9" />
+                </filter>
               </defs>
 
               {/* TradingView Right Price Scale Panel Background */}
@@ -1417,115 +1712,103 @@ export function SmcChartOverlay({
                 </g>
               ))}
 
-              {/* Step 4 & 5: Setup Post-CHoCH FVG Retest Zone — Rendered with Full High-Visibility */}
-              {fvgBounds && fvgBounds.high > fvgBounds.low && (
-                <g>
-                  {(() => {
-                    const topY = getY(fvgBounds.high);
-                    const botY = getY(fvgBounds.low);
-                    const zH = Math.max(12, Math.abs(botY - topY));
-                    const badgeY = Math.min(chartBottom - 26, Math.max(chartTop + 4, topY + 3));
-                    return (
-                      <>
-                        <rect
-                          x={chartLeft + candleSpacing * 3}
-                          y={topY}
-                          width={plotWidth - candleSpacing * 3}
-                          height={zH}
-                          fill="url(#fvgGradientZone)"
-                          stroke={s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e"}
-                          strokeWidth={s5Pass ? 2.5 : 1.5}
-                          strokeDasharray={s5Pass ? "none" : "4 4"}
-                          opacity={s5Pass ? 1 : 0.85}
-                          filter={s5Pass ? "url(#glowGreen)" : undefined}
-                        />
-                        <rect
-                          x={chartLeft + candleSpacing * 3 + 8}
-                          y={badgeY}
-                          width={isMobile ? 190 : 260}
-                          height="20"
-                          fill={s5Pass ? "#064e3b" : s4Pass ? "#134e4a" : "#0f172a"}
-                          rx="4"
-                          stroke={s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e"}
-                          strokeWidth="1.2"
-                        />
-                        <text
-                          x={chartLeft + candleSpacing * 3 + 14}
-                          y={badgeY + 14}
-                          fill="#ffffff"
-                          fontSize={isMobile ? "9" : "10.5"}
-                          fontFamily="monospace"
-                          fontWeight="900"
-                        >
-                          {s5Pass
-                            ? "🟢 S5 RETEST CONFIRMED"
-                            : s4Pass
-                            ? "⏳ S4 FVG CREATED — RETESTING"
-                            : isBullishSetup
-                            ? "🟢 BULLISH FVG ZONE"
-                            : "🔴 BEARISH FVG ZONE"}{" "}
-                          (${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})
-                        </text>
-                      </>
-                    );
-                  })()}
-                </g>
-              )}
-
-              {/* Bot-Detected Active SMC Zones (Order Blocks, Breakers, iFVG) */}
-              {parsedActiveZones.map((zone, zIdx) => {
-                if (fvgBounds && Math.abs(fvgBounds.low - zone.low) < 0.05 && Math.abs(fvgBounds.high - zone.high) < 0.05) {
-                  return null;
-                }
-                const isOB = zone.type.toUpperCase().includes("OB");
-                const isBreaker = zone.type.toUpperCase().includes("BREAKER");
-
-                const boxFill = isOB
-                  ? zone.isBullish ? "rgba(59, 130, 246, 0.16)" : "rgba(168, 85, 247, 0.16)"
-                  : isBreaker
-                  ? "rgba(245, 158, 11, 0.16)"
-                  : "rgba(6, 182, 212, 0.16)";
-
-                const boxStroke = isOB
-                  ? zone.isBullish ? "#3b82f6" : "#a855f7"
-                  : isBreaker
-                  ? "#f59e0b"
-                  : "#06b6d4";
-
-                const zTop = getY(zone.high);
-                const zHeight = Math.max(8, Math.abs(getY(zone.low) - zTop));
+              {/* Institutional SMC Zones (FVG, Order Blocks, Breakers, iFVG) with Exact Origin Candlestick Anchoring & Anti-Collision Badges */}
+              {renderedSmcZones.map((zone) => {
+                const originCandle = candles[zone.originIdx];
+                const candleHighY = originCandle ? getY(originCandle.high) : zone.topY;
+                const candleLowY = originCandle ? getY(originCandle.low) : zone.botY;
+                const candleCenterY = originCandle ? getY((originCandle.open + originCandle.close) / 2) : zone.topY;
 
                 return (
-                  <g key={`parsed-zone-${zIdx}`}>
+                  <g key={zone.id}>
+                    {/* 1. Zone Rectangle starting strictly at its originating candle originX and projecting rightward */}
                     <rect
-                      x={chartLeft + candleSpacing * 2}
-                      y={zTop}
-                      width={plotWidth - candleSpacing * 2}
-                      height={zHeight}
-                      fill={boxFill}
-                      stroke={boxStroke}
-                      strokeWidth="1.2"
-                      strokeDasharray="4 3"
+                      x={zone.originX}
+                      y={zone.topY}
+                      width={zone.boxWidth}
+                      height={zone.boxHeight}
+                      fill={zone.boxFill}
+                      stroke={zone.boxStroke}
+                      strokeWidth={zone.strokeWidth}
+                      strokeDasharray={zone.strokeDash}
+                      opacity={zone.isPrimaryFvg && s5Pass ? 1 : 0.88}
+                      filter={zone.glowFilter}
+                      rx="2"
                     />
+
+                    {/* 2. Origin Guideline Connecting Originating Candle to the Zone Box */}
+                    <line
+                      x1={zone.originX}
+                      y1={Math.min(zone.topY, candleCenterY)}
+                      x2={zone.originX}
+                      y2={Math.max(zone.botY, candleCenterY)}
+                      stroke={zone.boxStroke}
+                      strokeWidth="1.5"
+                      strokeDasharray="2 2"
+                      opacity="0.8"
+                    />
+
+                    {/* 3. Origin Candle Center Anchor Dot */}
+                    <circle
+                      cx={zone.originX}
+                      cy={candleCenterY}
+                      r="3.5"
+                      fill={zone.boxStroke}
+                      stroke="#ffffff"
+                      strokeWidth="1.2"
+                    />
+
+                    {/* 4. Origin Anchor Pin Flag on the Originating Candle */}
+                    {(() => {
+                      const pinY = candleHighY > chartTop + 24 ? candleHighY - 18 : candleLowY + 5;
+                      const pinWidth = isMobile ? 68 : 84;
+                      return (
+                        <g>
+                          <rect
+                            x={zone.originX - pinWidth / 2}
+                            y={pinY}
+                            width={pinWidth}
+                            height="15"
+                            rx="3"
+                            fill="#090d16"
+                            stroke={zone.boxStroke}
+                            strokeWidth="1"
+                          />
+                          <text
+                            x={zone.originX}
+                            y={pinY + 11}
+                            fill={zone.boxStroke}
+                            fontSize={isMobile ? "7.5" : "8.5"}
+                            fontFamily="monospace"
+                            fontWeight="900"
+                            textAnchor="middle"
+                          >
+                            {zone.originLabel}
+                          </text>
+                        </g>
+                      );
+                    })()}
+
+                    {/* 5. Anti-Collision Information Badge Inside/Beside the Zone (Zero Stacking Overlap) */}
                     <rect
-                      x={chartLeft + candleSpacing * 2 + 6}
-                      y={zTop + 3}
-                      width={isMobile ? 130 : 170}
-                      height="17"
-                      fill="#0f172a"
-                      rx="3"
-                      stroke={boxStroke}
-                      strokeWidth="1"
+                      x={zone.badgeX}
+                      y={zone.badgeY}
+                      width={zone.badgeWidth}
+                      height={zone.badgeHeight}
+                      fill={zone.badgeBg}
+                      rx="4"
+                      stroke={zone.badgeStroke}
+                      strokeWidth="1.2"
                     />
                     <text
-                      x={chartLeft + candleSpacing * 2 + 10}
-                      y={zTop + 15}
-                      fill={boxStroke}
+                      x={zone.badgeX + 8}
+                      y={zone.badgeY + 13}
+                      fill={zone.isPrimaryFvg ? "#ffffff" : zone.badgeTextColor}
                       fontSize={isMobile ? "8.5" : "9.5"}
                       fontFamily="monospace"
                       fontWeight="800"
                     >
-                      {zone.label || zone.name}
+                      {zone.badgeTitle} {zone.badgeSub}
                     </text>
                   </g>
                 );
@@ -1576,48 +1859,223 @@ export function SmcChartOverlay({
                 />
               )}
 
-              {/* Active Entry Level Line */}
-              {showEntryLevel && effectiveEntryPrice > 0 && (
-                <line
-                  x1={chartLeft}
-                  y1={getY(effectiveEntryPrice)}
-                  x2={chartRight}
-                  y2={getY(effectiveEntryPrice)}
-                  stroke="#38bdf8"
-                  strokeWidth={2.5}
-                  filter="url(#glowBlue)"
-                />
-              )}
+              {/* INSTITUTIONAL TRADE POSITION BRACKET & PROJECTIONS (LuxAlgo / TradingView Style) */}
+              {(() => {
+                const entryX = chartLeft + (candleMilestones.entry + 0.5) * candleSpacing;
+                const sweepX = chartLeft + (candleMilestones.sweep + 0.5) * candleSpacing;
+                const chochX = chartLeft + (candleMilestones.choch + 0.5) * candleSpacing;
 
-              {/* Stop Loss (SL) Level Line */}
-              {showSlLevel && effectiveSlPrice > 0 && (
-                <line
-                  x1={chartLeft}
-                  y1={getY(effectiveSlPrice)}
-                  x2={chartRight}
-                  y2={getY(effectiveSlPrice)}
-                  stroke="#ef4444"
-                  strokeWidth={isTradeActive ? 3 : 1.5}
-                  strokeDasharray={isTradeActive ? "none" : "5 5"}
-                  opacity={isTradeActive ? 1 : 0.85}
-                  filter={isTradeActive ? "url(#glowRed)" : undefined}
-                />
-              )}
+                const hasActiveTradeOrSignal = isTradeActive || s7Pass;
 
-              {/* Take Profit (TP) Level Line */}
-              {showTpLevel && effectiveTpPrice > 0 && (
-                <line
-                  x1={chartLeft}
-                  y1={getY(effectiveTpPrice)}
-                  x2={chartRight}
-                  y2={getY(effectiveTpPrice)}
-                  stroke="#10b981"
-                  strokeWidth={isTradeActive ? 3 : 1.5}
-                  strokeDasharray={isTradeActive ? "none" : "5 5"}
-                  opacity={isTradeActive ? 1 : 0.85}
-                  filter={isTradeActive ? "url(#glowGreen)" : undefined}
-                />
-              )}
+                return (
+                  <g>
+                    {/* A. Active Position Bracket Shading (Green Profit Zone + Red Risk Zone) */}
+                    {hasActiveTradeOrSignal && effectiveEntryPrice > 0 && effectiveTpPrice > 0 && effectiveSlPrice > 0 && (
+                      <g>
+                        {/* Green Target Zone Box */}
+                        <rect
+                          x={entryX}
+                          y={Math.min(getY(effectiveEntryPrice), getY(effectiveTpPrice))}
+                          width={Math.max(candleSpacing * 2, chartRight - entryX)}
+                          height={Math.max(4, Math.abs(getY(effectiveTpPrice) - getY(effectiveEntryPrice)))}
+                          fill="rgba(16, 185, 129, 0.09)"
+                          stroke="#10b981"
+                          strokeWidth="1"
+                          strokeDasharray="4 3"
+                        />
+                        {/* Red Risk Zone Box */}
+                        <rect
+                          x={entryX}
+                          y={Math.min(getY(effectiveEntryPrice), getY(effectiveSlPrice))}
+                          width={Math.max(candleSpacing * 2, chartRight - entryX)}
+                          height={Math.max(4, Math.abs(getY(effectiveSlPrice) - getY(effectiveEntryPrice)))}
+                          fill="rgba(239, 68, 68, 0.09)"
+                          stroke="#ef4444"
+                          strokeWidth="1"
+                          strokeDasharray="4 3"
+                        />
+                        {/* Center Position Metric Floating Pill */}
+                        <rect
+                          x={Math.min(chartRight - (isMobile ? 130 : 165), entryX + 16)}
+                          y={getY(effectiveEntryPrice) - 11}
+                          width={isMobile ? 125 : 160}
+                          height="22"
+                          rx="4"
+                          fill="#090d16"
+                          stroke="#38bdf8"
+                          strokeWidth="1.2"
+                        />
+                        <text
+                          x={Math.min(chartRight - (isMobile ? 130 : 165), entryX + 16) + (isMobile ? 62 : 80)}
+                          y={getY(effectiveEntryPrice) + 4}
+                          fill="#38bdf8"
+                          fontSize={isMobile ? "8.5" : "9.5"}
+                          fontFamily="monospace"
+                          fontWeight="900"
+                          textAnchor="middle"
+                        >
+                          {isTradeActive ? "⚡ ACTIVE 1:1.85 RRR" : "🎯 SIGNAL 1:1.85 RRR"} ({isBullishSetup ? "BUY" : "SELL"})
+                        </text>
+                      </g>
+                    )}
+
+                    {/* B. Active Entry Level Ray (Originating at confirmed entry candle) */}
+                    {showEntryLevel && effectiveEntryPrice > 0 && (
+                      <g>
+                        <line
+                          x1={hasActiveTradeOrSignal ? entryX : chartLeft}
+                          y1={getY(effectiveEntryPrice)}
+                          x2={chartRight}
+                          y2={getY(effectiveEntryPrice)}
+                          stroke="#38bdf8"
+                          strokeWidth={2.5}
+                          filter="url(#glowBlue)"
+                        />
+                        {/* Entry Candle Trigger Anchor */}
+                        <circle
+                          cx={entryX}
+                          cy={getY(effectiveEntryPrice)}
+                          r="4.5"
+                          fill="#38bdf8"
+                          stroke="#ffffff"
+                          strokeWidth="1.5"
+                        />
+                        <rect
+                          x={entryX - (isMobile ? 32 : 40)}
+                          y={getY(effectiveEntryPrice) - 26}
+                          width={isMobile ? 64 : 80}
+                          height="18"
+                          rx="4"
+                          fill="#0284c7"
+                          stroke="#38bdf8"
+                          strokeWidth="1.2"
+                        />
+                        <text
+                          x={entryX}
+                          y={getY(effectiveEntryPrice) - 14}
+                          fill="#ffffff"
+                          fontSize={isMobile ? "8" : "9"}
+                          fontFamily="monospace"
+                          fontWeight="900"
+                          textAnchor="middle"
+                        >
+                          ⚡ ENTRY C#{candleMilestones.entry + 1}
+                        </text>
+                      </g>
+                    )}
+
+                    {/* C. Stop Loss (SL) Level Ray (Originating at Step 2 Sweep candle) */}
+                    {showSlLevel && effectiveSlPrice > 0 && (
+                      <g>
+                        <line
+                          x1={s2Pass ? sweepX : chartLeft}
+                          y1={getY(effectiveSlPrice)}
+                          x2={chartRight}
+                          y2={getY(effectiveSlPrice)}
+                          stroke="#ef4444"
+                          strokeWidth={isTradeActive ? 3 : 1.8}
+                          strokeDasharray={isTradeActive ? "none" : "5 5"}
+                          opacity={isTradeActive ? 1 : 0.85}
+                          filter={isTradeActive ? "url(#glowRed)" : undefined}
+                        />
+                        {/* Sweep-to-SL Anchor connector and marker */}
+                        {s2Pass && (
+                          <>
+                            <line
+                              x1={sweepX}
+                              y1={getY(isBullishSetup ? (swingStructure.swingLow || livePrice) : (swingStructure.swingHigh || livePrice))}
+                              x2={sweepX}
+                              y2={getY(effectiveSlPrice)}
+                              stroke="#ef4444"
+                              strokeWidth="1.2"
+                              strokeDasharray="2 2"
+                              opacity="0.85"
+                            />
+                            <circle
+                              cx={sweepX}
+                              cy={getY(effectiveSlPrice)}
+                              r="3.5"
+                              fill="#ef4444"
+                              stroke="#ffffff"
+                              strokeWidth="1"
+                            />
+                            <rect
+                              x={sweepX + 6}
+                              y={getY(effectiveSlPrice) - 18}
+                              width={isMobile ? 120 : 155}
+                              height="17"
+                              rx="3"
+                              fill="#450a0a"
+                              stroke="#ef4444"
+                              strokeWidth="1"
+                            />
+                            <text
+                              x={sweepX + 10}
+                              y={getY(effectiveSlPrice) - 6}
+                              fill="#fca5a5"
+                              fontSize={isMobile ? "8" : "9"}
+                              fontFamily="monospace"
+                              fontWeight="900"
+                            >
+                              🛡️ SL ANCHOR (SWEEP + $0.75)
+                            </text>
+                          </>
+                        )}
+                      </g>
+                    )}
+
+                    {/* D. Take Profit (TP) Level Ray (Originating at Step 4 FVG / CHoCH expansion) */}
+                    {showTpLevel && effectiveTpPrice > 0 && (
+                      <g>
+                        <line
+                          x1={s4Pass ? chochX : chartLeft}
+                          y1={getY(effectiveTpPrice)}
+                          x2={chartRight}
+                          y2={getY(effectiveTpPrice)}
+                          stroke="#10b981"
+                          strokeWidth={isTradeActive ? 3 : 1.8}
+                          strokeDasharray={isTradeActive ? "none" : "5 5"}
+                          opacity={isTradeActive ? 1 : 0.85}
+                          filter={isTradeActive ? "url(#glowGreen)" : undefined}
+                        />
+                        {/* TP Target Anchor Badge */}
+                        {s4Pass && (
+                          <>
+                            <circle
+                              cx={chochX}
+                              cy={getY(effectiveTpPrice)}
+                              r="3.5"
+                              fill="#10b981"
+                              stroke="#ffffff"
+                              strokeWidth="1"
+                            />
+                            <rect
+                              x={chochX + 6}
+                              y={getY(effectiveTpPrice) + 3}
+                              width={isMobile ? 120 : 155}
+                              height="17"
+                              rx="3"
+                              fill="#064e3b"
+                              stroke="#10b981"
+                              strokeWidth="1"
+                            />
+                            <text
+                              x={chochX + 10}
+                              y={getY(effectiveTpPrice) + 15}
+                              fill="#6ee7b7"
+                              fontSize={isMobile ? "8" : "9"}
+                              fontFamily="monospace"
+                              fontWeight="900"
+                            >
+                              🎯 TP TARGET (1:1.85 RRR)
+                            </text>
+                          </>
+                        )}
+                      </g>
+                    )}
+                  </g>
+                );
+              })()}
 
               {/* MARKET STRUCTURE ZIGZAG PATH (Order Flow Connecting Fractal Swings) */}
               {marketStructure.path && (
