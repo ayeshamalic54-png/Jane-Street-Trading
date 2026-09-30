@@ -65,9 +65,9 @@ def evaluate_smc_strategy_signal(
     has_bull_choch, bull_choch_lvl, bull_choch_idx = detect_choch_bos(eval_df, sell_sweep_idx, is_bullish=True) if has_sell_sweep else (False, 0.0, -1)
     has_bear_choch, bear_choch_lvl, bear_choch_idx = detect_choch_bos(eval_df, buy_sweep_idx, is_bullish=False) if has_buy_sweep else (False, 0.0, -1)
 
-    # Step 4: 3-Candle FVG Creation STRICTLY AFTER CHoCH
-    zones_bull = detect_smc_zones(eval_df, min_idx=bull_choch_idx) if has_bull_choch else {'bullish_fvg': []}
-    zones_bear = detect_smc_zones(eval_df, min_idx=bear_choch_idx) if has_bear_choch else {'bearish_fvg': []}
+    # Step 4: 3-Candle Displacement FVG Creation (From Sweep through CHoCH Breakout)
+    zones_bull = detect_smc_zones(eval_df, min_idx=sell_sweep_idx) if has_bull_choch else {'bullish_fvg': []}
+    zones_bear = detect_smc_zones(eval_df, min_idx=buy_sweep_idx) if has_bear_choch else {'bearish_fvg': []}
 
     # Step 5: CLOSED CANDLE Retests THAT SAME NEW Post-CHoCH FVG
     in_bull_fvg = is_price_in_zones(closed_close, zones_bull['bullish_fvg']) or is_price_in_zones(closed_low, zones_bull['bullish_fvg'])
