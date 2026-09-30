@@ -267,15 +267,15 @@ export function SmcChartOverlay({
       : Number((effectiveEntryPrice - defaultSlDist).toFixed(2));
   }, [hasActivePosition, activePosition, sweepPrice, isBearishSetup, defaultBuf, effectiveEntryPrice, isMetals]);
 
-  // Strict TP: baseline 1.8R target ($95-$110 USD reward on 0.07 lots, with Order Block shield)
+  // Strict TP: baseline 1:1.85 target ($97-$112 USD reward on 0.07 lots, with Order Block shield)
   const effectiveTpPrice = useMemo(() => {
     if (hasActivePosition && activePosition && (Number(activePosition.tp) > 0 || Number(activePosition.tpPrice) > 0)) {
       return Number(activePosition.tp || activePosition.tpPrice);
     }
     const slDist = Math.max(isMetals ? 3.0 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
     return isBearishSetup
-      ? Number((effectiveEntryPrice - 1.8 * slDist).toFixed(2))
-      : Number((effectiveEntryPrice + 1.8 * slDist).toFixed(2));
+      ? Number((effectiveEntryPrice - 1.85 * slDist).toFixed(2))
+      : Number((effectiveEntryPrice + 1.85 * slDist).toFixed(2));
   }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isMetals]);
 
   const entryPrice = effectiveEntryPrice;
@@ -810,7 +810,7 @@ export function SmcChartOverlay({
         fontSize: isMobile ? "9.5" : "10.5",
         label: isTradeActive
           ? `🟢 TP $${effectiveTpPrice.toFixed(2)}`
-          : `🎯 2.0R $${effectiveTpPrice.toFixed(2)}`,
+          : `🎯 1:1.85 $${effectiveTpPrice.toFixed(2)}`,
         priority: 85,
       });
     }
@@ -1041,7 +1041,7 @@ export function SmcChartOverlay({
             </div>
             <p className="text-xs text-zinc-300 mt-0.5">
               {isTradeActive
-                ? `Running ${tradeDirection} on ${symbol} | Lot: ${isMetals ? "0.07" : "0.51"} | SL: $${slPrice.toFixed(2)} ($${defaultBuf} Buf) | TP: $${tpPrice.toFixed(2)} (2.0R Target) ${
+                ? `Running ${tradeDirection} on ${symbol} | Lot: ${isMetals ? "0.07" : "0.51"} | SL: $${slPrice.toFixed(2)} ($${defaultBuf} Buf) | TP: $${tpPrice.toFixed(2)} (1:1.85 Target) ${
                     hasActivePosition && activePosition.profit !== undefined
                       ? `| Float P&L: $${Number(activePosition.profit).toFixed(2)}`
                       : ""
@@ -1108,9 +1108,9 @@ export function SmcChartOverlay({
                 : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
               {isTradeActive
-                ? `🟢 ACTIVE TP: $${tpPrice.toFixed(2)} (${isMetals ? "~$105 Target" : ""})`
+                ? `🟢 ACTIVE TP: $${tpPrice.toFixed(2)} (${isMetals ? "~$97-$110 Target" : ""})`
                 : s4Pass
-                ? `🎯 2.0R TARGET: $${tpPrice.toFixed(2)} (${isMetals ? "~$105 Target" : ""})`
+                ? `🎯 1:1.85 TARGET: $${tpPrice.toFixed(2)} (${isMetals ? "~$97-$110 Target" : ""})`
                 : "⏳ TP: Locks at FVG (Step 4)"}
             </div>
           </div>

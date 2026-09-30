@@ -89,7 +89,7 @@ export default function Signals() {
     const isCrypto = s.endsWith("USDT") || ["BTC", "ETH", "SOL", "BNB"].some(x => s.includes(x));
     
     const slDist = isMetals ? 7.50 : (isCrypto ? entry * 0.015 : 0.00194);
-    const tpDist = slDist * 1.8; // 1:1.8 RRR Target for ALL assets (Gold & Forex)
+    const tpDist = slDist * 1.85; // 1:1.85 RRR Target for ALL assets (Gold & Forex)
     const pricePrecision = isCrypto ? 2 : (getPipSize(sig.symbolA) <= 0.0001 ? 5 : getPipSize(sig.symbolA) <= 0.01 ? 3 : 2);
 
     const sB = sig.symbolB.toUpperCase();
@@ -186,7 +186,7 @@ export default function Signals() {
       `📊 *STRATEGY:* \`Strict 9-Condition Pure SMC Structure\`\n\n` +
       `📥 *ENTRY PRICE:* \`${details.entry}\` \n` +
       `⛔ *STOP LOSS (SL):* \`${details.sl}\` *(Sweep High/Low + $0.75 Buffer)*\n` +
-      `🎯 *TAKE PROFIT (TP):* \`${details.tp2}\` *(Executing 2.0R TP / M15 Structural Target)*\n` +
+      `🎯 *TAKE PROFIT (TP):* \`${details.tp2}\` *(Executing 1:1.85 RRR / M15 Structural Target)*\n` +
       `📦 *LOT SIZE:* \`${lotStr} Lots\``;
 
     navigator.clipboard.writeText(text).then(() => {
@@ -229,7 +229,7 @@ export default function Signals() {
                   <TableHead className="font-mono text-xs">ASSET</TableHead>
                   <TableHead className="font-mono text-xs text-right font-medium">ENTRY</TableHead>
                   <TableHead className="font-mono text-xs text-right text-red-400 font-medium">SL</TableHead>
-                  <TableHead className="font-mono text-xs text-right text-green-400 font-medium">TP (1:1.8)</TableHead>
+                  <TableHead className="font-mono text-xs text-right text-green-400 font-medium">TP (1:1.85)</TableHead>
                   <TableHead className="font-mono text-xs text-center">STATUS</TableHead>
                   <TableHead className="font-mono text-xs text-right">LOTS</TableHead>
                   <TableHead className="font-mono text-xs text-right">P&L</TableHead>

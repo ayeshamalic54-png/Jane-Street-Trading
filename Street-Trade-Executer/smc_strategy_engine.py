@@ -103,10 +103,10 @@ def evaluate_smc_strategy_signal(
         if avail_rrr < 1.5 and not bypass_filters:
             return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 1.5R Requirement)"
 
-        target_rrr = 1.8  # Baseline 1.8R Target ($95-$110 USD profit on 0.07 lot)
+        target_rrr = 1.85  # Baseline 1:1.85 Target ($97-$112 USD profit on 0.07 lot)
         tp_price = price + (target_rrr * sl_dist)
 
-        # Smart Order Block Shield: Front-run opposing Bearish OB only if profit >= 1.45R ($95+ USD)
+        # Smart Order Block Shield: Front-run opposing Bearish OB only if profit >= 1.40R ($94+ USD)
         try:
             all_zones = detect_smc_zones(eval_df, min_idx=0)
             opp_obs = all_zones.get('bearish_ob', []) + all_zones.get('bearish_breaker', [])
@@ -122,15 +122,15 @@ def evaluate_smc_strategy_signal(
                 best_ob_front, best_ob_rrr = min(ob_targets, key=lambda x: x[0])
                 tp_price = best_ob_front
                 target_rrr = best_ob_rrr
-                logger.info(f"🛡️ [TP SHIELD] Front-running opposing Bearish Order Block @ {tp_price:.2f} ({target_rrr:.2f}R / $95+ profit lock)")
+                logger.info(f"🛡️ [TP SHIELD] Front-running opposing Bearish Order Block @ {tp_price:.2f} ({target_rrr:.2f}R / $94+ profit lock)")
         except Exception:
             pass
 
-        reason = f"🟢 STRICT SMC PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) + CHoCH ({bull_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.1f}R)"
+        reason = f"🟢 STRICT SMC PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) + CHoCH ({bull_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.2f}R / 1:1.85)"
         logger.info("================================================================================")
         logger.info(f"🟢 [STRICT SMC BUY SIGNAL EXECUTED] 🚀")
         logger.info(f"🟢 Condition 8 (Structural SL): Sweep Low ({sweep_low_price:.2f}) - 0.75 = {sl_price:.2f} 🟢")
-        logger.info(f"🟢 Condition 9 (Target TP): M15 Target ({target_high:.2f}) -> Executing {target_rrr:.2f}R TP @ {tp_price:.2f} 🟢")
+        logger.info(f"🟢 Condition 9 (Target TP): M15 Target ({target_high:.2f}) -> Executing {target_rrr:.2f}R TP (1:1.85 Target) @ {tp_price:.2f} 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
@@ -160,10 +160,10 @@ def evaluate_smc_strategy_signal(
         if avail_rrr < 1.5 and not bypass_filters:
             return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 1.5R Requirement)"
 
-        target_rrr = 1.8  # Baseline 1.8R Target ($95-$110 USD profit on 0.07 lot)
+        target_rrr = 1.85  # Baseline 1:1.85 Target ($97-$112 USD profit on 0.07 lot)
         tp_price = price - (target_rrr * sl_dist)
 
-        # Smart Order Block Shield: Front-run opposing Bullish OB only if profit >= 1.45R ($95+ USD)
+        # Smart Order Block Shield: Front-run opposing Bullish OB only if profit >= 1.40R ($94+ USD)
         try:
             all_zones = detect_smc_zones(eval_df, min_idx=0)
             opp_obs = all_zones.get('bullish_ob', []) + all_zones.get('bullish_breaker', [])
@@ -179,15 +179,15 @@ def evaluate_smc_strategy_signal(
                 best_ob_front, best_ob_rrr = max(ob_targets, key=lambda x: x[0])
                 tp_price = best_ob_front
                 target_rrr = best_ob_rrr
-                logger.info(f"🛡️ [TP SHIELD] Front-running opposing Bullish Order Block @ {tp_price:.2f} ({target_rrr:.2f}R / $95+ profit lock)")
+                logger.info(f"🛡️ [TP SHIELD] Front-running opposing Bullish Order Block @ {tp_price:.2f} ({target_rrr:.2f}R / $94+ profit lock)")
         except Exception:
             pass
 
-        reason = f"🔴 STRICT SMC PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) + CHoCH ({bear_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.1f}R)"
+        reason = f"🔴 STRICT SMC PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) + CHoCH ({bear_choch_lvl:.2f}) + FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.2f}R / 1:1.85)"
         logger.info("================================================================================")
         logger.info(f"🔴 [STRICT SMC SELL SIGNAL EXECUTED] 🚀")
         logger.info(f"🔴 Condition 8 (Structural SL): Sweep High ({sweep_high_price:.2f}) + 0.75 = {sl_price:.2f} 🔴")
-        logger.info(f"🔴 Condition 9 (Target TP): M15 Target ({target_low:.2f}) -> Executing {target_rrr:.2f}R TP @ {tp_price:.2f} 🔴")
+        logger.info(f"🔴 Condition 9 (Target TP): M15 Target ({target_low:.2f}) -> Executing {target_rrr:.2f}R TP (1:1.85 Target) @ {tp_price:.2f} 🔴")
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
@@ -246,14 +246,14 @@ def evaluate_smc_strategy_signal(
                 target_low = max(valid_targets) if valid_targets else min(m15_targets)
                 scan_rrr = (price - target_low) / sl_d_check
         else:
-            scan_rrr = 1.8
+            scan_rrr = 1.85
 
         if scan_rrr >= 1.5:
-            step9_s = f"PASS 🟢 ({scan_rrr:.1f}R Target Space -> Executing 1.8R TP)"
+            step9_s = f"PASS 🟢 ({scan_rrr:.2f}R Target Space -> Executing 1:1.85 TP)"
         else:
-            step9_s = f"FAIL 🔴 ({scan_rrr:.1f}R Target Space < 1.5R Min)"
+            step9_s = f"FAIL 🔴 ({scan_rrr:.2f}R Target Space < 1.5R Min)"
     except Exception:
-        step9_s = "PASS 🟢 (M15 Target Min 1.5R / Preferred 1.8R)"
+        step9_s = "PASS 🟢 (M15 Target Min 1.5R / Target 1:1.85)"
 
     actual_sweep_p = sweep_low_price if has_sell_sweep else (sweep_high_price if has_buy_sweep else 0.0)
     actual_choch_p = bull_choch_lvl if has_bull_choch else (bear_choch_lvl if has_bear_choch else 0.0)

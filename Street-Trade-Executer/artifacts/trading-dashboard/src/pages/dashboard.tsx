@@ -1042,7 +1042,7 @@ export default function Dashboard() {
                 const s6Valid = s5Valid && isPassText(tel?.s6_status || tel?.rejection_status);
                 const s7Valid = s6Valid && isPassText(tel?.s7_status);
                 const s8Valid = s2Valid; // SL Buffer locks when Sweep is confirmed
-                const s9Valid = s7Valid || hasActivePosition; // 2.0R Target activates when trade triggers
+                const s9Valid = s7Valid || hasActivePosition; // 1:1.85 Target activates when trade triggers
 
                 const getBoxClass = (isValid: boolean, isCurrent: boolean) => {
                   if (isValid) {
@@ -1154,10 +1154,10 @@ export default function Dashboard() {
                     <div className={getBoxClass(s9Valid, false)}>
                       <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 9: M15 Target</div>
                       <div className={cn("text-xs truncate", getTextColor(s9Valid, false))}>
-                        {s9Valid ? "ACTIVE 🎯 (2.0R Target)" : "WAITING ENTRY ⚪"}
+                        {s9Valid ? "ACTIVE 🎯 (1:1.85 Target)" : "WAITING ENTRY ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s9Valid ? "Executing 2.0R Target" : "Locks on Entry (Step 7)"}
+                        {s9Valid ? "Executing 1:1.85 Target" : "Locks on Entry (Step 7)"}
                       </div>
                     </div>
                   </div>

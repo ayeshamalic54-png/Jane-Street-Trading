@@ -1027,7 +1027,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         z_type = "Oversold Trigger" if z_score < 0 else "Overbought Trigger"
         z_str = f"{z_score:+.3f}"
         
-        rrr_val = (abs(tp2 - entry_a) / abs(entry_a - sl_a)) if abs(entry_a - sl_a) > 0 else 2.0
+        rrr_val = (abs(tp2 - entry_a) / abs(entry_a - sl_a)) if abs(entry_a - sl_a) > 0 else 1.85
         
         message = (
             f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
@@ -1037,7 +1037,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
             f"📊 **STRATEGY:** `Pure SMC / ICT 9-Condition Structure 🟢`\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
             f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Sweep + 0.75 Buffer)*\n"
-            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.1f}R Target / M15 Structural Target)*\n"
+            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.2f}R Target / 1:1.85 Structural Target)*\n"
             f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
         
@@ -1067,7 +1067,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         digits = info.digits if info else 5
         
         message = (
-            f"📢 **PURE SMC / ICT 7-STEP SIGNAL ENGINE** 📢\n"
+            f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
             f"🏁 **[ POSITION CLOSED ]** 🏁\n\n"
             f"📊 **ASSET:** `{symbol}` ({order_type})\n"
             f"📦 **LOT SIZE:** `{lots:.2f} Lots`\n"
@@ -2056,7 +2056,7 @@ def main():
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target Min 2.0R / Preferred 3.0R) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target: 1:1.85 RRR) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
 
 
 
@@ -2164,7 +2164,7 @@ def main():
                     SL_PIPS = new_sl
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
-                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target Min 2.0R / Preferred 3.0R) | Engine: Pure SMC/ICT Active 🟢")
+                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target: 1:1.85 RRR) | Engine: Pure SMC/ICT Active 🟢")
                         logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Tier 1: +$62.00 Net Profit Lock | Tier 2: +$80.00 Net Profit Lock | Full TP Target: +$91.00 USD) | Friday Close Guard: ENABLED 🌅")
 
 
@@ -2643,7 +2643,7 @@ def main():
                     action = "SELL_SPREAD"
 
 
-                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: M15 Structural Target (Min 2.0R / Preferred 3.0R) 🟢")
+                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: M15 Structural Target (1:1.85 Target) 🟢")
                 try:
                     from database import update_smc_telemetry
                     import json
@@ -2656,18 +2656,18 @@ def main():
                     s6_st = "FAIL ⚪"
                     s7_st = "FAIL ⚪"
                     s8_st = "PASS 🟢 ($0.75 Fixed)"
-                    s9_st = "FAIL ⚪ (Min 2.0R)"
+                    s9_st = "FAIL ⚪ (Min 1.5R / 1:1.85)"
                     sweep_p_val = 0.0
                     choch_p_val = 0.0
 
                     if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason:
                         if "BUY" in vid_reason:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 2.0R TP)"
+                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
                             )
                         else:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 2.0R TP)"
+                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
                             )
                         if smc_sl is not None:
                             sweep_p_val = float(smc_sl) + (0.75 if "BUY" in vid_reason else -0.75)
@@ -3249,7 +3249,7 @@ def main():
             forex_log_str = "ENABLED 🟢" if FOREX_ENABLED else "DISABLED 🔴"
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Engine: Pure SMC/ICT Active 🟢 "
-                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: DISABLED ❌ (M15 Structural Target: Min 2.0R / Preferred 3.0R) "
+                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: DISABLED ❌ (M15 Structural Target: 1:1.85 Target) "
             )
 
             eff_dd_log = max(daily_loss_p, peak_dd_p)
