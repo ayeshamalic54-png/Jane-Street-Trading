@@ -1089,6 +1089,15 @@ def get_smc_telemetry(symbol_pair: str) -> dict:
             row = cur.fetchone()
         cur.close()
         if row:
+            raw_fvg = row[7] or "[]"
+            candles_list = []
+            try:
+                import json
+                p = json.loads(raw_fvg) if isinstance(raw_fvg, str) else raw_fvg
+                if isinstance(p, dict) and "candles" in p and isinstance(p["candles"], list):
+                    candles_list = p["candles"]
+            except Exception:
+                pass
             return {
                 "symbol_pair": row[0] or symbol_pair,
                 "m15_bias": row[1] or "NEUTRAL ⚪",
@@ -1097,7 +1106,8 @@ def get_smc_telemetry(symbol_pair: str) -> dict:
                 "choch_status": row[4] or "FAIL ⚪ (Scanning)",
                 "choch_price": float(row[5] or 0.0),
                 "fvg_status": row[6] or "FAIL ⚪ (Scanning)",
-                "fvg_bounds_json": row[7] or "[]",
+                "fvg_bounds_json": raw_fvg,
+                "candles": candles_list,
                 "rejection_status": row[8] or "FAIL ⚪ (Scanning)",
                 "action": row[9] or "NONE",
                 "updated_at": str(row[10]) if row[10] else "",
@@ -1121,6 +1131,7 @@ def get_smc_telemetry(symbol_pair: str) -> dict:
         "choch_price": 0.0,
         "fvg_status": "FAIL ⚪ (Scanning FVGs)",
         "fvg_bounds_json": "[]",
+        "candles": [],
         "rejection_status": "FAIL ⚪ (Scanning Rejection)",
         "action": "NONE",
         "updated_at": "",

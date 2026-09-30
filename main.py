@@ -2699,7 +2699,40 @@ def main():
                                 except Exception:
                                     pass
 
-                    fvg_json = json.dumps(SMC_ZONES_CACHE.get(s_a_resolved, {})) if s_a_resolved in SMC_ZONES_CACHE else "[]"
+                    zone_dict = dict(SMC_ZONES_CACHE.get(s_a_resolved, {}))
+                    candle_records = []
+                    if df_m5 is not None and not df_m5.empty:
+                        slice_m5 = df_m5.tail(45)
+                        is_metals_sym = (cat_a == 'metals') or any(m in s_a_resolved.upper() for m in ['XAU', 'XAG', 'GOLD', 'SILVER'])
+                        for _, crow in slice_m5.iterrows():
+                            t_val = crow['time']
+                            t_str = t_val.strftime("%H:%M") if hasattr(t_val, 'strftime') else str(t_val)
+                            o_val = float(round(crow['open'], 2 if is_metals_sym else 5))
+                            h_val = float(round(crow['high'], 2 if is_metals_sym else 5))
+                            l_val = float(round(crow['low'], 2 if is_metals_sym else 5))
+                            c_val = float(round(crow['close'], 2 if is_metals_sym else 5))
+                            candle_records.append({
+                                "time": t_str,
+                                "open": o_val,
+                                "high": h_val,
+                                "low": l_val,
+                                "close": c_val,
+                                "isBullish": bool(c_val >= o_val),
+                                "volume": int(crow.get('tick_volume', 100)) if 'tick_volume' in crow else 100
+                            })
+                        if candle_records and sweep_p_val > 0:
+                            tgt_k = "low" if "BULLISH" in m15_b else "high"
+                            best_sw = min(candle_records, key=lambda c: abs(c[tgt_k] - sweep_p_val))
+                            if abs(best_sw[tgt_k] - sweep_p_val) < (2.0 if is_metals_sym else 0.005):
+                                best_sw["isSweep"] = True
+                        if candle_records and choch_p_val > 0:
+                            tgt_k = "high" if "BULLISH" in m15_b else "low"
+                            best_ch = min(candle_records, key=lambda c: abs(c[tgt_k] - choch_p_val))
+                            if abs(best_ch[tgt_k] - choch_p_val) < (2.0 if is_metals_sym else 0.005):
+                                best_ch["isChoch"] = True
+
+                    zone_dict["candles"] = candle_records
+                    fvg_json = json.dumps(zone_dict)
                     update_smc_telemetry(
                         pk, m15_b, s2_st, float(sweep_p_val), s3_st, float(choch_p_val), 
                         s4_st, fvg_json, s6_st, smc_sig,

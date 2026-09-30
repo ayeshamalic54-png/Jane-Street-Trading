@@ -304,8 +304,99 @@ export function SmcChartOverlay({
     };
   }, []);
 
-  // Construct Realistic M5 Candlesticks Graphically Representing the SMC Sequence
+  // 1. Extract Real MT5 M5 Candlesticks from Bot Telemetry Feed
+  const realCandles = useMemo<Candle[] | null>(() => {
+    try {
+      let rawList: any[] | null = null;
+      if (Array.isArray(telemetry?.candles) && telemetry.candles.length >= 8) {
+        rawList = telemetry.candles;
+      } else {
+        const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
+        if (rawJson) {
+          const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+          if (Array.isArray(parsed?.candles) && parsed.candles.length >= 8) {
+            rawList = parsed.candles;
+          }
+        }
+      }
+
+      if (!rawList || rawList.length < 8) return null;
+
+      // Slice to match zoom level or responsive count
+      const maxCount = isMobile
+        ? Math.max(12, Math.min(36, Math.round(18 / zoomLevel)))
+        : Math.max(16, Math.min(50, Math.round(32 / zoomLevel)));
+
+      const sliced = rawList.slice(-maxCount);
+
+      // Map to Candle objects
+      const mapped: Candle[] = sliced.map((c, i) => {
+        const isLast = i === sliced.length - 1;
+        const openP = Number(c.open);
+        const closeP = isLast && livePrice > 0 ? livePrice : Number(c.close);
+        const highP = isLast && livePrice > 0 ? Math.max(Number(c.high), livePrice) : Number(c.high);
+        const lowP = isLast && livePrice > 0 ? Math.min(Number(c.low), livePrice) : Number(c.low);
+        return {
+          time: c.time || "",
+          open: openP,
+          high: highP,
+          low: lowP,
+          close: closeP,
+          isBullish: closeP >= openP,
+          volume: Number(c.volume || 100),
+          isSweep: Boolean(c.isSweep),
+          isChoch: Boolean(c.isChoch),
+          isRetest: Boolean(c.isRetest),
+          isRejection: Boolean(c.isRejection),
+        };
+      });
+
+      // Identify milestone candles if not already tagged
+      if (s2Pass && sweepPrice > 0 && !mapped.some((c) => c.isSweep)) {
+        let bestIdx = -1;
+        let bestDiff = Infinity;
+        mapped.forEach((c, idx) => {
+          const target = isBullishSetup ? c.low : c.high;
+          const diff = Math.abs(target - sweepPrice);
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            bestIdx = idx;
+          }
+        });
+        if (bestIdx >= 0 && bestDiff < (isMetals ? 2.5 : 0.005)) {
+          mapped[bestIdx].isSweep = true;
+        }
+      }
+
+      if (s3Pass && chochPrice > 0 && !mapped.some((c) => c.isChoch)) {
+        let bestIdx = -1;
+        let bestDiff = Infinity;
+        mapped.forEach((c, idx) => {
+          const target = isBullishSetup ? c.high : c.low;
+          const diff = Math.abs(target - chochPrice);
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            bestIdx = idx;
+          }
+        });
+        if (bestIdx >= 0 && bestDiff < (isMetals ? 2.5 : 0.005)) {
+          mapped[bestIdx].isChoch = true;
+        }
+      }
+
+      return mapped;
+    } catch {
+      return null;
+    }
+  }, [telemetry, livePrice, zoomLevel, isMobile, s2Pass, s3Pass, sweepPrice, chochPrice, isBullishSetup, isMetals]);
+
+  // Construct Realistic M5 Candlesticks Graphically Representing the SMC Sequence (Real MT5 + Schematic Fallback)
   const candles = useMemo<Candle[]>(() => {
+    // If real MT5 candlesticks are available from bot telemetry, use them directly!
+    if (realCandles && realCandles.length >= 8) {
+      return realCandles;
+    }
+
     const bars: Candle[] = [];
     const step = isMetals ? 0.65 : 0.0003;
     const now = Date.now();
@@ -447,6 +538,7 @@ export function SmcChartOverlay({
 
     return bars;
   }, [
+    realCandles,
     livePrice,
     sweepPrice,
     chochPrice,
@@ -1526,6 +1618,21 @@ export function SmcChartOverlay({
                 >
                   HTF Bias: {rawM15Bias}
                 </Badge>
+                {Boolean(realCandles && realCandles.length >= 8) ? (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] px-2 py-0.5 font-bold bg-cyan-500/20 text-cyan-300 border-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.3)]"
+                  >
+                    ⚡ REAL MT5 M5 FEED
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] px-2 py-0.5 font-bold bg-indigo-500/20 text-indigo-300 border-indigo-500"
+                  >
+                    📐 SMC SCHEMATIC CANVAS
+                  </Badge>
+                )}
               </div>
 
               <div className="flex items-center gap-2 text-[11px]">

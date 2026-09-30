@@ -26,6 +26,13 @@ router.get("/smc_telemetry", async (req, res) => {
     }
 
     if (row) {
+      let parsedBounds: any = {};
+      try {
+        if (row.fvgBoundsJson) {
+          parsedBounds = typeof row.fvgBoundsJson === "string" ? JSON.parse(row.fvgBoundsJson) : row.fvgBoundsJson;
+        }
+      } catch {}
+
       return res.json({
         symbol_pair: row.symbolPair,
         m15_bias: row.m15Bias || "NEUTRAL ⚪",
@@ -35,6 +42,7 @@ router.get("/smc_telemetry", async (req, res) => {
         choch_price: Number(row.chochPrice ?? 0),
         fvg_status: row.fvgStatus || "FAIL ⚪",
         fvg_bounds_json: row.fvgBoundsJson || "[]",
+        candles: Array.isArray(parsedBounds?.candles) ? parsedBounds.candles : [],
         rejection_status: row.rejectionStatus || "FAIL ⚪",
         action: row.action || "NONE",
         updated_at: row.updatedAt ? new Date(row.updatedAt).toISOString() : "",
