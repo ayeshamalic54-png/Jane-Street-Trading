@@ -77,6 +77,57 @@ def evaluate_smc_strategy_signal(
     p5_buy_rejection = in_bull_fvg and (closed_close >= closed_open)
     p5_sell_rejection = in_bear_fvg and (closed_close <= closed_open)
 
+    # ── FRESHNESS & STRUCTURE INVALIDATION GUARD ──
+    # SMC Rule: An entry setup is only valid while price is actively reacting to it.
+    # 1. Stale Expiry Guard: If more than 6 M5 candles (>30 mins) have elapsed since CHoCH and price has NOT retested the FVG,
+    # the setup is EXPIRED. Price failed to pull back in time; the setup is dead.
+    # 2. Structural BOS Invalidation:
+    # - Bearish Setup: If price plunges below recent swing low (creating a new BOS down) before retesting the FVG,
+    # the higher premium FVG is abandoned. The structure cycle has moved on.
+    # - Bullish Setup: If price surges above recent swing high (creating a new BOS up) before retesting the FVG,
+    # the lower discount FVG is abandoned. The structure cycle has moved on.
+    n_candles = len(eval_df)
+
+    if has_bear_choch:
+        candles_since_bear_choch = (n_candles - 1) - bear_choch_idx
+        if candles_since_bear_choch > 6 and not in_bear_fvg:
+            has_buy_sweep = False
+            has_bear_choch = False
+            zones_bear = {'bearish_fvg': []}
+            in_bear_fvg = False
+            p5_sell_rejection = False
+        else:
+            from smc_indicators import get_swing_points
+            _, recent_m5_sl = get_swing_points(eval_df, n_left=2, n_right=2)
+            if recent_m5_sl:
+                lowest_sl = min(p for p, _ in recent_m5_sl[-4:]) if len(recent_m5_sl) >= 4 else recent_m5_sl[-1][0]
+                if closed_close < lowest_sl and not in_bear_fvg:
+                    has_buy_sweep = False
+                    has_bear_choch = False
+                    zones_bear = {'bearish_fvg': []}
+                    in_bear_fvg = False
+                    p5_sell_rejection = False
+
+    if has_bull_choch:
+        candles_since_bull_choch = (n_candles - 1) - bull_choch_idx
+        if candles_since_bull_choch > 6 and not in_bull_fvg:
+            has_sell_sweep = False
+            has_bull_choch = False
+            zones_bull = {'bullish_fvg': []}
+            in_bull_fvg = False
+            p5_buy_rejection = False
+        else:
+            from smc_indicators import get_swing_points
+            recent_m5_sh, _ = get_swing_points(eval_df, n_left=2, n_right=2)
+            if recent_m5_sh:
+                highest_sh = max(p for p, _ in recent_m5_sh[-4:]) if len(recent_m5_sh) >= 4 else recent_m5_sh[-1][0]
+                if closed_close > highest_sh and not in_bull_fvg:
+                    has_sell_sweep = False
+                    has_bull_choch = False
+                    zones_bull = {'bullish_fvg': []}
+                    in_bull_fvg = False
+                    p5_buy_rejection = False
+
     # ── 1. BUY SIGNAL EVALUATION (CONDITION 8 & 9 MANDATORY 🟢) ──
     if is_m15_bullish and has_sell_sweep and has_bull_choch and (len(zones_bull['bullish_fvg']) > 0) and in_bull_fvg and p5_buy_rejection:
         buf = 0.75 if is_metals else 0.00040
@@ -194,28 +245,28 @@ def evaluate_smc_strategy_signal(
     # ── 3. SCANNER LOGGING (ALL 7 STEPS INDIVIDUALLY DISPLAYED) ──
     if is_m15_bullish:
         step1_s = "BULLISH 🟢"
-        step2_s = "PASS 🟢 (Sell-Side Sweep)" if has_sell_sweep else "FAIL ⚪ (No Sell-Side Sweep)"
-        step3_s = "PASS 🟢 (Bullish CHoCH)" if has_bull_choch else "FAIL ⚪ (No Bullish CHoCH)"
-        step4_s = "PASS 🟢 (Post-CHoCH FVG)" if (len(zones_bull['bullish_fvg']) > 0) else "FAIL ⚪ (No Post-CHoCH FVG)"
-        step5_s = "PASS 🟢 (Retested FVG)" if in_bull_fvg else "FAIL ⚪ (No Retest)"
-        step6_s = "PASS 🟢 (Green Rejection)" if p5_buy_rejection else "FAIL ⚪ (No Rejection)"
-        step7_s = "PASS 🟢 (Candle Closed)" if p5_buy_rejection else "FAIL ⚪ (Waiting Candle Close)"
+        step2_s = "PASS 🟢 (Sell-Side Sweep)" if has_sell_sweep else "WAITING ⚪ (Awaiting Fresh Sweep)"
+        step3_s = "PASS 🟢 (Bullish CHoCH)" if has_bull_choch else "WAITING ⚪ (Awaiting Fresh CHoCH)"
+        step4_s = "PASS 🟢 (Post-CHoCH FVG)" if (len(zones_bull['bullish_fvg']) > 0) else "WAITING ⚪ (Awaiting Fresh FVG)"
+        step5_s = "PASS 🟢 (Retested FVG)" if in_bull_fvg else "WAITING ⚪ (Awaiting Retest)"
+        step6_s = "PASS 🟢 (Green Rejection)" if p5_buy_rejection else "WAITING ⚪ (Awaiting Rejection)"
+        step7_s = "PASS 🟢 (Candle Closed)" if p5_buy_rejection else "WAITING ⚪ (Waiting Candle Close)"
     elif is_m15_bearish:
         step1_s = "BEARISH 🔴"
-        step2_s = "PASS 🔴 (Buy-Side Sweep)" if has_buy_sweep else "FAIL ⚪ (No Buy-Side Sweep)"
-        step3_s = "PASS 🔴 (Bearish CHoCH)" if has_bear_choch else "FAIL ⚪ (No Bearish CHoCH)"
-        step4_s = "PASS 🔴 (Post-CHoCH FVG)" if (len(zones_bear['bearish_fvg']) > 0) else "FAIL ⚪ (No Post-CHoCH FVG)"
-        step5_s = "PASS 🔴 (Retested FVG)" if in_bear_fvg else "FAIL ⚪ (No Retest)"
-        step6_s = "PASS 🔴 (Red Rejection)" if p5_sell_rejection else "FAIL ⚪ (No Rejection)"
-        step7_s = "PASS 🔴 (Candle Closed)" if p5_sell_rejection else "FAIL ⚪ (Waiting Candle Close)"
+        step2_s = "PASS 🔴 (Buy-Side Sweep)" if has_buy_sweep else "WAITING ⚪ (Awaiting Fresh Sweep)"
+        step3_s = "PASS 🔴 (Bearish CHoCH)" if has_bear_choch else "WAITING ⚪ (Awaiting Fresh CHoCH)"
+        step4_s = "PASS 🔴 (Post-CHoCH FVG)" if (len(zones_bear['bearish_fvg']) > 0) else "WAITING ⚪ (Awaiting Fresh FVG)"
+        step5_s = "PASS 🔴 (Retested FVG)" if in_bear_fvg else "WAITING ⚪ (Awaiting Retest)"
+        step6_s = "PASS 🔴 (Red Rejection)" if p5_sell_rejection else "WAITING ⚪ (Awaiting Rejection)"
+        step7_s = "PASS 🔴 (Candle Closed)" if p5_sell_rejection else "WAITING ⚪ (Waiting Candle Close)"
     else:
         step1_s = "NEUTRAL ⚪"
-        step2_s = "FAIL ⚪ (M15 Structure Neutral)"
-        step3_s = "FAIL ⚪ (M15 Structure Neutral)"
-        step4_s = "FAIL ⚪ (M15 Structure Neutral)"
-        step5_s = "FAIL ⚪ (M15 Structure Neutral)"
-        step6_s = "FAIL ⚪ (M15 Structure Neutral)"
-        step7_s = "FAIL ⚪ (M15 Structure Neutral)"
+        step2_s = "WAITING ⚪ (M15 Neutral)"
+        step3_s = "WAITING ⚪ (M15 Neutral)"
+        step4_s = "WAITING ⚪ (M15 Neutral)"
+        step5_s = "WAITING ⚪ (M15 Neutral)"
+        step6_s = "WAITING ⚪ (M15 Neutral)"
+        step7_s = "WAITING ⚪ (M15 Neutral)"
 
     step8_s = "PASS 🟢 (0.75 Buf)" if is_metals else "PASS 🟢 (0.0004 Buf)"
 

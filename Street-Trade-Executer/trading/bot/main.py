@@ -1589,13 +1589,13 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
 
                 import risk_safeguards
                 is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', True)
-                be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 65.0)
+                be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 35.0)
 
                 should_close_trail = False
                 trail_close_reason = ""
 
                 if is_be_enabled and peak_floating_profit >= be_trigger_usd and (int(time.time()) % 20 == 0):
-                    logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVE 🟢] Peak PnL: +${peak_floating_profit:.2f} USD >= +${be_trigger_usd:.2f} USD. SL shifted to Breakeven (+ $5.00 USD profit lock). Trade running to Full TP (+ $91.00 USD)!")
+                    logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVE 🟢] Peak PnL: +${peak_floating_profit:.2f} USD >= +${be_trigger_usd:.2f} USD. SL shifted to Breakeven Entry Price (Risk-Free). Trade running to 1:1.85 TP!")
 
                 from execution_bot import modify_position_sl
                 pip_unit = 0.01 if "JPY" in sym_a.upper() else 0.0001
