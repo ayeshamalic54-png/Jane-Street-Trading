@@ -134,10 +134,34 @@ export function SmcChartOverlay({
   activeZones = [],
 }: SmcChartOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(1000);
   const [activeTab, setActiveTab] = useState<"smc" | "tv">("tv");
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredCandle, setHoveredCandle] = useState<Candle | null>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(1.0);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const updateSize = () => {
+      if (containerRef.current) {
+        const w = containerRef.current.clientWidth;
+        if (w > 0) setContainerWidth(w);
+      }
+    };
+    updateSize();
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          setContainerWidth(Math.round(entry.contentRect.width));
+        }
+      }
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const isMobile = containerWidth < 640;
 
   const isMetals =
     symbol.toUpperCase().includes("XAU") ||
@@ -285,70 +309,124 @@ export function SmcChartOverlay({
   // Construct Realistic M5 Candlesticks Graphically Representing the SMC Sequence
   const candles = useMemo<Candle[]>(() => {
     const bars: Candle[] = [];
-    const baseP = livePrice;
     const step = isMetals ? 0.65 : 0.0003;
     const now = Date.now();
-    const count = Math.max(14, Math.min(45, Math.round(26 / zoomLevel)));
+    const count = isMobile
+      ? Math.max(14, Math.min(24, Math.round(18 / zoomLevel)))
+      : Math.max(18, Math.min(40, Math.round(28 / zoomLevel)));
 
-    for (let i = count; i >= 0; i--) {
-      const t = new Date(now - i * 5 * 60 * 1000);
+    // Reference SMC anchor levels
+    const swP =
+      sweepPrice > 0
+        ? sweepPrice
+        : isBullishSetup
+        ? Number((livePrice - step * 6.5).toFixed(2))
+        : Number((livePrice + step * 6.5).toFixed(2));
+
+    const chP =
+      chochPrice > 0
+        ? chochPrice
+        : isBullishSetup
+        ? Number((swP + step * 4.0).toFixed(2))
+        : Number((swP - step * 4.0).toFixed(2));
+
+    // Milestone bar indices across the timeline (0 = oldest, count - 1 = live forming bar)
+    const sweepIdx = Math.max(2, Math.floor(count * 0.35));
+    const chochIdx = Math.max(sweepIdx + 2, Math.floor(count * 0.55));
+    const retestIdx = Math.max(chochIdx + 2, Math.floor(count * 0.72));
+    const rejectionIdx = Math.max(retestIdx + 1, Math.min(count - 2, Math.floor(count * 0.86)));
+    const liveIdx = count - 1;
+
+    // Build contiguous sequence: bar[k].open ALWAYS equals bar[k-1].close
+    let prevClose = isBullishSetup
+      ? swP + step * (sweepIdx * 0.45 + 1.2)
+      : swP - step * (sweepIdx * 0.45 + 1.2);
+
+    for (let k = 0; k < count; k++) {
+      const idxFromEnd = count - 1 - k;
+      const t = new Date(now - idxFromEnd * 5 * 60 * 1000);
       const timeStr = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
-      let openP = baseP;
-      let closeP = baseP;
+      const openP = prevClose;
+      let closeP = openP;
       let isSweep = false;
       let isChoch = false;
       let isRetest = false;
       let isRejection = false;
 
-      if (i > 14) {
-        openP = baseP + (i - 14) * step * 0.4;
-        closeP = openP - step * 0.5;
-      } else if (i === 14) {
-        isSweep = true;
-        if (sweepPrice > 0) {
-          openP = isBullishSetup ? sweepPrice + step * 0.8 : sweepPrice - step * 0.8;
-          closeP = isBullishSetup ? sweepPrice + step * 1.4 : sweepPrice - step * 1.4;
-        } else {
-          openP = baseP - step * 1.2;
-          closeP = baseP - step * 0.4;
-        }
-      } else if (i > 9 && i < 14) {
-        openP = baseP - (i - 9) * step * 0.5;
-        closeP = openP + step * 0.7;
-      } else if (i === 9) {
-        isChoch = true;
-        if (chochPrice > 0) {
-          openP = isBullishSetup ? chochPrice - step * 0.4 : chochPrice + step * 0.4;
-          closeP = isBullishSetup ? chochPrice + step * 0.8 : chochPrice - step * 0.8;
-        } else {
-          openP = baseP - step * 0.2;
-          closeP = baseP + step * 0.9;
-        }
-      } else if (i === 5) {
-        isRetest = true;
-        openP = baseP + step * 0.6;
-        closeP = baseP + step * 0.1;
-      } else if (i === 2) {
-        isRejection = true;
-        openP = baseP - step * 0.3;
-        closeP = isBullishSetup ? baseP + step * 0.6 : baseP - step * 0.6;
-      } else if (i === 0) {
-        openP = baseP - step * 0.2;
+      if (k === liveIdx) {
+        // Current forming candle: close is strictly identical to livePrice
         closeP = livePrice;
+      } else if (k < sweepIdx) {
+        // Phase 1: Pre-sweep trend leading down (or up) to liquidity level
+        const progress = (k + 1) / sweepIdx;
+        const target = isBullishSetup
+          ? swP + step * 0.35 + (1 - progress) * step * 2.5
+          : swP - step * 0.35 - (1 - progress) * step * 2.5;
+        // Alternating small candles with net drift towards sweep
+        const micro = (k % 3 === 0 ? 0.3 : -0.2) * step;
+        closeP = isBullishSetup
+          ? Math.max(swP + step * 0.2, target + micro)
+          : Math.min(swP - step * 0.2, target + micro);
+      } else if (k === sweepIdx) {
+        // Phase 2: Liquidity sweep candle
+        isSweep = s2Pass;
+        // Closes back inside structure
+        closeP = isBullishSetup ? swP + step * 0.5 : swP - step * 0.5;
+      } else if (k > sweepIdx && k < chochIdx) {
+        // Phase 3: Displacement impulse surge towards CHoCH
+        const progress = (k - sweepIdx) / (chochIdx - sweepIdx);
+        closeP = isBullishSetup
+          ? openP + step * (0.8 + progress * 0.4)
+          : openP - step * (0.8 + progress * 0.4);
+      } else if (k === chochIdx) {
+        // Phase 4: CHoCH breakout candle (closes beyond chochPrice)
+        isChoch = s3Pass;
+        closeP = isBullishSetup ? chP + step * 0.45 : chP - step * 0.45;
+      } else if (k > chochIdx && k < retestIdx) {
+        // Phase 5: Post-CHoCH peak / transition to pullback
+        const fvgMid = isBullishSetup ? (swP + chP) * 0.52 : (swP + chP) * 0.48;
+        closeP = (openP + fvgMid) * 0.5;
+      } else if (k === retestIdx) {
+        // Phase 6: Retest candle dipping into FVG zone
+        isRetest = s5Pass;
+        const fvgMid = isBullishSetup ? (swP + chP) * 0.52 : (swP + chP) * 0.48;
+        closeP = isBullishSetup ? fvgMid + step * 0.15 : fvgMid - step * 0.15;
+      } else if (k === rejectionIdx) {
+        // Phase 7: Rejection candle pushing away from FVG in setup direction
+        isRejection = s6Pass;
+        closeP = isBullishSetup ? openP + step * 0.65 : openP - step * 0.65;
       } else {
-        openP = baseP + Math.sin(i * 0.7) * step * 1.2;
-        closeP = openP + (i % 2 === 0 ? step * 0.5 : -step * 0.4);
+        // Phase 8: Smooth interpolation between rejection and final live candle
+        const remaining = liveIdx - k;
+        const stepDelta = (livePrice - openP) / (remaining + 1);
+        closeP = openP + stepDelta;
       }
 
-      let highP = Math.max(openP, closeP) + step * (isSweep ? 0.4 : 0.6);
-      let lowP = Math.min(openP, closeP) - step * (isSweep ? 2.5 : 0.6);
+      // Calculate realistic wicks
+      let highP = Math.max(openP, closeP) + step * 0.25;
+      let lowP = Math.min(openP, closeP) - step * 0.25;
 
-      if (isSweep && sweepPrice > 0) {
+      if (k === sweepIdx) {
+        // Accentuate the liquidity sweep wick
         if (isBullishSetup) {
-          lowP = sweepPrice - (isMetals ? 0.25 : 0.0001);
+          lowP = swP - (isMetals ? 0.35 : 0.0002);
+          highP = Math.max(openP, closeP) + step * 0.2;
         } else {
-          highP = sweepPrice + (isMetals ? 0.25 : 0.0001);
+          highP = swP + (isMetals ? 0.35 : 0.0002);
+          lowP = Math.min(openP, closeP) - step * 0.2;
+        }
+      } else if (k === liveIdx) {
+        // Final live candle: ensure wick wraps livePrice neatly
+        highP = Math.max(openP, livePrice) + (livePrice >= openP ? step * 0.2 : step * 0.08);
+        lowP = Math.min(openP, livePrice) - (livePrice <= openP ? step * 0.2 : step * 0.08);
+      } else if (k === rejectionIdx) {
+        // Rejection candle: long wick testing into FVG
+        const fvgMid = isBullishSetup ? (swP + chP) * 0.52 : (swP + chP) * 0.48;
+        if (isBullishSetup) {
+          lowP = Math.min(lowP, fvgMid - step * 0.3);
+        } else {
+          highP = Math.max(highP, fvgMid + step * 0.3);
         }
       }
 
@@ -365,9 +443,25 @@ export function SmcChartOverlay({
         isRetest,
         isRejection,
       });
+
+      prevClose = closeP;
     }
+
     return bars;
-  }, [livePrice, sweepPrice, chochPrice, isMetals, isBullishSetup, zoomLevel]);
+  }, [
+    livePrice,
+    sweepPrice,
+    chochPrice,
+    isMetals,
+    isBullishSetup,
+    isBearishSetup,
+    zoomLevel,
+    isMobile,
+    s2Pass,
+    s3Pass,
+    s5Pass,
+    s6Pass,
+  ]);
 
   const shouldShowTradeLevels = isTradeActive || s7Pass;
 
@@ -464,35 +558,42 @@ export function SmcChartOverlay({
   }, [candles, sweepPrice, chochPrice, isBullishSetup, isBearishSetup]);
 
   // Dimensions & Price Mapping (Full-Height TradingView Candlestick Proportions)
-  const svgWidth = 1000;
-  const svgHeight = 460;
-  const chartLeft = 20;
-  const chartRight = 850; // 150px reserved on right for ultra-crisp readable price tags
-  const chartTop = 25;
-  const chartBottom = 425;
-  const plotWidth = chartRight - chartLeft;
-  const plotHeight = chartBottom - chartTop;
+  const svgWidth = Math.max(340, containerWidth);
+  const svgHeight = isMobile ? 380 : 460;
+  const chartLeft = isMobile ? 8 : 20;
+  const rightTagWidth = isMobile ? 112 : 148;
+  const chartRight = svgWidth - (rightTagWidth + 8);
+  const chartTop = isMobile ? 18 : 25;
+  const chartBottom = svgHeight - (isMobile ? 28 : 35);
+  const plotWidth = Math.max(100, chartRight - chartLeft);
+  const plotHeight = Math.max(100, chartBottom - chartTop);
 
   const showSlLevel = isTradeActive || s2Pass;
   const showTpLevel = isTradeActive || s4Pass;
   const showEntryLevel = isTradeActive || s7Pass;
 
-  // AUTO-SCALE STRICTLY TO CANDLES - Candles will fill 85% of chart height!
+  // AUTO-SCALE STRICTLY TO CANDLES & ACTIVE SMC LEVELS
   const minPrice = useMemo(() => {
     const lows = candles.map((c) => c.low);
-    if (showSlLevel && slPrice > 0 && Math.abs(slPrice - livePrice) < 20) lows.push(slPrice);
-    if (showEntryLevel && entryPrice > 0) lows.push(entryPrice);
+    lows.push(livePrice);
+    if (showSlLevel && effectiveSlPrice > 0 && Math.abs(effectiveSlPrice - livePrice) < 30) lows.push(effectiveSlPrice);
+    if (showEntryLevel && effectiveEntryPrice > 0) lows.push(effectiveEntryPrice);
+    if (swingStructure.swingLow > 0 && Math.abs(swingStructure.swingLow - livePrice) < 30) lows.push(swingStructure.swingLow);
+    if (fvgBounds && fvgBounds.low > 0) lows.push(fvgBounds.low);
     const rawMin = Math.min(...lows);
     return Number((rawMin - (isMetals ? 0.60 : 0.0003)).toFixed(2));
-  }, [candles, showSlLevel, showEntryLevel, slPrice, entryPrice, livePrice, isMetals]);
+  }, [candles, showSlLevel, showEntryLevel, effectiveSlPrice, effectiveEntryPrice, livePrice, swingStructure.swingLow, fvgBounds, isMetals]);
 
   const maxPrice = useMemo(() => {
     const highs = candles.map((c) => c.high);
-    if (showTpLevel && tpPrice > 0 && Math.abs(tpPrice - livePrice) < 25) highs.push(tpPrice);
-    if (showEntryLevel && entryPrice > 0) highs.push(entryPrice);
+    highs.push(livePrice);
+    if (showTpLevel && effectiveTpPrice > 0 && Math.abs(effectiveTpPrice - livePrice) < 35) highs.push(effectiveTpPrice);
+    if (showEntryLevel && effectiveEntryPrice > 0) highs.push(effectiveEntryPrice);
+    if (swingStructure.swingHigh > 0 && Math.abs(swingStructure.swingHigh - livePrice) < 30) highs.push(swingStructure.swingHigh);
+    if (fvgBounds && fvgBounds.high > 0) highs.push(fvgBounds.high);
     const rawMax = Math.max(...highs);
     return Number((rawMax + (isMetals ? 0.60 : 0.0003)).toFixed(2));
-  }, [candles, showTpLevel, showEntryLevel, tpPrice, entryPrice, livePrice, isMetals]);
+  }, [candles, showTpLevel, showEntryLevel, effectiveTpPrice, effectiveEntryPrice, livePrice, swingStructure.swingHigh, fvgBounds, isMetals]);
 
   const priceRange = maxPrice - minPrice || 1;
 
@@ -503,7 +604,222 @@ export function SmcChartOverlay({
 
   const candleSpacing = plotWidth / candles.length;
   // Thick, bold, high-visibility TradingView-like candlesticks
-  const candleBodyWidth = Math.max(12, Math.min(28, candleSpacing * 0.78));
+  const candleBodyWidth = Math.max(isMobile ? 8 : 12, Math.min(isMobile ? 18 : 28, candleSpacing * 0.78));
+
+  // Anti-Collision Right Axis Tags Algorithm
+  interface RightAxisTag {
+    id: string;
+    price: number;
+    targetY: number;
+    renderedY: number;
+    bgFill: string;
+    borderStroke: string;
+    textColor: string;
+    fontSize: string;
+    label: string;
+    priority: number;
+  }
+
+  const tagHeight = isMobile ? 20 : 24;
+  const minTagGap = tagHeight + 2;
+
+  const stackedTags = useMemo<RightAxisTag[]>(() => {
+    const list: RightAxisTag[] = [];
+
+    // 1. Live Price (Highest priority)
+    list.push({
+      id: "live",
+      price: livePrice,
+      targetY: getY(livePrice),
+      renderedY: getY(livePrice),
+      bgFill: "#ffffff",
+      borderStroke: "#94a3b8",
+      textColor: "#000000",
+      fontSize: isMobile ? "10" : "11.5",
+      label: `LIVE $${livePrice.toFixed(2)}`,
+      priority: 100,
+    });
+
+    // 2. Active Entry Level
+    if (showEntryLevel && effectiveEntryPrice > 0) {
+      list.push({
+        id: "entry",
+        price: effectiveEntryPrice,
+        targetY: getY(effectiveEntryPrice),
+        renderedY: getY(effectiveEntryPrice),
+        bgFill: "#0284c7",
+        borderStroke: "#38bdf8",
+        textColor: "#ffffff",
+        fontSize: isMobile ? "9.5" : "10.5",
+        label: isMobile ? `ENTRY $${effectiveEntryPrice.toFixed(2)}` : `🔵 ENTRY $${effectiveEntryPrice.toFixed(2)}`,
+        priority: 90,
+      });
+    }
+
+    // 3. Stop Loss (SL)
+    if (showSlLevel && effectiveSlPrice > 0) {
+      list.push({
+        id: "sl",
+        price: effectiveSlPrice,
+        targetY: getY(effectiveSlPrice),
+        renderedY: getY(effectiveSlPrice),
+        bgFill: isTradeActive ? "#dc2626" : "#7f1d1d",
+        borderStroke: isTradeActive ? "#fca5a5" : "#b91c1c",
+        textColor: "#ffffff",
+        fontSize: isMobile ? "9.5" : "10.5",
+        label: isTradeActive
+          ? `🔴 SL $${effectiveSlPrice.toFixed(2)}`
+          : `🔒 SL (0.75) $${effectiveSlPrice.toFixed(2)}`,
+        priority: 85,
+      });
+    }
+
+    // 4. Take Profit (TP)
+    if (showTpLevel && effectiveTpPrice > 0) {
+      list.push({
+        id: "tp",
+        price: effectiveTpPrice,
+        targetY: getY(effectiveTpPrice),
+        renderedY: getY(effectiveTpPrice),
+        bgFill: isTradeActive ? "#059669" : "#064e3b",
+        borderStroke: isTradeActive ? "#6ee7b7" : "#059669",
+        textColor: "#ffffff",
+        fontSize: isMobile ? "9.5" : "10.5",
+        label: isTradeActive
+          ? `🟢 TP $${effectiveTpPrice.toFixed(2)}`
+          : `🎯 2.0R $${effectiveTpPrice.toFixed(2)}`,
+        priority: 85,
+      });
+    }
+
+    // 5. CHoCH Level
+    if (swingStructure.chochLvl > 0) {
+      list.push({
+        id: "choch",
+        price: swingStructure.chochLvl,
+        targetY: getY(swingStructure.chochLvl),
+        renderedY: getY(swingStructure.chochLvl),
+        bgFill: s3Pass ? "#d97706" : "#78350f",
+        borderStroke: s3Pass ? "#fde68a" : "#d97706",
+        textColor: "#ffffff",
+        fontSize: isMobile ? "9.5" : "10.5",
+        label: s3Pass
+          ? (isMobile ? `CHOCH 🟢 $${swingStructure.chochLvl.toFixed(2)}` : `⚡ CHOCH 🟢 $${swingStructure.chochLvl.toFixed(2)}`)
+          : `⏳ CHOCH $${swingStructure.chochLvl.toFixed(2)}`,
+        priority: 70,
+      });
+    }
+
+    // 6. Swing High
+    if (swingStructure.swingHigh > 0) {
+      const isSwept = s2Pass && isBearishSetup;
+      list.push({
+        id: "swingHigh",
+        price: swingStructure.swingHigh,
+        targetY: getY(swingStructure.swingHigh),
+        renderedY: getY(swingStructure.swingHigh),
+        bgFill: isSwept ? "#0891b2" : "#164e63",
+        borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
+        textColor: "#ffffff",
+        fontSize: isMobile ? "9" : "10",
+        label: isSwept
+          ? (isMobile ? `SWEPT 🟢 $${swingStructure.swingHigh.toFixed(2)}` : `⚡ BUY SWEPT $${swingStructure.swingHigh.toFixed(2)}`)
+          : (isMobile ? `SWING HI $${swingStructure.swingHigh.toFixed(2)}` : `⏳ SWING HI $${swingStructure.swingHigh.toFixed(2)}`),
+        priority: 60,
+      });
+    }
+
+    // 7. Swing Low
+    if (swingStructure.swingLow > 0) {
+      const isSwept = s2Pass && isBullishSetup;
+      list.push({
+        id: "swingLow",
+        price: swingStructure.swingLow,
+        targetY: getY(swingStructure.swingLow),
+        renderedY: getY(swingStructure.swingLow),
+        bgFill: isSwept ? "#0891b2" : "#164e63",
+        borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
+        textColor: "#ffffff",
+        fontSize: isMobile ? "9" : "10",
+        label: isSwept
+          ? (isMobile ? `SWEPT 🟢 $${swingStructure.swingLow.toFixed(2)}` : `⚡ SELL SWEPT $${swingStructure.swingLow.toFixed(2)}`)
+          : (isMobile ? `SWING LO $${swingStructure.swingLow.toFixed(2)}` : `⏳ SWING LO $${swingStructure.swingLow.toFixed(2)}`),
+        priority: 60,
+      });
+    }
+
+    // Sort by natural targetY ascending (top to bottom on chart)
+    list.sort((a, b) => a.targetY - b.targetY);
+
+    // Iterative relaxation to eliminate label collisions
+    for (let iter = 0; iter < 12; iter++) {
+      // Forward pass: push down if overlapping
+      for (let i = 1; i < list.length; i++) {
+        const prev = list[i - 1];
+        const curr = list[i];
+        const gap = curr.renderedY - prev.renderedY;
+        if (gap < minTagGap) {
+          const overlap = minTagGap - gap;
+          if (curr.priority > prev.priority) {
+            prev.renderedY -= overlap * 0.7;
+            curr.renderedY += overlap * 0.3;
+          } else if (prev.priority > curr.priority) {
+            prev.renderedY -= overlap * 0.3;
+            curr.renderedY += overlap * 0.7;
+          } else {
+            prev.renderedY -= overlap * 0.5;
+            curr.renderedY += overlap * 0.5;
+          }
+        }
+      }
+      // Backward pass: push up if overlapping
+      for (let i = list.length - 2; i >= 0; i--) {
+        const curr = list[i];
+        const next = list[i + 1];
+        const gap = next.renderedY - curr.renderedY;
+        if (gap < minTagGap) {
+          const overlap = minTagGap - gap;
+          curr.renderedY -= overlap * 0.5;
+          next.renderedY += overlap * 0.5;
+        }
+      }
+    }
+
+    // Boundary constraints: keep within chart viewport
+    const topLimit = chartTop + tagHeight / 2;
+    const botLimit = chartBottom - tagHeight / 2;
+
+    for (let i = 0; i < list.length; i++) {
+      list[i].renderedY = Math.max(
+        topLimit + i * minTagGap,
+        Math.min(botLimit - (list.length - 1 - i) * minTagGap, list[i].renderedY)
+      );
+    }
+
+    return list;
+  }, [
+    chartTop,
+    chartBottom,
+    isMobile,
+    tagHeight,
+    minTagGap,
+    livePrice,
+    showEntryLevel,
+    effectiveEntryPrice,
+    showSlLevel,
+    effectiveSlPrice,
+    showTpLevel,
+    effectiveTpPrice,
+    swingStructure,
+    s2Pass,
+    s3Pass,
+    isTradeActive,
+    isBullishSetup,
+    isBearishSetup,
+    minPrice,
+    priceRange,
+    plotHeight,
+  ]);
 
   // 6 Clean Price Grid Ticks
   const gridTicks = useMemo(() => {
@@ -783,8 +1099,8 @@ export function SmcChartOverlay({
               </div>
             </div>
 
-            {/* 7-Step Sequential Micro-Grid Directly Inside Chart */}
-            <div className="grid grid-cols-7 gap-1.5 text-[10px]">
+            {/* 7-Step Sequential Micro-Grid Directly Inside Chart (Responsive on Mobile) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 text-[10px]">
               {/* S1: M15 Bias */}
               <div className={cn(
                 "p-1.5 rounded-lg border-2 text-center transition-all",
@@ -875,7 +1191,7 @@ export function SmcChartOverlay({
 
               {/* S7: Confirmation Close */}
               <div className={cn(
-                "p-1.5 rounded-lg border-2 text-center transition-all",
+                "col-span-2 sm:col-span-2 lg:col-span-1 p-1.5 rounded-lg border-2 text-center transition-all",
                 s7Pass
                   ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
                   : s6Pass
@@ -895,10 +1211,10 @@ export function SmcChartOverlay({
           <TradingViewEmbedded symbol={symbol} />
         ) : (
           /* SVG Canvas with Crisp Rendering and Real-time Cursor Tracking */
-          <div className="relative w-full h-[460px]">
+          <div className="relative w-full h-[380px] sm:h-[420px] md:h-[460px] lg:h-[480px]">
             <svg
               viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-              className="w-full h-full cursor-crosshair"
+              className="w-full h-full cursor-crosshair select-none"
               onMouseMove={handleMouseMove}
               onMouseLeave={handleMouseLeave}
             >
@@ -960,12 +1276,12 @@ export function SmcChartOverlay({
                     strokeDasharray="4 4"
                   />
                   <text
-                    x={chartRight + 14}
-                    y={tick.y + 4.5}
-                    fill="#cbd5e1"
-                    fontSize="13"
+                    x={chartRight + (isMobile ? 6 : 10)}
+                    y={tick.y + 4}
+                    fill="#64748b"
+                    fontSize={isMobile ? "10" : "11.5"}
                     fontFamily="monospace"
-                    fontWeight="800"
+                    fontWeight="700"
                   >
                     ${tick.price.toFixed(2)}
                   </text>
@@ -1014,262 +1330,104 @@ export function SmcChartOverlay({
                 </g>
               )}
 
-              {/* Step 2A: Swing High (Buy-Side Liquidity Level) - Visible Pre-Trade & Color Changes on Sweep */}
+              {/* Step 2A: Swing High (Buy-Side Liquidity Level Line) */}
               {swingStructure.swingHigh > 0 && (
-                <g>
-                  <line
-                    x1={chartLeft}
-                    y1={getY(swingStructure.swingHigh)}
-                    x2={chartRight}
-                    y2={getY(swingStructure.swingHigh)}
-                    stroke={(s2Pass && isBearishSetup) ? "#06b6d4" : "#0891b2"}
-                    strokeWidth={(s2Pass && isBearishSetup) ? 2.5 : 1.5}
-                    strokeDasharray={(s2Pass && isBearishSetup) ? "none" : "6 4"}
-                    opacity={(s2Pass && isBearishSetup) ? 1 : 0.75}
-                    filter={(s2Pass && isBearishSetup) ? "url(#glowCyan)" : undefined}
-                  />
-                  <rect
-                    x={chartRight + 6}
-                    y={getY(swingStructure.swingHigh) - 13}
-                    width="142"
-                    height="26"
-                    fill={(s2Pass && isBearishSetup) ? "#0891b2" : "#164e63"}
-                    rx="5"
-                    stroke={(s2Pass && isBearishSetup) ? "#a5f3fc" : "#0891b2"}
-                    strokeWidth="1.5"
-                  />
-                  <text
-                    x={chartRight + 10}
-                    y={getY(swingStructure.swingHigh) + 5}
-                    fill="#ffffff"
-                    fontSize="10.5"
-                    fontFamily="monospace"
-                    fontWeight="900"
-                  >
-                    {(s2Pass && isBearishSetup) ? "⚡ BUY-SIDE SWEPT 🟢" : "⏳ SWING HIGH (Buy Liq)"} ${swingStructure.swingHigh.toFixed(2)}
-                  </text>
-                </g>
-              )}
-
-              {/* Step 2B: Swing Low (Sell-Side Liquidity Level) - Visible Pre-Trade & Color Changes on Sweep */}
-              {swingStructure.swingLow > 0 && (
-                <g>
-                  <line
-                    x1={chartLeft}
-                    y1={getY(swingStructure.swingLow)}
-                    x2={chartRight}
-                    y2={getY(swingStructure.swingLow)}
-                    stroke={(s2Pass && isBullishSetup) ? "#06b6d4" : "#0891b2"}
-                    strokeWidth={(s2Pass && isBullishSetup) ? 2.5 : 1.5}
-                    strokeDasharray={(s2Pass && isBullishSetup) ? "none" : "6 4"}
-                    opacity={(s2Pass && isBullishSetup) ? 1 : 0.75}
-                    filter={(s2Pass && isBullishSetup) ? "url(#glowCyan)" : undefined}
-                  />
-                  <rect
-                    x={chartRight + 6}
-                    y={getY(swingStructure.swingLow) - 13}
-                    width="142"
-                    height="26"
-                    fill={(s2Pass && isBullishSetup) ? "#0891b2" : "#164e63"}
-                    rx="5"
-                    stroke={(s2Pass && isBullishSetup) ? "#a5f3fc" : "#0891b2"}
-                    strokeWidth="1.5"
-                  />
-                  <text
-                    x={chartRight + 10}
-                    y={getY(swingStructure.swingLow) + 5}
-                    fill="#ffffff"
-                    fontSize="10.5"
-                    fontFamily="monospace"
-                    fontWeight="900"
-                  >
-                    {(s2Pass && isBullishSetup) ? "⚡ SELL-SIDE SWEPT 🟢" : "⏳ SWING LOW (Sell Liq)"} ${swingStructure.swingLow.toFixed(2)}
-                  </text>
-                </g>
-              )}
-
-              {/* Step 3: CHoCH (Structure Shift Level) - Visible Pre-Trade & Color Changes on Confirmation */}
-              {swingStructure.chochLvl > 0 && (
-                <g>
-                  <line
-                    x1={chartLeft}
-                    y1={getY(swingStructure.chochLvl)}
-                    x2={chartRight}
-                    y2={getY(swingStructure.chochLvl)}
-                    stroke={s3Pass ? "#f59e0b" : "#d97706"}
-                    strokeWidth={s3Pass ? 2.5 : 1.5}
-                    strokeDasharray={s3Pass ? "none" : "6 4"}
-                    opacity={s3Pass ? 1 : 0.75}
-                    filter={s3Pass ? "url(#glowAmber)" : undefined}
-                  />
-                  <rect
-                    x={chartRight + 6}
-                    y={getY(swingStructure.chochLvl) - 13}
-                    width="142"
-                    height="26"
-                    fill={s3Pass ? "#d97706" : "#78350f"}
-                    rx="5"
-                    stroke={s3Pass ? "#fde68a" : "#d97706"}
-                    strokeWidth="1.5"
-                  />
-                  <text
-                    x={chartRight + 10}
-                    y={getY(swingStructure.chochLvl) + 5}
-                    fill="#ffffff"
-                    fontSize="10.5"
-                    fontFamily="monospace"
-                    fontWeight="900"
-                  >
-                    {s3Pass ? "⚡ CHOCH CONFIRMED 🟢" : "⏳ CHOCH LEVEL"} ${swingStructure.chochLvl.toFixed(2)}
-                  </text>
-                </g>
-              )}
-
-              {/* 1. ENTRY LEVEL LINE & PILL (SHOWN AT STEP 7 / ACTIVE TRADE) */}
-              {(isTradeActive || s7Pass) && entryPrice > 0 && (
-                <g>
-                  <line
-                    x1={chartLeft}
-                    y1={getY(entryPrice)}
-                    x2={chartRight}
-                    y2={getY(entryPrice)}
-                    stroke="#38bdf8"
-                    strokeWidth={2.5}
-                    filter="url(#glowBlue)"
-                  />
-                  <rect
-                    x={chartRight + 6}
-                    y={getY(entryPrice) - 13}
-                    width="142"
-                    height="26"
-                    fill="#0284c7"
-                    rx="5"
-                    stroke="#38bdf8"
-                    strokeWidth="1.5"
-                  />
-                  <text
-                    x={chartRight + 10}
-                    y={getY(entryPrice) + 5}
-                    fill="#ffffff"
-                    fontSize="11.5"
-                    fontFamily="monospace"
-                    fontWeight="900"
-                  >
-                    🔵 ACTIVE ENTRY ${entryPrice.toFixed(2)}
-                  </text>
-                </g>
-              )}
-
-              {/* 2. STOP LOSS (SL) LEVEL - SHOWN AT STEP 2 (SWEEP) & SOLID ON ACTIVE TRADE */}
-              {(isTradeActive || s2Pass) && slPrice > 0 && (
-                <g>
-                  <line
-                    x1={chartLeft}
-                    y1={getY(slPrice)}
-                    x2={chartRight}
-                    y2={getY(slPrice)}
-                    stroke="#ef4444"
-                    strokeWidth={isTradeActive ? 3 : 1.5}
-                    strokeDasharray={isTradeActive ? "none" : "5 5"}
-                    opacity={isTradeActive ? 1 : 0.85}
-                    filter={isTradeActive ? "url(#glowRed)" : undefined}
-                  />
-                  <rect
-                    x={chartRight + 6}
-                    y={getY(slPrice) - 13}
-                    width="142"
-                    height="26"
-                    fill={isTradeActive ? "#dc2626" : "#7f1d1d"}
-                    rx="5"
-                    stroke={isTradeActive ? "#fca5a5" : "#b91c1c"}
-                    strokeWidth="1.5"
-                  />
-                  <text
-                    x={chartRight + 8}
-                    y={getY(slPrice) + 5}
-                    fill="#ffffff"
-                    fontSize="11"
-                    fontFamily="monospace"
-                    fontWeight="900"
-                  >
-                    {isTradeActive
-                      ? `🔴 ACTIVE SL $${slPrice.toFixed(2)}`
-                      : `🔒 SL (0.75 Buf) $${slPrice.toFixed(2)}`}
-                  </text>
-                </g>
-              )}
-
-              {/* 3. TAKE PROFIT (TP) 2.0R TARGET LEVEL - SHOWN AT STEP 4 (FVG FORMED) & SOLID ON ACTIVE TRADE */}
-              {(isTradeActive || s4Pass) && tpPrice > 0 && (
-                <g>
-                  <line
-                    x1={chartLeft}
-                    y1={getY(tpPrice)}
-                    x2={chartRight}
-                    y2={getY(tpPrice)}
-                    stroke="#10b981"
-                    strokeWidth={isTradeActive ? 3 : 1.5}
-                    strokeDasharray={isTradeActive ? "none" : "5 5"}
-                    opacity={isTradeActive ? 1 : 0.85}
-                    filter={isTradeActive ? "url(#glowGreen)" : undefined}
-                  />
-                  <rect
-                    x={chartRight + 6}
-                    y={getY(tpPrice) - 13}
-                    width="142"
-                    height="26"
-                    fill={isTradeActive ? "#059669" : "#064e3b"}
-                    rx="5"
-                    stroke={isTradeActive ? "#6ee7b7" : "#059669"}
-                    strokeWidth="1.5"
-                  />
-                  <text
-                    x={chartRight + 8}
-                    y={getY(tpPrice) + 5}
-                    fill="#ffffff"
-                    fontSize="11"
-                    fontFamily="monospace"
-                    fontWeight="900"
-                  >
-                    {isTradeActive
-                      ? `🟢 ACTIVE TP $${tpPrice.toFixed(2)}`
-                      : `🎯 2.0R TARGET $${tpPrice.toFixed(2)}`}
-                  </text>
-                </g>
-              )}
-
-              {/* LIVE MARKET PRICE LINE & SOLID WHITE PILL */}
-              <g>
                 <line
                   x1={chartLeft}
-                  y1={getY(livePrice)}
+                  y1={getY(swingStructure.swingHigh)}
                   x2={chartRight}
-                  y2={getY(livePrice)}
-                  stroke="#ffffff"
-                  strokeWidth="2"
-                  strokeDasharray="4 3"
+                  y2={getY(swingStructure.swingHigh)}
+                  stroke={(s2Pass && isBearishSetup) ? "#06b6d4" : "#0891b2"}
+                  strokeWidth={(s2Pass && isBearishSetup) ? 2.5 : 1.5}
+                  strokeDasharray={(s2Pass && isBearishSetup) ? "none" : "6 4"}
+                  opacity={(s2Pass && isBearishSetup) ? 1 : 0.75}
+                  filter={(s2Pass && isBearishSetup) ? "url(#glowCyan)" : undefined}
                 />
-                <rect
-                  x={chartRight + 6}
-                  y={getY(livePrice) - 13}
-                  width="138"
-                  height="26"
-                  fill="#ffffff"
-                  rx="5"
-                  stroke="#94a3b8"
-                  strokeWidth="1"
+              )}
+
+              {/* Step 2B: Swing Low (Sell-Side Liquidity Level Line) */}
+              {swingStructure.swingLow > 0 && (
+                <line
+                  x1={chartLeft}
+                  y1={getY(swingStructure.swingLow)}
+                  x2={chartRight}
+                  y2={getY(swingStructure.swingLow)}
+                  stroke={(s2Pass && isBullishSetup) ? "#06b6d4" : "#0891b2"}
+                  strokeWidth={(s2Pass && isBullishSetup) ? 2.5 : 1.5}
+                  strokeDasharray={(s2Pass && isBullishSetup) ? "none" : "6 4"}
+                  opacity={(s2Pass && isBullishSetup) ? 1 : 0.75}
+                  filter={(s2Pass && isBullishSetup) ? "url(#glowCyan)" : undefined}
                 />
-                <text
-                  x={chartRight + 12}
-                  y={getY(livePrice) + 5.5}
-                  fill="#000000"
-                  fontSize="12.5"
-                  fontFamily="monospace"
-                  fontWeight="900"
-                >
-                  LIVE ${livePrice.toFixed(2)}
-                </text>
-              </g>
+              )}
+
+              {/* Step 3: CHoCH Level Line */}
+              {swingStructure.chochLvl > 0 && (
+                <line
+                  x1={chartLeft}
+                  y1={getY(swingStructure.chochLvl)}
+                  x2={chartRight}
+                  y2={getY(swingStructure.chochLvl)}
+                  stroke={s3Pass ? "#f59e0b" : "#d97706"}
+                  strokeWidth={s3Pass ? 2.5 : 1.5}
+                  strokeDasharray={s3Pass ? "none" : "6 4"}
+                  opacity={s3Pass ? 1 : 0.75}
+                  filter={s3Pass ? "url(#glowAmber)" : undefined}
+                />
+              )}
+
+              {/* Active Entry Level Line */}
+              {showEntryLevel && effectiveEntryPrice > 0 && (
+                <line
+                  x1={chartLeft}
+                  y1={getY(effectiveEntryPrice)}
+                  x2={chartRight}
+                  y2={getY(effectiveEntryPrice)}
+                  stroke="#38bdf8"
+                  strokeWidth={2.5}
+                  filter="url(#glowBlue)"
+                />
+              )}
+
+              {/* Stop Loss (SL) Level Line */}
+              {showSlLevel && effectiveSlPrice > 0 && (
+                <line
+                  x1={chartLeft}
+                  y1={getY(effectiveSlPrice)}
+                  x2={chartRight}
+                  y2={getY(effectiveSlPrice)}
+                  stroke="#ef4444"
+                  strokeWidth={isTradeActive ? 3 : 1.5}
+                  strokeDasharray={isTradeActive ? "none" : "5 5"}
+                  opacity={isTradeActive ? 1 : 0.85}
+                  filter={isTradeActive ? "url(#glowRed)" : undefined}
+                />
+              )}
+
+              {/* Take Profit (TP) Level Line */}
+              {showTpLevel && effectiveTpPrice > 0 && (
+                <line
+                  x1={chartLeft}
+                  y1={getY(effectiveTpPrice)}
+                  x2={chartRight}
+                  y2={getY(effectiveTpPrice)}
+                  stroke="#10b981"
+                  strokeWidth={isTradeActive ? 3 : 1.5}
+                  strokeDasharray={isTradeActive ? "none" : "5 5"}
+                  opacity={isTradeActive ? 1 : 0.85}
+                  filter={isTradeActive ? "url(#glowGreen)" : undefined}
+                />
+              )}
+
+              {/* Live Market Price Line */}
+              <line
+                x1={chartLeft}
+                y1={getY(livePrice)}
+                x2={chartRight}
+                y2={getY(livePrice)}
+                stroke="#ffffff"
+                strokeWidth="1.75"
+                strokeDasharray="4 3"
+              />
 
               {/* CRISP CANDLESTICKS RENDERING */}
               {candles.map((c, idx) => {
@@ -1318,10 +1476,10 @@ export function SmcChartOverlay({
                           fill="#06b6d4"
                         />
                         <rect
-                          x={cx - 42}
+                          x={cx - (isMobile ? 32 : 42)}
                           y={yLow + 22}
-                          width="84"
-                          height="20"
+                          width={isMobile ? 64 : 84}
+                          height={isMobile ? 18 : 20}
                           fill="#0891b2"
                           rx="4"
                           stroke="#22d3ee"
@@ -1329,14 +1487,14 @@ export function SmcChartOverlay({
                         />
                         <text
                           x={cx}
-                          y={yLow + 36}
+                          y={yLow + (isMobile ? 34 : 36)}
                           fill="#ffffff"
-                          fontSize="9.5"
+                          fontSize={isMobile ? "8.5" : "9.5"}
                           fontFamily="monospace"
                           fontWeight="900"
                           textAnchor="middle"
                         >
-                          SWEEP WICK
+                          SWEEP
                         </text>
                       </g>
                     )}
@@ -1346,10 +1504,10 @@ export function SmcChartOverlay({
                       <g>
                         <circle cx={cx} cy={yHigh - 8} r="4" fill="#f59e0b" />
                         <rect
-                          x={cx - 28}
+                          x={cx - (isMobile ? 24 : 28)}
                           y={yHigh - 30}
-                          width="56"
-                          height="18"
+                          width={isMobile ? 48 : 56}
+                          height={18}
                           fill="#d97706"
                           rx="4"
                           stroke="#fde68a"
@@ -1359,7 +1517,7 @@ export function SmcChartOverlay({
                           x={cx}
                           y={yHigh - 17}
                           fill="#ffffff"
-                          fontSize="9.5"
+                          fontSize={isMobile ? "8.5" : "9.5"}
                           fontFamily="monospace"
                           fontWeight="900"
                           textAnchor="middle"
@@ -1370,12 +1528,12 @@ export function SmcChartOverlay({
                     )}
 
                     {/* Bottom Time Axis Label */}
-                    {idx % 4 === 0 && (
+                    {idx % (isMobile ? 5 : 4) === 0 && (
                       <text
                         x={cx}
-                        y={chartBottom + 20}
+                        y={chartBottom + (isMobile ? 18 : 22)}
                         fill="#cbd5e1"
-                        fontSize="11.5"
+                        fontSize={isMobile ? "9.5" : "11"}
                         fontFamily="monospace"
                         fontWeight="700"
                         textAnchor="middle"
@@ -1383,6 +1541,53 @@ export function SmcChartOverlay({
                         {c.time}
                       </text>
                     )}
+                  </g>
+                );
+              })}
+
+              {/* ANTI-COLLISION STACKED RIGHT-AXIS BADGES & LEADERS */}
+              {stackedTags.map((tag) => {
+                const isShifted = Math.abs(tag.renderedY - tag.targetY) > 2.0;
+                const badgeX = chartRight + 5;
+                const badgeY = tag.renderedY - tagHeight / 2;
+                const textY = tag.renderedY + (isMobile ? 3.5 : 4.5);
+
+                return (
+                  <g key={tag.id}>
+                    {/* Leader line connecting badge to exact price line if shifted */}
+                    {isShifted && (
+                      <path
+                        d={`M ${chartRight} ${tag.targetY} L ${badgeX} ${tag.renderedY}`}
+                        stroke={tag.borderStroke}
+                        strokeWidth="1.2"
+                        strokeDasharray="2 2"
+                        opacity={0.85}
+                      />
+                    )}
+
+                    {/* Badge Pill */}
+                    <rect
+                      x={badgeX}
+                      y={badgeY}
+                      width={rightTagWidth}
+                      height={tagHeight}
+                      fill={tag.bgFill}
+                      rx="4"
+                      stroke={tag.borderStroke}
+                      strokeWidth={tag.id === "live" ? 1.5 : 1.2}
+                    />
+
+                    {/* Badge Text */}
+                    <text
+                      x={badgeX + (isMobile ? 4 : 7)}
+                      y={textY}
+                      fill={tag.textColor}
+                      fontSize={tag.fontSize}
+                      fontFamily="monospace"
+                      fontWeight="900"
+                    >
+                      {tag.label}
+                    </text>
                   </g>
                 );
               })}
@@ -1419,20 +1624,20 @@ export function SmcChartOverlay({
 
                     {/* LIVE CURSOR PRICE PILL ON RIGHT AXIS */}
                     <rect
-                      x={chartRight + 6}
-                      y={mousePos.y - 13}
-                      width="138"
-                      height="26"
+                      x={chartRight + 5}
+                      y={mousePos.y - tagHeight / 2}
+                      width={rightTagWidth}
+                      height={tagHeight}
                       fill="#2563eb"
-                      rx="5"
+                      rx="4"
                       stroke="#bfdbfe"
                       strokeWidth="1.5"
                     />
                     <text
-                      x={chartRight + 12}
-                      y={mousePos.y + 5.5}
+                      x={chartRight + (isMobile ? 6 : 10)}
+                      y={mousePos.y + (isMobile ? 3.5 : 4.5)}
                       fill="#ffffff"
-                      fontSize="12.5"
+                      fontSize={isMobile ? "10" : "12"}
                       fontFamily="monospace"
                       fontWeight="900"
                     >
@@ -1444,7 +1649,7 @@ export function SmcChartOverlay({
 
             {/* Hover Tooltip Card */}
             {hoveredCandle && (
-              <div className="absolute top-3 left-4 bg-[#0d121f]/95 border border-zinc-700 px-3.5 py-2.5 rounded-lg text-xs font-mono text-zinc-100 shadow-2xl backdrop-blur-md pointer-events-none z-10 flex items-center gap-4">
+              <div className="absolute top-2 left-2 sm:top-3 sm:left-4 bg-[#0d121f]/95 border border-zinc-700 px-2.5 py-1.5 sm:px-3.5 sm:py-2.5 rounded-lg text-[10px] sm:text-xs font-mono text-zinc-100 shadow-2xl backdrop-blur-md pointer-events-none z-10 flex flex-wrap items-center gap-2 sm:gap-4">
                 <div>
                   <span className="text-zinc-400">Time:</span>{" "}
                   <span className="text-white font-black">{hoveredCandle.time}</span>
