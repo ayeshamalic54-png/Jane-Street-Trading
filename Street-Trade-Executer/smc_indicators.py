@@ -42,28 +42,73 @@ def get_swing_points(df, n_left=2, n_right=2):
 
 def detect_market_structure(df):
     """
-    Pure M15 Market Structure Bias:
-    - BULLISH: Higher Highs (HH) + Higher Lows (HL)
-    - BEARISH: Lower Highs (LH) + Lower Lows (LL)
-    - NEUTRAL: Mixed or insufficient swing data
+    Institutional M15 Market Structure Bias with Structural Trend Memory:
+    - In SMC/ICT, once a structure is established (Bullish: HH/HL or Bearish: LH/LL),
+      the trend REMAINS ACTIVE until an opposite structural break occurs.
+    - A temporary pullback or minor lower high inside an uptrend does NOT turn bias to 'NEUTRAL';
+      it is a discount retracement for buy entries.
+    - BULLISH: Trend remains Bullish until a candle closes below the confirmed structural Higher Low (Bearish MSS).
+    - BEARISH: Trend remains Bearish until a candle closes above the confirmed structural Lower High (Bullish MSS).
+    - NEUTRAL: Only returned if historical swing data is completely flat or undefined.
     """
     swing_highs, swing_lows = get_swing_points(df, n_left=2, n_right=2)
 
     if len(swing_highs) < 2 or len(swing_lows) < 2:
         return 'NEUTRAL'
 
-    has_hh = swing_highs[-1][0] > swing_highs[-2][0]
-    has_hl = swing_lows[-1][0] > swing_lows[-2][0]
+    # Combine all confirmed swing events chronologically
+    events = []
+    for p, idx in swing_highs:
+        events.append((idx, 'HIGH', p))
+    for p, idx in swing_lows:
+        events.append((idx, 'LOW', p))
+    events.sort(key=lambda x: x[0])
 
-    has_lh = swing_highs[-1][0] < swing_highs[-2][0]
-    has_ll = swing_lows[-1][0] < swing_lows[-2][0]
+    last_sh = None
+    prev_sh = None
+    last_sl = None
+    prev_sl = None
+    bias = 'NEUTRAL'
 
-    if has_hh and has_hl:
-        return 'BULLISH'
-    elif has_lh and has_ll:
-        return 'BEARISH'
+    for idx, kind, p in events:
+        if kind == 'HIGH':
+            prev_sh = last_sh
+            last_sh = p
+            if prev_sh is not None:
+                if last_sh > prev_sh:
+                    bias = 'BULLISH'
+                elif last_sh < prev_sh and bias == 'BEARISH':
+                    bias = 'BEARISH'
+        elif kind == 'LOW':
+            prev_sl = last_sl
+            last_sl = p
+            if prev_sl is not None:
+                if last_sl < prev_sl:
+                    bias = 'BEARISH'
+                elif last_sl > prev_sl and bias == 'BULLISH':
+                    bias = 'BULLISH'
 
-    return 'NEUTRAL'
+    # Structural Invalidation Check against current closed candle
+    curr_close = float(df['close'].iloc[-1])
+    if bias == 'BULLISH' and last_sl is not None:
+        if curr_close < last_sl:
+            bias = 'BEARISH'
+    elif bias == 'BEARISH' and last_sh is not None:
+        if curr_close > last_sh:
+            bias = 'BULLISH'
+
+    # Fallback to direct swing comparison if chronological pass was inconclusive
+    if bias == 'NEUTRAL':
+        has_hh = swing_highs[-1][0] > swing_highs[-2][0]
+        has_hl = swing_lows[-1][0] > swing_lows[-2][0]
+        has_lh = swing_highs[-1][0] < swing_highs[-2][0]
+        has_ll = swing_lows[-1][0] < swing_lows[-2][0]
+        if has_hh or (has_hl and not has_ll):
+            bias = 'BULLISH'
+        elif has_ll or (has_lh and not has_hh):
+            bias = 'BEARISH'
+
+    return bias
 
 
 def detect_liquidity_sweep(df_m5):
