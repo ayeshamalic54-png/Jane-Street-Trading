@@ -201,12 +201,13 @@ def detect_choch_bos(df_m5, sweep_idx, is_bullish=True):
     return False, 0.0, -1
 
 
-def detect_order_blocks(df):
+def detect_order_blocks(df, min_disp=1.0, max_dist=18.0):
     """
     Detects Order Blocks (OB) and Breaker Blocks:
-    - Bullish OB: Last down candle (close < open) before strong upward displacement breaking structure.
-    - Bearish OB: Last up candle (close > open) before strong downward displacement breaking structure.
+    - Bullish OB: Last down candle before strong upward displacement breaking structure.
+    - Bearish OB: Last up candle before strong downward displacement breaking structure.
     - Breaker Blocks: Failed OBs swept and broken by price.
+    Filters out micro-noise and limits to freshest structural zones.
     """
     if df is None or len(df) < 5:
         return [], [], [], []
@@ -216,19 +217,26 @@ def detect_order_blocks(df):
     opens = df['open'].values
     closes = df['close'].values
     n = len(df)
+    last_price = closes[-1]
 
     raw_bull_obs = []
     raw_bear_obs = []
 
     for i in range(2, n - 1):
+        disp = abs(closes[i] - opens[i])
+        if disp < min_disp:
+            continue
+
         if closes[i - 1] < opens[i - 1] and closes[i] > highs[i - 2]:
             ob_low = float(lows[i - 1])
             ob_high = float(highs[i - 1])
-            raw_bull_obs.append((ob_low, ob_high, i))
+            if abs(((ob_low + ob_high) / 2) - last_price) <= max_dist:
+                raw_bull_obs.append((ob_low, ob_high, i))
         elif closes[i - 1] > opens[i - 1] and closes[i] < lows[i - 2]:
             ob_low = float(lows[i - 1])
             ob_high = float(highs[i - 1])
-            raw_bear_obs.append((ob_low, ob_high, i))
+            if abs(((ob_low + ob_high) / 2) - last_price) <= max_dist:
+                raw_bear_obs.append((ob_low, ob_high, i))
 
     active_bull_obs = []
     active_bear_obs = []
@@ -246,7 +254,7 @@ def detect_order_blocks(df):
         if not mitigated:
             active_bull_obs.append((low_b, high_b))
         elif broken_as_breaker:
-            if closes[-1] >= low_b:
+            if closes[-1] >= low_b and abs(last_price - low_b) <= max_dist:
                 breaker_bear_obs.append((low_b, high_b))
 
     for low_b, high_b, idx in raw_bear_obs:
@@ -260,17 +268,18 @@ def detect_order_blocks(df):
         if not mitigated:
             active_bear_obs.append((low_b, high_b))
         elif broken_as_breaker:
-            if closes[-1] <= high_b:
+            if closes[-1] <= high_b and abs(last_price - high_b) <= max_dist:
                 breaker_bull_obs.append((low_b, high_b))
 
-    return active_bull_obs, active_bear_obs, breaker_bull_obs, breaker_bear_obs
+    return active_bull_obs[-2:], active_bear_obs[-2:], breaker_bull_obs[-2:], breaker_bear_obs[-2:]
 
 
 def detect_smc_zones(df, min_idx=0):
     """
     Step 4: Fair Value Gaps (3-Candle FVG), Order Blocks (OB), and Breaker Blocks.
     Only FVGs created at or after min_idx (post-CHoCH) are included.
-    Returns active unmitigated zones.
+    Filters micro-noise (< $1.00 on Gold) and distant dead zones (> $18.00).
+    Properly detects true iFVGs instead of duplicating FVGs.
     """
     if df is None or len(df) < 5:
         return {
@@ -284,19 +293,38 @@ def detect_smc_zones(df, min_idx=0):
     lows = df['low'].values
     closes = df['close'].values
     n = len(df)
+    last_price = closes[-1]
+
+    # Institutional threshold to eliminate 20-30 cent spread/tick noise
+    if last_price > 1000:
+        min_gap = 1.00       # Gold / BTC: minimum $1.00 gap for real institutional imbalance
+        max_dist = 18.00     # Reject dead zones > $18 away from current trading action
+        min_ob_disp = 1.20
+    elif last_price > 20:
+        min_gap = 0.08       # Silver / Platinum
+        max_dist = 2.00
+        min_ob_disp = 0.10
+    else:
+        min_gap = 0.00035    # Forex (3.5 pips)
+        max_dist = 0.0080
+        min_ob_disp = 0.00040
 
     raw_bull_fvgs = []
     raw_bear_fvgs = []
 
     start_scan = max(2, min_idx if min_idx >= 0 else 0)
     for i in range(start_scan, n):
-        if lows[i] > highs[i - 2]:
+        gap_up = lows[i] - highs[i - 2]
+        gap_down = lows[i - 2] - highs[i]
+        if gap_up >= min_gap:
             raw_bull_fvgs.append((highs[i - 2], lows[i], i))
-        elif highs[i] < lows[i - 2]:
+        elif gap_down >= min_gap:
             raw_bear_fvgs.append((highs[i], lows[i - 2], i))
 
     active_bull = []
     active_bear = []
+    mitigated_bull_fvgs = []
+    mitigated_bear_fvgs = []
 
     for low_b, high_b, idx in raw_bull_fvgs:
         mitigated = False
@@ -305,7 +333,10 @@ def detect_smc_zones(df, min_idx=0):
                 mitigated = True
                 break
         if not mitigated:
-            active_bull.append((float(low_b), float(high_b)))
+            if abs(((low_b + high_b) / 2) - last_price) <= max_dist:
+                active_bull.append((float(low_b), float(high_b)))
+        else:
+            mitigated_bull_fvgs.append((float(low_b), float(high_b), idx))
 
     for low_b, high_b, idx in raw_bear_fvgs:
         mitigated = False
@@ -314,19 +345,33 @@ def detect_smc_zones(df, min_idx=0):
                 mitigated = True
                 break
         if not mitigated:
-            active_bear.append((float(low_b), float(high_b)))
+            if abs(((low_b + high_b) / 2) - last_price) <= max_dist:
+                active_bear.append((float(low_b), float(high_b)))
+        else:
+            mitigated_bear_fvgs.append((float(low_b), float(high_b), idx))
 
-    bull_ob, bear_ob, bull_breaker, bear_breaker = detect_order_blocks(df)
+    bull_ob, bear_ob, bull_breaker, bear_breaker = detect_order_blocks(df, min_disp=min_ob_disp, max_dist=max_dist)
+
+    # Genuine Inversion FVG (iFVG) — NO DUPLICATION:
+    # A prior mitigated FVG where price traded through and now flips support/resistance
+    bullish_ifvg = []
+    bearish_ifvg = []
+    for low_b, high_b, idx in mitigated_bear_fvgs[-3:]:
+        if closes[-1] > high_b and (closes[-1] - high_b) <= (max_dist * 0.5):
+            bullish_ifvg.append((low_b, high_b))
+    for low_b, high_b, idx in mitigated_bull_fvgs[-3:]:
+        if closes[-1] < low_b and (low_b - closes[-1]) <= (max_dist * 0.5):
+            bearish_ifvg.append((low_b, high_b))
 
     return {
-        'bullish_fvg': active_bull,
-        'bearish_fvg': active_bear,
-        'bullish_ob': bull_ob,
-        'bearish_ob': bear_ob,
-        'bullish_breaker': bull_breaker,
-        'bearish_breaker': bear_breaker,
-        'bullish_ifvg': active_bull,
-        'bearish_ifvg': active_bear
+        'bullish_fvg': active_bull[-2:],
+        'bearish_fvg': active_bear[-2:],
+        'bullish_ob': bull_ob[-2:],
+        'bearish_ob': bear_ob[-2:],
+        'bullish_breaker': bull_breaker[-2:],
+        'bearish_breaker': bear_breaker[-2:],
+        'bullish_ifvg': bullish_ifvg[-1:],
+        'bearish_ifvg': bearish_ifvg[-1:]
     }
 
 

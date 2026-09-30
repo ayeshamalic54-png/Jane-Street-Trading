@@ -562,9 +562,16 @@ def log_fvg_zones(symbol, zones_dict):
     }
 
     rows = []
+    seen_ranges = set()
     for zone_key, db_type in zone_type_map.items():
-        for (low, high) in zones_dict.get(zone_key, []):
-            rows.append((symbol, db_type, float(low), float(high)))
+        # Keep only the freshest 1 zone per type
+        for (low, high) in zones_dict.get(zone_key, [])[-1:]:
+            low_f = round(float(low), 2)
+            high_f = round(float(high), 2)
+            range_key = (low_f, high_f)
+            if high_f > low_f and range_key not in seen_ranges:
+                seen_ranges.add(range_key)
+                rows.append((symbol, db_type, low_f, high_f))
 
     conn = None
     try:

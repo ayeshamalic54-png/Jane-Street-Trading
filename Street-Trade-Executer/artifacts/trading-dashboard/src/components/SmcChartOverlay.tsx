@@ -463,7 +463,7 @@ export function SmcChartOverlay({
 
   const shouldShowTradeLevels = isTradeActive || s7Pass;
 
-  // Parsed Active SMC Zones (FVG, OB, Breaker, iFVG) from live bot scanner
+  // Parsed Active SMC Zones (FVG, OB, Breaker, iFVG) from live bot scanner — Strictly Filtered for Clean Structure
   const parsedActiveZones = useMemo(() => {
     if (!activeZones || activeZones.length === 0) return [];
     const list: Array<{
@@ -474,6 +474,9 @@ export function SmcChartOverlay({
       high: number;
       label: string;
     }> = [];
+    const maxDist = isMetals ? 16.0 : 0.0080;
+    const seenRanges: string[] = [];
+
     for (const z of activeZones) {
       if (!z.range || (z.label && z.label.toUpperCase().includes("USDT")) || (z.type && z.type.toUpperCase().includes("USDT"))) continue;
       const parts = z.range.split(/[\u2013\-]/);
@@ -481,6 +484,18 @@ export function SmcChartOverlay({
         const low = parseFloat(parts[0].trim());
         const high = parseFloat(parts[1].trim());
         if (!isNaN(low) && !isNaN(high) && high > low) {
+          // 1. Proximity check: Must be within realistic trading range of livePrice
+          const mid = (low + high) / 2;
+          if (Math.abs(mid - livePrice) > maxDist) continue;
+
+          // 2. Deduplication check: Avoid identical or nearly identical duplicate ranges
+          const isDuplicate = seenRanges.some((r) => {
+            const [rL, rH] = r.split(":").map(Number);
+            return Math.abs(rL - low) < 0.35 && Math.abs(rH - high) < 0.35;
+          });
+          if (isDuplicate) continue;
+          seenRanges.push(`${low.toFixed(2)}:${high.toFixed(2)}`);
+
           const isBullish = z.type.toUpperCase().includes("BULLISH") || z.label.includes("🟢");
           const name = z.type.replace("BULLISH_", "").replace("BEARISH_", "");
           list.push({
@@ -494,8 +509,9 @@ export function SmcChartOverlay({
         }
       }
     }
-    return list;
-  }, [activeZones]);
+    // Limit to max 3 cleanest, freshest active zones on the chart to eliminate clutter
+    return list.slice(0, 3);
+  }, [activeZones, livePrice, isMetals]);
 
   // FVG Bounds: Resolved from bot telemetry, activeZones, or structural displacement
   const fvgBounds = useMemo(() => {
@@ -1718,6 +1734,11 @@ export function SmcChartOverlay({
                 const candleHighY = originCandle ? getY(originCandle.high) : zone.topY;
                 const candleLowY = originCandle ? getY(originCandle.low) : zone.botY;
                 const candleCenterY = originCandle ? getY((originCandle.open + originCandle.close) / 2) : zone.topY;
+
+                // Viewport culling: do not render distant zones outside chart scale
+                if (zone.low > maxPrice + 2.5 || zone.high < minPrice - 2.5) {
+                  return null;
+                }
 
                 return (
                   <g key={zone.id}>
