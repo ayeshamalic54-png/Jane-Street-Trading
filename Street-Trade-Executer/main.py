@@ -2625,12 +2625,12 @@ def main():
                 if df_a is not None and not df_a.empty:
                     df_a = calculate_zscore_and_ema(df_a)
 
-                # Strictly cut off forming live candle (iloc[-1]) so signal engine ONLY evaluates completed closed candles
-                df_m5_closed = df_m5.iloc[:-1].copy() if (df_m5 is not None and len(df_m5) > 10) else df_m5
-                df_a_closed = df_a.iloc[:-1].copy() if (df_a is not None and len(df_a) > 15) else df_a
-
+                # Pass live M5 & M15 data along with live broker tick price (p_a)
+                # Strategy engine evaluates confirmed closed candle (iloc[-2]) and executes on live price (p_a)
                 action = "NONE"
-                smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a_closed, df_m5_closed, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED)
+                smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(
+                    df_a, df_m5, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED, live_price=p_a
+                )
                 vid_reason = smc_reason
                 if smc_sig == "BUY":
                     action = "BUY_SPREAD"
@@ -2658,11 +2658,11 @@ def main():
                     if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason:
                         if "BUY" in vid_reason:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
+                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
                             )
                         else:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
+                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
                             )
                         if smc_sl is not None:
                             sweep_p_val = float(smc_sl) + (0.75 if "BUY" in vid_reason else -0.75)

@@ -135,9 +135,9 @@ def detect_liquidity_sweep(df_m5):
     sell_sweep = (False, 0.0, 0.0, -1)
     buy_sweep = (False, 0.0, 0.0, -1)
 
-    # Check recent candles for a fresh liquidity sweep (last 8 candles / 40 mins window)
+    # Check recent candles for a fresh liquidity sweep (last 14 candles / 70 mins window)
     # Search BACKWARDS (from newest candle to oldest) so we always capture the MOST RECENT active sweep
-    lookback_start = max(0, n - 8)
+    lookback_start = max(0, n - 14)
     for i in range(n - 1, lookback_start - 1, -1):
         # 1. Sell-side sweep (BUY setup): Price wicks below recent swing low, but closes ABOVE it
         for sl_val, sl_idx in reversed(swing_lows):
@@ -274,10 +274,11 @@ def detect_order_blocks(df, min_disp=1.0, max_dist=18.0):
     return active_bull_obs[-2:], active_bear_obs[-2:], breaker_bull_obs[-2:], breaker_bear_obs[-2:]
 
 
-def detect_smc_zones(df, min_idx=0):
+def detect_smc_zones(df, min_idx=0, sweep_low=None, sweep_high=None):
     """
     Step 4: Fair Value Gaps (3-Candle FVG), Order Blocks (OB), and Breaker Blocks.
-    Only FVGs created at or after min_idx (post-CHoCH) are included.
+    Captures the genuine Displacement Leg FVGs formed by the sweep-to-CHoCH impulse leg
+    as well as post-CHoCH expansion FVGs.
     Filters micro-noise (< $1.00 on Gold) and distant dead zones (> $18.00).
     Properly detects true iFVGs instead of duplicating FVGs.
     """
@@ -317,9 +318,13 @@ def detect_smc_zones(df, min_idx=0):
         gap_up = lows[i] - highs[i - 2]
         gap_down = lows[i - 2] - highs[i]
         if gap_up >= min_gap:
-            raw_bull_fvgs.append((highs[i - 2], lows[i], i))
+            # Anchor check: ensure bullish FVG is at or above sweep low if provided
+            if sweep_low is None or highs[i - 2] >= (sweep_low - 0.50):
+                raw_bull_fvgs.append((highs[i - 2], lows[i], i))
         elif gap_down >= min_gap:
-            raw_bear_fvgs.append((highs[i], lows[i - 2], i))
+            # Anchor check: ensure bearish FVG is at or below sweep high if provided
+            if sweep_high is None or lows[i - 2] <= (sweep_high + 0.50):
+                raw_bear_fvgs.append((highs[i], lows[i - 2], i))
 
     active_bull = []
     active_bear = []
@@ -381,3 +386,25 @@ def is_price_in_zones(price, zones):
         if low <= price <= high:
             return True
     return False
+
+
+def check_fvg_retest(closed_open, closed_high, closed_low, closed_close, fvg_zones, is_bullish=True, max_wick_buf=0.75):
+    """
+    Step 5: Rigorous FVG Retest Verification for SMC Scalping.
+    Checks whether a confirmed closed candle validly retested an active FVG:
+    - Bullish FVG [low_b, high_b]:
+      1. Price reached down into the FVG (closed_low <= high_b)
+      2. Price respected the structural support (closed_low >= low_b - max_wick_buf and closed_close >= low_b - 0.25)
+    - Bearish FVG [low_b, high_b]:
+      1. Price reached up into the FVG (closed_high >= low_b)
+      2. Price respected the structural resistance (closed_high <= high_b + max_wick_buf and closed_close <= high_b + 0.25)
+    Returns (is_retested, matched_fvg)
+    """
+    for low_b, high_b in fvg_zones:
+        if is_bullish:
+            if closed_low <= high_b and closed_low >= (low_b - max_wick_buf) and closed_close >= (low_b - 0.25):
+                return True, (float(low_b), float(high_b))
+        else:
+            if closed_high >= low_b and closed_high <= (high_b + max_wick_buf) and closed_close <= (high_b + 0.25):
+                return True, (float(low_b), float(high_b))
+    return False, None

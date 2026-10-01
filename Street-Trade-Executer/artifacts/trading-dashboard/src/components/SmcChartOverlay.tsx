@@ -644,7 +644,7 @@ export function SmcChartOverlay({
     const low = isBullishSetup ? Number((swP + (chP - swP) * 0.35).toFixed(2)) : Number((chP + (swP - chP) * 0.35).toFixed(2));
     const high = isBullishSetup ? Number((swP + (chP - swP) * 0.65).toFixed(2)) : Number((chP + (swP - chP) * 0.65).toFixed(2));
     if (high > low) {
-      return { low: Math.min(low, high), high: Math.max(low, high), label: s4Pass ? "S4 POST-CHOCH FVG" : "DISPLACEMENT FVG" };
+      return { low: Math.min(low, high), high: Math.max(low, high), label: s4Pass ? "S4 DISPLACEMENT FVG" : "DISPLACEMENT FVG" };
     }
 
     return null;
@@ -957,7 +957,7 @@ export function SmcChartOverlay({
       const fvgTitle = s5Pass
         ? "🟢 S5 RETEST CONFIRMED"
         : s4Pass
-        ? "⏳ S4 FVG CREATED — RETESTING"
+        ? "⏳ S4 DISPLACEMENT FVG — RETESTING"
         : isBullishSetup
         ? "🟢 BULLISH FVG ZONE"
         : "🔴 BEARISH FVG ZONE";
@@ -965,7 +965,7 @@ export function SmcChartOverlay({
       list.push({
         id: "fvg-primary",
         type: "FVG",
-        name: "S4/S5 Post-CHoCH FVG",
+        name: "S4/S5 Displacement FVG",
         low: fvgBounds.low,
         high: fvgBounds.high,
         originIdx,
@@ -1457,7 +1457,7 @@ export function SmcChartOverlay({
                 : !s3Pass
                 ? "Step 1 & 2 PASS 🟢 — Step 3 PENDING ⚪: Waiting for M5 CHoCH candle close break"
                 : !s4Pass || !s5Pass
-                ? "Step 1-3 PASS 🟢 — Step 4 & 5 PENDING ⚪: Waiting for Post-CHoCH FVG Creation & Retest"
+                ? "Step 1-3 PASS 🟢 — Step 4 & 5 PENDING ⚪: Waiting for Displacement FVG Creation & Retest"
                 : "Step 1-5 PASS 🟢 — Waiting for Final Rejection & Candle Close confirmation"}
             </p>
           </div>
@@ -2668,7 +2668,7 @@ export function SmcChartOverlay({
                 ) : (
                   <Clock className="w-4 h-4 text-zinc-500" />
                 )}
-                S4: Post-CHoCH FVG
+                S4: Displacement FVG
               </span>
               <Badge
                 variant="outline"
@@ -2684,8 +2684,8 @@ export function SmcChartOverlay({
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s4Pass
-                ? "Imbalance gap formed strictly after CHoCH candle index."
-                : "Waiting for 3-candle imbalance (Fair Value Gap) after CHoCH."}
+                ? "Imbalance gap formed by Sweep-to-CHoCH displacement leg."
+                : "Waiting for 3-candle displacement imbalance (Fair Value Gap)."}
             </p>
           </div>
 
@@ -2721,8 +2721,8 @@ export function SmcChartOverlay({
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s5Pass
-                ? "Price dipped into confirmed Post-CHoCH FVG zone."
-                : "Waiting for subsequent candle to retest the FVG zone."}
+                ? "Price dipped into confirmed Displacement FVG zone."
+                : "Waiting for subsequent candle to retest the Displacement FVG zone."}
             </p>
           </div>
 
