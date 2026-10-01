@@ -757,15 +757,30 @@ export function SmcChartOverlay({
     }> = [];
 
     // Find fractal swing peaks & valleys
-    for (let i = 1; i < candles.length - 1; i++) {
-      const prev = candles[i - 1];
-      const curr = candles[i];
-      const next = candles[i + 1];
+    const minAmp = isMetals ? 2.50 : 0.0018;
 
+    // Find institutional structural swing peaks & valleys (2-bar window + min depth filter)
+    for (let i = 2; i < candles.length - 2; i++) {
+      const curr = candles[i];
       const cx = chartLeft + (i + 0.5) * candleSpacing;
 
-      const isFractalHigh = curr.high >= prev.high && curr.high >= next.high;
-      const isFractalLow = curr.low <= prev.low && curr.low <= next.low;
+      let isFractalHigh = true;
+      let isFractalLow = true;
+
+      for (let j = 1; j <= 2; j++) {
+        if (candles[i - j].high > curr.high || candles[i + j].high > curr.high) isFractalHigh = false;
+        if (candles[i - j].low < curr.low || candles[i + j].low < curr.low) isFractalLow = false;
+      }
+
+      if (isFractalHigh) {
+        const localMin = Math.min(...candles.slice(Math.max(0, i - 4), Math.min(candles.length, i + 5)).map((c) => c.low));
+        if (curr.high - localMin < minAmp) isFractalHigh = false;
+      }
+
+      if (isFractalLow) {
+        const localMax = Math.max(...candles.slice(Math.max(0, i - 4), Math.min(candles.length, i + 5)).map((c) => c.high));
+        if (localMax - curr.low < minAmp) isFractalLow = false;
+      }
 
       if (isFractalHigh && !isFractalLow) {
         const lastSwing = swings[swings.length - 1];
