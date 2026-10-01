@@ -135,7 +135,7 @@ export function SmcChartOverlay({
 }: SmcChartOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(1000);
-  const [activeTab, setActiveTab] = useState<"smc" | "tv">("tv");
+  const [activeTab, setActiveTab] = useState<"smc" | "tv">("smc");
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredCandle, setHoveredCandle] = useState<Candle | null>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(1.0);
@@ -679,13 +679,13 @@ export function SmcChartOverlay({
   }, [candles, sweepPrice, chochPrice, isBullishSetup, isBearishSetup]);
 
   // Dimensions & Price Mapping (Full-Height TradingView Candlestick Proportions)
-  const svgWidth = Math.max(340, containerWidth);
-  const svgHeight = isMobile ? 380 : 460;
-  const chartLeft = isMobile ? 8 : 20;
-  const rightTagWidth = isMobile ? 112 : 148;
-  const chartRight = svgWidth - (rightTagWidth + 8);
-  const chartTop = isMobile ? 18 : 25;
-  const chartBottom = svgHeight - (isMobile ? 28 : 35);
+  const svgWidth = Math.max(320, containerWidth);
+  const svgHeight = isMobile ? 440 : 470;
+  const chartLeft = isMobile ? 6 : 20;
+  const rightTagWidth = isMobile ? 104 : 148;
+  const chartRight = svgWidth - (rightTagWidth + 6);
+  const chartTop = isMobile ? 16 : 25;
+  const chartBottom = svgHeight - (isMobile ? 26 : 35);
   const plotWidth = Math.max(100, chartRight - chartLeft);
   const plotHeight = Math.max(100, chartBottom - chartTop);
 
@@ -1158,8 +1158,8 @@ export function SmcChartOverlay({
     priority: number;
   }
 
-  const tagHeight = isMobile ? 20 : 24;
-  const minTagGap = tagHeight + 2;
+  const tagHeight = isMobile ? 22 : 24;
+  const minTagGap = tagHeight + (isMobile ? 5 : 4);
 
   const stackedTags = useMemo<RightAxisTag[]>(() => {
     const list: RightAxisTag[] = [];
@@ -1173,7 +1173,7 @@ export function SmcChartOverlay({
       bgFill: "#ffffff",
       borderStroke: "#94a3b8",
       textColor: "#000000",
-      fontSize: isMobile ? "10" : "11.5",
+      fontSize: isMobile ? "9.5" : "11.5",
       label: `LIVE $${livePrice.toFixed(2)}`,
       priority: 100,
     });
@@ -1188,7 +1188,7 @@ export function SmcChartOverlay({
         bgFill: "#0284c7",
         borderStroke: "#38bdf8",
         textColor: "#ffffff",
-        fontSize: isMobile ? "9.5" : "10.5",
+        fontSize: isMobile ? "9" : "10.5",
         label: isMobile ? `ENTRY $${effectiveEntryPrice.toFixed(2)}` : `🔵 ENTRY $${effectiveEntryPrice.toFixed(2)}`,
         priority: 90,
       });
@@ -1204,8 +1204,10 @@ export function SmcChartOverlay({
         bgFill: isTradeActive ? "#dc2626" : "#7f1d1d",
         borderStroke: isTradeActive ? "#fca5a5" : "#b91c1c",
         textColor: "#ffffff",
-        fontSize: isMobile ? "9.5" : "10.5",
-        label: isTradeActive
+        fontSize: isMobile ? "9" : "10.5",
+        label: isMobile
+          ? `SL $${effectiveSlPrice.toFixed(2)}`
+          : isTradeActive
           ? Math.abs(effectiveSlPrice - effectiveEntryPrice) < 0.20
             ? `🛡️ BREAKEVEN $${effectiveSlPrice.toFixed(2)}`
             : `🔴 SL $${effectiveSlPrice.toFixed(2)}`
@@ -1224,10 +1226,8 @@ export function SmcChartOverlay({
         bgFill: isTradeActive ? "#059669" : "#064e3b",
         borderStroke: isTradeActive ? "#6ee7b7" : "#059669",
         textColor: "#ffffff",
-        fontSize: isMobile ? "9.5" : "10.5",
-        label: isTradeActive
-          ? `🟢 TP $${effectiveTpPrice.toFixed(2)}`
-          : `🎯 1:1.85 $${effectiveTpPrice.toFixed(2)}`,
+        fontSize: isMobile ? "9" : "10.5",
+        label: isMobile ? `TP $${effectiveTpPrice.toFixed(2)}` : (isTradeActive ? `🟢 TP $${effectiveTpPrice.toFixed(2)}` : `🎯 1:1.85 $${effectiveTpPrice.toFixed(2)}`),
         priority: 85,
       });
     }
@@ -1242,9 +1242,11 @@ export function SmcChartOverlay({
         bgFill: s3Pass ? "#d97706" : "#78350f",
         borderStroke: s3Pass ? "#fde68a" : "#d97706",
         textColor: "#ffffff",
-        fontSize: isMobile ? "9.5" : "10.5",
-        label: s3Pass
-          ? (isMobile ? `CHOCH 🟢 $${swingStructure.chochLvl.toFixed(2)}` : `⚡ CHOCH 🟢 $${swingStructure.chochLvl.toFixed(2)}`)
+        fontSize: isMobile ? "9" : "10.5",
+        label: isMobile
+          ? `CHOCH $${swingStructure.chochLvl.toFixed(2)}`
+          : s3Pass
+          ? `⚡ CHOCH 🟢 $${swingStructure.chochLvl.toFixed(2)}`
           : `⏳ CHOCH $${swingStructure.chochLvl.toFixed(2)}`,
         priority: 70,
       });
@@ -1261,10 +1263,12 @@ export function SmcChartOverlay({
         bgFill: isSwept ? "#0891b2" : "#164e63",
         borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
         textColor: "#ffffff",
-        fontSize: isMobile ? "9" : "10",
-        label: isSwept
-          ? (isMobile ? `SWEPT 🟢 $${swingStructure.swingHigh.toFixed(2)}` : `⚡ BUY SWEPT $${swingStructure.swingHigh.toFixed(2)}`)
-          : (isMobile ? `SWING HI $${swingStructure.swingHigh.toFixed(2)}` : `⏳ SWING HI $${swingStructure.swingHigh.toFixed(2)}`),
+        fontSize: isMobile ? "8.5" : "10",
+        label: isMobile
+          ? (isSwept ? `SWEPT $${swingStructure.swingHigh.toFixed(2)}` : `SWING HI $${swingStructure.swingHigh.toFixed(2)}`)
+          : isSwept
+          ? `⚡ BUY SWEPT $${swingStructure.swingHigh.toFixed(2)}`
+          : `⏳ SWING HI $${swingStructure.swingHigh.toFixed(2)}`,
         priority: 60,
       });
     }
@@ -1280,10 +1284,12 @@ export function SmcChartOverlay({
         bgFill: isSwept ? "#0891b2" : "#164e63",
         borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
         textColor: "#ffffff",
-        fontSize: isMobile ? "9" : "10",
-        label: isSwept
-          ? (isMobile ? `SWEPT 🟢 $${swingStructure.swingLow.toFixed(2)}` : `⚡ SELL SWEPT $${swingStructure.swingLow.toFixed(2)}`)
-          : (isMobile ? `SWING LO $${swingStructure.swingLow.toFixed(2)}` : `⏳ SWING LO $${swingStructure.swingLow.toFixed(2)}`),
+        fontSize: isMobile ? "8.5" : "10",
+        label: isMobile
+          ? (isSwept ? `SWEPT $${swingStructure.swingLow.toFixed(2)}` : `SWING LO $${swingStructure.swingLow.toFixed(2)}`)
+          : isSwept
+          ? `⚡ SELL SWEPT $${swingStructure.swingLow.toFixed(2)}`
+          : `⏳ SWING LO $${swingStructure.swingLow.toFixed(2)}`,
         priority: 60,
       });
     }
@@ -1292,8 +1298,7 @@ export function SmcChartOverlay({
     list.sort((a, b) => a.targetY - b.targetY);
 
     // Iterative relaxation to eliminate label collisions
-    for (let iter = 0; iter < 12; iter++) {
-      // Forward pass: push down if overlapping
+    for (let iter = 0; iter < 16; iter++) {
       for (let i = 1; i < list.length; i++) {
         const prev = list[i - 1];
         const curr = list[i];
@@ -1312,7 +1317,6 @@ export function SmcChartOverlay({
           }
         }
       }
-      // Backward pass: push up if overlapping
       for (let i = list.length - 2; i >= 0; i--) {
         const curr = list[i];
         const next = list[i + 1];
@@ -1325,15 +1329,29 @@ export function SmcChartOverlay({
       }
     }
 
-    // Boundary constraints: keep within chart viewport
-    const topLimit = chartTop + tagHeight / 2;
-    const botLimit = chartBottom - tagHeight / 2;
+    // STRICT GUARANTEE: Enforce absolute minimum spacing sequentially so no two badges can ever overlap
+    for (let i = 1; i < list.length; i++) {
+      if (list[i].renderedY < list[i - 1].renderedY + minTagGap) {
+        list[i].renderedY = list[i - 1].renderedY + minTagGap;
+      }
+    }
 
-    for (let i = 0; i < list.length; i++) {
-      list[i].renderedY = Math.max(
-        topLimit + i * minTagGap,
-        Math.min(botLimit - (list.length - 1 - i) * minTagGap, list[i].renderedY)
-      );
+    // Boundary constraints: keep within chart viewport
+    const topLimit = chartTop + tagHeight / 2 + 2;
+    const botLimit = chartBottom - tagHeight / 2 - 2;
+
+    if (list.length > 0 && list[list.length - 1].renderedY > botLimit) {
+      const overflow = list[list.length - 1].renderedY - botLimit;
+      for (let i = 0; i < list.length; i++) {
+        list[i].renderedY -= overflow;
+      }
+    }
+
+    if (list.length > 0 && list[0].renderedY < topLimit) {
+      const underflow = topLimit - list[0].renderedY;
+      for (let i = 0; i < list.length; i++) {
+        list[i].renderedY += underflow;
+      }
     }
 
     return list;
@@ -1539,70 +1557,76 @@ export function SmcChartOverlay({
       </div>
 
       {/* 2. DUAL CHART VIEW TOGGLE & ZOOM CONTROLS */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant={activeTab === "tv" ? "default" : "outline"}
-            className={cn(
-              "h-8 px-3 text-xs font-mono font-bold transition-all",
-              activeTab === "tv"
-                ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-md"
-                : "bg-zinc-900 border-zinc-700 text-zinc-300 hover:text-white"
-            )}
-            onClick={() => setActiveTab("tv")}
-          >
-            <Tv className="w-3.5 h-3.5 mr-1.5" /> 📈 Real TradingView Pro Chart (Full M5 Feed)
-          </Button>
-
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+        <div className="grid grid-cols-2 gap-1.5 sm:flex sm:items-center sm:gap-2 w-full sm:w-auto">
           <Button
             size="sm"
             variant={activeTab === "smc" ? "default" : "outline"}
             className={cn(
-              "h-8 px-3 text-xs font-mono font-bold transition-all",
+              "h-9 sm:h-8 px-2 sm:px-3 text-xs font-mono font-bold transition-all justify-center",
               activeTab === "smc"
-                ? "bg-emerald-600 text-white hover:bg-emerald-500 shadow-md"
+                ? "bg-emerald-600 text-white hover:bg-emerald-500 shadow-md ring-1 ring-emerald-400"
                 : "bg-zinc-900 border-zinc-700 text-zinc-300 hover:text-white"
             )}
             onClick={() => setActiveTab("smc")}
           >
-            <BarChart2 className="w-3.5 h-3.5 mr-1.5 text-white" /> 🎯 SMC Diagram Canvas
+            <BarChart2 className="w-3.5 h-3.5 mr-1 text-white shrink-0" />
+            <span className="hidden sm:inline">🎯 SMC Diagram Canvas</span>
+            <span className="sm:hidden">🎯 SMC Canvas</span>
+          </Button>
+
+          <Button
+            size="sm"
+            variant={activeTab === "tv" ? "default" : "outline"}
+            className={cn(
+              "h-9 sm:h-8 px-2 sm:px-3 text-xs font-mono font-bold transition-all justify-center",
+              activeTab === "tv"
+                ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-md ring-1 ring-indigo-400"
+                : "bg-zinc-900 border-zinc-700 text-zinc-300 hover:text-white"
+            )}
+            onClick={() => setActiveTab("tv")}
+          >
+            <Tv className="w-3.5 h-3.5 mr-1 shrink-0" />
+            <span className="hidden sm:inline">📈 Real TradingView (M5)</span>
+            <span className="sm:hidden">📈 TradingView</span>
           </Button>
         </div>
 
         {/* Zoom Controls when in SMC view */}
         {activeTab === "smc" && (
-          <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-lg p-1">
+          <div className="flex items-center justify-between sm:justify-start gap-1.5 bg-zinc-900 border border-zinc-800 rounded-lg p-1 w-full sm:w-auto">
             <span className="text-xs font-mono font-bold text-zinc-300 px-2">
               Zoom: {Math.round(zoomLevel * 100)}%
             </span>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 text-zinc-200 hover:text-white hover:bg-zinc-800 font-bold"
-              onClick={() => setZoomLevel((z) => Math.min(3.5, Number((z + 0.35).toFixed(2))))}
-              title="Zoom In (Enlarge Scalping Candles)"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 text-zinc-200 hover:text-white hover:bg-zinc-800 font-bold"
-              onClick={() => setZoomLevel((z) => Math.max(0.4, Number((z - 0.35).toFixed(2))))}
-              title="Zoom Out (Show More Structure)"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 text-zinc-200 hover:text-white hover:bg-zinc-800"
-              onClick={() => setZoomLevel(1.0)}
-              title="Reset Zoom (100%)"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-zinc-200 hover:text-white hover:bg-zinc-800 font-bold"
+                onClick={() => setZoomLevel((z) => Math.min(3.5, Number((z + 0.35).toFixed(2))))}
+                title="Zoom In (Enlarge Scalping Candles)"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-zinc-200 hover:text-white hover:bg-zinc-800 font-bold"
+                onClick={() => setZoomLevel((z) => Math.max(0.4, Number((z - 0.35).toFixed(2))))}
+                title="Zoom Out (Show More Structure)"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-zinc-200 hover:text-white hover:bg-zinc-800"
+                onClick={() => setZoomLevel(1.0)}
+                title="Reset Zoom (100%)"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </Button>
+            </div>
           </div>
         )}
       </div>
@@ -1770,7 +1794,7 @@ export function SmcChartOverlay({
           <TradingViewEmbedded symbol={symbol} />
         ) : (
           /* SVG Canvas with Crisp Rendering and Real-time Cursor Tracking */
-          <div className="relative w-full h-[380px] sm:h-[420px] md:h-[460px] lg:h-[480px]">
+          <div className="relative w-full h-[440px] sm:h-[440px] md:h-[460px] lg:h-[480px]">
             <svg
               viewBox={`0 0 ${svgWidth} ${svgHeight}`}
               className="w-full h-full cursor-crosshair select-none"
@@ -1902,9 +1926,9 @@ export function SmcChartOverlay({
                     />
 
                     {/* 4. Origin Anchor Pin Flag on the Originating Candle */}
-                    {(() => {
+                    {!isMobile && (() => {
                       const pinY = candleHighY > chartTop + 24 ? candleHighY - 18 : candleLowY + 5;
-                      const pinWidth = isMobile ? 68 : 84;
+                      const pinWidth = 84;
                       return (
                         <g>
                           <rect
@@ -1921,7 +1945,7 @@ export function SmcChartOverlay({
                             x={zone.originX}
                             y={pinY + 11}
                             fill={zone.boxStroke}
-                            fontSize={isMobile ? "7.5" : "8.5"}
+                            fontSize="8.5"
                             fontFamily="monospace"
                             fontWeight="900"
                             textAnchor="middle"
