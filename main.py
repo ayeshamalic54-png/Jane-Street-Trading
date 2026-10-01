@@ -1037,7 +1037,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
             f"📊 **STRATEGY:** `Pure SMC / ICT 9-Condition Structure 🟢`\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
             f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Sweep + 0.75 Buffer)*\n"
-            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.2f}R Target / 1:1.85 Structural Target)*\n"
+            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.2f}R Opposing Structural Liquidity Target)*\n"
             f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
         
@@ -1587,7 +1587,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     peak_floating_profit = floating_profit
 
                 import risk_safeguards
-                is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', True)
+                is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', False)
                 be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 35.0)
 
                 should_close_trail = False
@@ -3164,7 +3164,7 @@ def main():
             if len(active_js_positions) > 0:
                 try:
                     import risk_safeguards
-                    is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', True)
+                    is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', False)
                     be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 35.0)
 
                     for p in active_js_positions:

@@ -1,10 +1,11 @@
 import numpy as np
 import pandas as pd
 
-def get_swing_points(df, n_left=2, n_right=2):
+def get_swing_points(df, n_left=3, n_right=3, min_amplitude=0.0):
     """
     Returns lists of swing highs (price, index) and swing lows (price, index)
-    using fractal definitions with n_left and n_right candles.
+    using institutional fractal definitions with n_left and n_right candles (default 3x3 = 7 bars).
+    Optionally enforces min_amplitude to filter out tight consolidation noise.
     """
     if df is None or len(df) < (n_left + n_right + 1):
         return [], []
@@ -33,9 +34,20 @@ def get_swing_points(df, n_left=2, n_right=2):
                 is_sl = False
 
         if is_sh:
-            swing_highs.append((float(highs[i]), i))
+            if min_amplitude > 0.0:
+                base_low = min(lows[i - n_left:i + n_right + 1])
+                if (highs[i] - base_low) < min_amplitude:
+                    is_sh = False
+            if is_sh:
+                swing_highs.append((float(highs[i]), i))
+
         if is_sl:
-            swing_lows.append((float(lows[i]), i))
+            if min_amplitude > 0.0:
+                base_high = max(highs[i - n_left:i + n_right + 1])
+                if (base_high - lows[i]) < min_amplitude:
+                    is_sl = False
+            if is_sl:
+                swing_lows.append((float(lows[i]), i))
 
     return swing_highs, swing_lows
 
@@ -123,7 +135,20 @@ def detect_liquidity_sweep(df_m5):
     - (is_swept_sell_side, sweep_lowest_price, swing_level, sweep_idx)
     - (is_swept_buy_side, sweep_highest_price, swing_level, sweep_idx)
     """
-    swing_highs, swing_lows = get_swing_points(df_m5, n_left=2, n_right=2)
+    if df_m5 is None or len(df_m5) < 10:
+        return (False, 0.0, 0.0, -1), (False, 0.0, 0.0, -1)
+
+    # Detect if asset is Gold / Metals
+    is_metals = False
+    if 'symbol' in df_m5.columns and any(m in str(df_m5['symbol'].iloc[0]).upper() for m in ['XAU', 'GOLD', 'XAG', 'SILVER']):
+        is_metals = True
+    elif len(df_m5) > 0 and float(df_m5['close'].iloc[-1]) > 500:
+        is_metals = True
+
+    min_amp = 1.75 if is_metals else 0.00015
+    swing_highs, swing_lows = get_swing_points(df_m5, n_left=3, n_right=3, min_amplitude=min_amp)
+    if len(swing_highs) < 2 or len(swing_lows) < 2:
+        swing_highs, swing_lows = get_swing_points(df_m5, n_left=2, n_right=2, min_amplitude=min_amp)
     if not swing_highs or not swing_lows:
         return (False, 0.0, 0.0, -1), (False, 0.0, 0.0, -1)
 
@@ -171,8 +196,8 @@ def detect_choch_bos(df_m5, sweep_idx, is_bullish=True):
     """
     Step 3: Bullish / Bearish CHoCH (Change of Character) & BOS.
     
-    - Bullish CHoCH: After sell-side sweep, M5 candle CLOSES above the last minor lower high before/at the sweep.
-    - Bearish CHoCH: After buy-side sweep, M5 candle CLOSES below the last minor higher low before/at the sweep.
+    - Bullish CHoCH: After sell-side sweep, M5 candle CLOSES above the last confirmed structural lower high formed PRIOR to the sweep.
+    - Bearish CHoCH: After buy-side sweep, M5 candle CLOSES below the last confirmed structural higher low formed PRIOR to the sweep.
     Returns: (has_choch, choch_level, choch_candle_index)
     """
     if df_m5 is None or sweep_idx < 0 or sweep_idx >= len(df_m5):
@@ -183,20 +208,32 @@ def detect_choch_bos(df_m5, sweep_idx, is_bullish=True):
     closes = df_m5['close'].values
     n = len(df_m5)
 
+    swing_highs, swing_lows = get_swing_points(df_m5, n_left=2, n_right=2)
+
     if is_bullish:
-        # Minor lower high before or at sweep_idx
-        minor_lh = max(highs[max(0, sweep_idx - 5):sweep_idx + 1])
-        # Check if any candle from sweep_idx to current candle CLOSES above minor_lh
-        for j in range(sweep_idx, n):
-            if closes[j] > minor_lh:
-                return True, float(minor_lh), j
+        # Last confirmed swing high formed prior to sweep_idx
+        prior_sh = [p for p, idx in swing_highs if idx < sweep_idx]
+        if prior_sh:
+            choch_lvl = prior_sh[-1]
+        else:
+            choch_lvl = max(highs[max(0, sweep_idx - 6):sweep_idx])
+            
+        # Check if any candle AFTER sweep_idx CLOSES above choch_lvl
+        for j in range(sweep_idx + 1, n):
+            if closes[j] > choch_lvl:
+                return True, float(choch_lvl), j
     else:
-        # Minor higher low before or at sweep_idx
-        minor_hl = min(lows[max(0, sweep_idx - 5):sweep_idx + 1])
-        # Check if any candle from sweep_idx to current candle CLOSES below minor_hl
-        for j in range(sweep_idx, n):
-            if closes[j] < minor_hl:
-                return True, float(minor_hl), j
+        # Last confirmed swing low formed prior to sweep_idx
+        prior_sl = [p for p, idx in swing_lows if idx < sweep_idx]
+        if prior_sl:
+            choch_lvl = prior_sl[-1]
+        else:
+            choch_lvl = min(lows[max(0, sweep_idx - 6):sweep_idx])
+            
+        # Check if any candle AFTER sweep_idx CLOSES below choch_lvl
+        for j in range(sweep_idx + 1, n):
+            if closes[j] < choch_lvl:
+                return True, float(choch_lvl), j
 
     return False, 0.0, -1
 

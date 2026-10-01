@@ -125,53 +125,74 @@ def evaluate_smc_strategy_signal(
         sl_price = sweep_low_price - buf
         sl_dist = max(min_dist, price - sl_price)
 
-        # Condition 9: Identify next M15 structural target high above entry (Requires min 1.5R space, baseline 1.8R)
+        # Condition 8 Anti-Chasing Cap: Max allowable SL distance for Metals (Gold) is $7.50
+        max_sl_cap = 7.50 if is_metals else 0.0050
+        if sl_dist > max_sl_cap and not bypass_filters:
+            return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 8: SL Distance ${sl_dist:.2f} > ${max_sl_cap:.2f} Max Cap - Move Overextended/Chasing Entry Discarded)"
+
+        # Discount Rule: Entry must be in Discount (Lower half of the sweep-to-CHoCH impulse leg)
+        leg_high = float(eval_df['high'].iloc[sell_sweep_idx:].max())
+        eq_50 = sweep_low_price + 0.50 * (leg_high - sweep_low_price)
+        if price > (eq_50 + (0.50 if is_metals else 0.00020)) and not bypass_filters:
+            return "NONE", None, None, 0.0, f"FAIL 🔴 (Discount Rule: Entry {price:.2f} in Premium > 50% Equilibrium {eq_50:.2f} - Must Buy in Discount)"
+
+        # Condition 9: Opposing Liquidity Target (BSL - Swing High / Bearish Order Block)
         from smc_indicators import get_swing_points
-        m15_sh, _ = get_swing_points(df_m15, n_left=2, n_right=2)
-        m15_targets = [p for p, _ in m15_sh if p > price]
-        if not m15_targets:
-            target_high = price + 2.5 * sl_dist
-            avail_rrr = 2.5
-        else:
-            valid_targets = [p for p in m15_targets if (p - price) / sl_dist >= 1.5]
-            if valid_targets:
-                target_high = min(valid_targets)
-                avail_rrr = (target_high - price) / sl_dist
+        m15_sh, _ = get_swing_points(df_m15, n_left=3, n_right=3)
+        m5_sh, _ = get_swing_points(eval_df, n_left=3, n_right=3)
+
+        all_zones = detect_smc_zones(eval_df, min_idx=0)
+        opp_obs = all_zones.get('bearish_ob', []) + all_zones.get('bearish_breaker', [])
+
+        target_candidates = []
+        for p_t, _ in m15_sh:
+            if p_t > price + (1.0 if is_metals else 0.0005):
+                target_candidates.append(float(p_t))
+        for p_t, _ in m5_sh:
+            if p_t > price + (1.0 if is_metals else 0.0005):
+                target_candidates.append(float(p_t))
+        for low_b, high_b in opp_obs:
+            if float(low_b) > price + (1.0 if is_metals else 0.0005):
+                target_candidates.append(float(low_b))
+
+        target_candidates = sorted(list(set([round(x, 2 if is_metals else 5) for x in target_candidates])))
+
+        ob_buf = 0.50 if is_metals else 0.00020
+        selected_target = None
+        selected_rrr = 0.0
+
+        for t_lvl in target_candidates:
+            front_run_tp = t_lvl - ob_buf
+            candidate_rrr = (front_run_tp - price) / sl_dist
+            if candidate_rrr >= 1.50:
+                selected_target = front_run_tp
+                selected_rrr = candidate_rrr
+                break
+
+        if selected_target is None:
+            if not target_candidates:
+                selected_target = price + (1.85 * sl_dist)
+                selected_rrr = 1.85
             else:
-                target_high = max(m15_targets)
-                avail_rrr = (target_high - price) / sl_dist
+                nearest_blocker = target_candidates[0]
+                avail_rrr = (nearest_blocker - price) / sl_dist
+                if not bypass_filters:
+                    return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: Opposing Liquidity @ {nearest_blocker:.2f} blocks path | RRR {avail_rrr:.2f}R < 1.5R)"
+                selected_target = nearest_blocker - ob_buf
+                selected_rrr = avail_rrr
 
-        if avail_rrr < 1.5 and not bypass_filters:
-            return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 1.5R Requirement)"
+        if selected_rrr > 2.50:
+            selected_target = price + (2.50 * sl_dist)
+            selected_rrr = 2.50
 
-        target_rrr = 1.85  # Baseline 1:1.85 Target ($97-$112 USD profit on 0.07 lot)
-        tp_price = price + (target_rrr * sl_dist)
+        tp_price = round(selected_target, 2 if is_metals else 5)
+        target_rrr = selected_rrr
 
-        # Smart Order Block Shield: Front-run opposing Bearish OB only if profit >= 1.40R ($94+ USD)
-        try:
-            all_zones = detect_smc_zones(eval_df, min_idx=0)
-            opp_obs = all_zones.get('bearish_ob', []) + all_zones.get('bearish_breaker', [])
-            ob_buf = 0.50 if is_metals else 0.00020
-            ob_targets = []
-            for low_b, high_b in opp_obs:
-                ob_front = float(low_b) - ob_buf
-                if ob_front > price and ob_front < tp_price:
-                    ob_rrr = (ob_front - price) / sl_dist
-                    if ob_rrr >= 1.40:
-                        ob_targets.append((ob_front, ob_rrr))
-            if ob_targets:
-                best_ob_front, best_ob_rrr = min(ob_targets, key=lambda x: x[0])
-                tp_price = best_ob_front
-                target_rrr = best_ob_rrr
-                logger.info(f"🛡️ [TP SHIELD] Front-running opposing Bearish Order Block @ {tp_price:.2f} ({target_rrr:.2f}R / $94+ profit lock)")
-        except Exception:
-            pass
-
-        reason = f"🟢 STRICT SMC PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) + CHoCH ({bull_choch_lvl:.2f}) + Displacement FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.2f}R / 1:1.85)"
+        reason = f"🟢 STRICT SMC PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) + CHoCH ({bull_choch_lvl:.2f}) + Discount FVG Retest | SL: {sl_price:.2f} (0.75 buf) | Opposing Target TP: {tp_price:.2f} ({target_rrr:.2f}R)"
         logger.info("================================================================================")
         logger.info(f"🟢 [STRICT SMC BUY SIGNAL EXECUTED] 🚀")
-        logger.info(f"🟢 Condition 8 (Structural SL): Sweep Low ({sweep_low_price:.2f}) - 0.75 = {sl_price:.2f} 🟢")
-        logger.info(f"🟢 Condition 9 (Target TP): M15 Target ({target_high:.2f}) -> Executing {target_rrr:.2f}R TP (1:1.85 Target) @ {tp_price:.2f} 🟢")
+        logger.info(f"🟢 Condition 8 (Structural SL): Sweep Low ({sweep_low_price:.2f}) - 0.75 = {sl_price:.2f} (Dist: ${sl_dist:.2f} <= ${max_sl_cap:.2f} Cap) 🟢")
+        logger.info(f"🟢 Condition 9 (Opposing Liquidity TP): Target Pool -> Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Front-Run 0.50) 🟢")
         logger.info("================================================================================")
         return "BUY", tp_price, sl_price, sl_dist, reason
 
@@ -182,53 +203,74 @@ def evaluate_smc_strategy_signal(
         sl_price = sweep_high_price + buf
         sl_dist = max(min_dist, sl_price - price)
 
-        # Condition 9: Identify next M15 structural target low below entry (Requires min 1.5R space, baseline 1.8R)
+        # Condition 8 Anti-Chasing Cap: Max allowable SL distance for Metals (Gold) is $7.50
+        max_sl_cap = 7.50 if is_metals else 0.0050
+        if sl_dist > max_sl_cap and not bypass_filters:
+            return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 8: SL Distance ${sl_dist:.2f} > ${max_sl_cap:.2f} Max Cap - Move Overextended/Chasing Entry Discarded)"
+
+        # Premium Rule: Entry must be in Premium (Upper half of the sweep-to-CHoCH impulse leg)
+        leg_low = float(eval_df['low'].iloc[buy_sweep_idx:].min())
+        eq_50 = sweep_high_price - 0.50 * (sweep_high_price - leg_low)
+        if price < (eq_50 - (0.50 if is_metals else 0.00020)) and not bypass_filters:
+            return "NONE", None, None, 0.0, f"FAIL 🔴 (Premium Rule: Entry {price:.2f} in Discount < 50% Equilibrium {eq_50:.2f} - Must Sell in Premium)"
+
+        # Condition 9: Opposing Liquidity Target (SSL - Swing Low / Bullish Order Block)
         from smc_indicators import get_swing_points
-        _, m15_sl = get_swing_points(df_m15, n_left=2, n_right=2)
-        m15_targets = [p for p, _ in m15_sl if p < price]
-        if not m15_targets:
-            target_low = price - 2.5 * sl_dist
-            avail_rrr = 2.5
-        else:
-            valid_targets = [p for p in m15_targets if (price - p) / sl_dist >= 1.5]
-            if valid_targets:
-                target_low = max(valid_targets)
-                avail_rrr = (price - target_low) / sl_dist
+        _, m15_sl = get_swing_points(df_m15, n_left=3, n_right=3)
+        _, m5_sl = get_swing_points(eval_df, n_left=3, n_right=3)
+
+        all_zones = detect_smc_zones(eval_df, min_idx=0)
+        opp_obs = all_zones.get('bullish_ob', []) + all_zones.get('bullish_breaker', [])
+
+        target_candidates = []
+        for p_t, _ in m15_sl:
+            if p_t < price - (1.0 if is_metals else 0.0005):
+                target_candidates.append(float(p_t))
+        for p_t, _ in m5_sl:
+            if p_t < price - (1.0 if is_metals else 0.0005):
+                target_candidates.append(float(p_t))
+        for low_b, high_b in opp_obs:
+            if float(high_b) < price - (1.0 if is_metals else 0.0005):
+                target_candidates.append(float(high_b))
+
+        target_candidates = sorted(list(set([round(x, 2 if is_metals else 5) for x in target_candidates])), reverse=True)
+
+        ob_buf = 0.50 if is_metals else 0.00020
+        selected_target = None
+        selected_rrr = 0.0
+
+        for t_lvl in target_candidates:
+            front_run_tp = t_lvl + ob_buf
+            candidate_rrr = (price - front_run_tp) / sl_dist
+            if candidate_rrr >= 1.50:
+                selected_target = front_run_tp
+                selected_rrr = candidate_rrr
+                break
+
+        if selected_target is None:
+            if not target_candidates:
+                selected_target = price - (1.85 * sl_dist)
+                selected_rrr = 1.85
             else:
-                target_low = min(m15_targets)
-                avail_rrr = (price - target_low) / sl_dist
+                nearest_blocker = target_candidates[0]
+                avail_rrr = (price - nearest_blocker) / sl_dist
+                if not bypass_filters:
+                    return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: Opposing Liquidity @ {nearest_blocker:.2f} blocks path | RRR {avail_rrr:.2f}R < 1.5R)"
+                selected_target = nearest_blocker + ob_buf
+                selected_rrr = avail_rrr
 
-        if avail_rrr < 1.5 and not bypass_filters:
-            return "NONE", None, None, 0.0, f"FAIL 🔴 (Condition 9: M15 Target RRR {avail_rrr:.2f}R < Minimum 1.5R Requirement)"
+        if selected_rrr > 2.50:
+            selected_target = price - (2.50 * sl_dist)
+            selected_rrr = 2.50
 
-        target_rrr = 1.85  # Baseline 1:1.85 Target ($97-$112 USD profit on 0.07 lot)
-        tp_price = price - (target_rrr * sl_dist)
+        tp_price = round(selected_target, 2 if is_metals else 5)
+        target_rrr = selected_rrr
 
-        # Smart Order Block Shield: Front-run opposing Bullish OB only if profit >= 1.40R ($94+ USD)
-        try:
-            all_zones = detect_smc_zones(eval_df, min_idx=0)
-            opp_obs = all_zones.get('bullish_ob', []) + all_zones.get('bullish_breaker', [])
-            ob_buf = 0.50 if is_metals else 0.00020
-            ob_targets = []
-            for low_b, high_b in opp_obs:
-                ob_front = float(high_b) + ob_buf
-                if ob_front < price and ob_front > tp_price:
-                    ob_rrr = (price - ob_front) / sl_dist
-                    if ob_rrr >= 1.40:
-                        ob_targets.append((ob_front, ob_rrr))
-            if ob_targets:
-                best_ob_front, best_ob_rrr = max(ob_targets, key=lambda x: x[0])
-                tp_price = best_ob_front
-                target_rrr = best_ob_rrr
-                logger.info(f"🛡️ [TP SHIELD] Front-running opposing Bullish Order Block @ {tp_price:.2f} ({target_rrr:.2f}R / $94+ profit lock)")
-        except Exception:
-            pass
-
-        reason = f"🔴 STRICT SMC PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) + CHoCH ({bear_choch_lvl:.2f}) + Displacement FVG Retest | SL: {sl_price:.2f} (0.75 buf) | TP: {tp_price:.2f} ({target_rrr:.2f}R / 1:1.85)"
+        reason = f"🔴 STRICT SMC PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) + CHoCH ({bear_choch_lvl:.2f}) + Premium FVG Retest | SL: {sl_price:.2f} (0.75 buf) | Opposing Target TP: {tp_price:.2f} ({target_rrr:.2f}R)"
         logger.info("================================================================================")
         logger.info(f"🔴 [STRICT SMC SELL SIGNAL EXECUTED] 🚀")
-        logger.info(f"🔴 Condition 8 (Structural SL): Sweep High ({sweep_high_price:.2f}) + 0.75 = {sl_price:.2f} 🔴")
-        logger.info(f"🔴 Condition 9 (Target TP): M15 Target ({target_low:.2f}) -> Executing {target_rrr:.2f}R TP (1:1.85 Target) @ {tp_price:.2f} 🔴")
+        logger.info(f"🔴 Condition 8 (Structural SL): Sweep High ({sweep_high_price:.2f}) + 0.75 = {sl_price:.2f} (Dist: ${sl_dist:.2f} <= ${max_sl_cap:.2f} Cap) 🔴")
+        logger.info(f"🔴 Condition 9 (Opposing Liquidity TP): Target Pool -> Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Front-Run 0.50) 🔴")
         logger.info("================================================================================")
         return "SELL", tp_price, sl_price, sl_dist, reason
 
@@ -258,7 +300,7 @@ def evaluate_smc_strategy_signal(
         step6_s = "WAITING ⚪ (M15 Neutral)"
         step7_s = "WAITING ⚪ (M15 Neutral)"
 
-    step8_s = "PASS 🟢 (0.75 Buf)" if is_metals else "PASS 🟢 (0.0004 Buf)"
+    step8_s = "PASS 🟢 (0.75 Buf | $7.50 Cap)" if is_metals else "PASS 🟢 (0.0004 Buf | Cap)"
 
     try:
         from smc_indicators import get_swing_points
@@ -267,10 +309,10 @@ def evaluate_smc_strategy_signal(
         if is_m15_bullish:
             sl_p_check = (sweep_low_price - buf) if has_sell_sweep else (price - (1.5 if is_metals else 0.0015))
             sl_d_check = max(min_dist, price - sl_p_check)
-            m15_sh, _ = get_swing_points(df_m15, n_left=2, n_right=2)
+            m15_sh, _ = get_swing_points(df_m15, n_left=3, n_right=3)
             m15_targets = [p for p, _ in m15_sh if p > price]
             if not m15_targets:
-                scan_rrr = 2.5
+                scan_rrr = 2.0
             else:
                 valid_targets = [p for p in m15_targets if (p - price) / sl_d_check >= 1.5]
                 target_high = min(valid_targets) if valid_targets else max(m15_targets)
@@ -278,10 +320,10 @@ def evaluate_smc_strategy_signal(
         elif is_m15_bearish:
             sl_p_check = (sweep_high_price + buf) if has_buy_sweep else (price + (1.5 if is_metals else 0.0015))
             sl_d_check = max(min_dist, sl_p_check - price)
-            _, m15_sl = get_swing_points(df_m15, n_left=2, n_right=2)
+            _, m15_sl = get_swing_points(df_m15, n_left=3, n_right=3)
             m15_targets = [p for p, _ in m15_sl if p < price]
             if not m15_targets:
-                scan_rrr = 2.5
+                scan_rrr = 2.0
             else:
                 valid_targets = [p for p in m15_targets if (price - p) / sl_d_check >= 1.5]
                 target_low = max(valid_targets) if valid_targets else min(m15_targets)
@@ -290,11 +332,11 @@ def evaluate_smc_strategy_signal(
             scan_rrr = 1.85
 
         if scan_rrr >= 1.5:
-            step9_s = f"PASS 🟢 ({scan_rrr:.2f}R Target Space -> Executing 1:1.85 TP)"
+            step9_s = f"PASS 🟢 ({scan_rrr:.2f}R Opposing Target | Front-Run 0.50)"
         else:
             step9_s = f"FAIL 🔴 ({scan_rrr:.2f}R Target Space < 1.5R Min)"
     except Exception:
-        step9_s = "PASS 🟢 (M15 Target Min 1.5R / Target 1:1.85)"
+        step9_s = "PASS 🟢 (Opposing Target Min 1.5R)"
 
     actual_sweep_p = sweep_low_price if has_sell_sweep else (sweep_high_price if has_buy_sweep else 0.0)
     actual_choch_p = bull_choch_lvl if has_bull_choch else (bear_choch_lvl if has_bear_choch else 0.0)

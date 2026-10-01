@@ -1445,7 +1445,7 @@ export function SmcChartOverlay({
               {isTradeActive
                 ? `Running ${tradeDirection} on ${symbol} | Lot: ${isMetals ? "0.07" : "0.51"} | SL: $${slPrice.toFixed(2)} ${
                     Math.abs(slPrice - entryPrice) < 0.20 ? "(Breakeven 🛡️)" : `($${defaultBuf} Buf)`
-                  } | TP: $${tpPrice.toFixed(2)} (1:1.85 Target) ${
+                  } | TP: $${tpPrice.toFixed(2)} (Opposing Liquidity Target) ${
                     hasActivePosition && activePosition.profit !== undefined
                       ? `| Float P&L: $${Number(activePosition.profit).toFixed(2)}`
                       : ""
@@ -2195,7 +2195,7 @@ export function SmcChartOverlay({
                               fontFamily="monospace"
                               fontWeight="900"
                             >
-                              🎯 TP TARGET (1:1.85 RRR)
+                              🎯 OPPOSING LIQUIDITY TP
                             </text>
                           </>
                         )}
@@ -2877,7 +2877,7 @@ export function SmcChartOverlay({
                 ) : (
                   <Clock className="w-4 h-4 text-zinc-500" />
                 )}
-                S8: SL Placement
+                S8: SL Placement & Cap
               </span>
               <Badge
                 variant="outline"
@@ -2888,15 +2888,15 @@ export function SmcChartOverlay({
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {s8Pass ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 ($${defaultBuf} Buf)`) : "PENDING ⚪"}
+                {s8Pass ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 ($${defaultBuf} Buf | $7.50 Cap)`) : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s8Pass
                 ? (slPrice > 0 && isTradeActive
-                    ? `Locked exact $${defaultBuf} buffer behind Sweep wick ($${slPrice.toFixed(2)}).`
-                    : `Verified fixed $${defaultBuf} structural SL buffer rule behind liquidity.`)
-                : `Will anchor $${defaultBuf} behind Sweep wick upon trade execution.`}
+                    ? `Locked exact $${defaultBuf} buffer behind Sweep wick ($${slPrice.toFixed(2)}) with $7.50 max risk cap.`
+                    : `Verified structural SL buffer ($${defaultBuf}) with max $7.50 anti-chasing risk cap.`)
+                : `Will anchor $${defaultBuf} behind Sweep wick upon trade execution (max $7.50 cap).`}
             </p>
           </div>
 
@@ -2916,7 +2916,7 @@ export function SmcChartOverlay({
                 ) : (
                   <Clock className="w-4 h-4 text-zinc-500" />
                 )}
-                S9: 1.8R Target Space
+                S9: Opposing Liquidity Target
               </span>
               <Badge
                 variant="outline"
@@ -2927,15 +2927,15 @@ export function SmcChartOverlay({
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {s9Pass ? (s9Status && isPassText(s9Status) ? s9Status : "PASS 🟢 (1.8R Space)") : "PENDING ⚪"}
+                {s9Pass ? (s9Status && isPassText(s9Status) ? s9Status : "PASS 🟢 (Opposing Target)") : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s9Pass
                 ? (tpPrice > 0 && isTradeActive
-                    ? `Mathematical 1.8R TP locked at $${tpPrice.toFixed(2)}.`
-                    : "Verified minimum 1.5R structural target space to opposing M15 swing liquidity.")
-                : "Requires minimum 1.5R distance to opposing liquidity pool."}
+                    ? `Opposing structural liquidity TP placed at $${tpPrice.toFixed(2)} (front-run by $0.50).`
+                    : "Verified minimum 1.5R clear path to opposing structural liquidity.")
+                : "Requires minimum 1.5R clear path to opposing liquidity pool."}
             </p>
           </div>
         </div>
