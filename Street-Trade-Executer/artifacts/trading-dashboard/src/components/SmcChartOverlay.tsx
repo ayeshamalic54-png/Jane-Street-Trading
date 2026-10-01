@@ -2267,62 +2267,123 @@ export function SmcChartOverlay({
                       shapeRendering="crispEdges"
                     />
 
-                    {/* Sweep Marker on the Sweep Candle */}
+                    {/* Sweep Marker on the Sweep Candle (High for Bearish, Low for Bullish) */}
                     {c.isSweep && (
                       <g>
-                        <path
-                          d={`M ${cx} ${yLow + 6} L ${cx - 7} ${yLow + 18} L ${cx + 7} ${yLow + 18} Z`}
-                          fill="#06b6d4"
-                        />
-                        <rect
-                          x={cx - (isMobile ? 32 : 42)}
-                          y={yLow + 22}
-                          width={isMobile ? 64 : 84}
-                          height={isMobile ? 18 : 20}
-                          fill="#0891b2"
-                          rx="4"
-                          stroke="#22d3ee"
-                          strokeWidth="1.5"
-                        />
-                        <text
-                          x={cx}
-                          y={yLow + (isMobile ? 34 : 36)}
-                          fill="#ffffff"
-                          fontSize={isMobile ? "8.5" : "9.5"}
-                          fontFamily="monospace"
-                          fontWeight="900"
-                          textAnchor="middle"
-                        >
-                          SWEEP
-                        </text>
+                        {isBullishSetup ? (
+                          <>
+                            <path
+                              d={`M ${cx} ${yLow + 6} L ${cx - 7} ${yLow + 18} L ${cx + 7} ${yLow + 18} Z`}
+                              fill="#06b6d4"
+                            />
+                            <rect
+                              x={cx - (isMobile ? 32 : 42)}
+                              y={yLow + 22}
+                              width={isMobile ? 64 : 84}
+                              height={isMobile ? 18 : 20}
+                              fill="#0891b2"
+                              rx="4"
+                              stroke="#22d3ee"
+                              strokeWidth="1.5"
+                            />
+                            <text
+                              x={cx}
+                              y={yLow + (isMobile ? 34 : 36)}
+                              fill="#ffffff"
+                              fontSize={isMobile ? "8.5" : "9.5"}
+                              fontFamily="monospace"
+                              fontWeight="900"
+                              textAnchor="middle"
+                            >
+                              SWEEP
+                            </text>
+                          </>
+                        ) : (
+                          <>
+                            <path
+                              d={`M ${cx} ${yHigh - 6} L ${cx - 7} ${yHigh - 18} L ${cx + 7} ${yHigh - 18} Z`}
+                              fill="#06b6d4"
+                            />
+                            <rect
+                              x={cx - (isMobile ? 32 : 42)}
+                              y={yHigh - 42}
+                              width={isMobile ? 64 : 84}
+                              height={isMobile ? 18 : 20}
+                              fill="#0891b2"
+                              rx="4"
+                              stroke="#22d3ee"
+                              strokeWidth="1.5"
+                            />
+                            <text
+                              x={cx}
+                              y={yHigh - (isMobile ? 30 : 28)}
+                              fill="#ffffff"
+                              fontSize={isMobile ? "8.5" : "9.5"}
+                              fontFamily="monospace"
+                              fontWeight="900"
+                              textAnchor="middle"
+                            >
+                              SWEEP
+                            </text>
+                          </>
+                        )}
                       </g>
                     )}
 
-                    {/* CHoCH Marker on the Break Candle */}
+                    {/* CHoCH Marker on the Break Candle (High for Bullish, Low for Bearish) */}
                     {c.isChoch && (
                       <g>
-                        <circle cx={cx} cy={yHigh - 8} r="4" fill="#f59e0b" />
-                        <rect
-                          x={cx - (isMobile ? 24 : 28)}
-                          y={yHigh - 30}
-                          width={isMobile ? 48 : 56}
-                          height={18}
-                          fill="#d97706"
-                          rx="4"
-                          stroke="#fde68a"
-                          strokeWidth="1.5"
-                        />
-                        <text
-                          x={cx}
-                          y={yHigh - 17}
-                          fill="#ffffff"
-                          fontSize={isMobile ? "8.5" : "9.5"}
-                          fontFamily="monospace"
-                          fontWeight="900"
-                          textAnchor="middle"
-                        >
-                          CHOCH
-                        </text>
+                        {isBullishSetup ? (
+                          <>
+                            <circle cx={cx} cy={yHigh - 8} r="4" fill="#f59e0b" />
+                            <rect
+                              x={cx - (isMobile ? 24 : 28)}
+                              y={yHigh - 30}
+                              width={isMobile ? 48 : 56}
+                              height={18}
+                              fill="#d97706"
+                              rx="4"
+                              stroke="#fde68a"
+                              strokeWidth="1.5"
+                            />
+                            <text
+                              x={cx}
+                              y={yHigh - 17}
+                              fill="#ffffff"
+                              fontSize={isMobile ? "8.5" : "9.5"}
+                              fontFamily="monospace"
+                              fontWeight="900"
+                              textAnchor="middle"
+                            >
+                              CHOCH
+                            </text>
+                          </>
+                        ) : (
+                          <>
+                            <circle cx={cx} cy={yLow + 8} r="4" fill="#f59e0b" />
+                            <rect
+                              x={cx - (isMobile ? 24 : 28)}
+                              y={yLow + 14}
+                              width={isMobile ? 48 : 56}
+                              height={18}
+                              fill="#d97706"
+                              rx="4"
+                              stroke="#fde68a"
+                              strokeWidth="1.5"
+                            />
+                            <text
+                              x={cx}
+                              y={yLow + 27}
+                              fill="#ffffff"
+                              fontSize={isMobile ? "8.5" : "9.5"}
+                              fontFamily="monospace"
+                              fontWeight="900"
+                              textAnchor="middle"
+                            >
+                              CHOCH
+                            </text>
+                          </>
+                        )}
                       </g>
                     )}
 
