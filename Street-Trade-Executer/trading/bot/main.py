@@ -3202,10 +3202,13 @@ def main():
                 status_str = f"HALTED (News: {msg})"
             elif low_correlation_warning:
                 status_str = "RUNNING (Warning: Low Correlation)"
-            elif has_positions and (peak_floating_profit >= 35.0 or floating_profit >= 35.0):
-                status_str = f"RUNNING (Breakeven Active 🛡️ | SL @ Entry | Profit ${floating_profit:.2f})"
             elif has_positions:
-                status_str = f"RUNNING (In Trade | PnL ${floating_profit:.2f} | Target 1:1.85)"
+                import risk_safeguards
+                is_be_on = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', False)
+                if is_be_on and (peak_floating_profit >= 35.0 or floating_profit >= 35.0):
+                    status_str = f"RUNNING (Breakeven Active 🛡️ | SL @ Entry | Profit ${floating_profit:.2f})"
+                else:
+                    status_str = f"RUNNING (In Trade 🚀 | PnL ${floating_profit:.2f} | Running to Opposing Target TP)"
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"
             
