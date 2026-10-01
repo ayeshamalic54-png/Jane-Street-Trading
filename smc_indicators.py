@@ -160,14 +160,23 @@ def detect_liquidity_sweep(df_m5):
     sell_sweep = (False, 0.0, 0.0, -1)
     buy_sweep = (False, 0.0, 0.0, -1)
 
+    min_structural_depth = 2.50 if is_metals else 0.0018
+    min_penetration = 0.25 if is_metals else 0.00003
+
     # Check recent candles for a fresh liquidity sweep (last 14 candles / 70 mins window)
     # Search BACKWARDS (from newest candle to oldest) so we always capture the MOST RECENT active sweep
     lookback_start = max(0, n - 14)
     for i in range(n - 1, lookback_start - 1, -1):
-        # 1. Sell-side sweep (BUY setup): Price wicks below recent swing low, but closes ABOVE it
+        # 1. Sell-side sweep (BUY setup): Price wicks below recent structural swing low, but closes ABOVE it
         for sl_val, sl_idx in reversed(swing_lows):
             if i > sl_idx + 1:
-                if lows[i] < sl_val and closes[i] >= sl_val:
+                # Structural depth check: ensure the swing low was a real swing, not an internal micro-blip
+                prior_peak = max(highs[max(0, sl_idx - 6):sl_idx + 1])
+                if (prior_peak - sl_val) < min_structural_depth:
+                    continue  # Ignore minor noise blip inside consolidation
+
+                # Penetration check: must wick at least min_penetration beyond swing level
+                if (sl_val - lows[i]) >= min_penetration and closes[i] >= sl_val:
                     # Breakdown guard: ensure price has NOT closed below this sweep low subsequently
                     subsequent_break = any(closes[k] < lows[i] for k in range(i + 1, n))
                     if not subsequent_break:
@@ -177,10 +186,16 @@ def detect_liquidity_sweep(df_m5):
             break
 
     for i in range(n - 1, lookback_start - 1, -1):
-        # 2. Buy-side sweep (SELL setup): Price wicks above recent swing high, but closes BELOW it
+        # 2. Buy-side sweep (SELL setup): Price wicks above recent structural swing high, but closes BELOW it
         for sh_val, sh_idx in reversed(swing_highs):
             if i > sh_idx + 1:
-                if highs[i] > sh_val and closes[i] <= sh_val:
+                # Structural depth check: ensure the swing high was a real swing, not an internal micro-blip
+                prior_trough = min(lows[max(0, sh_idx - 6):sh_idx + 1])
+                if (sh_val - prior_trough) < min_structural_depth:
+                    continue  # Ignore minor noise blip inside consolidation
+
+                # Penetration check: must wick at least min_penetration beyond swing level
+                if (highs[i] - sh_val) >= min_penetration and closes[i] <= sh_val:
                     # Breakout guard: ensure price has NOT closed above this sweep high subsequently
                     subsequent_break = any(closes[k] > highs[i] for k in range(i + 1, n))
                     if not subsequent_break:
