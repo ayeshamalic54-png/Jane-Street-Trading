@@ -28,8 +28,8 @@ SESSION_GUARD_ENABLED = True
 SESSION_START_HOUR = 12.5  # 12:30 PM PKT (London Open)
 SESSION_END_HOUR = 2.0     # 02:00 AM PKT (Before Rollover Close)
 
-# Breakeven Risk-Free Protection Guard (Shift SL to Breakeven Entry Price at +$35.00 USD profit)
-BREAKEVEN_GUARD_ENABLED = True
+# Breakeven Risk-Free Protection Guard (DISABLED per user directive: let trade breathe to structural TP / SL)
+BREAKEVEN_GUARD_ENABLED = False
 BREAKEVEN_TRIGGER_PROFIT_USD = 35.0  # +$35.00 USD (Shift SL to Entry Price, Risk-Free)
 
 def is_session_time_allowed(start_hour=12.5, end_hour=2.0, current_dt=None):

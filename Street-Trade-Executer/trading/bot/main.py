@@ -601,29 +601,11 @@ LEVERAGE_FACTORS = {
 
 def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Dynamic Prop Firm Lot Sizing Engine:
-    Calculates exact lot size for 0.5% Account Risk ($49.73 USD on $9,947 Account).
-    If sl_dist_price is not provided, defaults to 0.07 Lots for Metals / 0.51 Lots for Forex.
+    Fixed Institutional Prop Firm Lot Sizing Engine:
+    Strictly 0.07 Lots for Metals (XAUUSD / XAGUSD), 0.51 Lots for Forex.
     """
     sym_upper = symbol.upper()
-    try:
-        acc_info = mt5.account_info()
-        equity = acc_info.equity if (acc_info and acc_info.equity > 0) else 9947.0
-    except Exception:
-        equity = 9947.0
-
-    risk_pct = float(os.getenv("RISK_PER_TRADE_PCT", "0.5")) / 100.0
-    risk_usd = equity * risk_pct
-
-    if sl_dist_price > 0:
-        if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
-            lots = risk_usd / (sl_dist_price * 100.0)
-            return round(max(0.01, min(lots, 0.50)), 2)
-        elif category == "forex":
-            lots = risk_usd / (sl_dist_price * 100000.0)
-            return round(max(0.01, min(lots, 2.00)), 2)
-
-    if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper:
+    if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper or "GOLD" in sym_upper or "SILVER" in sym_upper:
         return 0.07
     return 0.51
 
@@ -922,7 +904,7 @@ def sync_mt5_open_positions_with_db():
         for p in positions:
             if p.ticket not in db_tickets:
                 dir_str = "BUY" if p.type == mt5.ORDER_TYPE_BUY else "SELL"
-                log_trade_entry(p.ticket, p.symbol, dir_str, float(p.volume), float(p.price_open), datetime.datetime.now(), "MT5_AUTO_IMPORTED")
+                log_trade_entry(p.ticket, p.symbol, dir_str, float(p.volume), float(p.price_open), datetime.datetime.now(), "MT5_AUTO_IMPORTED", sl=float(p.sl), tp=float(p.tp))
                 logger.info(f"📥 [MT5 AUTO-IMPORT] Active MT5 Ticket #{p.ticket} ({p.symbol} {dir_str} {p.volume} lots @ {p.price_open}) auto-imported to DB & Dashboard!")
 
         for ticket, symbol, lots, entry_price, order_type, entry_time in db_open_trades:
@@ -930,11 +912,11 @@ def sync_mt5_open_positions_with_db():
                 continue
 
             if ticket in active_tickets:
-                # Ticket is active in MT5 — update live floating PnL in DB for signals sidebar
+                # Ticket is active in MT5 — update live floating PnL, SL, and TP in DB for dashboard & chart
                 pos = next((p for p in positions if p.ticket == ticket), None)
                 if pos:
                     try:
-                        cur.execute("UPDATE trades SET profit = %s WHERE ticket = %s", (float(pos.profit), ticket))
+                        cur.execute("UPDATE trades SET profit = %s, sl = %s, tp = %s WHERE ticket = %s", (float(pos.profit), float(pos.sl), float(pos.tp), ticket))
                         conn.commit()
                     except Exception:
                         pass
@@ -1045,7 +1027,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         z_type = "Oversold Trigger" if z_score < 0 else "Overbought Trigger"
         z_str = f"{z_score:+.3f}"
         
-        rrr_val = (abs(tp2 - entry_a) / abs(entry_a - sl_a)) if abs(entry_a - sl_a) > 0 else 2.0
+        rrr_val = (abs(tp2 - entry_a) / abs(entry_a - sl_a)) if abs(entry_a - sl_a) > 0 else 1.85
         
         message = (
             f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
@@ -1055,7 +1037,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
             f"📊 **STRATEGY:** `Pure SMC / ICT 9-Condition Structure 🟢`\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
             f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Sweep + 0.75 Buffer)*\n"
-            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.1f}R Target / M15 Structural Target)*\n"
+            f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.2f}R Opposing Structural Liquidity Target)*\n"
             f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
         
@@ -1085,7 +1067,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         digits = info.digits if info else 5
         
         message = (
-            f"📢 **PURE SMC / ICT 7-STEP SIGNAL ENGINE** 📢\n"
+            f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
             f"🏁 **[ POSITION CLOSED ]** 🏁\n\n"
             f"📊 **ASSET:** `{symbol}` ({order_type})\n"
             f"📦 **LOT SIZE:** `{lots:.2f} Lots`\n"
@@ -1105,16 +1087,29 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
     except Exception as e:
         logger.error(f"Error sending Discord close notification: {e}")
 
+_DISCARD_ALERT_CACHE = {}
+
 def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_price=0.0, tp_price=0.0):
     """Sends a Discord webhook notification when a valid 9-Condition SMC signal is discarded or blocked."""
     import os
     import requests
+    import time
     
+    # Throttle: Only send each discard reason once every 30 minutes (or once per active block session)
+    clean_reason = reason.split("(")[0].strip()
+    throttle_key = f"{symbol_a}_{clean_reason}"
+    now_ts = time.time()
+    last_ts = _DISCARD_ALERT_CACHE.get(throttle_key, 0)
+    if now_ts - last_ts < 1800:
+        logger.info(f"🛡️ [DISCORD THROTTLE] Suppressed repeat discard notification for {symbol_a} ({clean_reason}) - already sent recently.")
+        return
+
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
         return
         
     try:
+        _DISCARD_ALERT_CACHE[throttle_key] = now_ts
         now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
         act_str = "BUY 🟢" if "BUY" in str(action).upper() else "SELL 🔴"
         
@@ -1124,11 +1119,15 @@ def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_pri
         sl_str = f"`{sl_price:.{digits_a}f}`" if sl_price > 0 else "`N/A`"
         tp_str = f"`{tp_price:.{digits_a}f}`" if tp_price > 0 else "`N/A`"
         
+        cat = get_symbol_category(symbol_a)
+        lot_val = 0.07 if (cat == "metals" or "XAU" in symbol_a.upper() or "XAG" in symbol_a.upper()) else 0.51
+
         message = (
             f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
             f"🚫 **[ SIGNAL DISCARDED / BLOCKED ]** 🚫\n\n"
             f"📊 **SIGNAL:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
+            f"📦 **TARGET LOT SIZE:** `{lot_val:.2f} Lots`\n"
             f"🛑 **DISCARD REASON:** `{reason}`\n"
             f"⛔ **ESTIMATED SL:** {sl_str}\n"
             f"🎯 **ESTIMATED TP:** {tp_str}\n"
@@ -1582,27 +1581,22 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                 except Exception as ex_dd:
                     logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
 
-            # ── Breakeven Risk-Free Protection Guard (Shift SL to Breakeven +$5.00 Profit Lock at +$65.00 USD) ──
+            # ── Breakeven Risk-Free Protection Guard (Shift SL to Breakeven Entry Price at +$35.00 USD) ──
             if has_positions:
                 if floating_profit > peak_floating_profit:
                     peak_floating_profit = floating_profit
 
                 import risk_safeguards
-                is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', True)
+                is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', False)
                 be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 35.0)
 
                 should_close_trail = False
                 trail_close_reason = ""
 
-                if is_be_enabled and peak_floating_profit >= be_trigger_usd and (int(time.time()) % 20 == 0):
-                    logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVE 🟢] Peak PnL: +${peak_floating_profit:.2f} USD >= +${be_trigger_usd:.2f} USD. SL shifted to Breakeven Entry Price (Risk-Free). Trade running to 1:1.85 TP!")
+                if is_be_enabled and (floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd) and (int(time.time()) % 20 == 0):
+                    logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVE 🟢] Profit: +${floating_profit:.2f} (Peak +${peak_floating_profit:.2f}) >= +${be_trigger_usd:.2f} USD. SL shifted to Entry Price (Breakeven). Trade running to Target!")
 
                 from execution_bot import modify_position_sl
-                pip_unit = 0.01 if "JPY" in sym_a.upper() else 0.0001
-                if any(x in sym_a.upper() for x in ["XAU", "XAG"]):
-                    pip_unit = 0.10
-                elif any(x in sym_a.upper() for x in ["US30", "NAS100", "US500"]):
-                    pip_unit = 1.0
 
                 for t_a in open_leg_a_trades:
                     entry_p = t_a.get("entry_price")
@@ -1616,19 +1610,17 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                         curr_sl = pos_info[0].sl
 
                         if pos_type == "BUY":
-                            pips_profit = (curr_p - entry_p) / pip_unit
-                            if is_be_enabled and (peak_floating_profit >= be_trigger_usd or pips_profit >= 9.0):
-                                target_sl = entry_p + (7.1 * pip_unit)
-                                if curr_sl < target_sl:
+                            if is_be_enabled and (floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd):
+                                target_sl = float(entry_p)
+                                if curr_sl < target_sl - 0.01 or curr_sl == 0.0:
                                     modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Breakeven profit lock ({target_sl:.5f})!")
+                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Entry Price ({target_sl:.5f})!")
                         elif pos_type == "SELL":
-                            pips_profit = (entry_p - curr_p) / pip_unit
-                            if is_be_enabled and (peak_floating_profit >= be_trigger_usd or pips_profit >= 9.0):
-                                target_sl = entry_p - (7.1 * pip_unit)
-                                if curr_sl == 0.0 or curr_sl > target_sl:
+                            if is_be_enabled and (floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd):
+                                target_sl = float(entry_p)
+                                if curr_sl > target_sl + 0.01 or curr_sl == 0.0:
                                     modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Breakeven profit lock ({target_sl:.5f})!")
+                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Entry Price ({target_sl:.5f})!")
 
 
 
@@ -2057,7 +2049,7 @@ def main():
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target Min 2.0R / Preferred 3.0R) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target: 1:1.85 RRR) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
 
 
 
@@ -2165,7 +2157,7 @@ def main():
                     SL_PIPS = new_sl
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
-                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target Min 2.0R / Preferred 3.0R) | Engine: Pure SMC/ICT Active 🟢")
+                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target: 1:1.85 RRR) | Engine: Pure SMC/ICT Active 🟢")
                         logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Tier 1: +$62.00 Net Profit Lock | Tier 2: +$80.00 Net Profit Lock | Full TP Target: +$91.00 USD) | Friday Close Guard: ENABLED 🌅")
 
 
@@ -2399,6 +2391,8 @@ def main():
                     floating_profit += sum(p.profit for p in active_js_positions)
                     if len(active_js_positions) > 0:
                         has_positions = True
+                        if floating_profit > peak_floating_profit:
+                            peak_floating_profit = floating_profit
                     else:
                         peak_floating_profit = 0.0
                 else:
@@ -2631,12 +2625,12 @@ def main():
                 if df_a is not None and not df_a.empty:
                     df_a = calculate_zscore_and_ema(df_a)
 
-                # Strictly cut off forming live candle (iloc[-1]) so signal engine ONLY evaluates completed closed candles
-                df_m5_closed = df_m5.iloc[:-1].copy() if (df_m5 is not None and len(df_m5) > 10) else df_m5
-                df_a_closed = df_a.iloc[:-1].copy() if (df_a is not None and len(df_a) > 15) else df_a
-
+                # Pass live M5 & M15 data along with live broker tick price (p_a)
+                # Strategy engine evaluates confirmed closed candle (iloc[-2]) and executes on live price (p_a)
                 action = "NONE"
-                smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(df_a_closed, df_m5_closed, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED)
+                smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(
+                    df_a, df_m5, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED, live_price=p_a
+                )
                 vid_reason = smc_reason
                 if smc_sig == "BUY":
                     action = "BUY_SPREAD"
@@ -2644,7 +2638,7 @@ def main():
                     action = "SELL_SPREAD"
 
 
-                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: M15 Structural Target (Min 2.0R / Preferred 3.0R) 🟢")
+                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: M15 Structural Target (1:1.85 Target) 🟢")
                 try:
                     from database import update_smc_telemetry
                     import json
@@ -2657,18 +2651,18 @@ def main():
                     s6_st = "FAIL ⚪"
                     s7_st = "FAIL ⚪"
                     s8_st = "PASS 🟢 ($0.75 Fixed)"
-                    s9_st = "FAIL ⚪ (Min 2.0R)"
+                    s9_st = "FAIL ⚪ (Min 1.5R / 1:1.85)"
                     sweep_p_val = 0.0
                     choch_p_val = 0.0
 
                     if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason:
                         if "BUY" in vid_reason:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 2.0R TP)"
+                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
                             )
                         else:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 2.0R TP)"
+                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
                             )
                         if smc_sl is not None:
                             sweep_p_val = float(smc_sl) + (0.75 if "BUY" in vid_reason else -0.75)
@@ -2705,7 +2699,40 @@ def main():
                                 except Exception:
                                     pass
 
-                    fvg_json = json.dumps(SMC_ZONES_CACHE.get(s_a_resolved, {})) if s_a_resolved in SMC_ZONES_CACHE else "[]"
+                    zone_dict = dict(SMC_ZONES_CACHE.get(s_a_resolved, {}))
+                    candle_records = []
+                    if df_m5 is not None and not df_m5.empty:
+                        slice_m5 = df_m5.tail(45)
+                        is_metals_sym = (cat_a == 'metals') or any(m in s_a_resolved.upper() for m in ['XAU', 'XAG', 'GOLD', 'SILVER'])
+                        for _, crow in slice_m5.iterrows():
+                            t_val = crow['time']
+                            t_str = t_val.strftime("%H:%M") if hasattr(t_val, 'strftime') else str(t_val)
+                            o_val = float(round(crow['open'], 2 if is_metals_sym else 5))
+                            h_val = float(round(crow['high'], 2 if is_metals_sym else 5))
+                            l_val = float(round(crow['low'], 2 if is_metals_sym else 5))
+                            c_val = float(round(crow['close'], 2 if is_metals_sym else 5))
+                            candle_records.append({
+                                "time": t_str,
+                                "open": o_val,
+                                "high": h_val,
+                                "low": l_val,
+                                "close": c_val,
+                                "isBullish": bool(c_val >= o_val),
+                                "volume": int(crow.get('tick_volume', 100)) if 'tick_volume' in crow else 100
+                            })
+                        if candle_records and sweep_p_val > 0:
+                            tgt_k = "low" if "BULLISH" in m15_b else "high"
+                            best_sw = min(candle_records, key=lambda c: abs(c[tgt_k] - sweep_p_val))
+                            if abs(best_sw[tgt_k] - sweep_p_val) < (2.0 if is_metals_sym else 0.005):
+                                best_sw["isSweep"] = True
+                        if candle_records and choch_p_val > 0:
+                            tgt_k = "high" if "BULLISH" in m15_b else "low"
+                            best_ch = min(candle_records, key=lambda c: abs(c[tgt_k] - choch_p_val))
+                            if abs(best_ch[tgt_k] - choch_p_val) < (2.0 if is_metals_sym else 0.005):
+                                best_ch["isChoch"] = True
+
+                    zone_dict["candles"] = candle_records
+                    fvg_json = json.dumps(zone_dict)
                     update_smc_telemetry(
                         pk, m15_b, s2_st, float(sweep_p_val), s3_st, float(choch_p_val), 
                         s4_st, fvg_json, s6_st, smc_sig,
@@ -3130,42 +3157,44 @@ def main():
                                 logger.info("================================================================================")
                     invalidate_trades_cache()
 
-            # Three-Step Sequential Exit Pipeline
-            best_cat_a_check = get_symbol_category(S_A)
-            if best_cat_a_check != "crypto" and len(active_js_positions) > 0:
-                leg_a_parts = [p for p in active_js_positions if p.symbol == S_A_resolved]
-                if leg_a_parts:
-                    try:
-                        # Step 1: Move SL of ALL 3 Leg A parts to Entry Price ONLY when PnL >= +$56.00 USD (0.56% Equity Gain)
-                        acc_check = mt5.account_info()
-                        eq_base = acc_check.equity if acc_check else 10000.0
-                        be_target_pnl = max(56.0, eq_base * 0.0056)
+            # ── BREAKEVEN RISK-FREE PROTECTION GUARD (+ $35.00 USD TRIGGER) ──
+            # Only activates when trade profit reaches >= +$35.00 USD.
+            # Shifts Stop Loss directly to Entry Price (price_open) so trade is 100% risk-free.
+            # If price reverses, trade exits at entry price (0 loss, capital safe).
+            if len(active_js_positions) > 0:
+                try:
+                    import risk_safeguards
+                    is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', False)
+                    be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 35.0)
 
-                        pnl_at_target = floating_profit >= be_target_pnl
+                    for p in active_js_positions:
+                        pos_cat = get_symbol_category(p.symbol)
+                        if pos_cat == "crypto":
+                            continue
 
-                        if pnl_at_target:
-                            trig_reason = f"PnL ${floating_profit:.2f} >= ${be_target_pnl:.2f} (0.56% Equity Gain)"
+                        pos_profit = float(p.profit)
+                        # Breakeven triggers when this position's profit or total basket reaches >= $35 USD
+                        if is_be_enabled and (pos_profit >= be_trigger_usd or floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd):
+                            entry_price = float(p.price_open)
+                            curr_sl = float(getattr(p, 'sl', 0.0))
+                            pos_type = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
 
-                            for p in leg_a_parts:
-                                if getattr(p, 'sl', 0.0) != leg_a_parts[0].price_open:
-                                    modify_position_sl(p.ticket, S_A_resolved, leg_a_parts[0].price_open)
-                                    logger.info(f"🛡️ [STEP 1 BREAKEVEN ACTIVATED] Triggered by {trig_reason}! Moved SL for ticket #{p.ticket} ({S_A_resolved}) to Entry Price ${leg_a_parts[0].price_open:.5f} (All 3 Parts Open)")
+                            should_modify = False
+                            if pos_type == "BUY":
+                                # For BUY: move SL up to entry price if it's below entry price
+                                if curr_sl < entry_price - 0.01 or curr_sl == 0.0:
+                                    should_modify = True
+                            elif pos_type == "SELL":
+                                # For SELL: move SL down to entry price if it's above entry price
+                                if curr_sl > entry_price + 0.01 or curr_sl == 0.0:
+                                    should_modify = True
 
-
-
-
-
-
-
-                        
-                        # Step 2: Mean Reversion auto-close at Z=0.00 is DISABLED (Trades run to SL/TP)
-                        pass
-                    except Exception as ex_sl:
-                        logger.error(f"Error evaluating 3-step exit pipeline: {ex_sl}")
-
-
-
-
+                            if should_modify:
+                                trig_reason = f"Profit ${pos_profit:.2f} (Peak ${peak_floating_profit:.2f}) >= ${be_trigger_usd:.2f} USD"
+                                modify_position_sl(p.ticket, p.symbol, entry_price)
+                                logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVATED 🟢] Triggered by {trig_reason}! Shifted SL for ticket #{p.ticket} ({p.symbol}) to Entry Price ${entry_price:.5f} (Risk-Free Mode Active) 🛡️")
+                except Exception as ex_sl:
+                    logger.error(f"Error evaluating breakeven guard: {ex_sl}")
 
             # Update dashboard status
             if is_news_halted or should_close_news:
@@ -3173,14 +3202,10 @@ def main():
                 status_str = f"HALTED (News: {msg})"
             elif low_correlation_warning:
                 status_str = "RUNNING (Warning: Low Correlation)"
-            elif has_positions and (peak_floating_profit >= 185.0 or floating_profit >= 185.0):
-                status_str = f"RUNNING (Trail Active Tier 4: Peak ${peak_floating_profit:.2f} | Floor $155.00)"
-            elif has_positions and (peak_floating_profit >= 142.0 or floating_profit >= 142.0):
-                status_str = f"RUNNING (Trail Active Tier 3: Peak ${peak_floating_profit:.2f} | Floor $120.00)"
-            elif has_positions and (peak_floating_profit >= 99.0 or floating_profit >= 99.0):
-                status_str = f"RUNNING (Trail Active Tier 2: Peak ${peak_floating_profit:.2f} | Floor $80.00)"
-            elif has_positions and (peak_floating_profit >= 67.0 or floating_profit >= 67.0):
-                status_str = f"RUNNING (Trail Active Tier 1: Peak ${peak_floating_profit:.2f} | Floor $53.00)"
+            elif has_positions and (peak_floating_profit >= 35.0 or floating_profit >= 35.0):
+                status_str = f"RUNNING (Breakeven Active 🛡️ | SL @ Entry | Profit ${floating_profit:.2f})"
+            elif has_positions:
+                status_str = f"RUNNING (In Trade | PnL ${floating_profit:.2f} | Target 1:1.85)"
             else:
                 status_str = "RUNNING (Active)" if AUTO_EXECUTE else "RUNNING (Signals Only)"
             
@@ -3250,7 +3275,7 @@ def main():
             forex_log_str = "ENABLED 🟢" if FOREX_ENABLED else "DISABLED 🔴"
             logger.info(
                 f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Engine: Pure SMC/ICT Active 🟢 "
-                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: DISABLED ❌ (M15 Structural Target: Min 2.0R / Preferred 3.0R) "
+                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: DISABLED ❌ (M15 Structural Target: 1:1.85 Target) "
             )
 
             eff_dd_log = max(daily_loss_p, peak_dd_p)
