@@ -21,5 +21,7 @@ export interface Signal {
   action: string;
   totalLots?: number;
   totalProfit?: number;
+  sl?: number;
+  tp?: number;
   trades?: SignalTradesItem[];
 }

@@ -398,6 +398,10 @@ components:
           type: number
         totalProfit:
           type: number
+        sl:
+          type: number
+        tp:
+          type: number
         trades:
           type: array
           items:
@@ -415,6 +419,12 @@ components:
                 type: number
               comment:
                 type: string
+              entryPrice:
+                type: number
+              sl:
+                type: number
+              tp:
+                type: number
       required:
         - id
         - timestamp

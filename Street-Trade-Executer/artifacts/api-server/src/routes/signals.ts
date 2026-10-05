@@ -53,6 +53,10 @@ router.get("/signals", async (req, res) => {
           defaultCatLots = 0.51; // Forex
         }
 
+        const executedTrade = tradesForSignal.find(t => t.sl != null) || tradesForSignal[0];
+        const actualSl = executedTrade?.sl != null ? Number(executedTrade.sl) : null;
+        const actualTp = executedTrade?.tp != null ? Number(executedTrade.tp) : null;
+
         return {
           id: s.id,
           timestamp: s.timestamp?.toISOString() ?? new Date().toISOString(),
@@ -67,6 +71,8 @@ router.get("/signals", async (req, res) => {
           action: s.action,
           totalLots: totalLots > 0 ? totalLots : defaultCatLots,
           totalProfit: totalProfit !== null ? totalProfit : 0.0,
+          sl: actualSl,
+          tp: actualTp,
           trades: tradesForSignal.map((t) => ({
             ticket: Number(t.ticket),
             symbol: t.symbol,
@@ -74,6 +80,9 @@ router.get("/signals", async (req, res) => {
             status: t.status,
             profit: t.profit != null ? Number(t.profit) : null,
             comment: t.comment,
+            entryPrice: t.entryPrice != null ? Number(t.entryPrice) : null,
+            sl: t.sl != null ? Number(t.sl) : null,
+            tp: t.tp != null ? Number(t.tp) : null,
           })),
         };
       })

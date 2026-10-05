@@ -100,6 +100,24 @@ export default function Signals() {
     const isBuy = sig.action === "BUY_SPREAD";
     const slB = isBuy ? (entryB + slDistB) : (entryB - slDistB);
 
+    // Prioritize actual live MT5 / database executed SL & TP
+    const executedTrade = (sig.trades && sig.trades.length > 0) ? (sig.trades.find((t: any) => t.sl != null) || sig.trades[0]) : null;
+    const realSl = (executedTrade?.sl != null ? Number(executedTrade.sl) : null) ?? (sig.sl != null ? Number(sig.sl) : null);
+    const realTp = (executedTrade?.tp != null ? Number(executedTrade.tp) : null) ?? (sig.tp != null ? Number(sig.tp) : null);
+    const realEntry = executedTrade?.entryPrice != null ? Number(executedTrade.entryPrice) : (executedTrade?.entry != null ? Number(executedTrade.entry) : entry);
+
+    if (realSl != null && realTp != null) {
+      return {
+        entry: realEntry.toFixed(pricePrecision),
+        sl: realSl.toFixed(pricePrecision),
+        tp1: realTp.toFixed(pricePrecision),
+        tp2: realTp.toFixed(pricePrecision),
+        tp3: realTp.toFixed(pricePrecision),
+        entryB: entryB.toFixed(pricePrecisionB),
+        slB: slB.toFixed(pricePrecisionB),
+      };
+    }
+
     if (sig.action === "BUY_SPREAD") {
       return {
         entry: entry.toFixed(pricePrecision),

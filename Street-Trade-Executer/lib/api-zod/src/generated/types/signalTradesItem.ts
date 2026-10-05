@@ -13,4 +13,7 @@ export type SignalTradesItem = {
   status?: string;
   profit?: number;
   comment?: string;
+  entryPrice?: number;
+  sl?: number;
+  tp?: number;
 };
