@@ -63,7 +63,23 @@ def detect_market_structure(df):
     - BEARISH: Trend remains Bearish until a candle closes above the confirmed structural Lower High (Bullish MSS).
     - NEUTRAL: Only returned if historical swing data is completely flat or undefined.
     """
-    swing_highs, swing_lows = get_swing_points(df, n_left=2, n_right=2)
+    if df is None or len(df) < 5:
+        return 'NEUTRAL'
+
+    is_metals = False
+    if 'symbol' in df.columns and any(m in str(df['symbol'].iloc[0]).upper() for m in ['XAU', 'GOLD', 'XAG', 'SILVER']):
+        is_metals = True
+    elif len(df) > 0 and float(df['close'].iloc[-1]) > 500:
+        is_metals = True
+
+    # 1. Enforce institutional structural amplitude threshold on M15
+    # Gold swings must have >= $3.00 amplitude to prevent micro-noise wiggles from polluting HTF bias
+    min_amp = 3.00 if is_metals else 0.0020
+    swing_highs, swing_lows = get_swing_points(df, n_left=3, n_right=3, min_amplitude=min_amp)
+    if len(swing_highs) < 2 or len(swing_lows) < 2:
+        swing_highs, swing_lows = get_swing_points(df, n_left=2, n_right=2, min_amplitude=min_amp * 0.65)
+    if len(swing_highs) < 2 or len(swing_lows) < 2:
+        swing_highs, swing_lows = get_swing_points(df, n_left=2, n_right=2)
 
     if len(swing_highs) < 2 or len(swing_lows) < 2:
         return 'NEUTRAL'
@@ -100,14 +116,21 @@ def detect_market_structure(df):
                 elif last_sl > prev_sl and bias == 'BULLISH':
                     bias = 'BULLISH'
 
-    # Structural Invalidation Check against current closed candle
+    # 2. Institutional Protected Structural MSS (Market Structure Shift) Check:
+    # A Bearish trend is NOT broken by minor internal green pullbacks.
+    # It requires an M15 candle CLOSE above the Protected Structural Lower High (Key Resistance).
+    # Likewise, a Bullish trend requires an M15 candle CLOSE below the Protected Structural Higher Low (Key Support).
     curr_close = float(df['close'].iloc[-1])
-    if bias == 'BULLISH' and last_sl is not None:
-        if curr_close < last_sl:
-            bias = 'BEARISH'
-    elif bias == 'BEARISH' and last_sh is not None:
-        if curr_close > last_sh:
+    if bias == 'BEARISH':
+        recent_sh_levels = [p for p, idx in swing_highs]
+        key_resistance = max(recent_sh_levels[-2:]) if len(recent_sh_levels) >= 2 else (recent_sh_levels[-1] if recent_sh_levels else None)
+        if key_resistance is not None and curr_close > key_resistance:
             bias = 'BULLISH'
+    elif bias == 'BULLISH':
+        recent_sl_levels = [p for p, idx in swing_lows]
+        key_support = min(recent_sl_levels[-2:]) if len(recent_sl_levels) >= 2 else (recent_sl_levels[-1] if recent_sl_levels else None)
+        if key_support is not None and curr_close < key_support:
+            bias = 'BEARISH'
 
     # Fallback to direct swing comparison if chronological pass was inconclusive
     if bias == 'NEUTRAL':
