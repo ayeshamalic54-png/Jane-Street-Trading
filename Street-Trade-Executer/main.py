@@ -1622,6 +1622,54 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                                     modify_position_sl(tkt, sym, target_sl)
                                     logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Entry Price ({target_sl:.5f})!")
 
+                # ── SCALPING STAGNATION GUARD (TIME-BASED BE & MAX DURATION TIMEOUT) ──
+                is_stagnation_enabled = getattr(risk_safeguards, 'STAGNATION_GUARD_ENABLED', True)
+                stagnation_be_mins = getattr(risk_safeguards, 'STAGNATION_BE_MINUTES', 60.0)
+                max_scalp_hold_mins = getattr(risk_safeguards, 'MAX_SCALP_HOLDING_MINUTES', 90.0)
+
+                for t_a in open_leg_a_trades:
+                    entry_p = t_a.get("entry_price")
+                    tkt = t_a.get("ticket")
+                    sym = t_a.get("symbol")
+                    pos_type = t_a.get("order_type")
+                    entry_t = t_a.get("entry_time")
+
+                    elapsed_min = 0.0
+                    if entry_t is not None:
+                        if hasattr(entry_t, "tzinfo") and entry_t.tzinfo is not None:
+                            elapsed_sec = abs((datetime.datetime.now(datetime.timezone.utc) - entry_t).total_seconds())
+                        else:
+                            elapsed_sec = abs((datetime.datetime.utcnow() - entry_t).total_seconds())
+                        elapsed_min = elapsed_sec / 60.0
+
+                    pos_info = mt5.positions_get(ticket=tkt)
+                    if pos_info and entry_p:
+                        curr_p = float(pos_info[0].price_current)
+                        curr_sl = float(pos_info[0].sl)
+                        pos_profit = float(pos_info[0].profit)
+
+                        is_metals_sym = any(m in sym.upper() for m in ['XAU', 'GOLD', 'XAG', 'SILVER'])
+                        be_buf = 0.20 if is_metals_sym else 0.00010
+
+                        # Rule 1: Stagnation Breakeven Lock after 60 mins if floating in profit
+                        if is_stagnation_enabled and elapsed_min >= stagnation_be_mins and (pos_profit > 0.0 or (pos_type == "BUY" and curr_p > float(entry_p)) or (pos_type == "SELL" and curr_p < float(entry_p))):
+                            if pos_type == "BUY":
+                                target_sl = round(float(entry_p) + be_buf, 2 if is_metals_sym else 5)
+                                if curr_sl < target_sl - 0.01 or curr_sl == 0.0:
+                                    modify_position_sl(tkt, sym, target_sl)
+                                    logger.info(f"🛡️ [STAGNATION BREAKEVEN LOCK 🟢] Ticket #{tkt} ({sym}) open for {elapsed_min:.1f} mins >= {stagnation_be_mins} mins. Shifted SL to Entry + buffer ({target_sl:.2f})!")
+                            elif pos_type == "SELL":
+                                target_sl = round(float(entry_p) - be_buf, 2 if is_metals_sym else 5)
+                                if curr_sl > target_sl + 0.01 or curr_sl == 0.0:
+                                    modify_position_sl(tkt, sym, target_sl)
+                                    logger.info(f"🛡️ [STAGNATION BREAKEVEN LOCK 🔴] Ticket #{tkt} ({sym}) open for {elapsed_min:.1f} mins >= {stagnation_be_mins} mins. Shifted SL to Entry - buffer ({target_sl:.2f})!")
+
+                        # Rule 2: Max Scalp Duration Timeout Exit after 90 mins
+                        if is_stagnation_enabled and elapsed_min >= max_scalp_hold_mins and not exit_triggered:
+                            exit_triggered = True
+                            exit_reason = f"Scalp Stagnation Timeout ({elapsed_min:.1f} mins >= {max_scalp_hold_mins} mins) to avoid session spike"
+                            logger.info(f"⏱️ [SCALP STAGNATION TIMEOUT] Ticket #{tkt} ({sym}) open for {elapsed_min:.1f} mins >= {max_scalp_hold_mins} mins. Triggering safe market close to avoid session spike!")
+
 
 
         # Safeguard: Blue Guardian Consistency Rule (trades closed under 2m 20s / 140s)
