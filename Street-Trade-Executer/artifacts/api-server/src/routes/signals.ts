@@ -54,15 +54,16 @@ router.get("/signals", async (req, res) => {
         }
 
         const executedTrade = tradesForSignal.find(t => t.sl != null) || tradesForSignal[0];
-        const actualSl = executedTrade?.sl != null ? Number(executedTrade.sl) : null;
-        const actualTp = executedTrade?.tp != null ? Number(executedTrade.tp) : null;
+        const actualSl = (executedTrade?.sl != null ? Number(executedTrade.sl) : null) ?? (s.sl != null ? Number(s.sl) : null);
+        const actualTp = (executedTrade?.tp != null ? Number(executedTrade.tp) : null) ?? (s.tp != null ? Number(s.tp) : null);
+        const actualEntry = (executedTrade?.entryPrice != null ? Number(executedTrade.entryPrice) : null) ?? (s.entryPrice != null ? Number(s.entryPrice) : Number(s.priceA));
 
         return {
           id: s.id,
           timestamp: s.timestamp?.toISOString() ?? new Date().toISOString(),
           symbolA: s.symbolA,
           symbolB: s.symbolB,
-          priceA: Number(s.priceA),
+          priceA: actualEntry,
           priceB: Number(s.priceB),
           beta: Number(s.beta),
           alpha: Number(s.alpha),

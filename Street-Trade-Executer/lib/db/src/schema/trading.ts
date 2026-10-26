@@ -29,6 +29,9 @@ export const signalsTable = pgTable("signals", {
   zScore: numeric("z_score", { precision: 10, scale: 4 }).notNull(),
   obi: numeric("obi", { precision: 10, scale: 4 }).notNull(),
   action: varchar("action", { length: 20 }).notNull(),
+  entryPrice: numeric("entry_price", { precision: 15, scale: 5 }),
+  sl: numeric("sl", { precision: 15, scale: 5 }),
+  tp: numeric("tp", { precision: 15, scale: 5 }),
 });
 
 export const dailyMetricsTable = pgTable("daily_metrics", {

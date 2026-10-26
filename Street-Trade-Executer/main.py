@@ -91,6 +91,7 @@ GLOBAL_CONFIG = {
 
 # Cooldown dictionary to prevent continuous entries on stopped-out signals
 COOLDOWN_DIRECTIONS = {}
+LAST_LOGGED_SIGNAL_BAR = {}
 
 KF_CACHE = {}
 LAST_KF_UPDATE_BAR = {}
@@ -2847,6 +2848,7 @@ def main():
                         cand_cat_a = get_symbol_category(s_a_resolved)
                         cand_cat_b = get_symbol_category(s_b_resolved)
                         if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)):
+                            cand_candle_time = str(df_m5.iloc[-2]['time']) if (df_m5 is not None and not df_m5.empty) else str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
                             candidate_signals.append({
                                 "pair": (s_a, s_b),
                                 "action": action,
@@ -2861,7 +2863,8 @@ def main():
                                 "price_b": p_b,
                                 "smc_sl": smc_sl,
                                 "smc_tp": smc_tp,
-                                "smc_sl_dist": smc_sl_dist
+                                "smc_sl_dist": smc_sl_dist,
+                                "candle_time": cand_candle_time
                             })
                         else:
                             disc_msg = f"SPREAD CHECK FAILED (Spread for {s_a_resolved} exceeded max threshold)"
@@ -2914,19 +2917,11 @@ def main():
                         send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"SESSION GUARD ACTIVE (Time {curr_utc_s} outside window {window_utc_s})", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0))
                     except Exception:
                         pass
-            elif not AUTO_EXECUTE and candidate_signals:
-                for c in candidate_signals:
-                    pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
-                    logger.info(f"📢 [SIGNAL DETECTED - SIGNALS ONLY MODE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but Auto-Execution is toggled OFF on Dashboard. Trade placement SKIPPED.")
-                    try:
-                        send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], "AUTO-EXECUTION TOGGLED OFF (Signals Only Mode)", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0))
-                    except Exception:
-                        pass
-            elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_blocked and is_session_ok and candidate_signals:
+            elif candidate_signals and is_trade_limit_ok and not is_news_blocked and is_session_ok:
                 if risk_safeguards.SESSION_GUARD_ENABLED:
                     for c in candidate_signals:
                         pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
-                        logger.info(f"⏰ [SESSION GUARD ACTIVE 🟢] Signal generated for {pair_str} ({c['action']}). Trade execution PROCEEDING!")
+                        logger.info(f"⏰ [SESSION GUARD ACTIVE 🟢] Candidate signal for {pair_str} ({c['action']}). Checking qualification...")
 
                 # Candidate signals bypass Beta boundary limits for single-asset execution
                 qualifying_candidates = []
@@ -2986,15 +2981,6 @@ def main():
                     S_A_resolved = resolve_broker_symbol(S_A) if cat_a_new != "crypto" else S_A
                     S_B_resolved = resolve_broker_symbol(S_B) if cat_b_new != "crypto" else S_B
                     
-                    # Log signal
-                    signal_id = log_signal(
-                        S_A, S_B, 
-                        best_sig["price_a"], best_sig["price_b"], 
-                        best_sig["beta"], 0.0, 
-                        best_sig["z_score"], best_sig["net_obi"], 
-                        best_action
-                    )
-                    
                     if best_sig.get("smc_sl_dist") and float(best_sig["smc_sl_dist"]) > 0:
                         sl_dist = float(best_sig["smc_sl_dist"])
                     else:
@@ -3033,8 +3019,6 @@ def main():
                         tp1_val = entry_a + (tp_dist * 0.5) if is_long else entry_a - (tp_dist * 0.5)
                         tp3_val = entry_a + (tp_dist * 1.5) if is_long else entry_a - (tp_dist * 1.5)
 
-
-                            
                         if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
                             disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                             mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
@@ -3048,25 +3032,56 @@ def main():
                         
                         order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(best_action, best_sig["beta"], best_sig["tick_b"])
                         sl_b = price_b + sl_sign_b * sl_dist_b
+
+                        # Deduplicate signal logging per closed bar so ticks don't re-log the same signal
+                        sig_bar_time = str(best_sig.get("candle_time") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+                        pair_sig_key = f"{S_A}_{best_action}"
                         
-                        send_discord_signal_notification(
-                            action=best_action,
-                            symbol_a=S_A,
-                            symbol_b=S_B,
-                            z_score=best_sig["z_score"],
-                            entry_a=entry_a,
-                            sl_a=sl_a,
-                            tp1=tp1_val,
-                            tp2=tp2_val,
-                            tp3=tp3_val,
-                            lots_a=actual_lots_a,
-                            entry_b=entry_b,
-                            sl_b=sl_b,
-                            lots_b=lots_b,
-                            side_b=side_b
-                        )
-                    except Exception as e_notify:
-                        logger.error(f"Error preparing Discord notification: {e_notify}")
+                        if LAST_LOGGED_SIGNAL_BAR.get(pair_sig_key) != sig_bar_time:
+                            LAST_LOGGED_SIGNAL_BAR[pair_sig_key] = sig_bar_time
+                            signal_id = log_signal(
+                                S_A, S_B, 
+                                best_sig["price_a"], best_sig["price_b"], 
+                                best_sig["beta"], 0.0, 
+                                best_sig["z_score"], best_sig["net_obi"], 
+                                best_action,
+                                entry_price=entry_a,
+                                sl=sl_a,
+                                tp=tp2_val
+                            )
+                            logger.info(f"✅ [SIGNAL RECORDED #{signal_id}] {S_A} ({best_action}) | Entry: {entry_a:.5f} | SL: {sl_a:.5f} | TP: {tp2_val:.5f} | Bar: {sig_bar_time}")
+                            try:
+                                send_discord_signal_notification(
+                                    action=best_action,
+                                    symbol_a=S_A,
+                                    symbol_b=S_B,
+                                    z_score=best_sig["z_score"],
+                                    entry_a=entry_a,
+                                    sl_a=sl_a,
+                                    tp1=tp1_val,
+                                    tp2=tp2_val,
+                                    tp3=tp3_val,
+                                    lots_a=actual_lots_a,
+                                    entry_b=entry_b,
+                                    sl_b=sl_b,
+                                    lots_b=lots_b,
+                                    side_b=side_b
+                                )
+                            except Exception as e_notify:
+                                logger.error(f"Error preparing Discord notification: {e_notify}")
+                        else:
+                            signal_id = None
+                            logger.info(f"⏳ [SIGNAL DEDUP] Signal {pair_sig_key} for bar {sig_bar_time} already recorded. Skipping duplicate signal.")
+
+                        # If Auto-Execution is toggled OFF (Signals Only Mode), stop here!
+                        if not AUTO_EXECUTE:
+                            logger.info(f"📢 [SIGNALS ONLY MODE 🔴] Auto-Execution is OFF on Dashboard. Signal recorded on Dashboard & Discord. MT5 order placement SKIPPED.")
+                            continue
+
+                    except Exception as e_sig_prep:
+                        logger.error(f"Error in signal preparation / logging: {e_sig_prep}")
+                        if not AUTO_EXECUTE:
+                            continue
                     
                     if is_long:
                         if best_cat_a == "crypto":

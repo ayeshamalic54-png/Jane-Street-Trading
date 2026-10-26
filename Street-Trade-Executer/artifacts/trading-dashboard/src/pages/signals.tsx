@@ -104,7 +104,7 @@ export default function Signals() {
     const executedTrade = (sig.trades && sig.trades.length > 0) ? (sig.trades.find((t: any) => t.sl != null) || sig.trades[0]) : null;
     const realSl = (executedTrade?.sl != null ? Number(executedTrade.sl) : null) ?? (sig.sl != null ? Number(sig.sl) : null);
     const realTp = (executedTrade?.tp != null ? Number(executedTrade.tp) : null) ?? (sig.tp != null ? Number(sig.tp) : null);
-    const realEntry = executedTrade?.entryPrice != null ? Number(executedTrade.entryPrice) : (executedTrade?.entry != null ? Number(executedTrade.entry) : entry);
+    const realEntry = executedTrade?.entryPrice != null ? Number(executedTrade.entryPrice) : (executedTrade?.entry != null ? Number(executedTrade.entry) : ((sig as any).entryPrice != null ? Number((sig as any).entryPrice) : entry));
 
     if (realSl != null && realTp != null) {
       return {
@@ -144,7 +144,7 @@ export default function Signals() {
 
   const getTpPill = (tradesList: any[] = []) => {
     if (!tradesList || tradesList.length === 0) {
-      return <Badge variant="outline" className="bg-gray-500/5 text-muted-foreground/40 border-border rounded-sm font-mono text-[9px] px-1 py-0 h-4">N/A</Badge>;
+      return <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 rounded-sm font-mono text-[9px] px-1 py-0 h-4">SIGNAL ONLY</Badge>;
     }
     const trade = tradesList[0];
     if (trade.status === "OPEN") {
