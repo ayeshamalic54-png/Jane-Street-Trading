@@ -128,7 +128,12 @@ def evaluate_smc_strategy_signal(
         sl_price = sweep_low_price - buf
         sl_dist = max(min_dist, price - sl_price)
 
-        # Condition 8 Anti-Chasing Cap: Max allowable SL distance for Metals (Gold) is $7.50
+        # Condition 8 Anti-Chasing & Discount Retest:
+        # Prevent late chasing: price must not have run away past the Displacement FVG upper bound
+        fvg_low, fvg_high = matched_bull_fvg
+        max_chase_dist = 1.50 if is_metals else 0.00080
+        is_chasing = price > (fvg_high + max_chase_dist)
+
         max_sl_cap = 7.50 if is_metals else 0.0050
         leg_high = float(eval_df['high'].iloc[sell_sweep_idx:].max())
         eq_50 = sweep_low_price + 0.50 * (leg_high - sweep_low_price)
@@ -168,23 +173,23 @@ def evaluate_smc_strategy_signal(
 
         if selected_target is None:
             if not target_candidates:
-                selected_target = price + (1.85 * sl_dist)
-                selected_rrr = 1.85
+                selected_target = price + (2.0 * sl_dist)
+                selected_rrr = 2.0
             else:
                 nearest_blocker = target_candidates[0]
                 avail_rrr = (nearest_blocker - price) / sl_dist
                 selected_target = nearest_blocker - ob_buf
                 selected_rrr = avail_rrr
 
-        if selected_rrr > 2.50:
-            selected_target = price + (2.50 * sl_dist)
-            selected_rrr = 2.50
+        if selected_rrr > 3.0:
+            selected_target = price + (3.0 * sl_dist)
+            selected_rrr = 3.0
 
         tp_price = round(selected_target, 2 if is_metals else 5)
         target_rrr = selected_rrr
 
-        is_sl_ok = (sl_dist <= max_sl_cap) or bypass_filters
-        is_discount_ok = (price <= (eq_50 + (0.50 if is_metals else 0.00020))) or bypass_filters
+        is_sl_ok = (sl_dist <= max_sl_cap and not is_chasing) or bypass_filters
+        is_discount_ok = (price <= max(eq_50 + (1.50 if is_metals else 0.0005), fvg_high + (0.50 if is_metals else 0.0002))) or bypass_filters
         is_target_ok = (selected_rrr >= 1.50) or bypass_filters
 
         if is_sl_ok and is_discount_ok and is_target_ok:
@@ -197,7 +202,10 @@ def evaluate_smc_strategy_signal(
             return "BUY", tp_price, sl_price, sl_dist, reason
         else:
             if not is_sl_ok:
-                custom_step8_s = f"FAIL 🔴 (SL ${sl_dist:.2f} > ${max_sl_cap:.2f} Cap)"
+                if is_chasing:
+                    custom_step8_s = f"FAIL 🔴 (Late Chasing: Price {price:.2f} > FVG Top {fvg_high:.2f})"
+                else:
+                    custom_step8_s = f"FAIL 🔴 (SL ${sl_dist:.2f} > ${max_sl_cap:.2f} Cap)"
             elif not is_discount_ok:
                 custom_step8_s = f"FAIL 🔴 (Price {price:.2f} in Premium > 50% Eq {eq_50:.2f})"
             else:
@@ -215,7 +223,12 @@ def evaluate_smc_strategy_signal(
         sl_price = sweep_high_price + buf
         sl_dist = max(min_dist, sl_price - price)
 
-        # Condition 8 Anti-Chasing Cap: Max allowable SL distance for Metals (Gold) is $7.50
+        # Condition 8 Anti-Chasing & Premium Retest:
+        # Prevent late chasing: price must not have run away past the Displacement FVG lower bound
+        fvg_low, fvg_high = matched_bear_fvg
+        max_chase_dist = 1.50 if is_metals else 0.00080
+        is_chasing = price < (fvg_low - max_chase_dist)
+
         max_sl_cap = 7.50 if is_metals else 0.0050
         leg_low = float(eval_df['low'].iloc[buy_sweep_idx:].min())
         eq_50 = sweep_high_price - 0.50 * (sweep_high_price - leg_low)
@@ -255,23 +268,23 @@ def evaluate_smc_strategy_signal(
 
         if selected_target is None:
             if not target_candidates:
-                selected_target = price - (1.85 * sl_dist)
-                selected_rrr = 1.85
+                selected_target = price - (2.0 * sl_dist)
+                selected_rrr = 2.0
             else:
                 nearest_blocker = target_candidates[0]
                 avail_rrr = (price - nearest_blocker) / sl_dist
                 selected_target = nearest_blocker + ob_buf
                 selected_rrr = avail_rrr
 
-        if selected_rrr > 2.50:
-            selected_target = price - (2.50 * sl_dist)
-            selected_rrr = 2.50
+        if selected_rrr > 3.0:
+            selected_target = price - (3.0 * sl_dist)
+            selected_rrr = 3.0
 
         tp_price = round(selected_target, 2 if is_metals else 5)
         target_rrr = selected_rrr
 
-        is_sl_ok = (sl_dist <= max_sl_cap) or bypass_filters
-        is_premium_ok = (price >= (eq_50 - (0.50 if is_metals else 0.00020))) or bypass_filters
+        is_sl_ok = (sl_dist <= max_sl_cap and not is_chasing) or bypass_filters
+        is_premium_ok = (price >= min(eq_50 - (1.50 if is_metals else 0.0005), fvg_low - (0.50 if is_metals else 0.0002))) or bypass_filters
         is_target_ok = (selected_rrr >= 1.50) or bypass_filters
 
         if is_sl_ok and is_premium_ok and is_target_ok:
@@ -284,7 +297,10 @@ def evaluate_smc_strategy_signal(
             return "SELL", tp_price, sl_price, sl_dist, reason
         else:
             if not is_sl_ok:
-                custom_step8_s = f"FAIL 🔴 (SL ${sl_dist:.2f} > ${max_sl_cap:.2f} Cap)"
+                if is_chasing:
+                    custom_step8_s = f"FAIL 🔴 (Late Chasing: Price {price:.2f} < FVG Bottom {fvg_low:.2f})"
+                else:
+                    custom_step8_s = f"FAIL 🔴 (SL ${sl_dist:.2f} > ${max_sl_cap:.2f} Cap)"
             elif not is_premium_ok:
                 custom_step8_s = f"FAIL 🔴 (Price {price:.2f} in Discount < 50% Eq {eq_50:.2f})"
             else:
@@ -333,6 +349,7 @@ def evaluate_smc_strategy_signal(
             from smc_indicators import get_swing_points
             buf = 0.75 if is_metals else 0.00040
             min_dist = 0.01 if is_metals else 0.00010
+            scan_tp = 0.0
             if is_m15_bullish:
                 sl_p_check = (sweep_low_price - buf) if has_sell_sweep else (price - (1.5 if is_metals else 0.0015))
                 sl_d_check = max(min_dist, price - sl_p_check)
@@ -340,9 +357,11 @@ def evaluate_smc_strategy_signal(
                 m15_targets = [p for p, _ in m15_sh if p > price]
                 if not m15_targets:
                     scan_rrr = 2.0
+                    scan_tp = price + 2.0 * sl_d_check
                 else:
                     valid_targets = [p for p in m15_targets if (p - price) / sl_d_check >= 1.5]
                     target_high = min(valid_targets) if valid_targets else max(m15_targets)
+                    scan_tp = target_high - (0.50 if is_metals else 0.00030)
                     scan_rrr = (target_high - price) / sl_d_check
             elif is_m15_bearish:
                 sl_p_check = (sweep_high_price + buf) if has_buy_sweep else (price + (1.5 if is_metals else 0.0015))
@@ -351,12 +370,15 @@ def evaluate_smc_strategy_signal(
                 m15_targets = [p for p, _ in m15_sl if p < price]
                 if not m15_targets:
                     scan_rrr = 2.0
+                    scan_tp = price - 2.0 * sl_d_check
                 else:
                     valid_targets = [p for p in m15_targets if (price - p) / sl_d_check >= 1.5]
                     target_low = max(valid_targets) if valid_targets else min(m15_targets)
+                    scan_tp = target_low + (0.50 if is_metals else 0.00030)
                     scan_rrr = (price - target_low) / sl_d_check
             else:
-                scan_rrr = 1.85
+                scan_rrr = 2.0
+                scan_tp = 0.0
 
             if scan_rrr >= 1.5:
                 step9_s = f"PASS 🟢 ({scan_rrr:.2f}R Opposing Target | Front-Run 0.50)"
@@ -364,6 +386,7 @@ def evaluate_smc_strategy_signal(
                 step9_s = f"FAIL 🔴 ({scan_rrr:.2f}R Target Space < 1.5R Min)"
         except Exception:
             step9_s = "PASS 🟢 (Opposing Target Min 1.5R)"
+            scan_tp = 0.0
 
     if is_m15_bearish:
         actual_sweep_p = sweep_high_price if has_buy_sweep else 0.0
@@ -374,6 +397,8 @@ def evaluate_smc_strategy_signal(
     else:
         actual_sweep_p = sweep_low_price if has_sell_sweep else (sweep_high_price if has_buy_sweep else 0.0)
         actual_choch_p = bull_choch_lvl if has_bull_choch else (bear_choch_lvl if has_bear_choch else 0.0)
-    scan_msg = f"Scanning Strict 9-Condition SMC | S1(M15): {step1_s} | S2(Sweep): {step2_s} | S3(CHoCH): {step3_s} | S4(Displacement FVG): {step4_s} | S5(Retest): {step5_s} | S6(Rejection): {step6_s} | S7(Closed): {step7_s} | S8(SL Buf): {step8_s} | S9(Target): {step9_s} | SweepPrice: {actual_sweep_p:.2f} | ChochPrice: {actual_choch_p:.2f}"
+    
+    tp_str = f" | OpposingTp: {scan_tp:.2f}" if ('scan_tp' in locals() and scan_tp > 0) else ""
+    scan_msg = f"Scanning Strict 9-Condition SMC | S1(M15): {step1_s} | S2(Sweep): {step2_s} | S3(CHoCH): {step3_s} | S4(Displacement FVG): {step4_s} | S5(Retest): {step5_s} | S6(Rejection): {step6_s} | S7(Closed): {step7_s} | S8(SL Buf): {step8_s} | S9(Target): {step9_s} | SweepPrice: {actual_sweep_p:.2f} | ChochPrice: {actual_choch_p:.2f}{tp_str}"
     return "NONE", None, None, 0.0, scan_msg
 

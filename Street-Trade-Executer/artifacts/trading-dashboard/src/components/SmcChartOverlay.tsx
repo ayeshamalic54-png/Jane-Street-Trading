@@ -267,16 +267,41 @@ export function SmcChartOverlay({
       : Number((effectiveEntryPrice - defaultSlDist).toFixed(2));
   }, [hasActivePosition, activePosition, sweepPrice, isBearishSetup, defaultBuf, effectiveEntryPrice, isMetals]);
 
-  // Strict TP: baseline 1:1.85 target ($97-$112 USD reward on 0.07 lots, with Order Block shield)
+  // Strict TP: dynamically prioritize opposing liquidity target from engine/telemetry, or calculated opposing target
   const effectiveTpPrice = useMemo(() => {
     if (hasActivePosition && activePosition && (Number(activePosition.tp) > 0 || Number(activePosition.tpPrice) > 0)) {
       return Number(activePosition.tp || activePosition.tpPrice);
     }
+    let telTp: number | null = null;
+    if (telemetry?.opposing_tp && Number(telemetry.opposing_tp) > 0) {
+      telTp = Number(telemetry.opposing_tp);
+    } else if (telemetry?.tp_price && Number(telemetry.tp_price) > 0) {
+      telTp = Number(telemetry.tp_price);
+    } else {
+      const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
+      if (rawJson) {
+        try {
+          const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+          if (parsed?.opposing_tp && Number(parsed.opposing_tp) > 0) telTp = Number(parsed.opposing_tp);
+          else if (parsed?.tp_price && Number(parsed.tp_price) > 0) telTp = Number(parsed.tp_price);
+        } catch {}
+      }
+    }
+    if (telTp && telTp > 0) {
+      return Number(telTp.toFixed(2));
+    }
     const slDist = Math.max(isMetals ? 3.0 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
     return isBearishSetup
-      ? Number((effectiveEntryPrice - 1.85 * slDist).toFixed(2))
-      : Number((effectiveEntryPrice + 1.85 * slDist).toFixed(2));
-  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isMetals]);
+      ? Number((effectiveEntryPrice - 2.0 * slDist).toFixed(2))
+      : Number((effectiveEntryPrice + 2.0 * slDist).toFixed(2));
+  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isMetals, telemetry]);
+
+  const effectiveRrr = useMemo(() => {
+    const slDist = Math.abs(effectiveEntryPrice - effectiveSlPrice);
+    if (slDist <= 0.00001) return 2.0;
+    const tpDist = Math.abs(effectiveTpPrice - effectiveEntryPrice);
+    return Number((tpDist / slDist).toFixed(2));
+  }, [effectiveEntryPrice, effectiveSlPrice, effectiveTpPrice]);
 
   const entryPrice = effectiveEntryPrice;
   const slPrice = effectiveSlPrice;
@@ -1227,7 +1252,7 @@ export function SmcChartOverlay({
         borderStroke: isTradeActive ? "#6ee7b7" : "#059669",
         textColor: "#ffffff",
         fontSize: isMobile ? "9" : "10.5",
-        label: isMobile ? `TP $${effectiveTpPrice.toFixed(2)}` : (isTradeActive ? `🟢 TP $${effectiveTpPrice.toFixed(2)}` : `🎯 1:1.85 $${effectiveTpPrice.toFixed(2)}`),
+        label: isMobile ? `TP $${effectiveTpPrice.toFixed(2)}` : (isTradeActive ? `🟢 TP $${effectiveTpPrice.toFixed(2)}` : `🎯 ${effectiveRrr}R $${effectiveTpPrice.toFixed(2)}`),
         priority: 85,
       });
     }
@@ -1547,9 +1572,9 @@ export function SmcChartOverlay({
                 : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
               {isTradeActive
-                ? `🟢 ACTIVE TP: $${tpPrice.toFixed(2)} (${isMetals ? "~$97-$110 Target" : ""})`
+                ? `🟢 ACTIVE TP: $${tpPrice.toFixed(2)} (${effectiveRrr}R Target)`
                 : s4Pass
-                ? `🎯 1:1.85 TARGET: $${tpPrice.toFixed(2)} (${isMetals ? "~$97-$110 Target" : ""})`
+                ? `🎯 TARGET: $${tpPrice.toFixed(2)} (${effectiveRrr}R Opposing Liquidity)`
                 : "⏳ TP: Locks at FVG (Step 4)"}
             </div>
           </div>
@@ -2081,7 +2106,7 @@ export function SmcChartOverlay({
                           fontWeight="900"
                           textAnchor="middle"
                         >
-                          {isTradeActive ? "⚡ ACTIVE 1:1.85 RRR" : "🎯 SIGNAL 1:1.85 RRR"} ({isBullishSetup ? "BUY" : "SELL"})
+                          {isTradeActive ? `⚡ ACTIVE ${effectiveRrr}R TARGET` : `🎯 SIGNAL ${effectiveRrr}R TARGET`} ({isBullishSetup ? "BUY" : "SELL"})
                         </text>
                       </g>
                     )}

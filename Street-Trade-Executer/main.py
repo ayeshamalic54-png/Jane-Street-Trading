@@ -1031,6 +1031,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         rrr_val = (abs(tp2 - entry_a) / abs(entry_a - sl_a)) if abs(entry_a - sl_a) > 0 else 1.85
         
         message = (
+            f"@everyone\n"
             f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
             f"🚀 **[ NEW OPEN POSITION ]** 🚀\n\n"
             f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
@@ -1068,6 +1069,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         digits = info.digits if info else 5
         
         message = (
+            f"@everyone\n"
             f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
             f"🏁 **[ POSITION CLOSED ]** 🏁\n\n"
             f"📊 **ASSET:** `{symbol}` ({order_type})\n"
@@ -1124,6 +1126,7 @@ def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_pri
         lot_val = 0.07 if (cat == "metals" or "XAU" in symbol_a.upper() or "XAG" in symbol_a.upper()) else 0.51
 
         message = (
+            f"@everyone\n"
             f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
             f"🚫 **[ SIGNAL DISCARDED / BLOCKED ]** 🚫\n\n"
             f"📊 **SIGNAL:** `{act_str}` ({symbol_a})\n"
@@ -2098,7 +2101,7 @@ def main():
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target: 1:1.85 RRR) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Condition 8 SL (0.75 buf) | Condition 9 Target (Opposing Structural Target) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
 
 
 
@@ -2206,7 +2209,7 @@ def main():
                     SL_PIPS = new_sl
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
-                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target: 1:1.85 RRR) | Engine: Pure SMC/ICT Active 🟢")
+                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] Condition 8 SL (0.75 buf) | Condition 9 Target (Opposing Structural Target) | Engine: Pure SMC/ICT Active 🟢")
                         logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Tier 1: +$62.00 Net Profit Lock | Tier 2: +$80.00 Net Profit Lock | Full TP Target: +$91.00 USD) | Friday Close Guard: ENABLED 🌅")
 
 
@@ -2687,7 +2690,7 @@ def main():
                     action = "SELL_SPREAD"
 
 
-                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: M15 Structural Target (1:1.85 Target) 🟢")
+                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: Opposing Structural Target 🟢")
                 try:
                     from database import update_smc_telemetry
                     import json
@@ -2700,21 +2703,25 @@ def main():
                     s6_st = "FAIL ⚪"
                     s7_st = "FAIL ⚪"
                     s8_st = "PASS 🟢 ($0.75 Fixed)"
-                    s9_st = "FAIL ⚪ (Min 1.5R / 1:1.85)"
+                    s9_st = "WAITING ⚪ (Opposing Target)"
                     sweep_p_val = 0.0
                     choch_p_val = 0.0
+                    opposing_tp_val = 0.0
 
                     if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason:
+                        dyn_rrr = (abs(float(smc_tp) - float(p_a)) / max(0.01, abs(float(p_a) - float(smc_sl)))) if (smc_tp and smc_sl) else 2.0
                         if "BUY" in vid_reason:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
+                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R Opposing Target)"
                             )
                         else:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
+                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R Opposing Target)"
                             )
                         if smc_sl is not None:
                             sweep_p_val = float(smc_sl) + (0.75 if "BUY" in vid_reason else -0.75)
+                        if smc_tp is not None:
+                            opposing_tp_val = float(smc_tp)
                     elif "S1(" in vid_reason or "Scanning Strict" in vid_reason:
                         parts = vid_reason.split("|")
                         for p in parts:
@@ -2745,6 +2752,11 @@ def main():
                             elif p_str.startswith("ChochPrice:"):
                                 try:
                                     choch_p_val = float(p_str.split(":", 1)[1].strip())
+                                except Exception:
+                                    pass
+                            elif p_str.startswith("OpposingTp:"):
+                                try:
+                                    opposing_tp_val = float(p_str.split(":", 1)[1].strip())
                                 except Exception:
                                     pass
 
@@ -2781,6 +2793,13 @@ def main():
                                 best_ch["isChoch"] = True
 
                     zone_dict["candles"] = candle_records
+                    if opposing_tp_val > 0:
+                        zone_dict["opposing_tp"] = opposing_tp_val
+                        zone_dict["tp_price"] = opposing_tp_val
+                    if sweep_p_val > 0:
+                        zone_dict["sweep_price"] = sweep_p_val
+                    if smc_sl is not None:
+                        zone_dict["sl_price"] = float(smc_sl)
                     fvg_json = json.dumps(zone_dict)
                     update_smc_telemetry(
                         pk, m15_b, s2_st, float(sweep_p_val), s3_st, float(choch_p_val), 

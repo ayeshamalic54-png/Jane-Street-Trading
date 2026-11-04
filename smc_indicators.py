@@ -98,50 +98,43 @@ def detect_market_structure(df):
     prev_sl = None
     bias = 'NEUTRAL'
 
-    for idx, kind, p in events:
-        if kind == 'HIGH':
-            prev_sh = last_sh
-            last_sh = p
-            if prev_sh is not None:
-                if last_sh > prev_sh:
-                    bias = 'BULLISH'
-                elif last_sh < prev_sh and bias == 'BEARISH':
-                    bias = 'BEARISH'
-        elif kind == 'LOW':
-            prev_sl = last_sl
-            last_sl = p
-            if prev_sl is not None:
-                if last_sl < prev_sl:
-                    bias = 'BEARISH'
-                elif last_sl > prev_sl and bias == 'BULLISH':
-                    bias = 'BULLISH'
+    # 2. Institutional Protected Structural Assessment:
+    # A Bullish trend requires Higher Highs & Higher Lows (HH & HL).
+    # A Bearish trend requires Lower Highs & Lower Lows (LH & LL).
+    # In a downtrend (making lower lows), minor green swing bounces are NOT Bullish unless Key Resistance (MSS) breaks!
+    has_hh = swing_highs[-1][0] > swing_highs[-2][0]
+    has_hl = swing_lows[-1][0] > swing_lows[-2][0]
+    has_lh = swing_highs[-1][0] < swing_highs[-2][0]
+    has_ll = swing_lows[-1][0] < swing_lows[-2][0]
 
-    # 2. Institutional Protected Structural MSS (Market Structure Shift) Check:
-    # A Bearish trend is NOT broken by minor internal green pullbacks.
-    # It requires an M15 candle CLOSE above the Protected Structural Lower High (Key Resistance).
-    # Likewise, a Bullish trend requires an M15 candle CLOSE below the Protected Structural Higher Low (Key Support).
     curr_close = float(df['close'].iloc[-1])
-    if bias == 'BEARISH':
-        recent_sh_levels = [p for p, idx in swing_highs]
-        key_resistance = max(recent_sh_levels[-2:]) if len(recent_sh_levels) >= 2 else (recent_sh_levels[-1] if recent_sh_levels else None)
+    recent_sh_levels = [p for p, idx in swing_highs]
+    recent_sl_levels = [p for p, idx in swing_lows]
+    key_resistance = max(recent_sh_levels[-2:]) if len(recent_sh_levels) >= 2 else (recent_sh_levels[-1] if recent_sh_levels else None)
+    key_support = min(recent_sl_levels[-2:]) if len(recent_sl_levels) >= 2 else (recent_sl_levels[-1] if recent_sl_levels else None)
+
+    if has_hh and has_hl:
+        bias = 'BULLISH'
+    elif has_lh and has_ll:
+        bias = 'BEARISH'
+    elif has_ll:
+        # Market actively dumping/making lower lows; cannot be Bullish unless confirmed structural MSS break
         if key_resistance is not None and curr_close > key_resistance:
             bias = 'BULLISH'
-    elif bias == 'BULLISH':
-        recent_sl_levels = [p for p, idx in swing_lows]
-        key_support = min(recent_sl_levels[-2:]) if len(recent_sl_levels) >= 2 else (recent_sl_levels[-1] if recent_sl_levels else None)
+        else:
+            bias = 'BEARISH'
+    elif has_hh:
+        # Market actively rallying/making higher highs; cannot be Bearish unless confirmed structural MSS break
         if key_support is not None and curr_close < key_support:
             bias = 'BEARISH'
-
-    # Fallback to direct swing comparison if chronological pass was inconclusive
-    if bias == 'NEUTRAL':
-        has_hh = swing_highs[-1][0] > swing_highs[-2][0]
-        has_hl = swing_lows[-1][0] > swing_lows[-2][0]
-        has_lh = swing_highs[-1][0] < swing_highs[-2][0]
-        has_ll = swing_lows[-1][0] < swing_lows[-2][0]
-        if has_hh or (has_hl and not has_ll):
+        else:
             bias = 'BULLISH'
-        elif has_ll or (has_lh and not has_hh):
-            bias = 'BEARISH'
+    elif has_hl and not has_ll:
+        bias = 'BULLISH'
+    elif has_lh and not has_hh:
+        bias = 'BEARISH'
+    else:
+        bias = 'NEUTRAL'
 
     return bias
 
