@@ -447,7 +447,7 @@ export function SmcChartOverlay({
     const sweepIdx = Math.max(2, Math.floor(count * 0.35));
     const chochIdx = Math.max(sweepIdx + 2, Math.floor(count * 0.55));
     const retestIdx = Math.max(chochIdx + 2, Math.floor(count * 0.72));
-    const rejectionIdx = Math.max(retestIdx + 1, Math.min(count - 2, Math.floor(count * 0.86)));
+    // Immediate execution on FVG retest touch (zero delay)
     const liveIdx = count - 1;
 
     // Build contiguous sequence: bar[k].open ALWAYS equals bar[k-1].close
@@ -465,7 +465,7 @@ export function SmcChartOverlay({
       let isSweep = false;
       let isChoch = false;
       let isRetest = false;
-      let isRejection = false;
+      // Instant entry on touch
 
       if (k === liveIdx) {
         // Current forming candle: close is strictly identical to livePrice
@@ -501,16 +501,12 @@ export function SmcChartOverlay({
         const fvgMid = (swP + chP) * 0.5;
         closeP = (openP + fvgMid) * 0.5;
       } else if (k === retestIdx) {
-        // Phase 6: Retest candle dipping into FVG zone
+        // Phase 6: Retest candle dipping into FVG zone (Immediate Entry on Touch)
         isRetest = s5Pass;
         const fvgMid = (swP + chP) * 0.5;
         closeP = isBullishSetup ? fvgMid + step * 0.15 : fvgMid - step * 0.15;
-      } else if (k === rejectionIdx) {
-        // Phase 7: Rejection candle pushing away from FVG in setup direction
-        isRejection = s6Pass;
-        closeP = isBullishSetup ? openP + step * 0.65 : openP - step * 0.65;
       } else {
-        // Phase 8: Smooth interpolation between rejection and final live candle
+        // Phase 7: Post-entry expansion towards Opposing TP
         const remaining = liveIdx - k;
         const stepDelta = (livePrice - openP) / (remaining + 1);
         closeP = openP + stepDelta;
@@ -533,14 +529,7 @@ export function SmcChartOverlay({
         // Final live candle: ensure wick wraps livePrice neatly
         highP = Math.max(openP, livePrice) + (livePrice >= openP ? step * 0.2 : step * 0.08);
         lowP = Math.min(openP, livePrice) - (livePrice <= openP ? step * 0.2 : step * 0.08);
-      } else if (k === rejectionIdx) {
-        // Rejection candle: long wick testing into FVG
-        const fvgMid = (swP + chP) * 0.5;
-        if (isBullishSetup) {
-          lowP = Math.min(lowP, fvgMid - step * 0.3);
-        } else {
-          highP = Math.max(highP, fvgMid + step * 0.3);
-        }
+      
       }
 
       bars.push({
@@ -554,7 +543,7 @@ export function SmcChartOverlay({
         isSweep,
         isChoch,
         isRetest,
-        isRejection,
+        // entry on retest
       });
 
       prevClose = closeP;
@@ -882,21 +871,18 @@ export function SmcChartOverlay({
     const defaultSweep = Math.max(2, Math.floor(count * 0.35));
     const defaultChoch = Math.max(defaultSweep + 2, Math.floor(count * 0.55));
     const defaultRetest = Math.max(defaultChoch + 2, Math.floor(count * 0.72));
-    const defaultRejection = Math.max(defaultRetest + 1, Math.min(count - 2, Math.floor(count * 0.86)));
 
     const sIdx = candles.findIndex((c) => c.isSweep);
     const cIdx = candles.findIndex((c) => c.isChoch);
     const rIdx = candles.findIndex((c) => c.isRetest);
-    const jIdx = candles.findIndex((c) => c.isRejection);
 
     const sweep = sIdx >= 0 ? sIdx : defaultSweep;
     const choch = cIdx >= 0 ? cIdx : defaultChoch;
     const retest = rIdx >= 0 ? rIdx : defaultRetest;
-    const rejection = jIdx >= 0 ? jIdx : defaultRejection;
-    const entry = isTradeActive || s7Pass ? rejection : (s5Pass ? retest : choch);
+    const entry = isTradeActive || s5Pass ? retest : choch;
 
-    return { sweep, choch, retest, rejection, entry };
-  }, [candles, isTradeActive, s7Pass, s5Pass]);
+    return { sweep, choch, retest, entry };
+  }, [candles, isTradeActive, s5Pass]);
 
   interface RenderedZone {
     id: string;
@@ -1768,7 +1754,7 @@ export function SmcChartOverlay({
                 </div>
               </div>
 
-              {/* S5: FVG Retest */}
+              {/* S5: FVG Retest & Entry */}
               <div className={cn(
                 "p-1.5 rounded-lg border-2 text-center transition-all",
                 s5Pass
@@ -1777,39 +1763,39 @@ export function SmcChartOverlay({
                   ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
                   : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">5. Retest</div>
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">5. Retest & Entry</div>
                 <div className="truncate font-black mt-0.5">
-                  {s5Pass ? "RETESTED 🟢" : s4Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                  {s5Pass ? "ENTRY ON TOUCH 🟢" : s4Pass ? "AWAITING ⏳" : "WAITING ⚪"}
                 </div>
               </div>
 
-              {/* S6: Rejection */}
+              {/* S6: SL Placement ($0.75 Buf) */}
               <div className={cn(
                 "p-1.5 rounded-lg border-2 text-center transition-all",
                 s6Pass
+                  ? "bg-rose-950/80 border-rose-400 text-rose-200 font-black shadow-[0_0_10px_rgba(244,63,94,0.3)]"
+                  : s5Pass
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+              )}>
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">6. SL ($0.75 Buf)</div>
+                <div className="truncate font-black mt-0.5">
+                  {s6Pass ? "LOCKED 🟢" : "PENDING ⚪"}
+                </div>
+              </div>
+
+              {/* S7: Opposing TP */}
+              <div className={cn(
+                "col-span-2 sm:col-span-2 lg:col-span-1 p-1.5 rounded-lg border-2 text-center transition-all",
+                s7Pass
                   ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
                   : s5Pass
                   ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
                   : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">6. Rejection</div>
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">7. Opposing TP</div>
                 <div className="truncate font-black mt-0.5">
-                  {s6Pass ? "REJECTED 🟢" : s5Pass ? "AWAITING ⏳" : "WAITING ⚪"}
-                </div>
-              </div>
-
-              {/* S7: Confirmation Close */}
-              <div className={cn(
-                "col-span-2 sm:col-span-2 lg:col-span-1 p-1.5 rounded-lg border-2 text-center transition-all",
-                s7Pass
-                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
-                  : s6Pass
-                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
-              )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">7. Close</div>
-                <div className="truncate font-black mt-0.5">
-                  {s7Pass ? "CONFIRMED 🟢" : s6Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                  {s7Pass ? "TARGET SET 🟢" : "PENDING ⚪"}
                 </div>
               </div>
             </div>

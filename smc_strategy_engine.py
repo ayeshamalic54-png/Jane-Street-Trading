@@ -314,39 +314,35 @@ def evaluate_smc_strategy_signal(
             else:
                 custom_step9_s = f"PASS 🟢 ({selected_rrr:.2f}R Opposing Target | Front-Run 0.50)"
 
-    # ── 3. SCANNER LOGGING (ALL 9 STEPS INDIVIDUALLY DISPLAYED) ──
+    # ── 3. SCANNER LOGGING (7 STRICT SMC STEPS INDIVIDUALLY DISPLAYED) ──
     if is_m15_bullish:
         step1_s = "BULLISH 🟢"
         step2_s = "PASS 🟢 (Sell-Side Sweep)" if has_sell_sweep else "WAITING ⚪ (Awaiting Fresh Sweep)"
         step3_s = "PASS 🟢 (Bullish CHoCH)" if has_bull_choch else "WAITING ⚪ (Awaiting Fresh CHoCH)"
         step4_s = "PASS 🟢 (Displacement FVG)" if (len(zones_bull['bullish_fvg']) > 0) else "WAITING ⚪ (Awaiting Displacement FVG)"
-        step5_s = "PASS 🟢 (FVG Retest & Entry)" if in_bull_fvg else "WAITING ⚪ (Awaiting FVG Retest)"
-        step6_s = "PASS 🟢 (Instant Entry)" if in_bull_fvg else "WAITING ⚪ (Awaiting FVG Touch)"
-        step7_s = "PASS 🟢 (Trigger on Touch)" if in_bull_fvg else "WAITING ⚪ (Waiting FVG Touch)"
+        step5_s = "PASS 🟢 (FVG Retest & Instant Entry)" if in_bull_fvg else "WAITING ⚪ (Awaiting FVG Retest)"
     elif is_m15_bearish:
         step1_s = "BEARISH 🔴"
         step2_s = "PASS 🔴 (Buy-Side Sweep)" if has_buy_sweep else "WAITING ⚪ (Awaiting Fresh Sweep)"
         step3_s = "PASS 🔴 (Bearish CHoCH)" if has_bear_choch else "WAITING ⚪ (Awaiting Fresh CHoCH)"
         step4_s = "PASS 🔴 (Displacement FVG)" if (len(zones_bear['bearish_fvg']) > 0) else "WAITING ⚪ (Awaiting Displacement FVG)"
-        step5_s = "PASS 🔴 (FVG Retest & Entry)" if in_bear_fvg else "WAITING ⚪ (Awaiting FVG Retest)"
-        step6_s = "PASS 🔴 (Instant Entry)" if in_bear_fvg else "WAITING ⚪ (Awaiting FVG Touch)"
-        step7_s = "PASS 🔴 (Trigger on Touch)" if in_bear_fvg else "WAITING ⚪ (Waiting FVG Touch)"
+        step5_s = "PASS 🔴 (FVG Retest & Instant Entry)" if in_bear_fvg else "WAITING ⚪ (Awaiting FVG Retest)"
     else:
         step1_s = "NEUTRAL ⚪"
         step2_s = "WAITING ⚪ (M15 Neutral)"
         step3_s = "WAITING ⚪ (M15 Neutral)"
         step4_s = "WAITING ⚪ (M15 Neutral)"
         step5_s = "WAITING ⚪ (M15 Neutral)"
-        step6_s = "WAITING ⚪ (M15 Neutral)"
-        step7_s = "WAITING ⚪ (M15 Neutral)"
 
+    # Step 6: SL Buffer ($0.75 Buf)
     if custom_step8_s is not None:
-        step8_s = custom_step8_s
+        step6_s = custom_step8_s
     else:
-        step8_s = "PASS 🟢 (0.75 Buf | $7.50 Cap)" if is_metals else "PASS 🟢 (0.0004 Buf | Cap)"
+        step6_s = "PASS 🟢 (0.75 Buf | $7.50 Cap)" if is_metals else "PASS 🟢 (0.0004 Buf | Cap)"
 
+    # Step 7: Opposing Target (TP)
     if custom_step9_s is not None:
-        step9_s = custom_step9_s
+        step7_s = custom_step9_s
     else:
         try:
             from smc_indicators import get_swing_points
@@ -384,11 +380,11 @@ def evaluate_smc_strategy_signal(
                 scan_tp = 0.0
 
             if scan_rrr >= 1.5:
-                step9_s = f"PASS 🟢 ({scan_rrr:.2f}R Opposing Target | Front-Run 0.50)"
+                step7_s = f"PASS 🟢 ({scan_rrr:.2f}R Opposing Target | Front-Run 0.50)"
             else:
-                step9_s = f"FAIL 🔴 ({scan_rrr:.2f}R Target Space < 1.5R Min)"
+                step7_s = f"FAIL 🔴 ({scan_rrr:.2f}R Target Space < 1.5R Min)"
         except Exception:
-            step9_s = "PASS 🟢 (Opposing Target Min 1.5R)"
+            step7_s = "PASS 🟢 (Opposing Target Min 1.5R)"
             scan_tp = 0.0
 
     if is_m15_bearish:
@@ -402,6 +398,6 @@ def evaluate_smc_strategy_signal(
         actual_choch_p = bull_choch_lvl if has_bull_choch else (bear_choch_lvl if has_bear_choch else 0.0)
     
     tp_str = f" | OpposingTp: {scan_tp:.2f}" if ('scan_tp' in locals() and scan_tp > 0) else ""
-    scan_msg = f"Scanning Strict 9-Condition SMC | S1(M15): {step1_s} | S2(Sweep): {step2_s} | S3(CHoCH): {step3_s} | S4(Displacement FVG): {step4_s} | S5(Retest): {step5_s} | S6(Rejection): {step6_s} | S7(Closed): {step7_s} | S8(SL Buf): {step8_s} | S9(Target): {step9_s} | SweepPrice: {actual_sweep_p:.2f} | ChochPrice: {actual_choch_p:.2f}{tp_str}"
+    scan_msg = f"Scanning Strict 7-Condition SMC | S1(M15): {step1_s} | S2(Sweep): {step2_s} | S3(CHoCH): {step3_s} | S4(Displacement FVG): {step4_s} | S5(Retest & Entry): {step5_s} | S6(SL Buf): {step6_s} | S7(Target): {step7_s} | SweepPrice: {actual_sweep_p:.2f} | ChochPrice: {actual_choch_p:.2f}{tp_str}"
     return "NONE", None, None, 0.0, scan_msg
 
