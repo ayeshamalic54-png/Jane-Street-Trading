@@ -148,6 +148,25 @@ def initialize_database():
         ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS max_drawdown_limit NUMERIC(5, 2) DEFAULT 3.30;
         """,
         """
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS is_bot_running BOOLEAN DEFAULT TRUE;
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS target_login BIGINT DEFAULT NULL;
+
+        CREATE TABLE IF NOT EXISTS mt5_accounts (
+            id SERIAL PRIMARY KEY,
+            login BIGINT NOT NULL UNIQUE,
+            server VARCHAR(255) NOT NULL,
+            password VARCHAR(255),
+            account_name VARCHAR(255) DEFAULT 'MT5 Account',
+            account_type VARCHAR(50) DEFAULT 'DEMO',
+            is_active BOOLEAN DEFAULT FALSE,
+            balance NUMERIC(15, 2) DEFAULT 0,
+            equity NUMERIC(15, 2) DEFAULT 0,
+            currency VARCHAR(10) DEFAULT 'USD',
+            company VARCHAR(255),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """,
+        """
         CREATE TABLE IF NOT EXISTS fvg_zones (
             id SERIAL PRIMARY KEY,
             symbol VARCHAR(50) NOT NULL,
@@ -1144,6 +1163,134 @@ def get_smc_telemetry(symbol_pair: str) -> dict:
         "s8_status": "PASS 🟢 ($0.75 Fixed)",
         "s9_status": "FAIL ⚪ (Min 2.0R)"
     }
+
+
+# ── MT5 ACCOUNTS & MASTER BOT ENGINE CONTROL HELPERS ─────────────────────────
+
+def get_mt5_accounts():
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, login, server, account_name, account_type, is_active, balance, equity, currency, company, updated_at
+            FROM mt5_accounts
+            ORDER BY is_active DESC, updated_at DESC
+        """)
+        rows = cur.fetchall()
+        accounts = []
+        for r in rows:
+            accounts.append({
+                "id": r[0],
+                "login": r[1],
+                "server": r[2],
+                "account_name": r[3],
+                "account_type": r[4],
+                "is_active": bool(r[5]),
+                "balance": float(r[6] or 0.0),
+                "equity": float(r[7] or 0.0),
+                "currency": r[8] or "USD",
+                "company": r[9] or "",
+                "updated_at": str(r[10]) if r[10] else ""
+            })
+        cur.close()
+        return accounts
+    except Exception as e:
+        logger.error(f"Error fetching mt5_accounts: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+def save_or_update_mt5_account(login, server, password="", account_name="MT5 Account", account_type="DEMO", is_active=False, balance=0.0, equity=0.0, currency="USD", company=""):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if is_active:
+            cur.execute("UPDATE mt5_accounts SET is_active = FALSE WHERE is_active = TRUE AND login != %s", (int(login),))
+        cur.execute("""
+            INSERT INTO mt5_accounts (login, server, password, account_name, account_type, is_active, balance, equity, currency, company, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (login) DO UPDATE SET
+                server = EXCLUDED.server,
+                password = CASE WHEN EXCLUDED.password IS NOT NULL AND EXCLUDED.password != '' THEN EXCLUDED.password ELSE mt5_accounts.password END,
+                account_name = CASE WHEN EXCLUDED.account_name IS NOT NULL AND EXCLUDED.account_name != '' THEN EXCLUDED.account_name ELSE mt5_accounts.account_name END,
+                account_type = EXCLUDED.account_type,
+                is_active = EXCLUDED.is_active,
+                balance = EXCLUDED.balance,
+                equity = EXCLUDED.equity,
+                currency = EXCLUDED.currency,
+                company = EXCLUDED.company,
+                updated_at = CURRENT_TIMESTAMP
+        """, (int(login), server, password, account_name, account_type, is_active, float(balance), float(equity), currency, company))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error saving mt5_account {login}: {e}")
+    finally:
+        if conn: conn.close()
+
+def set_target_mt5_login(login: int):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE bot_state SET target_login = %s WHERE id = 1", (int(login),))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error setting target_login {login}: {e}")
+    finally:
+        if conn: conn.close()
+
+def get_target_mt5_login():
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT target_login FROM bot_state WHERE id = 1")
+        row = cur.fetchone()
+        cur.close()
+        return int(row[0]) if (row and row[0] is not None) else None
+    except Exception as e:
+        logger.error(f"Error getting target_login: {e}")
+        return None
+    finally:
+        if conn: conn.close()
+
+def clear_target_mt5_login():
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE bot_state SET target_login = NULL WHERE id = 1")
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error clearing target_login: {e}")
+    finally:
+        if conn: conn.close()
+
+def get_bot_running_state() -> bool:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT is_bot_running FROM bot_state WHERE id = 1")
+        row = cur.fetchone()
+        cur.close()
+        return bool(row[0]) if (row and row[0] is not None) else True
+    except Exception:
+        return True
+    finally:
+        if conn: conn.close()
+
+def set_bot_running_state(is_running: bool):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        status_txt = "RUNNING (Active)" if is_running else "ENGINE STOPPED 🛑 (Standby)"
+        cur.execute("UPDATE bot_state SET is_bot_running = %s, system_status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = 1", (bool(is_running), status_txt))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"Error setting is_bot_running {is_running}: {e}")
+    finally:
+        if conn: conn.close()
 
 if __name__ == "__main__":
     initialize_database()
