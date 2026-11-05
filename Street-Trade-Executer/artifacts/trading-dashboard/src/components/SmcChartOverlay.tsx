@@ -205,8 +205,8 @@ export function SmcChartOverlay({
   const isSignalFired = (action === "BUY" || action === "SELL") && s5Pass;
   const isTradeActive = hasActivePosition || isSignalFired;
 
-  const s6Pass = isPassText(s8Status) || (s2Pass && isTradeActive); // SL Buffer ($0.75)
-  const s7Pass = isPassText(s9Status) || (s5Pass && isTradeActive); // Opposing Target
+  const s6Pass = isPassText(s6Status) || isPassText(s8Status) || (s2Pass && isTradeActive); // SL Buffer ($0.75)
+  const s7Pass = isPassText(s7Status) || isPassText(s9Status) || (s5Pass && isTradeActive) || (s5Pass && (swingStructure.swingLow > 0 || swingStructure.swingHigh > 0)); // Opposing Target
   const s8Pass = s6Pass;
   const s9Pass = s7Pass;
 
@@ -289,11 +289,19 @@ export function SmcChartOverlay({
     if (telTp && telTp > 0) {
       return Number(telTp.toFixed(2));
     }
-    const slDist = Math.max(isMetals ? 3.0 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
+    // Structural dealing range fallback: Target Swing Low (Bearish) or Swing High (Bullish) front-run by buffer
+    const frontRunBuf = isMetals ? 0.75 : 0.0003;
+    if (isBearishSetup && swingStructure.swingLow > 0 && swingStructure.swingLow < effectiveEntryPrice) {
+      return Number((swingStructure.swingLow + frontRunBuf).toFixed(2));
+    }
+    if (isBullishSetup && swingStructure.swingHigh > 0 && swingStructure.swingHigh > effectiveEntryPrice) {
+      return Number((swingStructure.swingHigh - frontRunBuf).toFixed(2));
+    }
+    const slDist = Math.max(isMetals ? 2.5 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
     return isBearishSetup
-      ? Number((effectiveEntryPrice - 2.0 * slDist).toFixed(2))
-      : Number((effectiveEntryPrice + 2.0 * slDist).toFixed(2));
-  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isMetals, telemetry]);
+      ? Number((effectiveEntryPrice - 1.8 * slDist).toFixed(2))
+      : Number((effectiveEntryPrice + 1.8 * slDist).toFixed(2));
+  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isBullishSetup, isMetals, telemetry, swingStructure]);
 
   const effectiveRrr = useMemo(() => {
     const slDist = Math.abs(effectiveEntryPrice - effectiveSlPrice);
@@ -2904,15 +2912,15 @@ export function SmcChartOverlay({
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {s9Pass ? (s9Status && isPassText(s9Status) ? s9Status : "PASS 🟢 (Opposing Target)") : "PENDING ⚪"}
+                {s7Pass ? (s7Status && isPassText(s7Status) ? s7Status : (s9Status && isPassText(s9Status) ? s9Status : "PASS 🟢 (Opposing Target)")) : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
-              {s9Pass
-                ? (tpPrice > 0 && isTradeActive
-                    ? `Opposing structural liquidity TP placed at $${tpPrice.toFixed(2)} (front-run by $0.50).`
-                    : "Verified minimum 1.5R clear path to opposing structural liquidity.")
-                : "Requires minimum 1.5R clear path to opposing liquidity pool."}
+              {s7Pass
+                ? (effectiveTpPrice > 0
+                    ? `Opposing structural liquidity TP placed at $${effectiveTpPrice.toFixed(2)} (front-run by $0.75).`
+                    : "Verified clear path to opposing structural liquidity.")
+                : "Requires clear path to opposing liquidity pool (Swing High/Low)."}
             </p>
           </div>
         </div>
