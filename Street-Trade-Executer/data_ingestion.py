@@ -101,34 +101,46 @@ def get_rates_df(symbol, timeframe, count=200):
     except Exception:
         pass
 
-    rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
-    if (rates is None or len(rates) == 0) and resolved != symbol:
-        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
-        
-    if rates is None or len(rates) == 0:
-        time.sleep(0.15)
+    # Try with retry to allow MT5 history server synchronization
+    rates = None
+    for attempt in range(3):
         rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
+        if rates is not None and len(rates) > 0:
+            break
+        if resolved != symbol:
+            rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
+            if rates is not None and len(rates) > 0:
+                resolved = symbol
+                break
+        time.sleep(0.3 * (attempt + 1))
 
     if rates is None or len(rates) == 0:
-        # Fallback search across all broker symbols for matching base alias (e.g. GOLD, XAUUSD.pro, XAUUSD.m)
+        # Fallback search across active broker symbols for matching base alias (e.g. GOLD, XAUUSD.pro, XAUUSD.m)
         try:
             all_symbols = mt5.symbols_get()
             if all_symbols:
                 target_base = symbol.upper().replace("USD", "").replace("EUR", "")
                 for s_info in all_symbols:
                     s_name = s_info.name
+                    if s_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
+                        continue
                     if symbol.upper() in s_name.upper() or (len(target_base) >= 3 and target_base in s_name.upper()):
                         mt5.symbol_select(s_name, True)
-                        r_try = mt5.copy_rates_from_pos(s_name, timeframe, 0, count)
-                        if r_try is not None and len(r_try) > 0:
-                            rates = r_try
-                            logger.info(f"Resolved alternative symbol {s_name} for {symbol} candles.")
+                        for _ in range(2):
+                            r_try = mt5.copy_rates_from_pos(s_name, timeframe, 0, count)
+                            if r_try is not None and len(r_try) > 0:
+                                rates = r_try
+                                logger.info(f"Resolved alternative tradeable symbol {s_name} for {symbol} candles.")
+                                break
+                            time.sleep(0.2)
+                        if rates is not None and len(rates) > 0:
                             break
         except Exception:
             pass
 
     if rates is None or len(rates) == 0:
-        logger.info(f"Broker does not offer candles for {symbol} (resolved: {resolved}). Skipping pair scan.")
+        err = mt5.last_error()
+        logger.warning(f"Broker does not offer candles for {symbol} (resolved: {resolved}, MT5 error: {err}). Tip: Open {resolved} chart in MT5 to force history sync.")
         return None
         
     df = pd.DataFrame(rates)
@@ -202,24 +214,33 @@ def resolve_broker_symbol(symbol):
         all_symbols = mt5.symbols_get()
         if not all_symbols:
             return symbol
-        sym_names = [s.name for s in all_symbols]
-        if symbol in sym_names:
-            return symbol
-            
-        # Check alias list first (e.g., NAS100 -> USTEC, US100, NQ100)
-        candidates = SYMBOL_ALIASES.get(symbol.upper(), [symbol])
         
+        # Check active tradeable symbols first
+        active_syms = {s.name: s for s in all_symbols if s.trade_mode != mt5.SYMBOL_TRADE_MODE_DISABLED}
+        all_sym_names = [s.name for s in all_symbols]
+
+        # 1. Exact match in active tradeable symbols
+        if symbol in active_syms:
+            return symbol
+
+        # 2. Check alias list for active tradeable symbols
+        candidates = SYMBOL_ALIASES.get(symbol.upper(), [symbol])
         for cand in candidates:
-            if cand in sym_names:
+            if cand in active_syms:
                 return cand
-            for s in sym_names:
+            for s_name in active_syms:
+                if s_name.startswith(cand) or cand in s_name or s_name.replace('.', '').replace('-', '').upper() == cand.upper():
+                    return s_name
+
+        # 3. Fallback to all symbols
+        if symbol in all_sym_names:
+            return symbol
+        for cand in candidates:
+            if cand in all_sym_names:
+                return cand
+            for s in all_sym_names:
                 if s.startswith(cand) or cand in s or s.replace('.', '').replace('-', '').upper() == cand.upper():
                     return s
-                    
-        # General prefix match fallback
-        for s in sym_names:
-            if s.startswith(symbol) or symbol in s or s.replace('.', '').replace('-', '').upper() == symbol.upper():
-                return s
     except Exception:
         pass
     return symbol
