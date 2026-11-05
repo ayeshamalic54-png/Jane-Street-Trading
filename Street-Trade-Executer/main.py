@@ -2442,6 +2442,16 @@ def main():
                     logger.info("⏸️ [ENGINE STOPPED] Trading bot is in Standby mode via Dashboard Toggle. No market scans or trades will be executed.")
                 time.sleep(3)
                 continue
+            else:
+                try:
+                    conn_sb = get_connection()
+                    cur_sb = conn_sb.cursor()
+                    cur_sb.execute("UPDATE bot_state SET system_status = CASE WHEN auto_execute THEN 'RUNNING (Active)' ELSE 'RUNNING (Signals Only)' END, last_heartbeat = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = 1 AND system_status LIKE '%STOPPED%'")
+                    conn_sb.commit()
+                    cur_sb.close()
+                    conn_sb.close()
+                except Exception:
+                    pass
 
             pairs_to_scan = []
             if FOREX_ENABLED:

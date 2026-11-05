@@ -230,6 +230,7 @@ router.post("/bot/control", async (req, res) => {
     await db.execute(sql`
       UPDATE bot_state
       SET is_bot_running = ${isRunning},
+          auto_execute   = CASE WHEN ${isRunning} THEN TRUE ELSE auto_execute END,
           system_status  = ${statusTxt},
           updated_at     = NOW()
       WHERE id = (SELECT MIN(id) FROM bot_state);

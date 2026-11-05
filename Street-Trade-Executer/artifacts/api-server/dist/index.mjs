@@ -44643,7 +44643,7 @@ router.get("/dashboard", async (req, res) => {
         action: s.action ?? "NONE"
       })),
       botOnline: isOnline,
-      isBotRunning: Boolean(botState?.is_bot_running ?? botState?.isBotRunning ?? true),
+      isBotRunning: !String(botState?.systemStatus ?? "").toUpperCase().includes("STOPPED") && Boolean(botState?.is_bot_running ?? botState?.isBotRunning ?? true),
       autoExecute: botState?.autoExecute ?? true,
       cryptoEnabled: botState?.cryptoEnabled ?? true,
       metalsEnabled: botState?.metalsEnabled ?? true,
@@ -49001,6 +49001,7 @@ router2.post("/bot/control", async (req, res) => {
     await db.execute(sql`
       UPDATE bot_state
       SET is_bot_running = ${isRunning},
+          auto_execute   = CASE WHEN ${isRunning} THEN TRUE ELSE auto_execute END,
           system_status  = ${statusTxt},
           updated_at     = NOW()
       WHERE id = (SELECT MIN(id) FROM bot_state)
