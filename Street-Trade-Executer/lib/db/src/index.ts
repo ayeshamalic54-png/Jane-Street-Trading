@@ -45,6 +45,8 @@ export const botStateTable = pgTable("bot_state", {
   overallDrawdown: numeric("overall_drawdown", { precision: 5, scale: 2 }).default("0.00"),
   maxEquityPeak: numeric("max_equity_peak", { precision: 15, scale: 2 }).default("5025.76"),
   mt5Login: bigint("mt5_login", { mode: "number" }).default(0),
+  isBotRunning: boolean("is_bot_running").default(true),
+  targetLogin: bigint("target_login", { mode: "number" }),
   knifeProtectionEnabled: boolean("knife_protection_enabled").default(true),
   obiEnabled: boolean("obi_enabled").default(true),
   volatilityFilterEnabled: boolean("volatility_filter_enabled").default(true),
@@ -99,6 +101,8 @@ export const dailyMetricsTable = pgTable("daily_metrics", {
   updatedAt: timestamp("updated_at").defaultNow(),
   botId: integer("bot_id").default(1),
   mt5Login: bigint("mt5_login", { mode: "number" }).default(0),
+  isBotRunning: boolean("is_bot_running").default(true),
+  targetLogin: bigint("target_login", { mode: "number" }),
 });
 
 export const tradeCommandsTable = pgTable("trade_commands", {
@@ -122,6 +126,22 @@ export const scannedAssetsTable = pgTable("scanned_assets", {
   winRate: numeric("win_rate", { precision: 5, scale: 2 }),
   zScore: numeric("z_score", { precision: 10, scale: 4 }),
   action: varchar("action", { length: 20 }),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+
+export const mt5AccountsTable = pgTable("mt5_accounts", {
+  id: serial("id").primaryKey(),
+  login: bigint("login", { mode: "number" }).notNull().unique(),
+  server: varchar("server", { length: 255 }).notNull(),
+  password: varchar("password", { length: 255 }),
+  accountName: varchar("account_name", { length: 255 }).default("MT5 Account"),
+  accountType: varchar("account_type", { length: 50 }).default("DEMO"),
+  isActive: boolean("is_active").default(false),
+  balance: numeric("balance", { precision: 15, scale: 2 }).default("0"),
+  equity: numeric("equity", { precision: 15, scale: 2 }).default("0"),
+  currency: varchar("currency", { length: 10 }).default("USD"),
+  company: varchar("company", { length: 255 }),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

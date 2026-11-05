@@ -8,7 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Activity, Wifi, WifiOff, Send, Zap, ZapOff } from "lucide-react";
+import { Activity, Wifi, WifiOff, Send, Zap, ZapOff, Power, PowerOff, ShieldCheck, ChevronDown, Plus, RefreshCw, UserCheck, AlertTriangle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
@@ -281,6 +282,40 @@ export default function Dashboard() {
   const [manualTp, setManualTp] = useState("20");
   const [manualEntry, setManualEntry] = useState("");
 
+  // Remote Bot Control & MT5 Account Switcher States
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [accountsList, setAccountsList] = useState<any[]>([]);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
+  const [isTogglingBot, setIsTogglingBot] = useState(false);
+  const [newLogin, setNewLogin] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newServer, setNewServer] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<"REAL" | "DEMO">("REAL");
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  const fetchAccounts = async () => {
+    try {
+      setIsLoadingAccounts(true);
+      const res = await fetch("/api/mt5/accounts");
+      if (res.ok) {
+        const data = await res.json();
+        setAccountsList(data.accounts || []);
+      }
+    } catch (e) {
+      console.error("Error fetching MT5 accounts:", e);
+    } finally {
+      setIsLoadingAccounts(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAccounts();
+    const interval = setInterval(fetchAccounts, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const getPipSize = (sym: string): number => {
     const s = sym.toUpperCase();
     if (s.includes("JPY")) return 0.01;
@@ -494,6 +529,97 @@ export default function Dashboard() {
   const formatMoney = (val: number) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(val);
 
+  const isBotActive = Boolean((dashboard as any)?.isBotRunning ?? (dashboard as any)?.is_bot_running ?? true);
+  const activeAccount = accountsList.find((a: any) => a.is_active || Number(a.login) === Number(mt5Login)) || accountsList[0];
+
+  const handleToggleBotRunning = async () => {
+    const nextState = !isBotActive;
+    setIsTogglingBot(true);
+    try {
+      const res = await fetch("/api/bot/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isRunning: nextState }),
+      });
+      if (res.ok) {
+        toast({
+          title: nextState ? "🟢 Trading Engine Started" : "🛑 Trading Engine Stopped",
+          description: nextState
+            ? "Live market scanning and Pure SMC execution is now ACTIVE."
+            : "Engine paused in Standby mode. Zero trades will be opened.",
+        });
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
+      } else {
+        toast({ title: "Failed to toggle bot engine", variant: "destructive" });
+      }
+    } catch (e) {
+      toast({ title: "Network error toggling bot", variant: "destructive" });
+    } finally {
+      setIsTogglingBot(false);
+    }
+  };
+
+  const handleSwitchAccount = async (targetLogin: number, accountName: string) => {
+    if (!window.confirm(`Switch trading bot to ${accountName} (Account #${targetLogin})?`)) return;
+    setIsSwitchingAccount(true);
+    try {
+      const res = await fetch("/api/mt5/switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ login: targetLogin }),
+      });
+      if (res.ok) {
+        toast({
+          title: "🔄 Switching Account...",
+          description: `Switch command sent for #${targetLogin}. MT5 will connect in ~3s.`,
+        });
+        fetchAccounts();
+        queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
+        setIsAccountModalOpen(false);
+      } else {
+        toast({ title: "Failed to switch account", variant: "destructive" });
+      }
+    } catch (e) {
+      toast({ title: "Error switching account", variant: "destructive" });
+    } finally {
+      setIsSwitchingAccount(false);
+    }
+  };
+
+  const handleAddAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLogin || !newServer) {
+      toast({ title: "Login & Server required", variant: "destructive" });
+      return;
+    }
+    try {
+      const res = await fetch("/api/mt5/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          login: newLogin,
+          server: newServer,
+          password: newPassword,
+          accountName: newName || (newType === "REAL" ? "Blue Guardian Real" : "Demo Account"),
+          accountType: newType,
+        }),
+      });
+      if (res.ok) {
+        toast({ title: "✅ Account Saved", description: `Account #${newLogin} registered successfully.` });
+        setNewLogin("");
+        setNewPassword("");
+        setNewServer("");
+        setNewName("");
+        setShowAddForm(false);
+        fetchAccounts();
+      } else {
+        toast({ title: "Failed to save account", variant: "destructive" });
+      }
+    } catch (e) {
+      toast({ title: "Error saving account", variant: "destructive" });
+    }
+  };
+
   const handleManualTrade = (direction: "BUY" | "SELL") => {
     const sym = manualSymbol.trim().toUpperCase();
     const lots = parseFloat(manualLots);
@@ -652,6 +778,250 @@ export default function Dashboard() {
           </Button>
         </div>
       </div>
+
+      {/* ── REMOTE BOT CONTROL & ACCOUNT SWITCHER STRIP (Zero-Overlap Guarantee) ── */}
+      <div className="bg-zinc-900/90 border-b border-zinc-800 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={handleToggleBotRunning}
+            size="sm"
+            disabled={isTogglingBot || isReadOnly}
+            className={cn(
+              "font-mono text-xs font-black h-8 px-3 rounded shadow transition-all flex items-center gap-2",
+              isBotActive
+                ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-400/40"
+                : "bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.4)] border border-rose-400/40 animate-pulse"
+            )}
+          >
+            {isBotActive ? <Power className="h-4 w-4" /> : <PowerOff className="h-4 w-4" />}
+            {isBotActive ? "ENGINE: ACTIVE 🟢" : "ENGINE: STOPPED 🛑"}
+          </Button>
+
+          <div className="flex flex-col">
+            <span className="text-[11px] font-bold text-zinc-200 flex items-center gap-1.5">
+              {isBotActive ? (
+                <>
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Live Trading Engine Running
+                </>
+              ) : (
+                <>
+                  <span className="h-2 w-2 rounded-full bg-rose-400" />
+                  Engine Halted (Standby Mode)
+                </>
+              )}
+            </span>
+            <span className="text-[10px] text-zinc-500 font-mono hidden sm:inline">
+              {isBotActive ? "Scanning M5/M15 market structure & executing orders" : "No orders will be placed. Bot is paused safely."}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsAccountModalOpen(true)}
+            className="h-8 px-3 bg-zinc-950 border-zinc-700 hover:border-zinc-500 text-zinc-100 font-mono text-xs font-bold rounded flex items-center gap-2 shadow-sm"
+          >
+            <ShieldCheck className="h-4 w-4 text-emerald-400" />
+            <span className="max-w-[140px] sm:max-w-[220px] truncate">
+              {activeAccount
+                ? `${activeAccount.account_name || "MT5"} #${activeAccount.login}`
+                : `MT5 #${mt5Login || "Connected"}`}
+            </span>
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-[9px] px-1.5 py-0 font-bold",
+                activeAccount?.account_type === "REAL"
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                  : "bg-blue-500/20 text-blue-300 border-blue-500/40"
+              )}
+            >
+              {activeAccount?.account_type || "DEMO"}
+            </Badge>
+            <ChevronDown className="h-3.5 w-3.5 text-zinc-400" />
+          </Button>
+        </div>
+      </div>
+
+      {/* ── MT5 ACCOUNT SWITCHER & MANAGER MODAL ── */}
+      <Dialog open={isAccountModalOpen} onOpenChange={setIsAccountModalOpen}>
+        <DialogContent className="max-w-md bg-zinc-950 border border-zinc-800 text-foreground p-6 rounded-lg shadow-2xl">
+          <DialogHeader className="mb-4">
+            <DialogTitle className="text-base font-black flex items-center gap-2 text-white">
+              <ShieldCheck className="h-5 w-5 text-emerald-400" />
+              MT5 Account Switcher & Manager
+            </DialogTitle>
+            <DialogDescription className="text-xs text-zinc-400">
+              VPS par MetaTrader 5 me connected accounts select karein ya naya account add karein.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Accounts List */}
+          <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+            {accountsList.length === 0 ? (
+              <div className="p-4 rounded border border-zinc-800 bg-zinc-900/40 text-center text-xs text-zinc-400 font-mono">
+                {isLoadingAccounts ? "Loading MT5 accounts..." : `Active Account: #${mt5Login || "None"}`}
+              </div>
+            ) : (
+              accountsList.map((acc: any) => {
+                const isThisActive = acc.is_active || Number(acc.login) === Number(mt5Login);
+                return (
+                  <div
+                    key={acc.login}
+                    className={cn(
+                      "p-3 rounded-lg border transition-all flex items-center justify-between gap-3",
+                      isThisActive
+                        ? "bg-emerald-950/30 border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.15)]"
+                        : "bg-zinc-900/50 border-zinc-800 hover:border-zinc-700"
+                    )}
+                  >
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-white truncate">
+                          {acc.account_name || "MT5 Account"}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[8px] px-1 py-0 font-bold",
+                            acc.account_type === "REAL"
+                              ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                              : "bg-blue-500/20 text-blue-300 border-blue-500/40"
+                          )}
+                        >
+                          {acc.account_type || "DEMO"}
+                        </Badge>
+                      </div>
+                      <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
+                        Login: <span className="text-zinc-200 font-bold">#{acc.login}</span> · {acc.server || "Server"}
+                      </div>
+                      {acc.equity > 0 && (
+                        <div className="text-[10px] text-emerald-400 font-mono font-bold mt-0.5">
+                          Equity: ${Number(acc.equity).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      {isThisActive ? (
+                        <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-bold px-2 py-1">
+                          ACTIVE 🟢
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isSwitchingAccount || isReadOnly}
+                          onClick={() => handleSwitchAccount(Number(acc.login), acc.account_name || `Account #${acc.login}`)}
+                          className="h-7 text-[10px] font-bold font-mono px-2.5 bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-zinc-200"
+                        >
+                          Switch 🔄
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Toggle Add Account Form */}
+          <div className="mt-4 pt-3 border-t border-zinc-800">
+            {!showAddForm ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAddForm(true)}
+                className="w-full text-xs font-bold text-zinc-300 hover:text-white hover:bg-zinc-900 border border-dashed border-zinc-700 h-8 flex items-center justify-center gap-1.5"
+              >
+                <Plus className="h-3.5 w-3.5 text-emerald-400" />
+                + Connect Another Prop Firm / Broker Account
+              </Button>
+            ) : (
+              <form onSubmit={handleAddAccount} className="space-y-3 bg-zinc-900/60 p-3 rounded-lg border border-zinc-800">
+                <div className="text-xs font-bold text-zinc-200 flex items-center justify-between">
+                  <span>Register New MT5 Account</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddForm(false)}
+                    className="text-zinc-400 hover:text-zinc-200 text-[10px]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-1">Login Number</label>
+                    <Input
+                      value={newLogin}
+                      onChange={(e) => setNewLogin(e.target.value)}
+                      placeholder="e.g. 482910"
+                      className="h-7 text-xs bg-zinc-950 border-zinc-800 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-1">Server Name</label>
+                    <Input
+                      value={newServer}
+                      onChange={(e) => setNewServer(e.target.value)}
+                      placeholder="e.g. BlueGuardian-Server"
+                      className="h-7 text-xs bg-zinc-950 border-zinc-800 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-1">Password</label>
+                    <Input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Trader Password"
+                      className="h-7 text-xs bg-zinc-950 border-zinc-800 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-1">Account Name</label>
+                    <Input
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      placeholder="e.g. Blue Guardian Real"
+                      className="h-7 text-xs bg-zinc-950 border-zinc-800"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewType("REAL")}
+                      className={cn("px-2 py-0.5 rounded text-[10px] font-bold border", newType === "REAL" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500" : "bg-zinc-800 text-zinc-400 border-zinc-700")}
+                    >
+                      REAL
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewType("DEMO")}
+                      className={cn("px-2 py-0.5 rounded text-[10px] font-bold border", newType === "DEMO" ? "bg-blue-500/20 text-blue-300 border-blue-500" : "bg-zinc-800 text-zinc-400 border-zinc-700")}
+                    >
+                      DEMO
+                    </button>
+                  </div>
+                  <Button type="submit" size="sm" className="h-7 px-3 text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+                    Save Account
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="p-6 space-y-6">
         {/* High-Impact News Protection Card */}

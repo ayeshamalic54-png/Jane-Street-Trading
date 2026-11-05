@@ -221,4 +221,84 @@ router.post("/toggle-session-guard", async (req, res) => {
   }
 });
 
+
+// ── MASTER BOT ENGINE ON/OFF CONTROL ─────────────────────────────
+router.post("/bot/control", async (req, res) => {
+  try {
+    const isRunning = Boolean(req.body.isRunning);
+    const statusTxt = isRunning ? "RUNNING (Active)" : "ENGINE STOPPED 🛑 (Standby)";
+    await db.execute(sql`
+      ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS is_bot_running BOOLEAN DEFAULT TRUE;
+      UPDATE bot_state
+      SET is_bot_running = ${isRunning},
+          system_status  = ${statusTxt},
+          updated_at     = NOW()
+      WHERE id = (SELECT MIN(id) FROM bot_state);
+    `);
+    return res.json({ status: "success", isRunning, systemStatus: statusTxt });
+  } catch (err) {
+    console.error("Failed to update bot control:", err);
+    return res.status(500).json({ error: "Failed to update bot control" });
+  }
+});
+
+// ── MT5 ACCOUNTS REGISTRY & REAL-TIME SWITCHER ────────────────────
+router.get("/mt5/accounts", async (req, res) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT id, login, server, account_name, account_type, is_active, balance, equity, currency, company, updated_at
+      FROM mt5_accounts
+      ORDER BY is_active DESC, updated_at DESC;
+    `);
+    const rows = (result as any).rows || [];
+    return res.json({ accounts: rows });
+  } catch (err) {
+    console.error("Failed to fetch mt5 accounts:", err);
+    return res.status(500).json({ error: "Failed to fetch mt5 accounts" });
+  }
+});
+
+router.post("/mt5/accounts", async (req, res) => {
+  try {
+    const { login, server, password, accountName, accountType } = req.body || {};
+    if (!login || !server) {
+      return res.status(400).json({ error: "Login and server are required" });
+    }
+    await db.execute(sql`
+      INSERT INTO mt5_accounts (login, server, password, account_name, account_type, updated_at)
+      VALUES (${Number(login)}, ${String(server)}, ${String(password || "")}, ${String(accountName || "MT5 Account")}, ${String(accountType || "REAL")}, NOW())
+      ON CONFLICT (login) DO UPDATE SET
+        server       = EXCLUDED.server,
+        password     = CASE WHEN EXCLUDED.password IS NOT NULL AND EXCLUDED.password != '' THEN EXCLUDED.password ELSE mt5_accounts.password END,
+        account_name = CASE WHEN EXCLUDED.account_name IS NOT NULL AND EXCLUDED.account_name != '' THEN EXCLUDED.account_name ELSE mt5_accounts.account_name END,
+        account_type = EXCLUDED.account_type,
+        updated_at   = NOW();
+    `);
+    return res.json({ status: "success", message: `Account #${login} registered successfully` });
+  } catch (err) {
+    console.error("Failed to register mt5 account:", err);
+    return res.status(500).json({ error: "Failed to register account" });
+  }
+});
+
+router.post("/mt5/switch", async (req, res) => {
+  try {
+    const { login } = req.body || {};
+    if (!login) {
+      return res.status(400).json({ error: "Login number is required" });
+    }
+    await db.execute(sql`
+      ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS target_login BIGINT DEFAULT NULL;
+      UPDATE bot_state
+      SET target_login = ${Number(login)},
+          updated_at   = NOW()
+      WHERE id = (SELECT MIN(id) FROM bot_state);
+    `);
+    return res.json({ status: "success", targetLogin: Number(login), message: `Switch command queued for Account #${login}` });
+  } catch (err) {
+    console.error("Failed to queue account switch:", err);
+    return res.status(500).json({ error: "Failed to queue account switch" });
+  }
+});
+
 export default router;

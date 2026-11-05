@@ -30,7 +30,7 @@ from execution_bot import execute_three_part_trade, execute_three_part_hedge_tra
 
 
 from smc_indicators import detect_smc_zones, is_price_in_zones
-from database import log_signal, get_connection, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset, purge_disabled_category_zones
+from database import log_signal, get_connection, save_or_update_mt5_account, get_target_mt5_login, clear_target_mt5_login, get_bot_running_state, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset, purge_disabled_category_zones
 from news_guard import check_pair_news_block, check_post_news_stability
 try:
     from binance_execution import (
@@ -2144,6 +2144,58 @@ def main():
 
             current_login = int(acc_info.login)
             
+            # Auto-sync active MT5 account to mt5_accounts table
+            try:
+                acc_type = "REAL" if acc_info.trade_mode == 2 else ("DEMO" if acc_info.trade_mode == 0 else "CONTEST")
+                save_or_update_mt5_account(
+                    login=current_login,
+                    server=acc_info.server,
+                    account_name=f"{acc_info.name} ({acc_type})",
+                    account_type=acc_type,
+                    is_active=True,
+                    balance=acc_info.balance,
+                    equity=acc_info.equity,
+                    currency=acc_info.currency,
+                    company=acc_info.company
+                )
+            except Exception as ex_acc:
+                pass
+
+            # Check if an Account Switch was requested from Dashboard
+            try:
+                target_login_req = get_target_mt5_login()
+                if target_login_req and target_login_req != current_login:
+                    logger.info(f"🔄 [ACCOUNT SWITCH REQUESTED] Switching from #{current_login} to Target Login #{target_login_req}...")
+                    conn_acc = get_connection()
+                    cur_acc = conn_acc.cursor()
+                    cur_acc.execute("SELECT server, password FROM mt5_accounts WHERE login = %s", (target_login_req,))
+                    acc_cred = cur_acc.fetchone()
+                    cur_acc.close()
+                    conn_acc.close()
+
+                    if acc_cred:
+                        t_server, t_pwd = acc_cred[0], acc_cred[1]
+                        login_ok = False
+                        if t_pwd and len(str(t_pwd).strip()) > 0:
+                            login_ok = mt5.login(login=int(target_login_req), password=str(t_pwd), server=str(t_server))
+                        else:
+                            login_ok = mt5.login(login=int(target_login_req), server=str(t_server))
+
+                        if login_ok:
+                            logger.info(f"✅ [ACCOUNT SWITCH SUCCESS] Switched to MT5 #{target_login_req} ({t_server})!")
+                            clear_target_mt5_login()
+                            time.sleep(2)
+                            continue
+                        else:
+                            err_c = mt5.last_error()
+                            logger.error(f"❌ [ACCOUNT SWITCH FAILED] MT5 login error: {err_c}")
+                            clear_target_mt5_login()
+                    else:
+                        logger.error(f"❌ Target login #{target_login_req} not found in mt5_accounts registry.")
+                        clear_target_mt5_login()
+            except Exception as ex_sw:
+                logger.error(f"Error checking target account switch: {ex_sw}")
+
             # Check if there is an account switch OR a startup mismatch on 0 trades today
             from database import get_connection
             startup_mismatch = False
@@ -2374,6 +2426,23 @@ def main():
             is_news_halted = is_news_blocked
 
             # ── 1. COMPILE CANDIDATE PAIRS ──
+            # Check Master Bot Engine Running State (Dashboard Toggle)
+            is_engine_active = get_bot_running_state()
+            if not is_engine_active:
+                try:
+                    conn_sb = get_connection()
+                    cur_sb = conn_sb.cursor()
+                    cur_sb.execute("UPDATE bot_state SET system_status = 'ENGINE STOPPED 🛑 (Standby)', last_heartbeat = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = 1")
+                    conn_sb.commit()
+                    cur_sb.close()
+                    conn_sb.close()
+                except Exception:
+                    pass
+                if win_rate_loop_counter % 20 == 0:
+                    logger.info("⏸️ [ENGINE STOPPED] Trading bot is in Standby mode via Dashboard Toggle. No market scans or trades will be executed.")
+                time.sleep(3)
+                continue
+
             pairs_to_scan = []
             if FOREX_ENABLED:
                 pairs_to_scan.extend(CANDIDATE_PAIRS["forex"])

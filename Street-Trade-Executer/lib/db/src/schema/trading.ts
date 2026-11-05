@@ -118,6 +118,22 @@ export const scannedAssetsTable = pgTable("scanned_assets", {
 
 export type ScannedAsset = typeof scannedAssetsTable.$inferSelect;
 
+
+export const mt5AccountsTable = pgTable("mt5_accounts", {
+  id: serial("id").primaryKey(),
+  login: bigint("login", { mode: "number" }).notNull().unique(),
+  server: varchar("server", { length: 255 }).notNull(),
+  password: varchar("password", { length: 255 }),
+  accountName: varchar("account_name", { length: 255 }).default("MT5 Account"),
+  accountType: varchar("account_type", { length: 50 }).default("DEMO"),
+  isActive: boolean("is_active").default(false),
+  balance: numeric("balance", { precision: 15, scale: 2 }).default("0"),
+  equity: numeric("equity", { precision: 15, scale: 2 }).default("0"),
+  currency: varchar("currency", { length: 10 }).default("USD"),
+  company: varchar("company", { length: 255 }),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const smcTelemetryTable = pgTable("smc_telemetry", {
   symbolPair: varchar("symbol_pair", { length: 100 }).primaryKey(),
   m15Bias: varchar("m15_bias", { length: 100 }),

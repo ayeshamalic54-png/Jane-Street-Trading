@@ -205,6 +205,7 @@ router.get("/dashboard", async (req, res) => {
           action: s.action ?? "NONE",
         })),
       botOnline: isOnline,
+      isBotRunning: Boolean((botState as any)?.is_bot_running ?? (botState as any)?.isBotRunning ?? true),
       autoExecute: botState?.autoExecute ?? true,
       cryptoEnabled: botState?.cryptoEnabled ?? true,
       metalsEnabled: botState?.metalsEnabled ?? true,
