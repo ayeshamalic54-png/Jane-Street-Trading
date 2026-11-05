@@ -188,8 +188,6 @@ def evaluate_smc_strategy_signal(
         target_rrr = selected_rrr
         scan_tp = tp_price
         scan_rrr = target_rrr
-        scan_tp = tp_price
-        scan_rrr = target_rrr
 
         is_sl_ok = (sl_dist <= max_sl_cap and not is_chasing) or bypass_filters
         is_discount_ok = (price <= max(eq_50 + (1.50 if is_metals else 0.0005), fvg_high + (0.50 if is_metals else 0.0002))) or bypass_filters
@@ -280,8 +278,6 @@ def evaluate_smc_strategy_signal(
 
         tp_price = round(selected_target, 2 if is_metals else 5)
         target_rrr = selected_rrr
-        scan_tp = tp_price
-        scan_rrr = target_rrr
         scan_tp = tp_price
         scan_rrr = target_rrr
 
