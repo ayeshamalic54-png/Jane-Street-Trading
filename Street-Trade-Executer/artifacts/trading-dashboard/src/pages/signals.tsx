@@ -256,7 +256,30 @@ export default function Signals() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {signals.map((sig) => {
+                {(() => {
+                  const claimedTickets = new Set<number>();
+                  const normalizedSignals = signals.map((rawSig: any) => {
+                    const rawTrades = [...(rawSig.trades ?? [])].sort((a: any, b: any) => Number(b.ticket || 0) - Number(a.ticket || 0));
+                    const matchedTrade = rawTrades.find((t: any) => !claimedTickets.has(Number(t.ticket)));
+                    if (matchedTrade) {
+                      claimedTickets.add(Number(matchedTrade.ticket));
+                      const singleTrades = [matchedTrade];
+                      const singleProfit = matchedTrade.profit != null ? Number(matchedTrade.profit) : rawSig.totalProfit;
+                      return {
+                        ...rawSig,
+                        priceA: matchedTrade.entryPrice != null ? Number(matchedTrade.entryPrice) : rawSig.priceA,
+                        sl: matchedTrade.sl != null ? Number(matchedTrade.sl) : rawSig.sl,
+                        tp: matchedTrade.tp != null ? Number(matchedTrade.tp) : rawSig.tp,
+                        trades: singleTrades,
+                        totalProfit: singleProfit,
+                      };
+                    }
+                    if (rawTrades.length > 0) {
+                      return { ...rawSig, trades: [], totalProfit: null };
+                    }
+                    return rawSig;
+                  });
+                  return normalizedSignals.map((sig: any) => {
                   const details = getSignalDetails(sig);
                   const tradesList = sig.trades ?? [];
                   const totalProfitVal = sig.totalProfit;
@@ -325,7 +348,8 @@ export default function Signals() {
                       </TableCell>
                     </TableRow>
                   );
-                })}
+                });
+                })()}
               </TableBody>
             </Table>
           )}

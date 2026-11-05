@@ -49529,12 +49529,12 @@ router7.get("/signals", async (req, res) => {
       rows.map((s) => {
         const symBaseA = (s.symbolA ?? "").toUpperCase().split(".")[0];
         const tradesForSignal = trades.filter((t) => {
-          if (t.signalId === s.id) return true;
+          if (t.signalId != null) return Number(t.signalId) === Number(s.id);
           const tSymBase = (t.symbol ?? "").toUpperCase().split(".")[0];
           if (tSymBase === symBaseA && t.entryTime && s.timestamp) {
             const sigTime = new Date(s.timestamp).getTime();
             const tradeTime = new Date(t.entryTime).getTime();
-            if (Math.abs(sigTime - tradeTime) <= 6e5) return true;
+            if (Math.abs(sigTime - tradeTime) <= 45000) return true;
           }
           return false;
         });

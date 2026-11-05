@@ -24,12 +24,12 @@ router.get("/signals", async (req, res) => {
       rows.map((s) => {
         const symBaseA = (s.symbolA ?? "").toUpperCase().split('.')[0];
         const tradesForSignal = trades.filter((t) => {
-          if (t.signalId === s.id) return true;
-          const tSymBase = (t.symbol ?? "").toUpperCase().split('.')[0];
+          if (t.signalId != null) return Number(t.signalId) === Number(s.id);
+          const tSymBase = (t.symbol ?? "").toUpperCase().split(".")[0];
           if (tSymBase === symBaseA && t.entryTime && s.timestamp) {
             const sigTime = new Date(s.timestamp).getTime();
             const tradeTime = new Date(t.entryTime).getTime();
-            if (Math.abs(sigTime - tradeTime) <= 600000) return true; // within 10 minutes
+            if (Math.abs(sigTime - tradeTime) <= 45000) return true;
           }
           return false;
         });
