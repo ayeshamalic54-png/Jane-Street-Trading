@@ -192,22 +192,23 @@ export function SmcChartOverlay({
   const isM15Bearish = rawM15Bias.includes("BEARISH");
   const s1Pass = (isM15Bullish || isM15Bearish) && !rawM15Bias.includes("NEUTRAL");
 
-  // Sequential Condition Verifications
+  // Sequential Condition Verifications (Direct FVG Retest Entry)
   const s2Pass = s1Pass && isPassText(sweepStatus);
   const s3Pass = s2Pass && isPassText(chochStatus);
   const s4Pass = s3Pass && isPassText(fvgStatus);
   const s5Pass = s4Pass && isPassText(retestStatus);
-  const s6Pass = s5Pass && isPassText(s6Status);
-  const s7Pass = s6Pass && isPassText(s7Status);
 
   const hasActivePosition = Boolean(
     activePosition && (activePosition.ticket || activePosition.entryPrice)
   );
-  const isSignalFired = (action === "BUY" || action === "SELL") && s7Pass;
+  // Entry executes directly upon FVG Retest (s5Pass)
+  const isSignalFired = (action === "BUY" || action === "SELL") && s5Pass;
   const isTradeActive = hasActivePosition || isSignalFired;
 
-  const s8Pass = isPassText(s8Status) || (s2Pass && isTradeActive);
-  const s9Pass = isPassText(s9Status) || (s7Pass && isTradeActive);
+  const s6Pass = isPassText(s8Status) || (s2Pass && isTradeActive); // SL Buffer ($0.75)
+  const s7Pass = isPassText(s9Status) || (s5Pass && isTradeActive); // Opposing Target
+  const s8Pass = s6Pass;
+  const s9Pass = s7Pass;
 
   const passedCount = [
     s1Pass,
@@ -217,8 +218,6 @@ export function SmcChartOverlay({
     s5Pass,
     s6Pass,
     s7Pass,
-    s8Pass,
-    s9Pass,
   ].filter(Boolean).length;
 
   const tradeDirection = hasActivePosition
@@ -1482,7 +1481,7 @@ export function SmcChartOverlay({
                 {isTradeActive
                   ? `⚡ TRADE ACTIVE: ${tradeDirection} EXECUTED @ $${entryPrice.toFixed(2)}`
                   : s1Pass
-                  ? `🔍 SETUP SCANNING — ${passedCount} OF 9 CONDITIONS VERIFIED`
+                  ? `🔍 SETUP SCANNING — ${passedCount} OF 7 CONDITIONS VERIFIED`
                   : "⚪ ORDER FLOW MONITORING — NO ACTIVE TRADE"}
               </span>
               <Badge
@@ -1514,9 +1513,11 @@ export function SmcChartOverlay({
                 ? "Step 1 PASS 🟢 — Step 2 PENDING ⚪: Waiting for M5 Liquidity Sweep wick"
                 : !s3Pass
                 ? "Step 1 & 2 PASS 🟢 — Step 3 PENDING ⚪: Waiting for M5 CHoCH candle close break"
-                : !s4Pass || !s5Pass
-                ? "Step 1-3 PASS 🟢 — Step 4 & 5 PENDING ⚪: Waiting for Displacement FVG Creation & Retest"
-                : "Step 1-5 PASS 🟢 — Waiting for Final Rejection & Candle Close confirmation"}
+                : !s4Pass
+                ? "Step 1-3 PASS 🟢 — Step 4 PENDING ⚪: Waiting for Displacement FVG Creation"
+                : !s5Pass
+                ? "Step 1-4 PASS 🟢 — Step 5 PENDING ⚪: Waiting for FVG Retest / Touch (Immediate Entry on Tap)"
+                : "Step 1-5 PASS 🟢 — FVG Retested! Instant Entry Executed"}
             </p>
           </div>
         </div>
@@ -2658,7 +2659,7 @@ export function SmcChartOverlay({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-mono font-bold text-white uppercase tracking-wider flex items-center gap-2">
-            <Layers className="w-4 h-4 text-indigo-400" /> Pure SMC Strict 9-Step Verification Status
+            <Layers className="w-4 h-4 text-indigo-400" /> Pure SMC Strict Verification Status
           </h4>
           <span className="text-[11px] font-mono text-zinc-400">
             Real-time VPS Engine Confluence
@@ -2814,7 +2815,7 @@ export function SmcChartOverlay({
             </p>
           </div>
 
-          {/* Step 5 */}
+          {/* Step 5: FVG Retest & Entry */}
           <div
             className={cn(
               "p-3 rounded-lg border transition-all",
@@ -2830,7 +2831,7 @@ export function SmcChartOverlay({
                 ) : (
                   <Clock className="w-4 h-4 text-zinc-500" />
                 )}
-                S5: FVG Retest
+                S5: FVG Retest & Entry
               </span>
               <Badge
                 variant="outline"
@@ -2841,54 +2842,56 @@ export function SmcChartOverlay({
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {s5Pass ? retestStatus : "PENDING ⚪"}
+                {s5Pass ? "PASS 🟢 (Entry on Touch)" : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s5Pass
-                ? "Price dipped into confirmed Displacement FVG zone."
-                : "Waiting for subsequent candle to retest the Displacement FVG zone."}
+                ? "Price touched Displacement FVG. Immediate entry executed!"
+                : "Waiting for price to touch/retest the Displacement FVG zone."}
             </p>
           </div>
 
-          {/* Step 6 */}
+          {/* Step 6: SL Buffer */}
           <div
             className={cn(
               "p-3 rounded-lg border transition-all",
               s6Pass
-                ? "bg-emerald-950/30 border-emerald-500/50 text-white"
+                ? "bg-rose-950/40 border-rose-500/60 text-white"
                 : "bg-[#0d121f] border-zinc-800 text-zinc-400"
             )}
           >
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold flex items-center gap-1.5 text-white">
                 {s6Pass ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <Shield className="w-4 h-4 text-rose-400" />
                 ) : (
                   <Clock className="w-4 h-4 text-zinc-500" />
                 )}
-                S6: Rejection Candle
+                S6: SL Placement ($0.75 Buf)
               </span>
               <Badge
                 variant="outline"
                 className={cn(
                   "text-[10px] px-1.5 py-0.2 font-bold",
                   s6Pass
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-400"
+                    ? "bg-rose-500/20 text-rose-300 border-rose-400"
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
-                {s6Pass ? s6Status : "PENDING ⚪"}
+                {s6Pass ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 ($${defaultBuf} Buf | $7.50 Cap)`) : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s6Pass
-                ? "Confirmed directional rejection candle inside the FVG."
-                : "Waiting for directional rejection candle at zone."}
+                ? (slPrice > 0 && isTradeActive
+                    ? `Locked exact $${defaultBuf} buffer behind Sweep wick ($${slPrice.toFixed(2)}) with $7.50 max risk cap.`
+                    : `Verified structural SL buffer ($${defaultBuf}) with max $7.50 anti-chasing risk cap.`)
+                : `Will anchor $${defaultBuf} behind Sweep wick upon trade execution (max $7.50 cap).`}
             </p>
           </div>
 
-          {/* Step 7 */}
+          {/* Step 7: Opposing Target */}
           <div
             className={cn(
               "p-3 rounded-lg border transition-all",
@@ -2900,87 +2903,11 @@ export function SmcChartOverlay({
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold flex items-center gap-1.5 text-white">
                 {s7Pass ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                ) : (
-                  <Clock className="w-4 h-4 text-zinc-500" />
-                )}
-                S7: Candle Closed
-              </span>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] px-1.5 py-0.2 font-bold",
-                  s7Pass
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-400"
-                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
-                )}
-              >
-                {s7Pass ? s7Status : "PENDING ⚪"}
-              </Badge>
-            </div>
-            <p className="text-[11px] text-zinc-300 leading-snug">
-              {s7Pass
-                ? "Confirmed full candle closure (no unconfirmed ticks)."
-                : "Execution strictly waits for full candle closure."}
-            </p>
-          </div>
-
-          {/* Step 8 */}
-          <div
-            className={cn(
-              "p-3 rounded-lg border transition-all",
-              s8Pass
-                ? "bg-rose-950/40 border-rose-500/60 text-white"
-                : "bg-[#0d121f] border-zinc-800 text-zinc-400"
-            )}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-bold flex items-center gap-1.5 text-white">
-                {s8Pass ? (
-                  <Shield className="w-4 h-4 text-rose-400" />
-                ) : (
-                  <Clock className="w-4 h-4 text-zinc-500" />
-                )}
-                S8: SL Placement & Cap
-              </span>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] px-1.5 py-0.2 font-bold",
-                  s8Pass
-                    ? "bg-rose-500/20 text-rose-300 border-rose-400"
-                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
-                )}
-              >
-                {s8Pass ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 ($${defaultBuf} Buf | $7.50 Cap)`) : "PENDING ⚪"}
-              </Badge>
-            </div>
-            <p className="text-[11px] text-zinc-300 leading-snug">
-              {s8Pass
-                ? (slPrice > 0 && isTradeActive
-                    ? `Locked exact $${defaultBuf} buffer behind Sweep wick ($${slPrice.toFixed(2)}) with $7.50 max risk cap.`
-                    : `Verified structural SL buffer ($${defaultBuf}) with max $7.50 anti-chasing risk cap.`)
-                : `Will anchor $${defaultBuf} behind Sweep wick upon trade execution (max $7.50 cap).`}
-            </p>
-          </div>
-
-          {/* Step 9 */}
-          <div
-            className={cn(
-              "p-3 rounded-lg border transition-all",
-              s9Pass
-                ? "bg-emerald-950/30 border-emerald-500/50 text-white"
-                : "bg-[#0d121f] border-zinc-800 text-zinc-400"
-            )}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-bold flex items-center gap-1.5 text-white">
-                {s9Pass ? (
                   <Target className="w-4 h-4 text-emerald-400" />
                 ) : (
                   <Clock className="w-4 h-4 text-zinc-500" />
                 )}
-                S9: Opposing Liquidity Target
+                S7: Opposing Liquidity Target
               </span>
               <Badge
                 variant="outline"

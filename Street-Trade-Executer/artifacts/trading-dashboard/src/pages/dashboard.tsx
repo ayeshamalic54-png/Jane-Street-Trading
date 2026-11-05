@@ -1043,10 +1043,8 @@ export default function Dashboard() {
                 const s3Valid = s2Valid && isPassText(tel?.choch_status);
                 const s4Valid = s3Valid && isPassText(tel?.fvg_status);
                 const s5Valid = s4Valid && isPassText(tel?.retest_status || tel?.fvg_status);
-                const s6Valid = s5Valid && isPassText(tel?.s6_status || tel?.rejection_status);
-                const s7Valid = s6Valid && isPassText(tel?.s7_status);
-                const s8Valid = s2Valid; // SL Buffer locks when Sweep is confirmed
-                const s9Valid = s7Valid || hasActivePosition; // Opposing Liquidity Target activates when trade triggers
+                const s6Valid = s2Valid; // SL Buffer locks when Sweep is confirmed
+                const s7Valid = s5Valid || hasActivePosition; // Opposing Target activates on FVG Retest / Entry
 
                 const getBoxClass = (isValid: boolean, isCurrent: boolean) => {
                   if (isValid) {
@@ -1110,58 +1108,36 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Step 5 */}
+                    {/* Step 5: FVG Retest & Entry */}
                     <div className={getBoxClass(s5Valid, s4Valid && !s5Valid)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 5: FVG Retest</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 5: FVG Retest & Entry</div>
                       <div className={cn("text-xs truncate", getTextColor(s5Valid, s4Valid && !s5Valid))}>
-                        {s5Valid ? "PASS 🟢 (Retested)" : s4Valid ? "AWAITING RETEST ⏳" : "WAITING ⚪"}
+                        {s5Valid ? "PASS 🟢 (Entry on Touch)" : s4Valid ? "AWAITING RETEST ⏳" : "WAITING ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s5Valid ? "Price Dipped in FVG" : "Waiting Pullback to FVG"}
+                        {s5Valid ? "Instant Entry on FVG Touch" : "Waiting Pullback to FVG"}
                       </div>
                     </div>
 
-                    {/* Step 6 */}
-                    <div className={getBoxClass(s6Valid, s5Valid && !s6Valid)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 6: Rejection Wick</div>
-                      <div className={cn("text-xs truncate", getTextColor(s6Valid, s5Valid && !s6Valid))}>
-                        {s6Valid ? "PASS 🟢 (Rejection)" : s5Valid ? "AWAITING REJECTION ⏳" : "WAITING ⚪"}
+                    {/* Step 6: SL Buffer - Activates at Step 2 (Sweep) */}
+                    <div className={getBoxClass(s6Valid, false)}>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 6: SL Buffer</div>
+                      <div className={cn("text-xs truncate", getTextColor(s6Valid, false))}>
+                        {s6Valid ? "LOCKED 🔒 ($0.75 Buffer)" : "WAITING SWEEP ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s6Valid ? "Institutional Rejection" : "Waiting FVG Rejection"}
+                        {s6Valid ? "Locked at Sweep ± $0.75" : "Locks at Sweep (Step 2)"}
                       </div>
                     </div>
 
-                    {/* Step 7 */}
-                    <div className={getBoxClass(s7Valid, s6Valid && !s7Valid)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 7: Candle Closed</div>
-                      <div className={cn("text-xs truncate", getTextColor(s7Valid, s6Valid && !s7Valid))}>
-                        {s7Valid ? "PASS 🟢 (Confirmed)" : s6Valid ? "AWAITING CLOSE ⏳" : "WAITING ⚪"}
+                    {/* Step 7: Opposing Target - Activates on FVG Retest / Entry */}
+                    <div className={getBoxClass(s7Valid, false)}>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 7: Opposing Target</div>
+                      <div className={cn("text-xs truncate", getTextColor(s7Valid, false))}>
+                        {s7Valid ? (tel?.s9_status && isPassText(tel.s9_status) ? tel.s9_status : "ACTIVE 🎯 (Opposing Target)") : (tel?.s9_status || "WAITING ENTRY ⚪")}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s7Valid ? "M5 Bar Confirmed" : "Waiting Final Bar Close"}
-                      </div>
-                    </div>
-
-                    {/* Step 8 (SL Buffer) - Activates at Step 2 (Sweep) */}
-                    <div className={getBoxClass(s8Valid, false)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 8: SL Buffer</div>
-                      <div className={cn("text-xs truncate", getTextColor(s8Valid, false))}>
-                        {s8Valid ? "LOCKED 🔒 ($0.75 Buffer)" : "WAITING SWEEP ⚪"}
-                      </div>
-                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s8Valid ? "Locked at Sweep ± $0.75" : "Locks at Sweep (Step 2)"}
-                      </div>
-                    </div>
-
-                    {/* Step 9 (M15 Target) - Activates at Step 7/Entry */}
-                    <div className={getBoxClass(s9Valid, false)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 9: M15 Target</div>
-                      <div className={cn("text-xs truncate", getTextColor(s9Valid, false))}>
-                        {s9Valid ? (tel?.s9_status && isPassText(tel.s9_status) ? tel.s9_status : "ACTIVE 🎯 (Opposing Target)") : (tel?.s9_status || "WAITING ENTRY ⚪")}
-                      </div>
-                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s9Valid ? "Executing Opposing Target" : "Locks on Entry (Step 7)"}
+                        {s7Valid ? "Executing Opposing Target" : "Locks on FVG Retest (Step 5)"}
                       </div>
                     </div>
                   </div>

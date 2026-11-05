@@ -2708,21 +2708,21 @@ def main():
                     choch_p_val = 0.0
                     opposing_tp_val = 0.0
 
-                    if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason:
+                    if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason or "ALL SMC STEPS PASSED" in vid_reason:
                         dyn_rrr = (abs(float(smc_tp) - float(p_a)) / max(0.01, abs(float(p_a) - float(smc_sl)))) if (smc_tp and smc_sl) else 2.0
                         if "BUY" in vid_reason:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R Opposing Target)"
+                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢 (Entry on Touch)", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R Opposing Target)"
                             )
                         else:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R Opposing Target)"
+                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴 (Entry on Touch)", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R Opposing Target)"
                             )
                         if smc_sl is not None:
                             sweep_p_val = float(smc_sl) + (0.75 if "BUY" in vid_reason else -0.75)
                         if smc_tp is not None:
                             opposing_tp_val = float(smc_tp)
-                    elif "S1(" in vid_reason or "Scanning Strict" in vid_reason:
+                    elif "S1(" in vid_reason or "Scanning Strict" in vid_reason or "Scanning Pure SMC" in vid_reason:
                         parts = vid_reason.split("|")
                         for p in parts:
                             p_str = p.strip()

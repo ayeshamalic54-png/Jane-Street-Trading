@@ -78,21 +78,26 @@ def evaluate_smc_strategy_signal(
     zones_bull = detect_smc_zones(eval_df, min_idx=sell_sweep_idx, sweep_low=sweep_low_price) if has_bull_choch else {'bullish_fvg': []}
     zones_bear = detect_smc_zones(eval_df, min_idx=buy_sweep_idx, sweep_high=sweep_high_price) if has_bear_choch else {'bearish_fvg': []}
 
-    # Step 5: CLOSED CANDLE Retests THAT SAME Displacement Leg FVG
+    # Step 5: FVG Retest / Touch (Direct execution upon FVG tap - no candle close or rejection lag)
     wick_buf = 0.75 if is_metals else 0.00040
+    curr_low = float(curr_live_row.get('low', price)) if curr_live_row is not None else price
+    curr_high = float(curr_live_row.get('high', price)) if curr_live_row is not None else price
+
     in_bull_fvg, matched_bull_fvg = check_fvg_retest(closed_open, closed_high, closed_low, closed_close, zones_bull['bullish_fvg'], is_bullish=True, max_wick_buf=wick_buf)
+    if not in_bull_fvg:
+        for low_b, high_b in zones_bull['bullish_fvg']:
+            if (price <= high_b + 0.50 or curr_low <= high_b) and price >= (low_b - wick_buf):
+                in_bull_fvg = True
+                matched_bull_fvg = (float(low_b), float(high_b))
+                break
+
     in_bear_fvg, matched_bear_fvg = check_fvg_retest(closed_open, closed_high, closed_low, closed_close, zones_bear['bearish_fvg'], is_bullish=False, max_wick_buf=wick_buf)
-
-    # Step 6 & 7: Valid Rejection Direction on CONFIRMED CLOSED CANDLE
-    # Bullish: Green candle OR strong lower wick rejection (hammer / pin-bar)
-    bull_lower_wick = (closed_close - closed_low) if closed_close >= closed_open else (closed_open - closed_low)
-    bull_candle_range = max(0.01 if is_metals else 0.0001, closed_high - closed_low)
-    p5_buy_rejection = in_bull_fvg and ((closed_close >= closed_open) or (bull_lower_wick / bull_candle_range >= 0.40))
-
-    # Bearish: Red candle OR strong upper wick rejection (shooting star / pin-bar)
-    bear_upper_wick = (closed_high - closed_close) if closed_close <= closed_open else (closed_high - closed_open)
-    bear_candle_range = max(0.01 if is_metals else 0.0001, closed_high - closed_low)
-    p5_sell_rejection = in_bear_fvg and ((closed_close <= closed_open) or (bear_upper_wick / bear_candle_range >= 0.40))
+    if not in_bear_fvg:
+        for low_b, high_b in zones_bear['bearish_fvg']:
+            if (price >= low_b - 0.50 or curr_high >= low_b) and price <= (high_b + wick_buf):
+                in_bear_fvg = True
+                matched_bear_fvg = (float(low_b), float(high_b))
+                break
 
     # ── FRESHNESS & STRUCTURE INVALIDATION GUARD ──
     # SMC Rule: Setup remains valid while price respects structural boundaries.
@@ -107,7 +112,6 @@ def evaluate_smc_strategy_signal(
             has_bear_choch = False
             zones_bear = {'bearish_fvg': []}
             in_bear_fvg = False
-            p5_sell_rejection = False
 
     if has_bull_choch:
         candles_since_bull_choch = (n_candles - 1) - bull_choch_idx
@@ -116,13 +120,12 @@ def evaluate_smc_strategy_signal(
             has_bull_choch = False
             zones_bull = {'bullish_fvg': []}
             in_bull_fvg = False
-            p5_buy_rejection = False
 
     custom_step8_s = None
     custom_step9_s = None
 
-    # ── 1. BUY SIGNAL EVALUATION (CONDITION 8 & 9 MANDATORY 🟢) ──
-    if is_m15_bullish and has_sell_sweep and has_bull_choch and (len(zones_bull['bullish_fvg']) > 0) and in_bull_fvg and p5_buy_rejection:
+    # ── 1. BUY SIGNAL EVALUATION (DIRECT FVG RETEST ENTRY 🟢) ──
+    if is_m15_bullish and has_sell_sweep and has_bull_choch and (len(zones_bull['bullish_fvg']) > 0) and in_bull_fvg:
         buf = 0.75 if is_metals else 0.00040
         min_dist = 0.01 if is_metals else 0.00010
         sl_price = sweep_low_price - buf
@@ -216,8 +219,8 @@ def evaluate_smc_strategy_signal(
             else:
                 custom_step9_s = f"PASS 🟢 ({selected_rrr:.2f}R Opposing Target | Front-Run 0.50)"
 
-    # ── 2. SELL SIGNAL EVALUATION (CONDITION 8 & 9 MANDATORY 🔴) ──
-    if is_m15_bearish and has_buy_sweep and has_bear_choch and (len(zones_bear['bearish_fvg']) > 0) and in_bear_fvg and p5_sell_rejection:
+    # ── 2. SELL SIGNAL EVALUATION (DIRECT FVG RETEST ENTRY 🔴) ──
+    if is_m15_bearish and has_buy_sweep and has_bear_choch and (len(zones_bear['bearish_fvg']) > 0) and in_bear_fvg:
         buf = 0.75 if is_metals else 0.00040
         min_dist = 0.01 if is_metals else 0.00010
         sl_price = sweep_high_price + buf
@@ -317,17 +320,17 @@ def evaluate_smc_strategy_signal(
         step2_s = "PASS 🟢 (Sell-Side Sweep)" if has_sell_sweep else "WAITING ⚪ (Awaiting Fresh Sweep)"
         step3_s = "PASS 🟢 (Bullish CHoCH)" if has_bull_choch else "WAITING ⚪ (Awaiting Fresh CHoCH)"
         step4_s = "PASS 🟢 (Displacement FVG)" if (len(zones_bull['bullish_fvg']) > 0) else "WAITING ⚪ (Awaiting Displacement FVG)"
-        step5_s = "PASS 🟢 (Retested FVG)" if in_bull_fvg else "WAITING ⚪ (Awaiting Retest)"
-        step6_s = "PASS 🟢 (Rejection)" if p5_buy_rejection else "WAITING ⚪ (Awaiting Rejection)"
-        step7_s = "PASS 🟢 (Candle Closed)" if p5_buy_rejection else "WAITING ⚪ (Waiting Candle Close)"
+        step5_s = "PASS 🟢 (FVG Retest & Entry)" if in_bull_fvg else "WAITING ⚪ (Awaiting FVG Retest)"
+        step6_s = "PASS 🟢 (Instant Entry)" if in_bull_fvg else "WAITING ⚪ (Awaiting FVG Touch)"
+        step7_s = "PASS 🟢 (Trigger on Touch)" if in_bull_fvg else "WAITING ⚪ (Waiting FVG Touch)"
     elif is_m15_bearish:
         step1_s = "BEARISH 🔴"
         step2_s = "PASS 🔴 (Buy-Side Sweep)" if has_buy_sweep else "WAITING ⚪ (Awaiting Fresh Sweep)"
         step3_s = "PASS 🔴 (Bearish CHoCH)" if has_bear_choch else "WAITING ⚪ (Awaiting Fresh CHoCH)"
         step4_s = "PASS 🔴 (Displacement FVG)" if (len(zones_bear['bearish_fvg']) > 0) else "WAITING ⚪ (Awaiting Displacement FVG)"
-        step5_s = "PASS 🔴 (Retested FVG)" if in_bear_fvg else "WAITING ⚪ (Awaiting Retest)"
-        step6_s = "PASS 🔴 (Rejection)" if p5_sell_rejection else "WAITING ⚪ (Awaiting Rejection)"
-        step7_s = "PASS 🔴 (Candle Closed)" if p5_sell_rejection else "WAITING ⚪ (Waiting Candle Close)"
+        step5_s = "PASS 🔴 (FVG Retest & Entry)" if in_bear_fvg else "WAITING ⚪ (Awaiting FVG Retest)"
+        step6_s = "PASS 🔴 (Instant Entry)" if in_bear_fvg else "WAITING ⚪ (Awaiting FVG Touch)"
+        step7_s = "PASS 🔴 (Trigger on Touch)" if in_bear_fvg else "WAITING ⚪ (Waiting FVG Touch)"
     else:
         step1_s = "NEUTRAL ⚪"
         step2_s = "WAITING ⚪ (M15 Neutral)"
