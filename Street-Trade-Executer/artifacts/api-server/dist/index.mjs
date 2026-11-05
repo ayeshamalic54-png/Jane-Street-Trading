@@ -48999,12 +48999,11 @@ router2.post("/bot/control", async (req, res) => {
     const isRunning = Boolean(req.body.isRunning);
     const statusTxt = isRunning ? "RUNNING (Active)" : "ENGINE STOPPED \u{1F6D1} (Standby)";
     await db.execute(sql`
-      ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS is_bot_running BOOLEAN DEFAULT TRUE;
       UPDATE bot_state
       SET is_bot_running = ${isRunning},
           system_status  = ${statusTxt},
           updated_at     = NOW()
-      WHERE id = (SELECT MIN(id) FROM bot_state);
+      WHERE id = (SELECT MIN(id) FROM bot_state)
     `);
     return res.json({ status: "success", isRunning, systemStatus: statusTxt });
   } catch (err) {
@@ -49055,11 +49054,15 @@ router2.post("/mt5/switch", async (req, res) => {
       return res.status(400).json({ error: "Login number is required" });
     }
     await db.execute(sql`
-      ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS target_login BIGINT DEFAULT NULL;
       UPDATE bot_state
       SET target_login = ${Number(login)},
+          mt5_login    = ${Number(login)},
           updated_at   = NOW()
-      WHERE id = (SELECT MIN(id) FROM bot_state);
+      WHERE id = (SELECT MIN(id) FROM bot_state)
+    `);
+    await db.execute(sql`
+      UPDATE mt5_accounts
+      SET is_active = (login = ${Number(login)})
     `);
     return res.json({ status: "success", targetLogin: Number(login), message: `Switch command queued for Account #${login}` });
   } catch (err) {
