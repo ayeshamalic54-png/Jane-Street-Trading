@@ -91,6 +91,7 @@ GLOBAL_CONFIG = {
 
 # Cooldown dictionary to prevent continuous entries on stopped-out signals
 COOLDOWN_DIRECTIONS = {}
+LAST_LOGGED_SIGNAL_BAR = {}
 
 KF_CACHE = {}
 LAST_KF_UPDATE_BAR = {}
@@ -1006,7 +1007,7 @@ def get_tp_distance(symbol: str, price: float, tp_pips_override: float = None) -
     else:
         return 50.0 * pip_sz
 
-def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_a, sl_a, tp1, tp2, tp3, lots_a, entry_b, sl_b, lots_b, side_b):
+def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_a, sl_a, tp1, tp2, tp3, lots_a, entry_b, sl_b, lots_b, side_b, is_signal_only=False):
     import os
     import requests
     
@@ -1029,14 +1030,16 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         
         rrr_val = (abs(tp2 - entry_a) / abs(entry_a - sl_a)) if abs(entry_a - sl_a) > 0 else 1.85
         
+        mode_header = "📢 **[ NEW PURE SMC TRADING SIGNAL ]** 📢\n*(Signals Only Mode — Auto-Execution OFF)*" if is_signal_only else "🚀 **[ NEW OPEN POSITION ]** 🚀"
         message = (
-            f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
-            f"🚀 **[ NEW OPEN POSITION ]** 🚀\n\n"
+            f"@everyone\n"
+            f"📢 **PURE SMC / ICT 7-CONDITION SIGNAL ENGINE** 📢\n"
+            f"{mode_header}\n\n"
             f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
-            f"📊 **STRATEGY:** `Pure SMC / ICT 9-Condition Structure 🟢`\n\n"
+            f"📊 **STRATEGY:** `Pure SMC Structure (7-Step Verified) 🟢`\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
-            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Sweep + 0.75 Buffer)*\n"
+            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Sweep {'-' if 'BUY' in act_str else '+'} $0.75 Buffer)*\n"
             f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.2f}R Opposing Structural Liquidity Target)*\n"
             f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
@@ -1067,6 +1070,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         digits = info.digits if info else 5
         
         message = (
+            f"@everyone\n"
             f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
             f"🏁 **[ POSITION CLOSED ]** 🏁\n\n"
             f"📊 **ASSET:** `{symbol}` ({order_type})\n"
@@ -1089,7 +1093,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
 
 _DISCARD_ALERT_CACHE = {}
 
-def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_price=0.0, tp_price=0.0):
+def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_price=0.0, tp_price=0.0, entry_price=0.0):
     """Sends a Discord webhook notification when a valid 9-Condition SMC signal is discarded or blocked."""
     import os
     import requests
@@ -1122,13 +1126,16 @@ def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_pri
         cat = get_symbol_category(symbol_a)
         lot_val = 0.07 if (cat == "metals" or "XAU" in symbol_a.upper() or "XAG" in symbol_a.upper()) else 0.51
 
+        entry_str = f"`{entry_price:.{digits_a}f}`" if (entry_price and entry_price > 0) else "`Live Market Price`"
         message = (
-            f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
+            f"@everyone\n"
+            f"📢 **PURE SMC / ICT 7-CONDITION SIGNAL ENGINE** 📢\n"
             f"🚫 **[ SIGNAL DISCARDED / BLOCKED ]** 🚫\n\n"
             f"📊 **SIGNAL:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
             f"📦 **TARGET LOT SIZE:** `{lot_val:.2f} Lots`\n"
             f"🛑 **DISCARD REASON:** `{reason}`\n"
+            f"📥 **ENTRY PRICE:** {entry_str}\n"
             f"⛔ **ESTIMATED SL:** {sl_str}\n"
             f"🎯 **ESTIMATED TP:** {tp_str}\n"
             f"ℹ️ **STATUS:** Signal met Pure SMC structure conditions but entry execution was safely blocked by Risk & Capital Protection safeguards."
@@ -2097,7 +2104,7 @@ def main():
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target: 1:1.85 RRR) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Condition 8 SL (0.75 buf) | Condition 9 Target (Opposing Structural Target) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
 
 
 
@@ -2205,7 +2212,7 @@ def main():
                     SL_PIPS = new_sl
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
-                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] Condition 8 SL (0.75 buf) | Condition 9 Target (M15 Structural Target: 1:1.85 RRR) | Engine: Pure SMC/ICT Active 🟢")
+                        logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] Condition 8 SL (0.75 buf) | Condition 9 Target (Opposing Structural Target) | Engine: Pure SMC/ICT Active 🟢")
                         logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Tier 1: +$62.00 Net Profit Lock | Tier 2: +$80.00 Net Profit Lock | Full TP Target: +$91.00 USD) | Friday Close Guard: ENABLED 🌅")
 
 
@@ -2686,7 +2693,7 @@ def main():
                     action = "SELL_SPREAD"
 
 
-                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: M15 Structural Target (1:1.85 Target) 🟢")
+                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: Opposing Structural Target 🟢")
                 try:
                     from database import update_smc_telemetry
                     import json
@@ -2699,22 +2706,26 @@ def main():
                     s6_st = "FAIL ⚪"
                     s7_st = "FAIL ⚪"
                     s8_st = "PASS 🟢 ($0.75 Fixed)"
-                    s9_st = "FAIL ⚪ (Min 1.5R / 1:1.85)"
+                    s9_st = "WAITING ⚪ (Opposing Target)"
                     sweep_p_val = 0.0
                     choch_p_val = 0.0
+                    opposing_tp_val = 0.0
 
-                    if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason:
+                    if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason or "ALL SMC STEPS PASSED" in vid_reason:
+                        dyn_rrr = (abs(float(smc_tp) - float(p_a)) / max(0.01, abs(float(p_a) - float(smc_sl)))) if (smc_tp and smc_sl) else 2.0
                         if "BUY" in vid_reason:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
+                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢 (Entry on Touch)", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R Opposing Target)"
                             )
                         else:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", "PASS 🟢 (Executing 1:1.85 TP)"
+                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴 (Entry on Touch)", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R Opposing Target)"
                             )
                         if smc_sl is not None:
                             sweep_p_val = float(smc_sl) + (0.75 if "BUY" in vid_reason else -0.75)
-                    elif "S1(" in vid_reason or "Scanning Strict" in vid_reason:
+                        if smc_tp is not None:
+                            opposing_tp_val = float(smc_tp)
+                    elif "S1(" in vid_reason or "Scanning Strict" in vid_reason or "Scanning Pure SMC" in vid_reason:
                         parts = vid_reason.split("|")
                         for p in parts:
                             p_str = p.strip()
@@ -2744,6 +2755,11 @@ def main():
                             elif p_str.startswith("ChochPrice:"):
                                 try:
                                     choch_p_val = float(p_str.split(":", 1)[1].strip())
+                                except Exception:
+                                    pass
+                            elif p_str.startswith("OpposingTp:"):
+                                try:
+                                    opposing_tp_val = float(p_str.split(":", 1)[1].strip())
                                 except Exception:
                                     pass
 
@@ -2780,6 +2796,13 @@ def main():
                                 best_ch["isChoch"] = True
 
                     zone_dict["candles"] = candle_records
+                    if opposing_tp_val > 0:
+                        zone_dict["opposing_tp"] = opposing_tp_val
+                        zone_dict["tp_price"] = opposing_tp_val
+                    if sweep_p_val > 0:
+                        zone_dict["sweep_price"] = sweep_p_val
+                    if smc_sl is not None:
+                        zone_dict["sl_price"] = float(smc_sl)
                     fvg_json = json.dumps(zone_dict)
                     update_smc_telemetry(
                         pk, m15_b, s2_st, float(sweep_p_val), s3_st, float(choch_p_val), 
@@ -2826,7 +2849,7 @@ def main():
                     disc_msg = f"SINGLE TRADE LOCK ACTIVE (1 active trade open on MT5: {len(active_symbols_set)} active symbols)"
                     logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but 1 active trade is already open on MT5. Entry BLOCKED.")
                     try:
-                        send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0)
+                        send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0, entry_price=p_a)
                     except Exception:
                         pass
                 elif action != "NONE":
@@ -2840,13 +2863,14 @@ def main():
                         disc_msg = f"COOLDOWN ACTIVE (Post-trade cooldown active, dir={cooldown_dir}, db_cd={in_cd})"
                         logger.info(f"⏳ [COOLDOWN ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but cooldown is active. Entry BLOCKED.")
                         try:
-                            send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0)
+                            send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0, entry_price=p_a)
                         except Exception:
                             pass
                     else:
                         cand_cat_a = get_symbol_category(s_a_resolved)
                         cand_cat_b = get_symbol_category(s_b_resolved)
                         if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)):
+                            cand_candle_time = str(df_m5.iloc[-2]['time']) if (df_m5 is not None and not df_m5.empty) else str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
                             candidate_signals.append({
                                 "pair": (s_a, s_b),
                                 "action": action,
@@ -2861,13 +2885,14 @@ def main():
                                 "price_b": p_b,
                                 "smc_sl": smc_sl,
                                 "smc_tp": smc_tp,
-                                "smc_sl_dist": smc_sl_dist
+                                "smc_sl_dist": smc_sl_dist,
+                                "candle_time": cand_candle_time
                             })
                         else:
                             disc_msg = f"SPREAD CHECK FAILED (Spread for {s_a_resolved} exceeded max threshold)"
                             logger.info(f"⚠️ [SPREAD CHECK FAILED] Spread for {s_a_resolved} exceeded threshold. Entry SKIPPED.")
                             try:
-                                send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0)
+                                send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0, entry_price=p_a)
                             except Exception:
                                 pass
 
@@ -2895,7 +2920,7 @@ def main():
                     logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] An active trade is currently open on MT5 ({len(active_symbols_set)} active symbols). New entries BLOCKED until the active trade closes.")
                     for c in candidate_signals:
                         try:
-                            send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"SINGLE TRADE LOCK ACTIVE ({len(active_symbols_set)} active symbols open)", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0))
+                            send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"SINGLE TRADE LOCK ACTIVE ({len(active_symbols_set)} active symbols open)", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0), entry_price=c.get('price_a', 0.0))
                         except Exception:
                             pass
             elif is_news_blocked and candidate_signals:
@@ -2903,7 +2928,7 @@ def main():
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
                     logger.info(f"📰 [HIGH IMPACT NEWS GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']}), but {news_reason} is ACTIVE. New entries BLOCKED.")
                     try:
-                        send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"HIGH IMPACT NEWS GUARD ({news_reason})", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0))
+                        send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"HIGH IMPACT NEWS GUARD ({news_reason})", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0), entry_price=c.get('price_a', 0.0))
                     except Exception:
                         pass
             elif risk_safeguards.SESSION_GUARD_ENABLED and not is_session_ok and candidate_signals:
@@ -2911,22 +2936,14 @@ def main():
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
                     logger.info(f"⏰ [SESSION GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but current time ({curr_utc_s}) is OUTSIDE allowed trading window ({window_utc_s}). New entries BLOCKED.")
                     try:
-                        send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"SESSION GUARD ACTIVE (Time {curr_utc_s} outside window {window_utc_s})", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0))
+                        send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"SESSION GUARD ACTIVE (Time {curr_utc_s} outside window {window_utc_s})", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0), entry_price=c.get('price_a', 0.0))
                     except Exception:
                         pass
-            elif not AUTO_EXECUTE and candidate_signals:
-                for c in candidate_signals:
-                    pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
-                    logger.info(f"📢 [SIGNAL DETECTED - SIGNALS ONLY MODE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but Auto-Execution is toggled OFF on Dashboard. Trade placement SKIPPED.")
-                    try:
-                        send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], "AUTO-EXECUTION TOGGLED OFF (Signals Only Mode)", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0))
-                    except Exception:
-                        pass
-            elif AUTO_EXECUTE and is_trade_limit_ok and not is_news_blocked and is_session_ok and candidate_signals:
+            elif candidate_signals and is_trade_limit_ok and not is_news_blocked and is_session_ok:
                 if risk_safeguards.SESSION_GUARD_ENABLED:
                     for c in candidate_signals:
                         pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
-                        logger.info(f"⏰ [SESSION GUARD ACTIVE 🟢] Signal generated for {pair_str} ({c['action']}). Trade execution PROCEEDING!")
+                        logger.info(f"⏰ [SESSION GUARD ACTIVE 🟢] Candidate signal for {pair_str} ({c['action']}). Checking qualification...")
 
                 # Candidate signals bypass Beta boundary limits for single-asset execution
                 qualifying_candidates = []
@@ -2986,15 +3003,6 @@ def main():
                     S_A_resolved = resolve_broker_symbol(S_A) if cat_a_new != "crypto" else S_A
                     S_B_resolved = resolve_broker_symbol(S_B) if cat_b_new != "crypto" else S_B
                     
-                    # Log signal
-                    signal_id = log_signal(
-                        S_A, S_B, 
-                        best_sig["price_a"], best_sig["price_b"], 
-                        best_sig["beta"], 0.0, 
-                        best_sig["z_score"], best_sig["net_obi"], 
-                        best_action
-                    )
-                    
                     if best_sig.get("smc_sl_dist") and float(best_sig["smc_sl_dist"]) > 0:
                         sl_dist = float(best_sig["smc_sl_dist"])
                     else:
@@ -3033,8 +3041,6 @@ def main():
                         tp1_val = entry_a + (tp_dist * 0.5) if is_long else entry_a - (tp_dist * 0.5)
                         tp3_val = entry_a + (tp_dist * 1.5) if is_long else entry_a - (tp_dist * 1.5)
 
-
-                            
                         if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
                             disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                             mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
@@ -3048,25 +3054,57 @@ def main():
                         
                         order_type_b, side_b, price_b, sl_sign_b = get_hedge_execution_parameters(best_action, best_sig["beta"], best_sig["tick_b"])
                         sl_b = price_b + sl_sign_b * sl_dist_b
+
+                        # Deduplicate signal logging per closed bar so ticks don't re-log the same signal
+                        sig_bar_time = str(best_sig.get("candle_time") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+                        pair_sig_key = f"{S_A}_{best_action}"
                         
-                        send_discord_signal_notification(
-                            action=best_action,
-                            symbol_a=S_A,
-                            symbol_b=S_B,
-                            z_score=best_sig["z_score"],
-                            entry_a=entry_a,
-                            sl_a=sl_a,
-                            tp1=tp1_val,
-                            tp2=tp2_val,
-                            tp3=tp3_val,
-                            lots_a=actual_lots_a,
-                            entry_b=entry_b,
-                            sl_b=sl_b,
-                            lots_b=lots_b,
-                            side_b=side_b
-                        )
-                    except Exception as e_notify:
-                        logger.error(f"Error preparing Discord notification: {e_notify}")
+                        if LAST_LOGGED_SIGNAL_BAR.get(pair_sig_key) != sig_bar_time:
+                            LAST_LOGGED_SIGNAL_BAR[pair_sig_key] = sig_bar_time
+                            signal_id = log_signal(
+                                S_A, S_B, 
+                                best_sig["price_a"], best_sig["price_b"], 
+                                best_sig["beta"], 0.0, 
+                                best_sig["z_score"], best_sig["net_obi"], 
+                                best_action,
+                                entry_price=entry_a,
+                                sl=sl_a,
+                                tp=tp2_val
+                            )
+                            logger.info(f"✅ [SIGNAL RECORDED #{signal_id}] {S_A} ({best_action}) | Entry: {entry_a:.5f} | SL: {sl_a:.5f} | TP: {tp2_val:.5f} | Bar: {sig_bar_time}")
+                            try:
+                                send_discord_signal_notification(
+                                    action=best_action,
+                                    symbol_a=S_A,
+                                    symbol_b=S_B,
+                                    z_score=best_sig["z_score"],
+                                    entry_a=entry_a,
+                                    sl_a=sl_a,
+                                    tp1=tp1_val,
+                                    tp2=tp2_val,
+                                    tp3=tp3_val,
+                                    lots_a=actual_lots_a,
+                                    entry_b=entry_b,
+                                    sl_b=sl_b,
+                                    lots_b=lots_b,
+                                    side_b=side_b,
+                                    is_signal_only=(not AUTO_EXECUTE)
+                                )
+                            except Exception as e_notify:
+                                logger.error(f"Error preparing Discord notification: {e_notify}")
+                        else:
+                            signal_id = None
+                            logger.info(f"⏳ [SIGNAL DEDUP] Signal {pair_sig_key} for bar {sig_bar_time} already recorded. Skipping duplicate signal.")
+
+                        # If Auto-Execution is toggled OFF (Signals Only Mode), stop here!
+                        if not AUTO_EXECUTE:
+                            logger.info(f"📢 [SIGNALS ONLY MODE 🟢] All 7 SMC conditions verified. Signal #{signal_id} logged to Dashboard & Discord. MT5 order placement SKIPPED per user configuration.")
+                            continue
+
+                    except Exception as e_sig_prep:
+                        logger.error(f"Error in signal preparation / logging: {e_sig_prep}")
+                        if not AUTO_EXECUTE:
+                            continue
                     
                     if is_long:
                         if best_cat_a == "crypto":

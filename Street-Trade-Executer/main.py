@@ -1007,7 +1007,7 @@ def get_tp_distance(symbol: str, price: float, tp_pips_override: float = None) -
     else:
         return 50.0 * pip_sz
 
-def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_a, sl_a, tp1, tp2, tp3, lots_a, entry_b, sl_b, lots_b, side_b):
+def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_a, sl_a, tp1, tp2, tp3, lots_a, entry_b, sl_b, lots_b, side_b, is_signal_only=False):
     import os
     import requests
     
@@ -1030,15 +1030,16 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         
         rrr_val = (abs(tp2 - entry_a) / abs(entry_a - sl_a)) if abs(entry_a - sl_a) > 0 else 1.85
         
+        mode_header = "📢 **[ NEW PURE SMC TRADING SIGNAL ]** 📢\n*(Signals Only Mode — Auto-Execution OFF)*" if is_signal_only else "🚀 **[ NEW OPEN POSITION ]** 🚀"
         message = (
             f"@everyone\n"
-            f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
-            f"🚀 **[ NEW OPEN POSITION ]** 🚀\n\n"
+            f"📢 **PURE SMC / ICT 7-CONDITION SIGNAL ENGINE** 📢\n"
+            f"{mode_header}\n\n"
             f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
-            f"📊 **STRATEGY:** `Pure SMC / ICT 9-Condition Structure 🟢`\n\n"
+            f"📊 **STRATEGY:** `Pure SMC Structure (7-Step Verified) 🟢`\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
-            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Sweep + 0.75 Buffer)*\n"
+            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Sweep {'-' if 'BUY' in act_str else '+'} $0.75 Buffer)*\n"
             f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.2f}R Opposing Structural Liquidity Target)*\n"
             f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
@@ -1092,7 +1093,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
 
 _DISCARD_ALERT_CACHE = {}
 
-def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_price=0.0, tp_price=0.0):
+def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_price=0.0, tp_price=0.0, entry_price=0.0):
     """Sends a Discord webhook notification when a valid 9-Condition SMC signal is discarded or blocked."""
     import os
     import requests
@@ -1125,14 +1126,16 @@ def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_pri
         cat = get_symbol_category(symbol_a)
         lot_val = 0.07 if (cat == "metals" or "XAU" in symbol_a.upper() or "XAG" in symbol_a.upper()) else 0.51
 
+        entry_str = f"`{entry_price:.{digits_a}f}`" if (entry_price and entry_price > 0) else "`Live Market Price`"
         message = (
             f"@everyone\n"
-            f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
+            f"📢 **PURE SMC / ICT 7-CONDITION SIGNAL ENGINE** 📢\n"
             f"🚫 **[ SIGNAL DISCARDED / BLOCKED ]** 🚫\n\n"
             f"📊 **SIGNAL:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
             f"📦 **TARGET LOT SIZE:** `{lot_val:.2f} Lots`\n"
             f"🛑 **DISCARD REASON:** `{reason}`\n"
+            f"📥 **ENTRY PRICE:** {entry_str}\n"
             f"⛔ **ESTIMATED SL:** {sl_str}\n"
             f"🎯 **ESTIMATED TP:** {tp_str}\n"
             f"ℹ️ **STATUS:** Signal met Pure SMC structure conditions but entry execution was safely blocked by Risk & Capital Protection safeguards."
@@ -2846,7 +2849,7 @@ def main():
                     disc_msg = f"SINGLE TRADE LOCK ACTIVE (1 active trade open on MT5: {len(active_symbols_set)} active symbols)"
                     logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but 1 active trade is already open on MT5. Entry BLOCKED.")
                     try:
-                        send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0)
+                        send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0, entry_price=p_a)
                     except Exception:
                         pass
                 elif action != "NONE":
@@ -2860,7 +2863,7 @@ def main():
                         disc_msg = f"COOLDOWN ACTIVE (Post-trade cooldown active, dir={cooldown_dir}, db_cd={in_cd})"
                         logger.info(f"⏳ [COOLDOWN ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but cooldown is active. Entry BLOCKED.")
                         try:
-                            send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0)
+                            send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0, entry_price=p_a)
                         except Exception:
                             pass
                     else:
@@ -2889,7 +2892,7 @@ def main():
                             disc_msg = f"SPREAD CHECK FAILED (Spread for {s_a_resolved} exceeded max threshold)"
                             logger.info(f"⚠️ [SPREAD CHECK FAILED] Spread for {s_a_resolved} exceeded threshold. Entry SKIPPED.")
                             try:
-                                send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0)
+                                send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0, entry_price=p_a)
                             except Exception:
                                 pass
 
@@ -2917,7 +2920,7 @@ def main():
                     logger.info(f"🛡️ [SINGLE TRADE LOCK ACTIVE] An active trade is currently open on MT5 ({len(active_symbols_set)} active symbols). New entries BLOCKED until the active trade closes.")
                     for c in candidate_signals:
                         try:
-                            send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"SINGLE TRADE LOCK ACTIVE ({len(active_symbols_set)} active symbols open)", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0))
+                            send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"SINGLE TRADE LOCK ACTIVE ({len(active_symbols_set)} active symbols open)", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0), entry_price=c.get('price_a', 0.0))
                         except Exception:
                             pass
             elif is_news_blocked and candidate_signals:
@@ -2925,7 +2928,7 @@ def main():
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
                     logger.info(f"📰 [HIGH IMPACT NEWS GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']}), but {news_reason} is ACTIVE. New entries BLOCKED.")
                     try:
-                        send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"HIGH IMPACT NEWS GUARD ({news_reason})", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0))
+                        send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"HIGH IMPACT NEWS GUARD ({news_reason})", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0), entry_price=c.get('price_a', 0.0))
                     except Exception:
                         pass
             elif risk_safeguards.SESSION_GUARD_ENABLED and not is_session_ok and candidate_signals:
@@ -2933,7 +2936,7 @@ def main():
                     pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
                     logger.info(f"⏰ [SESSION GUARD ACTIVE 🔴] Signal generated for {pair_str} ({c['action']} | Z={c['z_score']:.3f} | Beta={float(c.get('beta', 1.0)):.2f}), but current time ({curr_utc_s}) is OUTSIDE allowed trading window ({window_utc_s}). New entries BLOCKED.")
                     try:
-                        send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"SESSION GUARD ACTIVE (Time {curr_utc_s} outside window {window_utc_s})", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0))
+                        send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"SESSION GUARD ACTIVE (Time {curr_utc_s} outside window {window_utc_s})", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0), entry_price=c.get('price_a', 0.0))
                     except Exception:
                         pass
             elif candidate_signals and is_trade_limit_ok and not is_news_blocked and is_session_ok:
@@ -3084,7 +3087,8 @@ def main():
                                     entry_b=entry_b,
                                     sl_b=sl_b,
                                     lots_b=lots_b,
-                                    side_b=side_b
+                                    side_b=side_b,
+                                    is_signal_only=(not AUTO_EXECUTE)
                                 )
                             except Exception as e_notify:
                                 logger.error(f"Error preparing Discord notification: {e_notify}")
@@ -3094,7 +3098,7 @@ def main():
 
                         # If Auto-Execution is toggled OFF (Signals Only Mode), stop here!
                         if not AUTO_EXECUTE:
-                            logger.info(f"📢 [SIGNALS ONLY MODE 🔴] Auto-Execution is OFF on Dashboard. Signal recorded on Dashboard & Discord. MT5 order placement SKIPPED.")
+                            logger.info(f"📢 [SIGNALS ONLY MODE 🟢] All 7 SMC conditions verified. Signal #{signal_id} logged to Dashboard & Discord. MT5 order placement SKIPPED per user configuration.")
                             continue
 
                     except Exception as e_sig_prep:

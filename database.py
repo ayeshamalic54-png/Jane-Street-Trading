@@ -657,11 +657,11 @@ def purge_disabled_category_zones(forex_enabled=True, metals_enabled=True, indic
         if conn:
             conn.close()
 
-def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action):
-    """Logs a generated mathematical signal. Returns the signal ID."""
+def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action, entry_price=None, sl=None, tp=None):
+    """Logs a generated mathematical signal with exact entry, sl, and tp. Returns the signal ID."""
     query = """
-        INSERT INTO signals (symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO signals (symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action, entry_price, sl, tp)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     """
     conn = None
@@ -673,7 +673,10 @@ def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, 
             float(price_a), float(price_b),
             float(beta), float(alpha),
             float(z_score), float(obi),
-            action
+            action,
+            float(entry_price) if entry_price is not None else float(price_a),
+            float(sl) if sl is not None else None,
+            float(tp) if tp is not None else None
         ))
         row = cur.fetchone()
         conn.commit()
