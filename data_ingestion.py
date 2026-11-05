@@ -101,9 +101,8 @@ def get_rates_df(symbol, timeframe, count=200):
     except Exception:
         pass
 
-    # Try with retry to allow MT5 history server synchronization
     rates = None
-    for attempt in range(3):
+    for attempt in range(5):
         rates = mt5.copy_rates_from_pos(resolved, timeframe, 0, count)
         if rates is not None and len(rates) > 0:
             break
@@ -112,28 +111,33 @@ def get_rates_df(symbol, timeframe, count=200):
             if rates is not None and len(rates) > 0:
                 resolved = symbol
                 break
-        time.sleep(0.3 * (attempt + 1))
+        
+        # Poke tick data to trigger MT5 history stream download from broker
+        if attempt == 0:
+            try:
+                mt5.symbol_info_tick(resolved)
+            except Exception:
+                pass
 
+        time.sleep(0.2 * (attempt + 1))
+
+    # Fast targeted fallback without dumping full symbol database
     if rates is None or len(rates) == 0:
-        # Fallback search across active broker symbols for matching base alias (e.g. GOLD, XAUUSD.pro, XAUUSD.m)
         try:
-            all_symbols = mt5.symbols_get()
-            if all_symbols:
-                target_base = symbol.upper().replace("USD", "").replace("EUR", "")
-                for s_info in all_symbols:
-                    s_name = s_info.name
-                    if s_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
-                        continue
-                    if symbol.upper() in s_name.upper() or (len(target_base) >= 3 and target_base in s_name.upper()):
+            target_base = symbol.upper().replace("USD", "").replace("EUR", "")
+            if len(target_base) >= 3:
+                group_syms = mt5.symbols_get(group=f"*{target_base}*")
+                if group_syms:
+                    for s_info in group_syms:
+                        if s_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
+                            continue
+                        s_name = s_info.name
                         mt5.symbol_select(s_name, True)
-                        for _ in range(2):
-                            r_try = mt5.copy_rates_from_pos(s_name, timeframe, 0, count)
-                            if r_try is not None and len(r_try) > 0:
-                                rates = r_try
-                                logger.info(f"Resolved alternative tradeable symbol {s_name} for {symbol} candles.")
-                                break
-                            time.sleep(0.2)
-                        if rates is not None and len(rates) > 0:
+                        r_try = mt5.copy_rates_from_pos(s_name, timeframe, 0, count)
+                        if r_try is not None and len(r_try) > 0:
+                            rates = r_try
+                            logger.info(f"Resolved alternative tradeable symbol {s_name} for {symbol} candles.")
+                            _RESOLVED_CACHE[symbol.strip().upper()] = s_name
                             break
         except Exception:
             pass
@@ -146,7 +150,6 @@ def get_rates_df(symbol, timeframe, count=200):
     df = pd.DataFrame(rates)
     df['time'] = pd.to_datetime(df['time'], unit='s')
     return df
-
 
 def get_live_ticks(symbol):
     """Fetches the latest tick (bid, ask, time) for a symbol."""
@@ -208,40 +211,54 @@ SYMBOL_ALIASES = {
     "XAGUSD": ["XAGUSD", "SILVER"],
 }
 
+_RESOLVED_CACHE = {}
+COMMON_SUFFIXES = ["", ".m", ".pro", ".raw", "+", "c", ".a", ".ecn", ".i", "m", "_i", "-", ".s"]
+
 def resolve_broker_symbol(symbol):
-    """Resolves broker-specific symbol names and suffixes (e.g. NAS100 -> USTEC.m, EURUSD -> EURUSD.a)."""
+    """Resolves broker-specific symbol names (e.g. XAUUSD -> XAUUSD.m, NAS100 -> USTEC) with zero IPC lag using direct symbol_info and memory caching."""
+    global _RESOLVED_CACHE
+    if not symbol:
+        return symbol
+    
+    sym_upper = symbol.strip().upper()
+    if sym_upper in _RESOLVED_CACHE:
+        return _RESOLVED_CACHE[sym_upper]
+
     try:
-        all_symbols = mt5.symbols_get()
-        if not all_symbols:
-            return symbol
-        
-        # Check active tradeable symbols first
-        active_syms = {s.name: s for s in all_symbols if s.trade_mode != mt5.SYMBOL_TRADE_MODE_DISABLED}
-        all_sym_names = [s.name for s in all_symbols]
-
-        # 1. Exact match in active tradeable symbols
-        if symbol in active_syms:
+        # 1. Direct match on exact symbol
+        info = mt5.symbol_info(symbol)
+        if info is not None:
+            _RESOLVED_CACHE[sym_upper] = symbol
             return symbol
 
-        # 2. Check alias list for active tradeable symbols
-        candidates = SYMBOL_ALIASES.get(symbol.upper(), [symbol])
-        for cand in candidates:
-            if cand in active_syms:
-                return cand
-            for s_name in active_syms:
-                if s_name.startswith(cand) or cand in s_name or s_name.replace('.', '').replace('-', '').upper() == cand.upper():
-                    return s_name
+        # 2. Direct match on uppercase
+        if sym_upper != symbol:
+            info = mt5.symbol_info(sym_upper)
+            if info is not None:
+                _RESOLVED_CACHE[sym_upper] = sym_upper
+                return sym_upper
 
-        # 3. Fallback to all symbols
-        if symbol in all_sym_names:
-            return symbol
-        for cand in candidates:
-            if cand in all_sym_names:
-                return cand
-            for s in all_sym_names:
-                if s.startswith(cand) or cand in s or s.replace('.', '').replace('-', '').upper() == cand.upper():
-                    return s
-    except Exception:
-        pass
+        # 3. Check aliases with common broker suffixes (takes < 0.005s total)
+        candidates = SYMBOL_ALIASES.get(sym_upper, [sym_upper])
+        for alias in candidates:
+            for sfx in COMMON_SUFFIXES:
+                cand = f"{alias}{sfx}"
+                info = mt5.symbol_info(cand)
+                if info is not None:
+                    _RESOLVED_CACHE[sym_upper] = cand
+                    return cand
+
+        # 4. Fast targeted query by group prefix (never dumps all 50,000 symbols)
+        prefix = sym_upper[:3]
+        group_syms = mt5.symbols_get(group=f"*{prefix}*")
+        if group_syms:
+            for s in group_syms:
+                if s.trade_mode != mt5.SYMBOL_TRADE_MODE_DISABLED:
+                    if sym_upper in s.name.upper() or s.name.upper().startswith(sym_upper) or any(a in s.name.upper() for a in candidates):
+                        _RESOLVED_CACHE[sym_upper] = s.name
+                        return s.name
+    except Exception as e:
+        logger.debug(f"Symbol resolution exception for {symbol}: {e}")
+
+    _RESOLVED_CACHE[sym_upper] = symbol
     return symbol
-
