@@ -206,7 +206,7 @@ export function SmcChartOverlay({
   const isTradeActive = hasActivePosition || isSignalFired;
 
   const s6Pass = isPassText(s6Status) || isPassText(s8Status) || (s2Pass && isTradeActive); // SL Buffer ($0.75)
-  const s7Pass = isPassText(s7Status) || isPassText(s9Status) || (s5Pass && isTradeActive) || (s5Pass && (swingStructure.swingLow > 0 || swingStructure.swingHigh > 0)); // Opposing Target
+  const s7Pass = isPassText(s7Status) || isPassText(s9Status) || (s5Pass && isTradeActive) || s5Pass; // Opposing Target
   const s8Pass = s6Pass;
   const s9Pass = s7Pass;
 
@@ -291,17 +291,28 @@ export function SmcChartOverlay({
     }
     // Structural dealing range fallback: Target Swing Low (Bearish) or Swing High (Bullish) front-run by buffer
     const frontRunBuf = isMetals ? 0.75 : 0.0003;
-    if (isBearishSetup && swingStructure.swingLow > 0 && swingStructure.swingLow < effectiveEntryPrice) {
-      return Number((swingStructure.swingLow + frontRunBuf).toFixed(2));
+    let swLo = 0, swHi = 0;
+    try {
+      const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
+      const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+      const cArr = Array.isArray(telemetry?.candles) ? telemetry.candles : parsed?.candles;
+      if (Array.isArray(cArr) && cArr.length > 2) {
+        const slc = cArr.slice(0, -1);
+        swHi = Math.max(...slc.map((c: any) => Number(c.high || 0)));
+        swLo = Math.min(...slc.filter((c: any) => Number(c.low) > 0).map((c: any) => Number(c.low)));
+      }
+    } catch {}
+    if (isBearishSetup && swLo > 0 && swLo < effectiveEntryPrice) {
+      return Number((swLo + frontRunBuf).toFixed(2));
     }
-    if (isBullishSetup && swingStructure.swingHigh > 0 && swingStructure.swingHigh > effectiveEntryPrice) {
-      return Number((swingStructure.swingHigh - frontRunBuf).toFixed(2));
+    if (isBullishSetup && swHi > 0 && swHi > effectiveEntryPrice) {
+      return Number((swHi - frontRunBuf).toFixed(2));
     }
     const slDist = Math.max(isMetals ? 2.5 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
     return isBearishSetup
       ? Number((effectiveEntryPrice - 1.8 * slDist).toFixed(2))
       : Number((effectiveEntryPrice + 1.8 * slDist).toFixed(2));
-  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isBullishSetup, isMetals, telemetry, swingStructure]);
+  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isBullishSetup, isMetals, telemetry]);
 
   const effectiveRrr = useMemo(() => {
     const slDist = Math.abs(effectiveEntryPrice - effectiveSlPrice);
