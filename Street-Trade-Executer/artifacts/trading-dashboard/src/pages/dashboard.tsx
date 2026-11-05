@@ -468,7 +468,8 @@ export default function Dashboard() {
   if (!dashboard) return null;
 
   const recentSymbolSignals = signalsData?.filter(
-    (s: any) => s.symbolA.toUpperCase().includes(selectedChartSymbol.toUpperCase()) || s.symbolB.toUpperCase().includes(selectedChartSymbol.toUpperCase())
+    (s: any) => ((s?.symbolA || "").toUpperCase().includes((selectedChartSymbol || "").toUpperCase())) ||
+                ((s?.symbolB || "").toUpperCase().includes((selectedChartSymbol || "").toUpperCase()))
   ) ?? [];
 
   const {
@@ -496,17 +497,17 @@ export default function Dashboard() {
   const overallGain = equity - (initialBalance ?? 100000.00);
   const overallGainPercent = (initialBalance ?? 100000.00) > 0 ? (overallGain / (initialBalance ?? 100000.00)) * 100 : 0;
 
-  const matchingAsset = dashboard.scannedAssets?.find(
-    (a: any) => a.symbolPair.startsWith(selectedChartSymbol) || a.symbolPair.endsWith(selectedChartSymbol)
+  const matchingAsset = dashboard?.scannedAssets?.find(
+    (a: any) => (a?.symbolPair || "").startsWith(selectedChartSymbol) || (a?.symbolPair || "").endsWith(selectedChartSymbol)
   );
 
   const selectedAssetAction = matchingAsset?.action ?? "NONE";
   const selectedAssetZScore = matchingAsset?.zScore ?? 0.0;
   const selectedAssetWinRate = matchingAsset?.winRate ?? 50.0;
 
-  const matchingPosition = dashboard.activePositions?.find((p: any) => {
-    const symUpper = p.symbol.toUpperCase();
-    const chartUpper = selectedChartSymbol.toUpperCase();
+  const matchingPosition = dashboard?.activePositions?.find((p: any) => {
+    const symUpper = (p?.symbol || "").toUpperCase();
+    const chartUpper = (selectedChartSymbol || "").toUpperCase();
     return symUpper.includes(chartUpper) || chartUpper.includes(symUpper);
   });
   const hasActivePosition = matchingPosition != null;
@@ -521,6 +522,7 @@ export default function Dashboard() {
   }) ?? [];
 
   const getStatusColor = (status: string) => {
+    if (!status || typeof status !== "string") return "bg-gray-500";
     if (status.startsWith("RUNNING")) return "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]";
     if (status.startsWith("HALTED")) return "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]";
     return "bg-gray-500";
@@ -530,7 +532,8 @@ export default function Dashboard() {
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(val);
 
   const isBotActive = Boolean((dashboard as any)?.isBotRunning ?? (dashboard as any)?.is_bot_running ?? true);
-  const activeAccount = accountsList.find((a: any) => a.is_active || Number(a.login) === Number(mt5Login)) || accountsList[0];
+  const safeAccountsList = Array.isArray(accountsList) ? accountsList : [];
+  const activeAccount = safeAccountsList.find((a: any) => a?.is_active || Number(a?.login) === Number(mt5Login)) || safeAccountsList[0];
 
   const handleToggleBotRunning = async () => {
     const nextState = !isBotActive;
@@ -861,12 +864,12 @@ export default function Dashboard() {
 
           {/* Accounts List */}
           <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
-            {accountsList.length === 0 ? (
+            {safeAccountsList.length === 0 ? (
               <div className="p-4 rounded border border-zinc-800 bg-zinc-900/40 text-center text-xs text-zinc-400 font-mono">
                 {isLoadingAccounts ? "Loading MT5 accounts..." : `Active Account: #${mt5Login || "None"}`}
               </div>
             ) : (
-              accountsList.map((acc: any) => {
+              safeAccountsList.map((acc: any) => {
                 const isThisActive = acc.is_active || Number(acc.login) === Number(mt5Login);
                 return (
                   <div
@@ -1737,22 +1740,22 @@ export default function Dashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dashboard.scannedAssets.map((asset: any) => (
+                  {(dashboard?.scannedAssets || []).map((asset: any) => (
                     <TableRow 
                       key={asset.symbolPair} 
                       className="border-border hover:bg-muted/30 cursor-pointer"
                       onClick={() => {
-                        const parts = asset.symbolPair.split('/');
+                        const parts = (asset?.symbolPair || "").split('/');
                         if (parts.length === 2) {
                           setSelectedChartSymbol(parts[0]);
                         }
                       }}
                     >
                       <TableCell className="font-mono font-medium">{asset.symbolPair}</TableCell>
-                      <TableCell className="font-mono text-right">{asset.priceA.toFixed(5)}</TableCell>
-                      <TableCell className="font-mono text-right">{asset.priceB.toFixed(5)}</TableCell>
+                      <TableCell className="font-mono text-right">{Number(asset?.priceA || 0).toFixed(5)}</TableCell>
+                      <TableCell className="font-mono text-right">{Number(asset?.priceB || 0).toFixed(5)}</TableCell>
                       <TableCell className="font-mono text-right font-semibold text-blue-400">
-                        {asset.winRate.toFixed(1)}%
+                        {Number(asset?.winRate || 0).toFixed(1)}%
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline" className={cn(
@@ -1929,7 +1932,7 @@ export default function Dashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {activePositions.map((pos) => (
+                  {(activePositions || []).map((pos) => (
                     <TableRow key={pos.ticket} className="border-border hover:bg-muted/30">
                       <TableCell className="font-mono text-xs text-muted-foreground">#{pos.ticket}</TableCell>
                       <TableCell className="font-mono font-medium">{pos.symbol}</TableCell>
@@ -1943,9 +1946,9 @@ export default function Dashboard() {
                           {pos.type}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-mono text-right">{pos.lots.toFixed(2)}</TableCell>
-                      <TableCell className="font-mono text-right">{pos.entry.toFixed(5)}</TableCell>
-                      <TableCell className="font-mono text-right">{pos.current?.toFixed(5) || "-"}</TableCell>
+                      <TableCell className="font-mono text-right">{Number(pos?.lots || 0).toFixed(2)}</TableCell>
+                      <TableCell className="font-mono text-right">{Number(pos?.entry || 0).toFixed(5)}</TableCell>
+                      <TableCell className="font-mono text-right">{pos?.current != null ? Number(pos.current).toFixed(5) : "-"}</TableCell>
                       <TableCell className={cn(
                         "font-mono text-right font-bold",
                         pos.profit >= 0 ? "text-green-500" : "text-red-500"
