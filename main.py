@@ -2741,8 +2741,10 @@ def main():
                                 s5_st = p_str.split(":", 1)[1].strip()
                             elif p_str.startswith("S6("):
                                 s6_st = p_str.split(":", 1)[1].strip()
+                                s8_st = s6_st
                             elif p_str.startswith("S7("):
                                 s7_st = p_str.split(":", 1)[1].strip()
+                                s9_st = s7_st
                             elif p_str.startswith("S8("):
                                 s8_st = p_str.split(":", 1)[1].strip()
                             elif p_str.startswith("S9("):
