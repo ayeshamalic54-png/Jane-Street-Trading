@@ -227,14 +227,24 @@ router.post("/bot/control", async (req, res) => {
   try {
     const isRunning = Boolean(req.body.isRunning);
     const statusTxt = isRunning ? "RUNNING (Active)" : "ENGINE STOPPED 🛑 (Standby)";
-    await db.execute(sql`
-      UPDATE bot_state
-      SET is_bot_running = ${isRunning},
-          auto_execute   = CASE WHEN ${isRunning} THEN TRUE ELSE auto_execute END,
-          system_status  = ${statusTxt},
-          updated_at     = NOW()
-      WHERE id = (SELECT MIN(id) FROM bot_state);
-    `);
+    if (isRunning) {
+      await db.execute(sql`
+        UPDATE bot_state
+        SET is_bot_running = TRUE,
+            auto_execute   = TRUE,
+            system_status  = ${statusTxt},
+            updated_at     = NOW()
+        WHERE id = (SELECT MIN(id) FROM bot_state)
+      `);
+    } else {
+      await db.execute(sql`
+        UPDATE bot_state
+        SET is_bot_running = FALSE,
+            system_status  = ${statusTxt},
+            updated_at     = NOW()
+        WHERE id = (SELECT MIN(id) FROM bot_state)
+      `);
+    }
     return res.json({ status: "success", isRunning, systemStatus: statusTxt });
   } catch (err) {
     console.error("Failed to update bot control:", err);

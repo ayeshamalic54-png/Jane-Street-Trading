@@ -531,20 +531,41 @@ export default function Dashboard() {
   const formatMoney = (val: number) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(val);
 
-  const isBotActive = Boolean((dashboard as any)?.isBotRunning ?? (dashboard as any)?.is_bot_running ?? true);
+  const isBotActive = !String(systemStatus || "").toUpperCase().includes("STOPPED") && Boolean((dashboard as any)?.isBotRunning ?? (dashboard as any)?.is_bot_running ?? true);
   const safeAccountsList = Array.isArray(accountsList) ? accountsList : [];
   const activeAccount = safeAccountsList.find((a: any) => a?.is_active || Number(a?.login) === Number(mt5Login)) || safeAccountsList[0];
 
-  const handleToggleBotRunning = async () => {
-    const nextState = !isBotActive;
+  const handleToggleBotRunning = async (forceState?: boolean) => {
+    const nextState = typeof forceState === "boolean" ? forceState : !isBotActive;
     setIsTogglingBot(true);
     try {
-      const res = await fetch("/api/bot/control", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isRunning: nextState }),
-      });
-      if (res.ok) {
+      if (dashboard) {
+        (dashboard as any).systemStatus = nextState ? "RUNNING (Active)" : "ENGINE STOPPED 🛑 (Standby)";
+        (dashboard as any).isBotRunning = nextState;
+        (dashboard as any).is_bot_running = nextState;
+      }
+      let ok = (
+        await fetch("/api/bot/control", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isRunning: nextState }),
+        })
+      ).ok;
+      if (!ok) {
+        ok = (
+          await fetch("/api/execute-trade", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              symbol: "SYS_CTL",
+              direction: "CLOSE",
+              lots: 0.01,
+              comment: nextState ? "BOTENGINE:ON" : "BOTENGINE:OFF",
+            }),
+          })
+        ).ok;
+      }
+      if (ok) {
         toast({
           title: nextState ? "🟢 Trading Engine Started" : "🛑 Trading Engine Stopped",
           description: nextState
@@ -785,20 +806,47 @@ export default function Dashboard() {
       {/* ── REMOTE BOT CONTROL & ACCOUNT SWITCHER STRIP (Zero-Overlap Guarantee) ── */}
       <div className="bg-zinc-900/90 border-b border-zinc-800 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">
-          <Button
-            onClick={handleToggleBotRunning}
-            size="sm"
-            disabled={isTogglingBot || isReadOnly}
-            className={cn(
-              "font-mono text-xs font-black h-8 px-3 rounded shadow transition-all flex items-center gap-2",
-              isBotActive
-                ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-400/40"
-                : "bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.4)] border border-rose-400/40 animate-pulse"
-            )}
-          >
-            {isBotActive ? <Power className="h-4 w-4" /> : <PowerOff className="h-4 w-4" />}
-            {isBotActive ? "ENGINE: ACTIVE 🟢" : "ENGINE: STOPPED 🛑"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "font-mono text-xs font-black h-8 px-3 rounded flex items-center gap-1.5 border",
+                isBotActive
+                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40"
+                  : "bg-rose-500/15 text-rose-400 border-rose-500/40 animate-pulse"
+              )}
+            >
+              {isBotActive ? <Power className="h-3.5 w-3.5" /> : <PowerOff className="h-3.5 w-3.5" />}
+              {isBotActive ? "ENGINE: ACTIVE 🟢" : "ENGINE: STOPPED 🛑"}
+            </span>
+            <Button
+              onClick={() => handleToggleBotRunning(true)}
+              size="sm"
+              disabled={isTogglingBot || isReadOnly}
+              className={cn(
+                "font-mono text-xs font-black h-8 px-3 rounded shadow transition-all flex items-center gap-1.5",
+                isBotActive
+                  ? "bg-emerald-700/50 hover:bg-emerald-600 text-emerald-100 border border-emerald-500/30"
+                  : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_14px_rgba(16,185,129,0.5)] border border-emerald-400 animate-bounce"
+              )}
+            >
+              <Power className="h-3.5 w-3.5" />
+              🟢 ON (START)
+            </Button>
+            <Button
+              onClick={() => handleToggleBotRunning(false)}
+              size="sm"
+              disabled={isTogglingBot || isReadOnly}
+              className={cn(
+                "font-mono text-xs font-black h-8 px-3 rounded shadow transition-all flex items-center gap-1.5",
+                !isBotActive
+                  ? "bg-rose-900/40 hover:bg-rose-700 text-rose-200 border border-rose-500/30"
+                  : "bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.4)] border border-rose-400/50"
+              )}
+            >
+              <PowerOff className="h-3.5 w-3.5" />
+              🛑 OFF (STOP)
+            </Button>
+          </div>
 
           <div className="flex flex-col">
             <span className="text-[11px] font-bold text-zinc-200 flex items-center gap-1.5">
