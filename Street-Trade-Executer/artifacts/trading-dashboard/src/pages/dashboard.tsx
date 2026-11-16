@@ -1455,7 +1455,7 @@ export default function Dashboard() {
                 const isPassText = (val: unknown) =>
                   typeof val === "string" && (val.includes("PASS") || val.includes("🟢"));
                 const isFailText = (val: unknown) =>
-                  typeof val === "string" && (val.includes("🔴") || (val.includes("FAIL") && !val.includes("⚪")));
+                  typeof val === "string" && !val.includes("PASS") && (val.includes("🔴") || (val.includes("FAIL") && !val.includes("⚪")));
 
                 const s1Text = tel?.m15_bias || "NEUTRAL ⚪";
                 const isM15Bull = s1Text.includes("BULLISH");
