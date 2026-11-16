@@ -747,33 +747,39 @@ export function SmcChartOverlay({
 
   const minPrice = useMemo(() => {
     let min = candleMin - vertPad;
-    // Include nearby levels without allowing distant SL to squash the candles
-    if (showSlLevel && effectiveSlPrice > 0 && candleMin - effectiveSlPrice <= candleSpan * 1.2) {
-      min = Math.min(min, effectiveSlPrice - (isMetals ? 0.40 : 0.0002));
+    const pad = isMetals ? 0.80 : 0.0004;
+    if (showSlLevel && effectiveSlPrice > 0 && candleMin - effectiveSlPrice <= candleSpan * 1.5) {
+      min = Math.min(min, effectiveSlPrice - pad);
     }
-    if (swingStructure.swingLow > 0 && candleMin - swingStructure.swingLow <= candleSpan * 1.2) {
-      min = Math.min(min, swingStructure.swingLow - (isMetals ? 0.40 : 0.0002));
+    if (showTpLevel && effectiveTpPrice > 0 && candleMin - effectiveTpPrice <= candleSpan * 1.5) {
+      min = Math.min(min, effectiveTpPrice - pad);
+    }
+    if (swingStructure.swingLow > 0 && candleMin - swingStructure.swingLow <= candleSpan * 1.3) {
+      min = Math.min(min, swingStructure.swingLow - pad);
     }
     if (fvgBounds && fvgBounds.low > 0 && candleMin - fvgBounds.low <= candleSpan * 1.2) {
-      min = Math.min(min, fvgBounds.low - (isMetals ? 0.40 : 0.0002));
+      min = Math.min(min, fvgBounds.low - pad);
     }
     return Number(min.toFixed(2));
-  }, [candleMin, vertPad, candleSpan, showSlLevel, effectiveSlPrice, swingStructure.swingLow, fvgBounds, isMetals]);
+  }, [candleMin, vertPad, candleSpan, showSlLevel, effectiveSlPrice, showTpLevel, effectiveTpPrice, swingStructure.swingLow, fvgBounds, isMetals]);
 
   const maxPrice = useMemo(() => {
     let max = candleMax + vertPad;
-    // Include nearby levels without allowing distant TP to squash the candles
-    if (showTpLevel && effectiveTpPrice > 0 && effectiveTpPrice - candleMax <= candleSpan * 1.2) {
-      max = Math.max(max, effectiveTpPrice + (isMetals ? 0.40 : 0.0002));
+    const pad = isMetals ? 0.80 : 0.0004;
+    if (showTpLevel && effectiveTpPrice > 0 && effectiveTpPrice - candleMax <= candleSpan * 1.5) {
+      max = Math.max(max, effectiveTpPrice + pad);
     }
-    if (swingStructure.swingHigh > 0 && swingStructure.swingHigh - candleMax <= candleSpan * 1.2) {
-      max = Math.max(max, swingStructure.swingHigh + (isMetals ? 0.40 : 0.0002));
+    if (showSlLevel && effectiveSlPrice > 0 && effectiveSlPrice - candleMax <= candleSpan * 1.5) {
+      max = Math.max(max, effectiveSlPrice + pad);
+    }
+    if (swingStructure.swingHigh > 0 && swingStructure.swingHigh - candleMax <= candleSpan * 1.3) {
+      max = Math.max(max, swingStructure.swingHigh + pad);
     }
     if (fvgBounds && fvgBounds.high > 0 && fvgBounds.high - candleMax <= candleSpan * 1.2) {
-      max = Math.max(max, fvgBounds.high + (isMetals ? 0.40 : 0.0002));
+      max = Math.max(max, fvgBounds.high + pad);
     }
     return Number(max.toFixed(2));
-  }, [candleMax, vertPad, candleSpan, showTpLevel, effectiveTpPrice, swingStructure.swingHigh, fvgBounds, isMetals]);
+  }, [candleMax, vertPad, candleSpan, showTpLevel, effectiveTpPrice, showSlLevel, effectiveSlPrice, swingStructure.swingHigh, fvgBounds, isMetals]);
 
   const priceRange = maxPrice - minPrice || 1;
 
@@ -1035,10 +1041,10 @@ export function SmcChartOverlay({
         botY,
         boxHeight,
         boxWidth,
-        badgeX: originX + 8,
-        badgeY: Math.min(chartBottom - 26, Math.max(chartTop + 4, topY + 3)),
-        badgeWidth: isMobile ? 185 : 255,
-        badgeHeight: 20,
+        badgeX: Math.min(chartRight - (isMobile ? 128 : 158), originX + 6),
+        badgeY: Math.min(chartBottom - 24, Math.max(chartTop + 4, topY + 2)),
+        badgeWidth: isMobile ? 122 : 152,
+        badgeHeight: 16,
         badgeBg: s5Pass ? "#064e3b" : s4Pass ? "#134e4a" : "#0f172a",
         badgeStroke: s5Pass ? "#10b981" : s4Pass ? "#14b8a6" : isBullishSetup ? "#10b981" : "#f43f5e",
         badgeTextColor: "#ffffff",
@@ -1047,8 +1053,8 @@ export function SmcChartOverlay({
         strokeDash: s5Pass ? "none" : "4 4",
         strokeWidth: s5Pass ? 2.5 : 1.5,
         glowFilter: s5Pass ? "url(#glowGreen)" : undefined,
-        badgeTitle: fvgTitle,
-        badgeSub: `(${fvgBounds.low.toFixed(2)} - ${fvgBounds.high.toFixed(2)})`,
+        badgeTitle: s5Pass ? "S5 FVG" : s4Pass ? "S4 FVG" : "FVG",
+        badgeSub: `${fvgBounds.low.toFixed(2)}-${fvgBounds.high.toFixed(2)}`,
         isPrimaryFvg: true,
       });
     }
@@ -1126,10 +1132,10 @@ export function SmcChartOverlay({
         botY,
         boxHeight,
         boxWidth,
-        badgeX: originX + 6,
-        badgeY: Math.min(chartBottom - 26, Math.max(chartTop + 4, topY + 3)),
-        badgeWidth: isMobile ? 140 : 180,
-        badgeHeight: 18,
+        badgeX: Math.min(chartRight - (isMobile ? 116 : 144), originX + 6),
+        badgeY: Math.min(chartBottom - 24, Math.max(chartTop + 4, topY + 2)),
+        badgeWidth: isMobile ? 112 : 138,
+        badgeHeight: 16,
         badgeBg,
         badgeStroke,
         badgeTextColor: boxStroke,
@@ -1137,8 +1143,8 @@ export function SmcChartOverlay({
         boxStroke,
         strokeDash,
         strokeWidth,
-        badgeTitle: z.label || z.name,
-        badgeSub: `(${z.low.toFixed(2)} - ${z.high.toFixed(2)})`,
+        badgeTitle: shortName,
+        badgeSub: `${z.low.toFixed(2)}-${z.high.toFixed(2)}`,
         isPrimaryFvg: false,
       });
     });
@@ -1202,13 +1208,13 @@ export function SmcChartOverlay({
     priority: number;
   }
 
-  const tagHeight = isMobile ? 22 : 24;
-  const minTagGap = tagHeight + (isMobile ? 5 : 4);
+  const tagHeight = isMobile ? 16 : 18;
+  const minTagGap = tagHeight + 2;
 
   const stackedTags = useMemo<RightAxisTag[]>(() => {
     const list: RightAxisTag[] = [];
 
-    // 1. Live Price (Highest priority)
+    // 1. Live Price (Exact True Y Anchor)
     list.push({
       id: "live",
       price: livePrice,
@@ -1217,13 +1223,13 @@ export function SmcChartOverlay({
       bgFill: "#ffffff",
       borderStroke: "#94a3b8",
       textColor: "#000000",
-      fontSize: isMobile ? "9.5" : "11.5",
+      fontSize: isMobile ? "9" : "10.5",
       label: `LIVE $${livePrice.toFixed(2)}`,
       priority: 100,
     });
 
-    // 2. Active Entry Level
-    if (showEntryLevel && effectiveEntryPrice > 0) {
+    // 2. Active Entry Level (Only show if separate from LIVE)
+    if (showEntryLevel && effectiveEntryPrice > 0 && (isTradeActive || Math.abs(effectiveEntryPrice - livePrice) >= 0.15)) {
       list.push({
         id: "entry",
         price: effectiveEntryPrice,
@@ -1232,51 +1238,13 @@ export function SmcChartOverlay({
         bgFill: "#0284c7",
         borderStroke: "#38bdf8",
         textColor: "#ffffff",
-        fontSize: isMobile ? "9" : "10.5",
-        label: isMobile ? `ENTRY $${effectiveEntryPrice.toFixed(2)}` : `🔵 ENTRY $${effectiveEntryPrice.toFixed(2)}`,
-        priority: 90,
+        fontSize: isMobile ? "8.5" : "10",
+        label: isMobile ? `ENT $${effectiveEntryPrice.toFixed(2)}` : `🔵 ENTRY $${effectiveEntryPrice.toFixed(2)}`,
+        priority: 92,
       });
     }
 
-    // 3. Stop Loss (SL)
-    if (showSlLevel && effectiveSlPrice > 0) {
-      list.push({
-        id: "sl",
-        price: effectiveSlPrice,
-        targetY: getY(effectiveSlPrice),
-        renderedY: getY(effectiveSlPrice),
-        bgFill: isTradeActive ? "#dc2626" : "#7f1d1d",
-        borderStroke: isTradeActive ? "#fca5a5" : "#b91c1c",
-        textColor: "#ffffff",
-        fontSize: isMobile ? "9" : "10.5",
-        label: isMobile
-          ? `SL $${effectiveSlPrice.toFixed(2)}`
-          : isTradeActive
-          ? Math.abs(effectiveSlPrice - effectiveEntryPrice) < 0.20
-            ? `🛡️ BREAKEVEN $${effectiveSlPrice.toFixed(2)}`
-            : `🔴 SL $${effectiveSlPrice.toFixed(2)}`
-          : `🔒 SL (0.75) $${effectiveSlPrice.toFixed(2)}`,
-        priority: 85,
-      });
-    }
-
-    // 4. Take Profit (TP)
-    if (showTpLevel && effectiveTpPrice > 0) {
-      list.push({
-        id: "tp",
-        price: effectiveTpPrice,
-        targetY: getY(effectiveTpPrice),
-        renderedY: getY(effectiveTpPrice),
-        bgFill: isTradeActive ? "#059669" : "#064e3b",
-        borderStroke: isTradeActive ? "#6ee7b7" : "#059669",
-        textColor: "#ffffff",
-        fontSize: isMobile ? "9" : "10.5",
-        label: isMobile ? `TP $${effectiveTpPrice.toFixed(2)}` : (isTradeActive ? `🟢 TP $${effectiveTpPrice.toFixed(2)}` : `🎯 ${effectiveRrr}R $${effectiveTpPrice.toFixed(2)}`),
-        priority: 85,
-      });
-    }
-
-    // 5. CHoCH Level
+    // 3. CHoCH Level (High priority so cursor row aligns accurately with orange CHoCH line)
     if (swingStructure.chochLvl > 0) {
       list.push({
         id: "choch",
@@ -1286,56 +1254,90 @@ export function SmcChartOverlay({
         bgFill: s3Pass ? "#d97706" : "#78350f",
         borderStroke: s3Pass ? "#fde68a" : "#d97706",
         textColor: "#ffffff",
-        fontSize: isMobile ? "9" : "10.5",
-        label: isMobile
-          ? `CHOCH $${swingStructure.chochLvl.toFixed(2)}`
-          : s3Pass
-          ? `⚡ CHOCH 🟢 $${swingStructure.chochLvl.toFixed(2)}`
-          : `⏳ CHOCH $${swingStructure.chochLvl.toFixed(2)}`,
-        priority: 70,
+        fontSize: isMobile ? "8.5" : "10",
+        label: isMobile ? `CHOCH $${swingStructure.chochLvl.toFixed(2)}` : `CHOCH $${swingStructure.chochLvl.toFixed(2)}`,
+        priority: 95,
       });
     }
 
-    // 6. Swing High
+    // 4. Stop Loss (SL)
+    if (showSlLevel && effectiveSlPrice > 0) {
+      list.push({
+        id: "sl",
+        price: effectiveSlPrice,
+        targetY: getY(effectiveSlPrice),
+        renderedY: getY(effectiveSlPrice),
+        bgFill: isTradeActive ? "#dc2626" : "#7f1d1d",
+        borderStroke: isTradeActive ? "#fca5a5" : "#b91c1c",
+        textColor: "#ffffff",
+        fontSize: isMobile ? "8.5" : "10",
+        label: isMobile
+          ? `SL $${effectiveSlPrice.toFixed(2)}`
+          : isTradeActive
+          ? Math.abs(effectiveSlPrice - effectiveEntryPrice) < 0.20
+            ? `BE $${effectiveSlPrice.toFixed(2)}`
+            : `SL $${effectiveSlPrice.toFixed(2)}`
+          : `SL $${effectiveSlPrice.toFixed(2)}`,
+        priority: 88,
+      });
+    }
+
+    // 5. Take Profit (TP)
+    if (showTpLevel && effectiveTpPrice > 0) {
+      list.push({
+        id: "tp",
+        price: effectiveTpPrice,
+        targetY: getY(effectiveTpPrice),
+        renderedY: getY(effectiveTpPrice),
+        bgFill: isTradeActive ? "#059669" : "#064e3b",
+        borderStroke: isTradeActive ? "#6ee7b7" : "#059669",
+        textColor: "#ffffff",
+        fontSize: isMobile ? "8.5" : "10",
+        label: isMobile ? `TP $${effectiveTpPrice.toFixed(2)}` : `TP $${effectiveTpPrice.toFixed(2)}`,
+        priority: 86,
+      });
+    }
+
+    // 6. Swing High (only add if not colliding with SL pill within minTagGap)
     if (swingStructure.swingHigh > 0) {
-      const isSwept = s2Pass && isBearishSetup;
-      list.push({
-        id: "swingHigh",
-        price: swingStructure.swingHigh,
-        targetY: getY(swingStructure.swingHigh),
-        renderedY: getY(swingStructure.swingHigh),
-        bgFill: isSwept ? "#0891b2" : "#164e63",
-        borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
-        textColor: "#ffffff",
-        fontSize: isMobile ? "8.5" : "10",
-        label: isMobile
-          ? (isSwept ? `SWEPT $${swingStructure.swingHigh.toFixed(2)}` : `SWING HI $${swingStructure.swingHigh.toFixed(2)}`)
-          : isSwept
-          ? `⚡ BUY SWEPT $${swingStructure.swingHigh.toFixed(2)}`
-          : `⏳ SWING HI $${swingStructure.swingHigh.toFixed(2)}`,
-        priority: 60,
-      });
+      const shY = getY(swingStructure.swingHigh);
+      const nearExisting = list.some((t) => Math.abs(t.targetY - shY) < minTagGap);
+      if (!nearExisting) {
+        const isSwept = s2Pass && isBearishSetup;
+        list.push({
+          id: "swingHigh",
+          price: swingStructure.swingHigh,
+          targetY: shY,
+          renderedY: shY,
+          bgFill: isSwept ? "#0891b2" : "#164e63",
+          borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
+          textColor: "#ffffff",
+          fontSize: isMobile ? "8.5" : "9.5",
+          label: isSwept ? `SWEPT $${swingStructure.swingHigh.toFixed(2)}` : `SW HI $${swingStructure.swingHigh.toFixed(2)}`,
+          priority: 50,
+        });
+      }
     }
 
-    // 7. Swing Low
+    // 7. Swing Low (only add if not colliding with SL/TP/LIVE pill within minTagGap)
     if (swingStructure.swingLow > 0) {
-      const isSwept = s2Pass && isBullishSetup;
-      list.push({
-        id: "swingLow",
-        price: swingStructure.swingLow,
-        targetY: getY(swingStructure.swingLow),
-        renderedY: getY(swingStructure.swingLow),
-        bgFill: isSwept ? "#0891b2" : "#164e63",
-        borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
-        textColor: "#ffffff",
-        fontSize: isMobile ? "8.5" : "10",
-        label: isMobile
-          ? (isSwept ? `SWEPT $${swingStructure.swingLow.toFixed(2)}` : `SWING LO $${swingStructure.swingLow.toFixed(2)}`)
-          : isSwept
-          ? `⚡ SELL SWEPT $${swingStructure.swingLow.toFixed(2)}`
-          : `⏳ SWING LO $${swingStructure.swingLow.toFixed(2)}`,
-        priority: 60,
-      });
+      const slY = getY(swingStructure.swingLow);
+      const nearExisting = list.some((t) => Math.abs(t.targetY - slY) < minTagGap);
+      if (!nearExisting) {
+        const isSwept = s2Pass && isBullishSetup;
+        list.push({
+          id: "swingLow",
+          price: swingStructure.swingLow,
+          targetY: slY,
+          renderedY: slY,
+          bgFill: isSwept ? "#0891b2" : "#164e63",
+          borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
+          textColor: "#ffffff",
+          fontSize: isMobile ? "8.5" : "9.5",
+          label: isSwept ? `SWEPT $${swingStructure.swingLow.toFixed(2)}` : `SW LO $${swingStructure.swingLow.toFixed(2)}`,
+          priority: 50,
+        });
+      }
     }
 
     // Sort by natural targetY ascending (top to bottom on chart)
@@ -1734,140 +1736,142 @@ export function SmcChartOverlay({
               </div>
             </div>
 
-            {/* 9-Step Sequential Micro-Grid Directly Inside Chart (Responsive, Zero Overlap) */}
-            <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-1.5 text-[10px]">
+            {/* 9-Step Sequential Micro-Grid Directly Inside Chart (Crisp Fonts, Uniform Height, Directional Color) */}
+            <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-1.5">
               {/* S1: M15 Bias */}
               <div className={cn(
-                "p-1.5 rounded-lg border-2 text-center transition-all",
-                s1Pass
-                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+                "min-h-[46px] px-1 py-1.5 rounded-lg border-2 flex flex-col items-center justify-center text-center transition-all",
+                s1Pass && isM15Bullish
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.25)]"
+                  : s1Pass && isM15Bearish
+                  ? "bg-rose-950/80 border-rose-500 text-rose-200 shadow-[0_0_10px_rgba(244,63,94,0.25)]"
+                  : "bg-slate-900 border-slate-600 text-slate-200"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">1. M15 Bias</div>
-                <div className="truncate font-black mt-0.5">
-                  {s1Pass ? (isM15Bullish ? "BULLISH 🟢" : "BEARISH 🔴") : "NEUTRAL ⚪"}
+                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">1. M15 Bias</div>
+                <div className="text-[11px] leading-tight font-black whitespace-nowrap mt-1">
+                  {s1Pass ? (isM15Bullish ? "BULL 🟢" : "BEAR 🔴") : "NEUT ⚪"}
                 </div>
               </div>
 
               {/* S2: Sweep */}
               <div className={cn(
-                "p-1.5 rounded-lg border-2 text-center transition-all",
+                "min-h-[46px] px-1 py-1.5 rounded-lg border-2 flex flex-col items-center justify-center text-center transition-all",
                 s2Pass
-                  ? "bg-cyan-950/80 border-cyan-400 text-cyan-200 font-black shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+                  ? "bg-cyan-950/80 border-cyan-400 text-cyan-200 shadow-[0_0_10px_rgba(6,182,212,0.25)]"
                   : s1Pass
-                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">2. Sweep</div>
-                <div className="truncate font-black mt-0.5">
-                  {s2Pass ? "SWEEP 🟢" : s1Pass ? "SCANNING ⏳" : "WAITING ⚪"}
+                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">2. Sweep</div>
+                <div className="text-[11px] leading-tight font-black whitespace-nowrap mt-1">
+                  {s2Pass ? "PASS 🟢" : s1Pass ? "SCAN ⏳" : "WAIT ⚪"}
                 </div>
               </div>
 
               {/* S3: CHoCH */}
               <div className={cn(
-                "p-1.5 rounded-lg border-2 text-center transition-all",
+                "min-h-[46px] px-1 py-1.5 rounded-lg border-2 flex flex-col items-center justify-center text-center transition-all",
                 s3Pass
-                  ? "bg-amber-950/80 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)]"
+                  ? "bg-amber-950/80 border-amber-400 text-amber-200 shadow-[0_0_10px_rgba(245,158,11,0.25)]"
                   : s2Pass
-                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">3. CHoCH</div>
-                <div className="truncate font-black mt-0.5">
-                  {s3Pass ? "CHOCH 🟢" : s2Pass ? "SCANNING ⏳" : "WAITING ⚪"}
+                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">3. CHoCH</div>
+                <div className="text-[11px] leading-tight font-black whitespace-nowrap mt-1">
+                  {s3Pass ? "PASS 🟢" : s2Pass ? "SCAN ⏳" : "WAIT ⚪"}
                 </div>
               </div>
 
               {/* S4: FVG Creation */}
               <div className={cn(
-                "p-1.5 rounded-lg border-2 text-center transition-all",
+                "min-h-[46px] px-1 py-1.5 rounded-lg border-2 flex flex-col items-center justify-center text-center transition-all",
                 s4Pass
-                  ? "bg-teal-950/80 border-teal-400 text-teal-200 font-black shadow-[0_0_10px_rgba(20,184,166,0.3)]"
+                  ? "bg-teal-950/80 border-teal-400 text-teal-200 shadow-[0_0_10px_rgba(20,184,166,0.25)]"
                   : s3Pass
-                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">4. FVG Form</div>
-                <div className="truncate font-black mt-0.5">
-                  {s4Pass ? "FVG 🟢" : s3Pass ? "SCANNING ⏳" : "WAITING ⚪"}
+                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">4. FVG</div>
+                <div className="text-[11px] leading-tight font-black whitespace-nowrap mt-1">
+                  {s4Pass ? "PASS 🟢" : s3Pass ? "SCAN ⏳" : "WAIT ⚪"}
                 </div>
               </div>
 
               {/* S5: FVG Retest */}
               <div className={cn(
-                "p-1.5 rounded-lg border-2 text-center transition-all",
+                "min-h-[46px] px-1 py-1.5 rounded-lg border-2 flex flex-col items-center justify-center text-center transition-all",
                 s5Pass
-                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.25)]"
                   : s4Pass
-                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">5. Retest</div>
-                <div className="truncate font-black mt-0.5">
-                  {s5Pass ? "RETESTED 🟢" : s4Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">5. Retest</div>
+                <div className="text-[11px] leading-tight font-black whitespace-nowrap mt-1">
+                  {s5Pass ? "PASS 🟢" : s4Pass ? "WAIT ⏳" : "WAIT ⚪"}
                 </div>
               </div>
 
               {/* S6: Rejection Candle */}
               <div className={cn(
-                "p-1.5 rounded-lg border-2 text-center transition-all",
+                "min-h-[46px] px-1 py-1.5 rounded-lg border-2 flex flex-col items-center justify-center text-center transition-all",
                 s6Pass
-                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.25)]"
                   : s5Pass
-                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">6. Rejection</div>
-                <div className="truncate font-black mt-0.5">
-                  {s6Pass ? "REJECTED 🟢" : s5Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">6. Reject</div>
+                <div className="text-[11px] leading-tight font-black whitespace-nowrap mt-1">
+                  {s6Pass ? "PASS 🟢" : s5Pass ? "WAIT ⏳" : "WAIT ⚪"}
                 </div>
               </div>
 
               {/* S7: Confirmation Close */}
               <div className={cn(
-                "p-1.5 rounded-lg border-2 text-center transition-all",
+                "min-h-[46px] px-1 py-1.5 rounded-lg border-2 flex flex-col items-center justify-center text-center transition-all",
                 s7Pass
-                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.25)]"
                   : s6Pass
-                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">7. Close</div>
-                <div className="truncate font-black mt-0.5">
-                  {s7Pass ? "CLOSED 🟢" : s6Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">7. Close</div>
+                <div className="text-[11px] leading-tight font-black whitespace-nowrap mt-1">
+                  {s7Pass ? "PASS 🟢" : s6Pass ? "WAIT ⏳" : "WAIT ⚪"}
                 </div>
               </div>
 
               {/* S8: SL Placement ($0.75 Buf) */}
               <div className={cn(
-                "p-1.5 rounded-lg border-2 text-center transition-all",
+                "min-h-[46px] px-1 py-1.5 rounded-lg border-2 flex flex-col items-center justify-center text-center transition-all",
                 s8Pass
-                  ? "bg-rose-950/80 border-rose-400 text-rose-200 font-black shadow-[0_0_10px_rgba(244,63,94,0.3)]"
+                  ? "bg-rose-950/80 border-rose-400 text-rose-200 shadow-[0_0_10px_rgba(244,63,94,0.25)]"
                   : s2Pass
-                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">8. SL ($0.75)</div>
-                <div className="truncate font-black mt-0.5">
-                  {s8Pass ? "LOCKED 🟢" : s8Status.includes("FAIL") ? "FAIL 🔴" : "PENDING ⚪"}
+                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">8. SL $0.75</div>
+                <div className="text-[11px] leading-tight font-black whitespace-nowrap mt-1">
+                  {s8Pass ? "LOCK 🟢" : s8Status.includes("FAIL") ? "FAIL 🔴" : "WAIT ⚪"}
                 </div>
               </div>
 
               {/* S9: M15 Opposing TP */}
               <div className={cn(
-                "p-1.5 rounded-lg border-2 text-center transition-all",
+                "min-h-[46px] px-1 py-1.5 rounded-lg border-2 flex flex-col items-center justify-center text-center transition-all",
                 s9Pass
-                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 shadow-[0_0_10px_rgba(16,185,129,0.25)]"
                   : s9Status.includes("FAIL")
-                  ? "bg-rose-950/80 border-rose-500 text-rose-200 font-black"
+                  ? "bg-rose-950/80 border-rose-500 text-rose-200"
                   : s7Pass
-                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">9. M15 TP</div>
-                <div className="truncate font-black mt-0.5">
-                  {s9Pass ? "TARGET SET 🟢" : s9Status.includes("FAIL") ? "LOW R:R 🔴" : "PENDING ⚪"}
+                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">9. M15 TP</div>
+                <div className="text-[11px] leading-tight font-black whitespace-nowrap mt-1">
+                  {s9Pass ? "SET 🟢" : s9Status.includes("FAIL") ? "FAIL 🔴" : "WAIT ⚪"}
                 </div>
               </div>
             </div>
@@ -1878,9 +1882,10 @@ export function SmcChartOverlay({
           <TradingViewEmbedded symbol={symbol} />
         ) : (
           /* SVG Canvas with Crisp Rendering and Real-time Cursor Tracking */
-          <div className="relative w-full h-[440px] sm:h-[440px] md:h-[460px] lg:h-[480px]">
+          <div className="relative w-full h-[440px] sm:h-[470px]">
             <svg
               viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+              preserveAspectRatio="none"
               className="w-full h-full cursor-crosshair select-none"
               onMouseMove={handleMouseMove}
               onMouseLeave={handleMouseLeave}
@@ -2009,36 +2014,7 @@ export function SmcChartOverlay({
                       strokeWidth="1.2"
                     />
 
-                    {/* 4. Origin Anchor Pin Flag on the Originating Candle */}
-                    {!isMobile && (() => {
-                      const pinY = candleHighY > chartTop + 24 ? candleHighY - 18 : candleLowY + 5;
-                      const pinWidth = 84;
-                      return (
-                        <g>
-                          <rect
-                            x={zone.originX - pinWidth / 2}
-                            y={pinY}
-                            width={pinWidth}
-                            height="15"
-                            rx="3"
-                            fill="#090d16"
-                            stroke={zone.boxStroke}
-                            strokeWidth="1"
-                          />
-                          <text
-                            x={zone.originX}
-                            y={pinY + 11}
-                            fill={zone.boxStroke}
-                            fontSize="8.5"
-                            fontFamily="monospace"
-                            fontWeight="900"
-                            textAnchor="middle"
-                          >
-                            {zone.originLabel}
-                          </text>
-                        </g>
-                      );
-                    })()}
+
 
                     {/* 5. Anti-Collision Information Badge Inside/Beside the Zone (Zero Stacking Overlap) */}
                     <rect
@@ -2251,8 +2227,8 @@ export function SmcChartOverlay({
                               strokeWidth="1"
                             />
                             <rect
-                              x={sweepX + 6}
-                              y={getY(effectiveSlPrice) - 18}
+                              x={Math.min(chartRight - (isMobile ? 124 : 158), sweepX + 6)}
+                              y={Math.max(chartTop + 2, Math.min(chartBottom - 20, getY(effectiveSlPrice) - 18))}
                               width={isMobile ? 120 : 155}
                               height="17"
                               rx="3"
@@ -2261,8 +2237,8 @@ export function SmcChartOverlay({
                               strokeWidth="1"
                             />
                             <text
-                              x={sweepX + 10}
-                              y={getY(effectiveSlPrice) - 6}
+                              x={Math.min(chartRight - (isMobile ? 124 : 158), sweepX + 6) + 4}
+                              y={Math.max(chartTop + 2, Math.min(chartBottom - 20, getY(effectiveSlPrice) - 18)) + 12}
                               fill="#fca5a5"
                               fontSize={isMobile ? "8" : "9"}
                               fontFamily="monospace"
@@ -2301,8 +2277,8 @@ export function SmcChartOverlay({
                               strokeWidth="1"
                             />
                             <rect
-                              x={chochX + 6}
-                              y={getY(effectiveTpPrice) + 3}
+                              x={Math.min(chartRight - (isMobile ? 124 : 158), chochX + 6)}
+                              y={getY(effectiveTpPrice) + 22 > chartBottom ? Math.max(chartTop + 2, getY(effectiveTpPrice) - 20) : getY(effectiveTpPrice) + 3}
                               width={isMobile ? 120 : 155}
                               height="17"
                               rx="3"
@@ -2311,8 +2287,8 @@ export function SmcChartOverlay({
                               strokeWidth="1"
                             />
                             <text
-                              x={chochX + 10}
-                              y={getY(effectiveTpPrice) + 15}
+                              x={Math.min(chartRight - (isMobile ? 124 : 158), chochX + 6) + 4}
+                              y={(getY(effectiveTpPrice) + 22 > chartBottom ? Math.max(chartTop + 2, getY(effectiveTpPrice) - 20) : getY(effectiveTpPrice) + 3) + 12}
                               fill="#6ee7b7"
                               fontSize={isMobile ? "8" : "9"}
                               fontFamily="monospace"
@@ -2729,15 +2705,17 @@ export function SmcChartOverlay({
           <div
             className={cn(
               "p-3 rounded-lg border transition-all",
-              s1Pass
+              s1Pass && isM15Bullish
                 ? "bg-emerald-950/30 border-emerald-500/50 text-white"
+                : s1Pass && isM15Bearish
+                ? "bg-rose-950/30 border-rose-500/50 text-white"
                 : "bg-[#0d121f] border-zinc-800 text-zinc-400"
             )}
           >
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold flex items-center gap-1.5 text-white">
                 {s1Pass ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <CheckCircle2 className={cn("w-4 h-4", isM15Bearish ? "text-rose-400" : "text-emerald-400")} />
                 ) : (
                   <Clock className="w-4 h-4 text-zinc-500" />
                 )}
@@ -2747,8 +2725,10 @@ export function SmcChartOverlay({
                 variant="outline"
                 className={cn(
                   "text-[10px] px-1.5 py-0.2 font-bold",
-                  s1Pass
+                  s1Pass && isM15Bullish
                     ? "bg-emerald-500/20 text-emerald-300 border-emerald-400"
+                    : s1Pass && isM15Bearish
+                    ? "bg-rose-500/20 text-rose-300 border-rose-400"
                     : "bg-zinc-800 text-zinc-400 border-zinc-700"
                 )}
               >
