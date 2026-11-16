@@ -2794,11 +2794,11 @@ def main():
                         dyn_rrr = (abs(float(smc_tp) - float(p_a)) / max(0.01, abs(float(p_a) - float(smc_sl)))) if (smc_tp and smc_sl) else 2.0
                         if "BUY" in vid_reason:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢 (Entry on Touch)", "PASS 🟢", "PASS 🟢", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R Opposing Target)"
+                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢 (FVG Retested)", "PASS 🟢 (Bullish Rejection)", "PASS 🟢 (Candle Closed)", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R M15 Target)"
                             )
                         else:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴 (Entry on Touch)", "PASS 🔴", "PASS 🔴", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R Opposing Target)"
+                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴 (FVG Retested)", "PASS 🔴 (Bearish Rejection)", "PASS 🔴 (Candle Closed)", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R M15 Target)"
                             )
                         if smc_sl is not None:
                             sweep_p_val = float(smc_sl) + (0.75 if "BUY" in vid_reason else -0.75)
@@ -2820,10 +2820,8 @@ def main():
                                 s5_st = p_str.split(":", 1)[1].strip()
                             elif p_str.startswith("S6("):
                                 s6_st = p_str.split(":", 1)[1].strip()
-                                s8_st = s6_st
                             elif p_str.startswith("S7("):
                                 s7_st = p_str.split(":", 1)[1].strip()
-                                s9_st = s7_st
                             elif p_str.startswith("S8("):
                                 s8_st = p_str.split(":", 1)[1].strip()
                             elif p_str.startswith("S9("):
@@ -3179,7 +3177,7 @@ def main():
 
                         # If Auto-Execution is toggled OFF (Signals Only Mode), stop here!
                         if not AUTO_EXECUTE:
-                            logger.info(f"📢 [SIGNALS ONLY MODE 🟢] All 7 SMC conditions verified. Signal #{signal_id} logged to Dashboard & Discord. MT5 order placement SKIPPED per user configuration.")
+                            logger.info(f"📢 [SIGNALS ONLY MODE 🟢] All 9 SMC conditions verified. Signal #{signal_id} logged to Dashboard & Discord. MT5 order placement SKIPPED per user configuration.")
                             continue
 
                     except Exception as e_sig_prep:

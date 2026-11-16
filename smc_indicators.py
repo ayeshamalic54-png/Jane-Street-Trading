@@ -4,7 +4,7 @@ import pandas as pd
 def get_swing_points(df, n_left=3, n_right=3, min_amplitude=0.0):
     """
     Returns lists of swing highs (price, index) and swing lows (price, index)
-    using institutional fractal definitions with n_left and n_right candles (default 3x3 = 7 bars).
+    using institutional fractal definitions with n_left and n_right candles.
     Optionally enforces min_amplitude to filter out tight consolidation noise.
     """
     if df is None or len(df) < (n_left + n_right + 1):
@@ -55,13 +55,9 @@ def get_swing_points(df, n_left=3, n_right=3, min_amplitude=0.0):
 def detect_market_structure(df):
     """
     Institutional M15 Market Structure Bias with Structural Trend Memory:
-    - In SMC/ICT, once a structure is established (Bullish: HH/HL or Bearish: LH/LL),
-      the trend REMAINS ACTIVE until an opposite structural break occurs.
-    - A temporary pullback or minor lower high inside an uptrend does NOT turn bias to 'NEUTRAL';
-      it is a discount retracement for buy entries.
-    - BULLISH: Trend remains Bullish until a candle closes below the confirmed structural Higher Low (Bearish MSS).
-    - BEARISH: Trend remains Bearish until a candle closes above the confirmed structural Lower High (Bullish MSS).
-    - NEUTRAL: Only returned if historical swing data is completely flat or undefined.
+    - BULLISH: Higher Highs & Higher Lows (HH & HL), or continuing uptrend until HL breaks.
+    - BEARISH: Lower Highs & Lower Lows (LH & LL), or continuing downtrend until LH breaks.
+    - NEUTRAL: Only returned if historical swing data is flat or undefined.
     """
     if df is None or len(df) < 5:
         return 'NEUTRAL'
@@ -72,8 +68,6 @@ def detect_market_structure(df):
     elif len(df) > 0 and float(df['close'].iloc[-1]) > 500:
         is_metals = True
 
-    # 1. Enforce institutional structural amplitude threshold on M15
-    # Gold swings must have >= $3.00 amplitude to prevent micro-noise wiggles from polluting HTF bias
     min_amp = 3.00 if is_metals else 0.0020
     swing_highs, swing_lows = get_swing_points(df, n_left=3, n_right=3, min_amplitude=min_amp)
     if len(swing_highs) < 2 or len(swing_lows) < 2:
@@ -84,24 +78,6 @@ def detect_market_structure(df):
     if len(swing_highs) < 2 or len(swing_lows) < 2:
         return 'NEUTRAL'
 
-    # Combine all confirmed swing events chronologically
-    events = []
-    for p, idx in swing_highs:
-        events.append((idx, 'HIGH', p))
-    for p, idx in swing_lows:
-        events.append((idx, 'LOW', p))
-    events.sort(key=lambda x: x[0])
-
-    last_sh = None
-    prev_sh = None
-    last_sl = None
-    prev_sl = None
-    bias = 'NEUTRAL'
-
-    # 2. Institutional Protected Structural Assessment:
-    # A Bullish trend requires Higher Highs & Higher Lows (HH & HL).
-    # A Bearish trend requires Lower Highs & Lower Lows (LH & LL).
-    # In a downtrend (making lower lows), minor green swing bounces are NOT Bullish unless Key Resistance (MSS) breaks!
     has_hh = swing_highs[-1][0] > swing_highs[-2][0]
     has_hl = swing_lows[-1][0] > swing_lows[-2][0]
     has_lh = swing_highs[-1][0] < swing_highs[-2][0]
@@ -114,38 +90,29 @@ def detect_market_structure(df):
     key_support = min(recent_sl_levels[-2:]) if len(recent_sl_levels) >= 2 else (recent_sl_levels[-1] if recent_sl_levels else None)
 
     if has_hh and has_hl:
-        bias = 'BULLISH'
+        return 'BULLISH'
     elif has_lh and has_ll:
-        bias = 'BEARISH'
+        return 'BEARISH'
     elif has_ll:
-        # Market actively dumping/making lower lows; cannot be Bullish unless confirmed structural MSS break
         if key_resistance is not None and curr_close > key_resistance:
-            bias = 'BULLISH'
-        else:
-            bias = 'BEARISH'
+            return 'BULLISH'
+        return 'BEARISH'
     elif has_hh:
-        # Market actively rallying/making higher highs; cannot be Bearish unless confirmed structural MSS break
         if key_support is not None and curr_close < key_support:
-            bias = 'BEARISH'
-        else:
-            bias = 'BULLISH'
+            return 'BEARISH'
+        return 'BULLISH'
     elif has_hl and not has_ll:
-        bias = 'BULLISH'
+        return 'BULLISH'
     elif has_lh and not has_hh:
-        bias = 'BEARISH'
-    else:
-        bias = 'NEUTRAL'
-
-    return bias
+        return 'BEARISH'
+    return 'NEUTRAL'
 
 
 def detect_liquidity_sweep(df_m5):
     """
-    Step 2: M5 Liquidity Sweep Detection.
-    Checks if recent candles sweep a confirmed M5 swing low (sell-side) or swing high (buy-side).
-    
-    - Sell-side Sweep (for BUY): Candle low[i] < swing_low AND close[i] >= swing_low.
-    - Buy-side Sweep (for SELL): Candle high[i] > swing_high AND close[i] <= swing_high.
+    Step 2: M5 Liquidity Sweep (Stop Loss Hunt) Detection.
+    Captures genuine 1-candle wick sweeps AND 2-candle reclaim sweeps beyond confirmed M5 Swing Highs/Lows
+    over an 18-candle (90 min) session window.
 
     Returns:
     - (is_swept_sell_side, sweep_lowest_price, swing_level, sweep_idx)
@@ -154,17 +121,18 @@ def detect_liquidity_sweep(df_m5):
     if df_m5 is None or len(df_m5) < 10:
         return (False, 0.0, 0.0, -1), (False, 0.0, 0.0, -1)
 
-    # Detect if asset is Gold / Metals
     is_metals = False
     if 'symbol' in df_m5.columns and any(m in str(df_m5['symbol'].iloc[0]).upper() for m in ['XAU', 'GOLD', 'XAG', 'SILVER']):
         is_metals = True
     elif len(df_m5) > 0 and float(df_m5['close'].iloc[-1]) > 500:
         is_metals = True
 
-    min_amp = 1.75 if is_metals else 0.00015
+    min_amp = 1.25 if is_metals else 0.00015
     swing_highs, swing_lows = get_swing_points(df_m5, n_left=3, n_right=3, min_amplitude=min_amp)
     if len(swing_highs) < 2 or len(swing_lows) < 2:
         swing_highs, swing_lows = get_swing_points(df_m5, n_left=2, n_right=2, min_amplitude=min_amp)
+    if not swing_highs or not swing_lows:
+        swing_highs, swing_lows = get_swing_points(df_m5, n_left=2, n_right=2)
     if not swing_highs or not swing_lows:
         return (False, 0.0, 0.0, -1), (False, 0.0, 0.0, -1)
 
@@ -176,46 +144,59 @@ def detect_liquidity_sweep(df_m5):
     sell_sweep = (False, 0.0, 0.0, -1)
     buy_sweep = (False, 0.0, 0.0, -1)
 
-    min_structural_depth = 2.50 if is_metals else 0.0018
-    min_penetration = 0.25 if is_metals else 0.00003
+    min_structural_depth = 1.50 if is_metals else 0.0010
+    min_penetration = 0.10 if is_metals else 0.00003
+    reclaim_max_dip = 1.50 if is_metals else 0.0008
 
-    # Check recent candles for a fresh liquidity sweep (last 14 candles / 70 mins window)
-    # Search BACKWARDS (from newest candle to oldest) so we always capture the MOST RECENT active sweep
-    lookback_start = max(0, n - 14)
+    # Evaluate up to newest bars over an 18-candle (90-min) institutional session window
+    lookback_start = max(0, n - 18)
     for i in range(n - 1, lookback_start - 1, -1):
-        # 1. Sell-side sweep (BUY setup): Price wicks below recent structural swing low, but closes ABOVE it
+        # 1. Sell-side sweep (BUY setup): Price wicks below structural swing low and reclaims above
         for sl_val, sl_idx in reversed(swing_lows):
             if i > sl_idx + 1:
-                # Structural depth check: ensure the swing low was a real swing, not an internal micro-blip
                 prior_peak = max(highs[max(0, sl_idx - 6):sl_idx + 1])
                 if (prior_peak - sl_val) < min_structural_depth:
-                    continue  # Ignore minor noise blip inside consolidation
+                    continue
 
-                # Penetration check: must wick at least min_penetration beyond swing level
-                if (sl_val - lows[i]) >= min_penetration and closes[i] >= sl_val:
-                    # Breakdown guard: ensure price has NOT closed below this sweep low subsequently
-                    subsequent_break = any(closes[k] < lows[i] for k in range(i + 1, n))
+                is_one_bar_sweep = (sl_val - lows[i]) >= min_penetration and closes[i] >= sl_val
+                is_two_bar_reclaim = (
+                    (i + 1 < n - 1)
+                    and (sl_val - lows[i]) >= min_penetration
+                    and closes[i] >= (sl_val - reclaim_max_dip)
+                    and closes[i + 1] >= sl_val
+                )
+                if is_one_bar_sweep or is_two_bar_reclaim:
+                    sweep_low = float(min(lows[i], lows[i + 1])) if is_two_bar_reclaim else float(lows[i])
+                    sweep_end_idx = (i + 1) if is_two_bar_reclaim else i
+                    # Check confirmed closed bars after reclaim so a single forming tick doesn't erase active setup
+                    subsequent_break = any(closes[k] < sweep_low for k in range(sweep_end_idx + 1, max(sweep_end_idx + 1, n - 1)))
                     if not subsequent_break:
-                        sell_sweep = (True, float(lows[i]), float(sl_val), i)
+                        sell_sweep = (True, sweep_low, float(sl_val), i)
                         break
         if sell_sweep[0]:
             break
 
     for i in range(n - 1, lookback_start - 1, -1):
-        # 2. Buy-side sweep (SELL setup): Price wicks above recent structural swing high, but closes BELOW it
+        # 2. Buy-side sweep (SELL setup): Price wicks above structural swing high and reclaims below
         for sh_val, sh_idx in reversed(swing_highs):
             if i > sh_idx + 1:
-                # Structural depth check: ensure the swing high was a real swing, not an internal micro-blip
                 prior_trough = min(lows[max(0, sh_idx - 6):sh_idx + 1])
                 if (sh_val - prior_trough) < min_structural_depth:
-                    continue  # Ignore minor noise blip inside consolidation
+                    continue
 
-                # Penetration check: must wick at least min_penetration beyond swing level
-                if (highs[i] - sh_val) >= min_penetration and closes[i] <= sh_val:
-                    # Breakout guard: ensure price has NOT closed above this sweep high subsequently
-                    subsequent_break = any(closes[k] > highs[i] for k in range(i + 1, n))
+                is_one_bar_sweep = (highs[i] - sh_val) >= min_penetration and closes[i] <= sh_val
+                is_two_bar_reclaim = (
+                    (i + 1 < n - 1)
+                    and (highs[i] - sh_val) >= min_penetration
+                    and closes[i] <= (sh_val + reclaim_max_dip)
+                    and closes[i + 1] <= sh_val
+                )
+                if is_one_bar_sweep or is_two_bar_reclaim:
+                    sweep_high = float(max(highs[i], highs[i + 1])) if is_two_bar_reclaim else float(highs[i])
+                    sweep_end_idx = (i + 1) if is_two_bar_reclaim else i
+                    subsequent_break = any(closes[k] > sweep_high for k in range(sweep_end_idx + 1, max(sweep_end_idx + 1, n - 1)))
                     if not subsequent_break:
-                        buy_sweep = (True, float(highs[i]), float(sh_val), i)
+                        buy_sweep = (True, sweep_high, float(sh_val), i)
                         break
         if buy_sweep[0]:
             break
@@ -226,10 +207,8 @@ def detect_liquidity_sweep(df_m5):
 def detect_choch_bos(df_m5, sweep_idx, is_bullish=True):
     """
     Step 3: Bullish / Bearish CHoCH (Change of Character) & BOS.
-    
-    - Bullish CHoCH: After sell-side sweep, M5 candle CLOSES above the last confirmed structural lower high formed PRIOR to the sweep.
-    - Bearish CHoCH: After buy-side sweep, M5 candle CLOSES below the last confirmed structural higher low formed PRIOR to the sweep.
-    Returns: (has_choch, choch_level, choch_candle_index)
+    - Bullish CHoCH: After sell-side sweep, M5 candle CLOSES above the last confirmed swing high formed PRIOR to the sweep.
+    - Bearish CHoCH: After buy-side sweep, M5 candle CLOSES below the last confirmed swing low formed PRIOR to the sweep.
     """
     if df_m5 is None or sweep_idx < 0 or sweep_idx >= len(df_m5):
         return False, 0.0, -1
@@ -242,26 +221,22 @@ def detect_choch_bos(df_m5, sweep_idx, is_bullish=True):
     swing_highs, swing_lows = get_swing_points(df_m5, n_left=2, n_right=2)
 
     if is_bullish:
-        # Last confirmed swing high formed prior to sweep_idx
         prior_sh = [p for p, idx in swing_highs if idx < sweep_idx]
         if prior_sh:
             choch_lvl = prior_sh[-1]
         else:
             choch_lvl = max(highs[max(0, sweep_idx - 6):sweep_idx])
-            
-        # Check if any candle AFTER sweep_idx CLOSES above choch_lvl
+
         for j in range(sweep_idx + 1, n):
             if closes[j] > choch_lvl:
                 return True, float(choch_lvl), j
     else:
-        # Last confirmed swing low formed prior to sweep_idx
         prior_sl = [p for p, idx in swing_lows if idx < sweep_idx]
         if prior_sl:
             choch_lvl = prior_sl[-1]
         else:
             choch_lvl = min(lows[max(0, sweep_idx - 6):sweep_idx])
-            
-        # Check if any candle AFTER sweep_idx CLOSES below choch_lvl
+
         for j in range(sweep_idx + 1, n):
             if closes[j] < choch_lvl:
                 return True, float(choch_lvl), j
@@ -269,14 +244,8 @@ def detect_choch_bos(df_m5, sweep_idx, is_bullish=True):
     return False, 0.0, -1
 
 
-def detect_order_blocks(df, min_disp=1.0, max_dist=18.0):
-    """
-    Detects Order Blocks (OB) and Breaker Blocks:
-    - Bullish OB: Last down candle before strong upward displacement breaking structure.
-    - Bearish OB: Last up candle before strong downward displacement breaking structure.
-    - Breaker Blocks: Failed OBs swept and broken by price.
-    Filters out micro-noise and limits to freshest structural zones.
-    """
+def detect_order_blocks(df, min_disp=0.80, max_dist=18.0):
+    """Detects Order Blocks (OB) and Breaker Blocks."""
     if df is None or len(df) < 5:
         return [], [], [], []
 
@@ -345,10 +314,8 @@ def detect_order_blocks(df, min_disp=1.0, max_dist=18.0):
 def detect_smc_zones(df, min_idx=0, sweep_low=None, sweep_high=None):
     """
     Step 4: Fair Value Gaps (3-Candle FVG), Order Blocks (OB), and Breaker Blocks.
-    Captures the genuine Displacement Leg FVGs formed by the sweep-to-CHoCH impulse leg
-    as well as post-CHoCH expansion FVGs.
-    Filters micro-noise (< $1.00 on Gold) and distant dead zones (> $18.00).
-    Properly detects true iFVGs instead of duplicating FVGs.
+    Uses balanced institutional M5 displacement thresholds ($0.40 on Gold, 1.8 pips on Forex)
+    so legitimate M5 scalping FVGs are captured accurately without losing precision.
     """
     if df is None or len(df) < 5:
         return {
@@ -364,19 +331,21 @@ def detect_smc_zones(df, min_idx=0, sweep_low=None, sweep_high=None):
     n = len(df)
     last_price = closes[-1]
 
-    # Institutional threshold to eliminate 20-30 cent spread/tick noise
     if last_price > 1000:
-        min_gap = 1.00       # Gold / BTC: minimum $1.00 gap for real institutional imbalance
-        max_dist = 18.00     # Reject dead zones > $18 away from current trading action
-        min_ob_disp = 1.20
+        min_gap = 0.40       # Gold / BTC: balanced institutional M5 imbalance threshold
+        max_dist = 18.00
+        min_ob_disp = 0.80
+        mit_tol = 0.20
     elif last_price > 20:
-        min_gap = 0.08       # Silver / Platinum
+        min_gap = 0.04       # Silver / Platinum
         max_dist = 2.00
-        min_ob_disp = 0.10
+        min_ob_disp = 0.06
+        mit_tol = 0.02
     else:
-        min_gap = 0.00035    # Forex (3.5 pips)
+        min_gap = 0.00018    # Forex (1.8 pips)
         max_dist = 0.0080
-        min_ob_disp = 0.00040
+        min_ob_disp = 0.00025
+        mit_tol = 0.00010
 
     raw_bull_fvgs = []
     raw_bear_fvgs = []
@@ -386,47 +355,48 @@ def detect_smc_zones(df, min_idx=0, sweep_low=None, sweep_high=None):
         gap_up = lows[i] - highs[i - 2]
         gap_down = lows[i - 2] - highs[i]
         if gap_up >= min_gap:
-            # Anchor check: ensure bullish FVG is at or above sweep low if provided
             if sweep_low is None or highs[i - 2] >= (sweep_low - 0.50):
                 raw_bull_fvgs.append((highs[i - 2], lows[i], i))
         elif gap_down >= min_gap:
-            # Anchor check: ensure bearish FVG is at or below sweep high if provided
             if sweep_high is None or lows[i - 2] <= (sweep_high + 0.50):
                 raw_bear_fvgs.append((highs[i], lows[i - 2], i))
 
     active_bull = []
     active_bear = []
+    active_bull_meta = []
+    active_bear_meta = []
     mitigated_bull_fvgs = []
     mitigated_bear_fvgs = []
 
     for low_b, high_b, idx in raw_bull_fvgs:
         mitigated = False
-        for j in range(idx + 1, n):
-            if closes[j] < low_b:
+        # Do not mitigate on the final still-forming bar n-1; wait for bar close
+        for j in range(idx + 1, max(idx + 1, n - 1)):
+            if closes[j] < (low_b - mit_tol):
                 mitigated = True
                 break
         if not mitigated:
             if abs(((low_b + high_b) / 2) - last_price) <= max_dist:
                 active_bull.append((float(low_b), float(high_b)))
+                active_bull_meta.append((float(low_b), float(high_b), int(idx)))
         else:
             mitigated_bull_fvgs.append((float(low_b), float(high_b), idx))
 
     for low_b, high_b, idx in raw_bear_fvgs:
         mitigated = False
-        for j in range(idx + 1, n):
-            if closes[j] > high_b:
+        for j in range(idx + 1, max(idx + 1, n - 1)):
+            if closes[j] > (high_b + mit_tol):
                 mitigated = True
                 break
         if not mitigated:
             if abs(((low_b + high_b) / 2) - last_price) <= max_dist:
                 active_bear.append((float(low_b), float(high_b)))
+                active_bear_meta.append((float(low_b), float(high_b), int(idx)))
         else:
             mitigated_bear_fvgs.append((float(low_b), float(high_b), idx))
 
     bull_ob, bear_ob, bull_breaker, bear_breaker = detect_order_blocks(df, min_disp=min_ob_disp, max_dist=max_dist)
 
-    # Genuine Inversion FVG (iFVG) — NO DUPLICATION:
-    # A prior mitigated FVG where price traded through and now flips support/resistance
     bullish_ifvg = []
     bearish_ifvg = []
     for low_b, high_b, idx in mitigated_bear_fvgs[-3:]:
@@ -437,8 +407,10 @@ def detect_smc_zones(df, min_idx=0, sweep_low=None, sweep_high=None):
             bearish_ifvg.append((low_b, high_b))
 
     return {
-        'bullish_fvg': active_bull[-2:],
-        'bearish_fvg': active_bear[-2:],
+        'bullish_fvg': [(l, h) for l, h in active_bull[-2:]],
+        'bearish_fvg': [(l, h) for l, h in active_bear[-2:]],
+        'bullish_fvg_meta': active_bull_meta[-2:],
+        'bearish_fvg_meta': active_bear_meta[-2:],
         'bullish_ob': bull_ob[-2:],
         'bearish_ob': bear_ob[-2:],
         'bullish_breaker': bull_breaker[-2:],
@@ -456,23 +428,62 @@ def is_price_in_zones(price, zones):
     return False
 
 
-def check_fvg_retest(closed_open, closed_high, closed_low, closed_close, fvg_zones, is_bullish=True, max_wick_buf=0.75):
+def check_fvg_retest(closed_open, closed_high, closed_low, closed_close, fvg_zones, is_bullish=True, max_wick_buf=0.75, prev_row=None, closed_idx=None):
     """
-    Step 5: Rigorous FVG Retest Verification for SMC Scalping.
-    Checks whether a confirmed closed candle validly retested an active FVG:
-    - Bullish FVG [low_b, high_b]:
-      1. Price reached down into the FVG (closed_low <= high_b)
-      2. Price respected the structural support (closed_low >= low_b - max_wick_buf and closed_close >= low_b - 0.25)
-    - Bearish FVG [low_b, high_b]:
-      1. Price reached up into the FVG (closed_high >= low_b)
-      2. Price respected the structural resistance (closed_high <= high_b + max_wick_buf and closed_close <= high_b + 0.25)
-    Returns (is_retested, matched_fvg)
+    Step 5: Institutional Closed-Candle FVG Retest Verification.
+    Ensures ONLY candles strictly AFTER FVG creation (candle_idx > fvg_creation_idx)
+    can qualify as a pullback/retest, preventing false triggers on the displacement bar itself.
+    fvg_zones can contain (low_b, high_b) or (low_b, high_b, creation_idx) tuples.
     """
-    for low_b, high_b in fvg_zones:
+    close_tol = 0.25 if max_wick_buf >= 0.1 else 0.00015
+
+    prev_low = float(prev_row['low']) if prev_row is not None else None
+    prev_high = float(prev_row['high']) if prev_row is not None else None
+    prev_close = float(prev_row['close']) if prev_row is not None else None
+    prev_idx = (closed_idx - 1) if closed_idx is not None else None
+
+    for item in fvg_zones:
+        low_b, high_b = float(item[0]), float(item[1])
+        creation_idx = int(item[2]) if len(item) >= 3 else -1
+
+        if closed_idx is not None and creation_idx >= 0 and closed_idx <= creation_idx:
+            continue  # Cannot retest an FVG on the exact candle that created it
+
+        can_use_prev = (
+            prev_row is not None
+            and (prev_idx is None or creation_idx < 0 or prev_idx > creation_idx)
+        )
+
         if is_bullish:
-            if closed_low <= high_b and closed_low >= (low_b - max_wick_buf) and closed_close >= (low_b - 0.25):
-                return True, (float(low_b), float(high_b))
+            direct_touch = (
+                closed_low <= high_b
+                and closed_low >= (low_b - max_wick_buf)
+                and closed_close >= (low_b - close_tol)
+            )
+            two_bar_retest = (
+                can_use_prev
+                and prev_low <= high_b
+                and prev_low >= (low_b - max_wick_buf)
+                and prev_close >= (low_b - close_tol)
+                and closed_close >= low_b
+                and closed_close >= closed_open
+            )
+            if direct_touch or two_bar_retest:
+                return True, (low_b, high_b)
         else:
-            if closed_high >= low_b and closed_high <= (high_b + max_wick_buf) and closed_close <= (high_b + 0.25):
-                return True, (float(low_b), float(high_b))
+            direct_touch = (
+                closed_high >= low_b
+                and closed_high <= (high_b + max_wick_buf)
+                and closed_close <= (high_b + close_tol)
+            )
+            two_bar_retest = (
+                can_use_prev
+                and prev_high >= low_b
+                and prev_high <= (high_b + max_wick_buf)
+                and prev_close <= (high_b + close_tol)
+                and closed_close <= high_b
+                and closed_close <= closed_open
+            )
+            if direct_touch or two_bar_retest:
+                return True, (low_b, high_b)
     return False, None

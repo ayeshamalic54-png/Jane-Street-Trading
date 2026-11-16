@@ -192,23 +192,23 @@ export function SmcChartOverlay({
   const isM15Bearish = rawM15Bias.includes("BEARISH");
   const s1Pass = (isM15Bullish || isM15Bearish) && !rawM15Bias.includes("NEUTRAL");
 
-  // Sequential Condition Verifications (Direct FVG Retest Entry)
+  // Sequential 9-Condition Pure SMC Verifications (Restored S6 Rejection + S7 Close Confirmation)
   const s2Pass = s1Pass && isPassText(sweepStatus);
   const s3Pass = s2Pass && isPassText(chochStatus);
   const s4Pass = s3Pass && isPassText(fvgStatus);
   const s5Pass = s4Pass && isPassText(retestStatus);
+  const s6Pass = s5Pass && isPassText(s6Status); // S6: Rejection Candle
+  const s7Pass = s6Pass && isPassText(s7Status); // S7: Closed Candle Confirmation
 
   const hasActivePosition = Boolean(
     activePosition && (activePosition.ticket || activePosition.entryPrice)
   );
-  // Entry executes directly upon FVG Retest (s5Pass)
-  const isSignalFired = (action === "BUY" || action === "SELL") && s5Pass;
+  const isSignalFired = (action === "BUY" || action === "SELL") && s7Pass;
   const isTradeActive = hasActivePosition || isSignalFired;
 
-  const s6Pass = isPassText(s6Status) || isPassText(s8Status) || (s2Pass && isTradeActive); // SL Buffer ($0.75)
-  const s7Pass = isPassText(s7Status) || isPassText(s9Status) || (s5Pass && isTradeActive) || s5Pass; // Opposing Target
-  const s8Pass = s6Pass;
-  const s9Pass = s7Pass;
+  // Strictly require actual S8/S9 pass text (Zero false-green override!)
+  const s8Pass = isPassText(s8Status) || (s2Pass && isTradeActive);
+  const s9Pass = isPassText(s9Status) || (s7Pass && isTradeActive);
 
   const passedCount = [
     s1Pass,
@@ -218,6 +218,8 @@ export function SmcChartOverlay({
     s5Pass,
     s6Pass,
     s7Pass,
+    s8Pass,
+    s9Pass,
   ].filter(Boolean).length;
 
   const tradeDirection = hasActivePosition
@@ -466,7 +468,7 @@ export function SmcChartOverlay({
     const sweepIdx = Math.max(2, Math.floor(count * 0.35));
     const chochIdx = Math.max(sweepIdx + 2, Math.floor(count * 0.55));
     const retestIdx = Math.max(chochIdx + 2, Math.floor(count * 0.72));
-    // Immediate execution on FVG retest touch (zero delay)
+    const rejectionIdx = Math.max(retestIdx + 1, Math.min(count - 2, Math.floor(count * 0.86)));
     const liveIdx = count - 1;
 
     // Build contiguous sequence: bar[k].open ALWAYS equals bar[k-1].close
@@ -484,7 +486,7 @@ export function SmcChartOverlay({
       let isSweep = false;
       let isChoch = false;
       let isRetest = false;
-      // Instant entry on touch
+      let isRejection = false;
 
       if (k === liveIdx) {
         // Current forming candle: close is strictly identical to livePrice
@@ -520,12 +522,16 @@ export function SmcChartOverlay({
         const fvgMid = (swP + chP) * 0.5;
         closeP = (openP + fvgMid) * 0.5;
       } else if (k === retestIdx) {
-        // Phase 6: Retest candle dipping into FVG zone (Immediate Entry on Touch)
+        // Phase 6: Retest candle dipping into FVG zone
         isRetest = s5Pass;
         const fvgMid = (swP + chP) * 0.5;
         closeP = isBullishSetup ? fvgMid + step * 0.15 : fvgMid - step * 0.15;
+      } else if (k === rejectionIdx) {
+        // Phase 7: Rejection candle closing in trend direction away from FVG
+        isRejection = s6Pass;
+        closeP = isBullishSetup ? openP + step * 0.65 : openP - step * 0.65;
       } else {
-        // Phase 7: Post-entry expansion towards Opposing TP
+        // Phase 8: Expansion after closed rejection confirmation
         const remaining = liveIdx - k;
         const stepDelta = (livePrice - openP) / (remaining + 1);
         closeP = openP + stepDelta;
@@ -548,7 +554,13 @@ export function SmcChartOverlay({
         // Final live candle: ensure wick wraps livePrice neatly
         highP = Math.max(openP, livePrice) + (livePrice >= openP ? step * 0.2 : step * 0.08);
         lowP = Math.min(openP, livePrice) - (livePrice <= openP ? step * 0.2 : step * 0.08);
-      
+      } else if (k === rejectionIdx) {
+        const fvgMid = (swP + chP) * 0.5;
+        if (isBullishSetup) {
+          lowP = Math.min(lowP, fvgMid - step * 0.3);
+        } else {
+          highP = Math.max(highP, fvgMid + step * 0.3);
+        }
       }
 
       bars.push({
@@ -562,7 +574,7 @@ export function SmcChartOverlay({
         isSweep,
         isChoch,
         isRetest,
-        // entry on retest
+        isRejection,
       });
 
       prevClose = closeP;
@@ -884,24 +896,27 @@ export function SmcChartOverlay({
     return { swings, path };
   }, [candles, candleSpacing, chartLeft, isBullishSetup, minPrice, maxPrice, priceRange, plotHeight, chartBottom]);
 
-  // Key milestone candle indices across the SMC sequence
+  // Key milestone candle indices across the 9-step SMC sequence
   const candleMilestones = useMemo(() => {
     const count = candles.length;
     const defaultSweep = Math.max(2, Math.floor(count * 0.35));
     const defaultChoch = Math.max(defaultSweep + 2, Math.floor(count * 0.55));
     const defaultRetest = Math.max(defaultChoch + 2, Math.floor(count * 0.72));
+    const defaultRejection = Math.max(defaultRetest + 1, Math.min(count - 2, Math.floor(count * 0.86)));
 
     const sIdx = candles.findIndex((c) => c.isSweep);
     const cIdx = candles.findIndex((c) => c.isChoch);
     const rIdx = candles.findIndex((c) => c.isRetest);
+    const jIdx = candles.findIndex((c) => c.isRejection);
 
     const sweep = sIdx >= 0 ? sIdx : defaultSweep;
     const choch = cIdx >= 0 ? cIdx : defaultChoch;
     const retest = rIdx >= 0 ? rIdx : defaultRetest;
-    const entry = isTradeActive || s5Pass ? retest : choch;
+    const rejection = jIdx >= 0 ? jIdx : defaultRejection;
+    const entry = isTradeActive || s7Pass ? rejection : (s5Pass ? retest : choch);
 
-    return { sweep, choch, retest, entry };
-  }, [candles, isTradeActive, s5Pass]);
+    return { sweep, choch, retest, rejection, entry };
+  }, [candles, isTradeActive, s7Pass, s5Pass]);
 
   interface RenderedZone {
     id: string;
@@ -1486,7 +1501,7 @@ export function SmcChartOverlay({
                 {isTradeActive
                   ? `⚡ TRADE ACTIVE: ${tradeDirection} EXECUTED @ $${entryPrice.toFixed(2)}`
                   : s1Pass
-                  ? `🔍 SETUP SCANNING — ${passedCount} OF 7 CONDITIONS VERIFIED`
+                  ? `🔍 SETUP SCANNING — ${passedCount} OF 9 CONDITIONS VERIFIED`
                   : "⚪ ORDER FLOW MONITORING — NO ACTIVE TRADE"}
               </span>
               <Badge
@@ -1521,8 +1536,14 @@ export function SmcChartOverlay({
                 : !s4Pass
                 ? "Step 1-3 PASS 🟢 — Step 4 PENDING ⚪: Waiting for Displacement FVG Creation"
                 : !s5Pass
-                ? "Step 1-4 PASS 🟢 — Step 5 PENDING ⚪: Waiting for FVG Retest / Touch (Immediate Entry on Tap)"
-                : "Step 1-5 PASS 🟢 — FVG Retested! Instant Entry Executed"}
+                ? "Step 1-4 PASS 🟢 — Step 5 PENDING ⚪: Waiting for closed-candle FVG Retest"
+                : !s6Pass
+                ? "Step 1-5 PASS 🟢 — Step 6 PENDING ⚪: Waiting for FVG Rejection Candle"
+                : !s7Pass
+                ? "Step 1-6 PASS 🟢 — Step 7 PENDING ⚪: Waiting for Candle Close Confirmation"
+                : !s9Pass
+                ? "Step 1-7 PASS 🟢 — Step 9 BLOCKED 🔴: Opposing M15 Liquidity Target < 2.0R"
+                : "Step 1-9 PASS 🟢 — All 9 Pure SMC Conditions Verified!"}
             </p>
           </div>
         </div>
@@ -1708,13 +1729,13 @@ export function SmcChartOverlay({
               <div className="flex items-center gap-2 text-[11px]">
                 <span className="text-zinc-400 font-bold">Sequence Progress:</span>
                 <span className="font-black px-2 py-0.5 rounded bg-zinc-800 text-emerald-400 border border-zinc-700">
-                  {isTradeActive ? "TRADE ACTIVE 🟢 (In Profit)" : `${Math.min(7, passedCount)} / 7 Steps Verified`}
+                  {isTradeActive ? "TRADE ACTIVE 🟢 (In Profit)" : `${Math.min(9, passedCount)} / 9 Steps Verified`}
                 </span>
               </div>
             </div>
 
-            {/* 7-Step Sequential Micro-Grid Directly Inside Chart (Responsive on Mobile) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 text-[10px]">
+            {/* 9-Step Sequential Micro-Grid Directly Inside Chart (Responsive, Zero Overlap) */}
+            <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-1.5 text-[10px]">
               {/* S1: M15 Bias */}
               <div className={cn(
                 "p-1.5 rounded-lg border-2 text-center transition-all",
@@ -1773,7 +1794,7 @@ export function SmcChartOverlay({
                 </div>
               </div>
 
-              {/* S5: FVG Retest & Entry */}
+              {/* S5: FVG Retest */}
               <div className={cn(
                 "p-1.5 rounded-lg border-2 text-center transition-all",
                 s5Pass
@@ -1782,39 +1803,71 @@ export function SmcChartOverlay({
                   ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
                   : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">5. Retest & Entry</div>
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">5. Retest</div>
                 <div className="truncate font-black mt-0.5">
-                  {s5Pass ? "ENTRY ON TOUCH 🟢" : s4Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                  {s5Pass ? "RETESTED 🟢" : s4Pass ? "AWAITING ⏳" : "WAITING ⚪"}
                 </div>
               </div>
 
-              {/* S6: SL Placement ($0.75 Buf) */}
+              {/* S6: Rejection Candle */}
               <div className={cn(
                 "p-1.5 rounded-lg border-2 text-center transition-all",
                 s6Pass
-                  ? "bg-rose-950/80 border-rose-400 text-rose-200 font-black shadow-[0_0_10px_rgba(244,63,94,0.3)]"
-                  : s5Pass
-                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
-                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
-              )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">6. SL ($0.75 Buf)</div>
-                <div className="truncate font-black mt-0.5">
-                  {s6Pass ? "LOCKED 🟢" : "PENDING ⚪"}
-                </div>
-              </div>
-
-              {/* S7: Opposing TP */}
-              <div className={cn(
-                "col-span-2 sm:col-span-2 lg:col-span-1 p-1.5 rounded-lg border-2 text-center transition-all",
-                s7Pass
                   ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
                   : s5Pass
                   ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
                   : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
               )}>
-                <div className="text-[9px] text-slate-300 uppercase font-semibold">7. Opposing TP</div>
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">6. Rejection</div>
                 <div className="truncate font-black mt-0.5">
-                  {s7Pass ? "TARGET SET 🟢" : "PENDING ⚪"}
+                  {s6Pass ? "REJECTED 🟢" : s5Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                </div>
+              </div>
+
+              {/* S7: Confirmation Close */}
+              <div className={cn(
+                "p-1.5 rounded-lg border-2 text-center transition-all",
+                s7Pass
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                  : s6Pass
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+              )}>
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">7. Close</div>
+                <div className="truncate font-black mt-0.5">
+                  {s7Pass ? "CLOSED 🟢" : s6Pass ? "AWAITING ⏳" : "WAITING ⚪"}
+                </div>
+              </div>
+
+              {/* S8: SL Placement ($0.75 Buf) */}
+              <div className={cn(
+                "p-1.5 rounded-lg border-2 text-center transition-all",
+                s8Pass
+                  ? "bg-rose-950/80 border-rose-400 text-rose-200 font-black shadow-[0_0_10px_rgba(244,63,94,0.3)]"
+                  : s2Pass
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+              )}>
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">8. SL ($0.75)</div>
+                <div className="truncate font-black mt-0.5">
+                  {s8Pass ? "LOCKED 🟢" : s8Status.includes("FAIL") ? "FAIL 🔴" : "PENDING ⚪"}
+                </div>
+              </div>
+
+              {/* S9: M15 Opposing TP */}
+              <div className={cn(
+                "p-1.5 rounded-lg border-2 text-center transition-all",
+                s9Pass
+                  ? "bg-emerald-950/80 border-emerald-400 text-emerald-200 font-black shadow-[0_0_10px_rgba(16,185,129,0.3)]"
+                  : s9Status.includes("FAIL")
+                  ? "bg-rose-950/80 border-rose-500 text-rose-200 font-black"
+                  : s7Pass
+                  ? "bg-amber-950/70 border-amber-400 text-amber-200 font-black shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse"
+                  : "bg-slate-900 border-slate-600 text-slate-200 font-bold"
+              )}>
+                <div className="text-[9px] text-slate-300 uppercase font-semibold">9. M15 TP</div>
+                <div className="truncate font-black mt-0.5">
+                  {s9Pass ? "TARGET SET 🟢" : s9Status.includes("FAIL") ? "LOW R:R 🔴" : "PENDING ⚪"}
                 </div>
               </div>
             </div>
@@ -2063,7 +2116,7 @@ export function SmcChartOverlay({
                 const sweepX = chartLeft + (candleMilestones.sweep + 0.5) * candleSpacing;
                 const chochX = chartLeft + (candleMilestones.choch + 0.5) * candleSpacing;
 
-                const hasActiveTradeOrSignal = isTradeActive || s7Pass;
+                const hasActiveTradeOrSignal = isTradeActive || (s7Pass && s9Pass);
 
                 return (
                   <g>
@@ -2820,7 +2873,7 @@ export function SmcChartOverlay({
             </p>
           </div>
 
-          {/* Step 5: FVG Retest & Entry */}
+          {/* Step 5: FVG Retest */}
           <div
             className={cn(
               "p-3 rounded-lg border transition-all",
@@ -2831,72 +2884,42 @@ export function SmcChartOverlay({
           >
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold flex items-center gap-1.5 text-white">
-                {s5Pass ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                ) : (
-                  <Clock className="w-4 h-4 text-zinc-500" />
-                )}
-                S5: FVG Retest & Entry
+                {s5Pass ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Clock className="w-4 h-4 text-zinc-500" />}
+                S5: FVG Retest
               </span>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] px-1.5 py-0.2 font-bold",
-                  s5Pass
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-400"
-                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
-                )}
-              >
-                {s5Pass ? "PASS 🟢 (Entry on Touch)" : "PENDING ⚪"}
+              <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0.2 font-bold", s5Pass ? "bg-emerald-500/20 text-emerald-300 border-emerald-400" : "bg-zinc-800 text-zinc-400 border-zinc-700")}>
+                {s5Pass ? (retestStatus || "PASS 🟢") : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
-              {s5Pass
-                ? "Price touched Displacement FVG. Immediate entry executed!"
-                : "Waiting for price to touch/retest the Displacement FVG zone."}
+              {s5Pass ? "Closed candle genuinely tapped & respected Displacement FVG." : "Waiting for closed candle retracement into Displacement FVG."}
             </p>
           </div>
 
-          {/* Step 6: SL Buffer */}
+          {/* Step 6: FVG Rejection Candle */}
           <div
             className={cn(
               "p-3 rounded-lg border transition-all",
               s6Pass
-                ? "bg-rose-950/40 border-rose-500/60 text-white"
+                ? "bg-emerald-950/30 border-emerald-500/50 text-white"
                 : "bg-[#0d121f] border-zinc-800 text-zinc-400"
             )}
           >
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold flex items-center gap-1.5 text-white">
-                {s6Pass ? (
-                  <Shield className="w-4 h-4 text-rose-400" />
-                ) : (
-                  <Clock className="w-4 h-4 text-zinc-500" />
-                )}
-                S6: SL Placement ($0.75 Buf)
+                {s6Pass ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Clock className="w-4 h-4 text-zinc-500" />}
+                S6: FVG Rejection Candle
               </span>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] px-1.5 py-0.2 font-bold",
-                  s6Pass
-                    ? "bg-rose-500/20 text-rose-300 border-rose-400"
-                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
-                )}
-              >
-                {s6Pass ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 ($${defaultBuf} Buf | $7.50 Cap)`) : "PENDING ⚪"}
+              <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0.2 font-bold", s6Pass ? "bg-emerald-500/20 text-emerald-300 border-emerald-400" : "bg-zinc-800 text-zinc-400 border-zinc-700")}>
+                {s6Pass ? (s6Status || "PASS 🟢") : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
-              {s6Pass
-                ? (slPrice > 0 && isTradeActive
-                    ? `Locked exact $${defaultBuf} buffer behind Sweep wick ($${slPrice.toFixed(2)}) with $7.50 max risk cap.`
-                    : `Verified structural SL buffer ($${defaultBuf}) with max $7.50 anti-chasing risk cap.`)
-                : `Will anchor $${defaultBuf} behind Sweep wick upon trade execution (max $7.50 cap).`}
+              {s6Pass ? "Confirmed institutional rejection wick/close out of FVG." : "Waiting for bullish/bearish rejection candle from FVG."}
             </p>
           </div>
 
-          {/* Step 7: Opposing Target */}
+          {/* Step 7: Candle Close Confirmation */}
           <div
             className={cn(
               "p-3 rounded-lg border transition-all",
@@ -2907,31 +2930,65 @@ export function SmcChartOverlay({
           >
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold flex items-center gap-1.5 text-white">
-                {s7Pass ? (
-                  <Target className="w-4 h-4 text-emerald-400" />
-                ) : (
-                  <Clock className="w-4 h-4 text-zinc-500" />
-                )}
-                S7: Opposing Liquidity Target
+                {s7Pass ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Clock className="w-4 h-4 text-zinc-500" />}
+                S7: Candle Close Confirm
               </span>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px] px-1.5 py-0.2 font-bold",
-                  s9Pass
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-400"
-                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
-                )}
-              >
-                {s7Pass ? (s7Status && isPassText(s7Status) ? s7Status : (s9Status && isPassText(s9Status) ? s9Status : "PASS 🟢 (Opposing Target)")) : "PENDING ⚪"}
+              <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0.2 font-bold", s7Pass ? "bg-emerald-500/20 text-emerald-300 border-emerald-400" : "bg-zinc-800 text-zinc-400 border-zinc-700")}>
+                {s7Pass ? (s7Status || "PASS 🟢") : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
-              {s7Pass
-                ? (effectiveTpPrice > 0
-                    ? `Opposing structural liquidity TP placed at $${effectiveTpPrice.toFixed(2)} (front-run by $0.75).`
-                    : "Verified clear path to opposing structural liquidity.")
-                : "Requires clear path to opposing liquidity pool (Swing High/Low)."}
+              {s7Pass ? "M5 rejection bar closed cleanly; entry confirmed without chasing." : "Entry waits strictly for M5 rejection bar close."}
+            </p>
+          </div>
+
+          {/* Step 8: SL Placement ($0.75 Buf) */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s8Pass
+                ? "bg-rose-950/40 border-rose-500/60 text-white"
+                : "bg-[#0d121f] border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5 text-white">
+                {s8Pass ? <Shield className="w-4 h-4 text-rose-400" /> : <Clock className="w-4 h-4 text-zinc-500" />}
+                S8: SL Placement ($0.75 Buf)
+              </span>
+              <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0.2 font-bold", s8Pass ? "bg-rose-500/20 text-rose-300 border-rose-400" : "bg-zinc-800 text-zinc-400 border-zinc-700")}>
+                {s8Pass ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 ($${defaultBuf} Buf)`) : "PENDING ⚪"}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-300 leading-snug">
+              {s8Pass ? `Anchored $${defaultBuf} beyond Sweep wick ($${slPrice.toFixed(2)}) with $7.50 max risk cap.` : `Will lock $${defaultBuf} behind Sweep extreme (max $7.50 cap).`}
+            </p>
+          </div>
+
+          {/* Step 9: M15 Opposing Liquidity Target */}
+          <div
+            className={cn(
+              "p-3 rounded-lg border transition-all",
+              s9Pass
+                ? "bg-emerald-950/30 border-emerald-500/50 text-white"
+                : s9Status.includes("FAIL")
+                ? "bg-rose-950/30 border-rose-500/60 text-white"
+                : "bg-[#0d121f] border-zinc-800 text-zinc-400"
+            )}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold flex items-center gap-1.5 text-white">
+                {s9Pass ? <Target className="w-4 h-4 text-emerald-400" /> : <Clock className="w-4 h-4 text-zinc-500" />}
+                S9: M15 Opposing Target
+              </span>
+              <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0.2 font-bold", s9Pass ? "bg-emerald-500/20 text-emerald-300 border-emerald-400" : s9Status.includes("FAIL") ? "bg-rose-500/20 text-rose-300 border-rose-400" : "bg-zinc-800 text-zinc-400 border-zinc-700")}>
+                {s9Status || (s9Pass ? "PASS 🟢 (>=2.0R Target)" : "PENDING ⚪")}
+              </Badge>
+            </div>
+            <p className="text-[11px] text-zinc-300 leading-snug">
+              {s9Pass
+                ? (effectiveTpPrice > 0 ? `M15 liquidity TP placed at $${effectiveTpPrice.toFixed(2)} (min 2.0R).` : "Verified >= 2.0R path to M15 opposing liquidity.")
+                : (s9Status.includes("FAIL") ? s9Status : "Requires >= 2.0R space to M15 structural liquidity pool.")}
             </p>
           </div>
         </div>
