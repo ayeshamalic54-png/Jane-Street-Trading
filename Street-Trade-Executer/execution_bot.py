@@ -7,9 +7,11 @@ logger = logging.getLogger("SMC_Forex_Bot")
 MAGIC_NUMBER = 992026           # Unique magic number for Jane Street system trades
 
 def is_retcode_success(res):
-    """Returns True if MT5 order_send result represents a successful fill."""
+    """Returns True if MT5 order_send result (or raw int retcode) represents a successful fill."""
     if res is None:
         return False
+    if isinstance(res, int):
+        return res in [mt5.TRADE_RETCODE_DONE, 10008, 10009, 0]
     retcode = getattr(res, 'retcode', None)
     comment = str(getattr(res, 'comment', '') or '').lower()
     if retcode in [mt5.TRADE_RETCODE_DONE, 10008, 10009, 0]:
@@ -30,8 +32,15 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
         if live_p > 0:
             price = live_p
             
-    # Dynamically detect broker's exact supported filling mode for this symbol
+    # Dynamically detect broker's exact supported filling mode and tick precision for this symbol
     info = mt5.symbol_info(symbol)
+    digits = int(info.digits) if (info and getattr(info, "digits", None) is not None) else None
+    if digits is not None:
+        price = round(float(price), digits)
+        if sl and float(sl) > 0:
+            sl = round(float(sl), digits)
+        if tp and float(tp) > 0:
+            tp = round(float(tp), digits)
     filling_modes = []
     if info and hasattr(info, "filling_mode"):
         fm = info.filling_mode
@@ -67,7 +76,7 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
         if tick:
             fresh_p = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
             if fresh_p > 0:
-                request["price"] = fresh_p
+                request["price"] = round(float(fresh_p), digits) if digits is not None else fresh_p
 
         request["type_filling"] = mode
         result = mt5.order_send(request)

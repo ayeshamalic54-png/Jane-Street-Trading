@@ -3018,7 +3018,7 @@ def main():
                         send_discord_discard_notification(c['action'], c['pair'][0], c['pair'][1], f"SESSION GUARD ACTIVE (Time {curr_utc_s} outside window {window_utc_s})", c.get('smc_sl', 0.0), c.get('smc_tp', 0.0), entry_price=c.get('price_a', 0.0))
                     except Exception:
                         pass
-            elif candidate_signals and is_trade_limit_ok and not is_news_blocked and is_session_ok:
+            elif candidate_signals and is_trade_limit_ok and not is_news_blocked and ((not risk_safeguards.SESSION_GUARD_ENABLED) or is_session_ok):
                 if risk_safeguards.SESSION_GUARD_ENABLED:
                     for c in candidate_signals:
                         pair_str = f"{c['pair'][0]}/{c['pair'][1]}"
@@ -3227,7 +3227,7 @@ def main():
                             tp_val = tp2_val
                             
                             res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
-                            if res_order and is_retcode_success(res_order.retcode):
+                            if res_order and is_retcode_success(res_order):
                                 log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_SMC_STRUCTURE", signal_id)
                                 try:
                                     send_discord_signal_notification(
@@ -3295,7 +3295,7 @@ def main():
                             tp_val = tp2_val
                             
                             res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
-                            if res_order and is_retcode_success(res_order.retcode):
+                            if res_order and is_retcode_success(res_order):
                                 log_trade_entry(res_order.order, S_A_resolved, "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_SMC_STRUCTURE", signal_id)
                                 try:
                                     send_discord_signal_notification(
