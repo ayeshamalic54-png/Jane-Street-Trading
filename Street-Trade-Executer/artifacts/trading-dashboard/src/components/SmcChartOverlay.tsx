@@ -599,7 +599,7 @@ export function SmcChartOverlay({
 
   const shouldShowTradeLevels = isTradeActive || s7Pass;
 
-  // Parsed Active SMC Zones (FVG, OB, Breaker, iFVG) from live bot scanner — Strictly Filtered for Clean Structure
+  // Parsed Active SMC Zones (FVG, OB, Breaker, iFVG) from live bot scanner — Strictly Filtered with Category Diversity
   const parsedActiveZones = useMemo(() => {
     if (!activeZones || activeZones.length === 0) return [];
     const list: Array<{
@@ -610,8 +610,17 @@ export function SmcChartOverlay({
       high: number;
       label: string;
     }> = [];
-    const maxDist = isMetals ? 16.0 : 0.0080;
+    const maxDist = isMetals ? 18.0 : 0.0080;
+    const dupTol = isMetals ? 0.35 : 0.0003;
     const seenRanges: string[] = [];
+
+    const getCategory = (typeStr: string, labelStr: string) => {
+      const u = `${typeStr} ${labelStr}`.toUpperCase();
+      if (u.includes("IFVG")) return "IFVG";
+      if (u.includes("BREAKER")) return "BREAKER";
+      if (u.includes("OB")) return "OB";
+      return "FVG";
+    };
 
     for (const z of activeZones) {
       if (!z.range || (z.label && z.label.toUpperCase().includes("USDT")) || (z.type && z.type.toUpperCase().includes("USDT"))) continue;
@@ -624,13 +633,14 @@ export function SmcChartOverlay({
           const mid = (low + high) / 2;
           if (Math.abs(mid - livePrice) > maxDist) continue;
 
-          // 2. Deduplication check: Avoid identical or nearly identical duplicate ranges
+          // 2. Category-scoped deduplication check so BREAKER / iFVG aren't dropped by an overlapping FVG/OB
+          const cat = getCategory(z.type || "", z.label || "");
           const isDuplicate = seenRanges.some((r) => {
-            const [rL, rH] = r.split(":").map(Number);
-            return Math.abs(rL - low) < 0.35 && Math.abs(rH - high) < 0.35;
+            const [rCat, rL, rH] = r.split(":");
+            return rCat === cat && Math.abs(Number(rL) - low) < dupTol && Math.abs(Number(rH) - high) < dupTol;
           });
           if (isDuplicate) continue;
-          seenRanges.push(`${low.toFixed(2)}:${high.toFixed(2)}`);
+          seenRanges.push(`${cat}:${low.toFixed(4)}:${high.toFixed(4)}`);
 
           const isBullish = z.type.toUpperCase().includes("BULLISH") || z.label.includes("🟢");
           const name = z.type.replace("BULLISH_", "").replace("BEARISH_", "");
@@ -645,8 +655,27 @@ export function SmcChartOverlay({
         }
       }
     }
-    // Limit to max 3 cleanest, freshest active zones on the chart to eliminate clutter
-    return list.slice(0, 3);
+
+    // Guarantee visibility for iFVG, BREAKER, OB, and FVG before filling extra slots (max 5 zones on chart)
+    const picked: typeof list = [];
+    const pickedKeys = new Set<string>();
+    for (const cat of ["IFVG", "BREAKER", "OB", "FVG"]) {
+      const match = list.find((item) => getCategory(item.type, item.label) === cat);
+      if (match) {
+        const key = `${match.type}:${match.low.toFixed(4)}:${match.high.toFixed(4)}`;
+        picked.push(match);
+        pickedKeys.add(key);
+      }
+    }
+    for (const item of list) {
+      if (picked.length >= 5) break;
+      const key = `${item.type}:${item.low.toFixed(4)}:${item.high.toFixed(4)}`;
+      if (!pickedKeys.has(key)) {
+        picked.push(item);
+        pickedKeys.add(key);
+      }
+    }
+    return picked;
   }, [activeZones, livePrice, isMetals]);
 
   // FVG Bounds: Resolved from bot telemetry, activeZones, or structural displacement
@@ -674,9 +703,9 @@ export function SmcChartOverlay({
       }
     } catch {}
 
-    // 2. Check activeZones from bot scanner
+    // 2. Check activeZones from bot scanner (exclude iFVG so iFVG renders separately as Inversion FVG)
     if (parsedActiveZones && parsedActiveZones.length > 0) {
-      const fvgZone = parsedActiveZones.find((z) => z.type.toUpperCase().includes("FVG"));
+      const fvgZone = parsedActiveZones.find((z) => z.type.toUpperCase().includes("FVG") && !z.type.toUpperCase().includes("IFVG"));
       if (fvgZone && fvgZone.high > fvgZone.low) {
         return { low: fvgZone.low, high: fvgZone.high, label: fvgZone.label || "ACTIVE FVG" };
       }
@@ -1061,14 +1090,14 @@ export function SmcChartOverlay({
 
     // 2. Active Zones (Order Blocks, Breakers, iFVG)
     parsedActiveZones.forEach((z, idx) => {
-      // Exclude if identical to fvgBounds
-      if (fvgBounds && Math.abs(fvgBounds.low - z.low) < 0.05 && Math.abs(fvgBounds.high - z.high) < 0.05) {
-        return;
-      }
-
       const isOB = z.type.toUpperCase().includes("OB");
       const isBreaker = z.type.toUpperCase().includes("BREAKER");
       const isIFVG = z.type.toUpperCase().includes("IFVG") || z.name.toUpperCase().includes("IFVG");
+
+      // Exclude only duplicate FVG ranges already rendered by primary fvgBounds (never suppress OB/BREAKER/iFVG)
+      if (!isOB && !isBreaker && !isIFVG && fvgBounds && Math.abs(fvgBounds.low - z.low) < 0.05 && Math.abs(fvgBounds.high - z.high) < 0.05) {
+        return;
+      }
 
       const zoneType: "FVG" | "OB" | "BREAKER" | "IFVG" | "OTHER" = isOB
         ? "OB"
