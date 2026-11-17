@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Play, TrendingUp, Award, DollarSign, Activity, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, formatPktTime } from "@/lib/utils";
 
 interface TradeSim {
   type: string;
@@ -235,7 +235,7 @@ export default function Backtest() {
                     {results.trades.map((t, idx) => (
                       <TableRow key={idx} className="border-border hover:bg-muted/30">
                         <TableCell className="font-mono text-[10px] py-2 text-muted-foreground">
-                          {new Date(t.time).toLocaleTimeString()}
+                          {formatPktTime(t.time)}
                         </TableCell>
                         <TableCell className="py-2">
                           <Badge variant="outline" className={cn(

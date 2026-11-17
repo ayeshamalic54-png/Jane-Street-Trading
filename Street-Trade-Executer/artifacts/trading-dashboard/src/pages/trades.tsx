@@ -5,8 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { cn, formatPktDateTime } from "@/lib/utils";
 
 export default function Trades() {
   const [status, setStatus] = useState<"ALL" | "OPEN" | "CLOSED">("ALL");
@@ -94,9 +93,9 @@ export default function Trades() {
                     <TableCell className="font-mono text-xs text-muted-foreground">#{trade.ticket}</TableCell>
                     <TableCell className="font-mono text-xs">
                       <div className="flex flex-col">
-                        <span>{format(new Date(trade.entryTime), "EEEE, dd/MM/yyyy, hh:mm:ss a")}</span>
+                        <span>{formatPktDateTime(trade.entryTime)}</span>
                         {trade.closeTime && (
-                          <span className="text-muted-foreground/70">{format(new Date(trade.closeTime), "EEEE, dd/MM/yyyy, hh:mm:ss a")}</span>
+                          <span className="text-muted-foreground/70">{formatPktDateTime(trade.closeTime)}</span>
                         )}
                       </div>
                     </TableCell>

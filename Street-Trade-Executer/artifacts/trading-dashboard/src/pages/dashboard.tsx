@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { cn, formatPktTime } from "@/lib/utils";
 import { Activity, Wifi, WifiOff, Send, Zap, ZapOff, Power, PowerOff, ShieldCheck, ChevronDown, Plus, RefreshCw, UserCheck, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useState, useEffect, useRef, useMemo } from "react";
@@ -1691,7 +1691,7 @@ export default function Dashboard() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                     {recentSymbolSignals.slice(0, 3).map((sig: any) => {
                       const isBuy = sig.action === "BUY_SPREAD";
-                      const dateStr = new Date(sig.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                      const dateStr = formatPktTime(sig.timestamp);
                       return (
                         <div key={sig.id} className={cn(
                           "flex items-center justify-between p-2 rounded-sm border text-xs font-mono",

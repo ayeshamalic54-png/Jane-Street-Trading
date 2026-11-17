@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, formatPktTime } from "@/lib/utils";
 import {
   CheckCircle2,
   Clock,
@@ -479,7 +479,7 @@ export function SmcChartOverlay({
     for (let k = 0; k < count; k++) {
       const idxFromEnd = count - 1 - k;
       const t = new Date(now - idxFromEnd * 5 * 60 * 1000);
-      const timeStr = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+      const timeStr = formatPktTime(t, { withSeconds: false, hour12: false, suffix: false });
 
       const openP = prevClose;
       let closeP = openP;

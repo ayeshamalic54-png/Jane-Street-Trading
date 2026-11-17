@@ -26,11 +26,11 @@ from video_strategy_engine import calculate_zscore_and_ema, evaluate_video_strat
 from smc_strategy_engine import evaluate_smc_strategy_signal
 
 
-from execution_bot import execute_three_part_trade, execute_three_part_hedge_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl
+from execution_bot import execute_three_part_trade, execute_three_part_hedge_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl, mt5_epoch_to_utc_naive
 
 
 from smc_indicators import detect_smc_zones, is_price_in_zones
-from database import log_signal, get_connection, save_or_update_mt5_account, get_target_mt5_login, clear_target_mt5_login, get_bot_running_state, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset, purge_disabled_category_zones
+from database import log_signal, get_connection, save_or_update_mt5_account, get_target_mt5_login, clear_target_mt5_login, get_bot_running_state, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset, purge_disabled_category_zones, utc_now_naive, to_utc_naive, format_pkt_time
 from news_guard import check_pair_news_block, check_post_news_stability
 try:
     from binance_execution import (
@@ -434,7 +434,7 @@ def poll_manual_commands(tick_a, tick_b, sl_pips: float):
                         res = send_order(symbol, order_type, price_b, hedge_lots, sl_b, tp_b, comment)
                         ok = (res is not None and res.retcode == mt5.TRADE_RETCODE_DONE)
                         if ok:
-                            log_trade_entry(res.order, symbol, direction, hedge_lots, res.price, datetime.datetime.now(), comment, manual_signal_id)
+                            log_trade_entry(res.order, symbol, direction, hedge_lots, res.price, utc_now_naive(), comment, manual_signal_id)
                             logger.info(f"Successfully executed Manual Leg B Hedge order ({symbol} {direction} {hedge_lots}lots). Ticket: {res.order}")
                         else:
                             err_reason = res.comment if res else (f"retcode {res.retcode}" if res else "No response")
@@ -905,7 +905,7 @@ def sync_mt5_open_positions_with_db():
         for p in positions:
             if p.ticket not in db_tickets:
                 dir_str = "BUY" if p.type == mt5.ORDER_TYPE_BUY else "SELL"
-                log_trade_entry(p.ticket, p.symbol, dir_str, float(p.volume), float(p.price_open), datetime.datetime.now(), "MT5_AUTO_IMPORTED", sl=float(p.sl), tp=float(p.tp))
+                log_trade_entry(p.ticket, p.symbol, dir_str, float(p.volume), float(p.price_open), mt5_epoch_to_utc_naive(getattr(p, "time", None), p.symbol), "MT5_AUTO_IMPORTED", sl=float(p.sl), tp=float(p.tp))
                 logger.info(f"📥 [MT5 AUTO-IMPORT] Active MT5 Ticket #{p.ticket} ({p.symbol} {dir_str} {p.volume} lots @ {p.price_open}) auto-imported to DB & Dashboard!")
 
         for ticket, symbol, lots, entry_price, order_type, entry_time in db_open_trades:
@@ -947,15 +947,15 @@ def sync_mt5_open_positions_with_db():
             # Ticket is truly closed (or partially netted out). Look up exit details.
             history = mt5.history_deals_get(position=ticket)
             if not history:
-                from_date = datetime.datetime.now() - datetime.timedelta(days=3)
-                to_date = datetime.datetime.now() + datetime.timedelta(days=1)
+                from_date = utc_now_naive() - datetime.timedelta(days=3)
+                to_date = utc_now_naive() + datetime.timedelta(days=2)
                 history = mt5.history_deals_get(from_date, to_date)
                 if history:
                     history = [d for d in history if d.symbol.upper().split('.')[0] == sym_base]
 
             close_price = float(entry_price)
             profit = 0.0
-            close_time = datetime.datetime.now()
+            close_time = utc_now_naive()
             found_exit = False
 
             if history:
@@ -967,7 +967,7 @@ def sync_mt5_open_positions_with_db():
                         d.profit + d.commission + d.swap
                         for d in history if d.entry == mt5.DEAL_ENTRY_OUT
                     )
-                    close_time = datetime.datetime.fromtimestamp(deal.time)
+                    close_time = mt5_epoch_to_utc_naive(deal.time, symbol)
                     found_exit = True
 
             if not found_exit:
@@ -1016,7 +1016,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         return
         
     try:
-        now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
+        now_str = format_pkt_time()
         act_str = "MARKET BUY 🟢" if "BUY" in str(action).upper() else "MARKET SELL 🔴"
         
         info_a = mt5.symbol_info(symbol_a) if mt5.initialize() else None
@@ -1062,7 +1062,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         return
         
     try:
-        now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
+        now_str = format_pkt_time()
         pnl_icon = "🟢 PROFIT" if profit >= 0 else "🔴 LOSS"
         pnl_sign = "+" if profit >= 0 else ""
         
@@ -1114,7 +1114,7 @@ def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_pri
         
     try:
         _DISCARD_ALERT_CACHE[throttle_key] = now_ts
-        now_str = datetime.datetime.now().strftime("%A, %d/%m/%Y, %I:%M:%S %p")
+        now_str = format_pkt_time()
         act_str = "BUY 🟢" if "BUY" in str(action).upper() else "SELL 🔴"
         
         info_a = mt5.symbol_info(symbol_a) if mt5.initialize() else None
@@ -1175,7 +1175,7 @@ def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        ten_mins_ago = datetime.datetime.now() - datetime.timedelta(minutes=10)
+        ten_mins_ago = utc_now_naive() - datetime.timedelta(minutes=10)
         cur.execute(
             """
             SELECT COUNT(*) FROM trades 
@@ -1235,7 +1235,7 @@ def close_single_trade(symbol, ticket, volume, order_type):
         is_long = (order_type.upper() == "BUY")
         ok = close_binance_partial(symbol, volume, is_long)
         if ok:
-            log_trade_exit(ticket, 0.0, 0.0, datetime.datetime.now())
+            log_trade_exit(ticket, 0.0, 0.0, utc_now_naive())
         return ok
     else:
         return close_position_by_ticket(symbol, ticket, volume)
@@ -1405,7 +1405,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
         if MINIMUM_HOLD_ENABLED and open_leg_a_trades:
             earliest_entry = min([t["entry_time"] for t in open_leg_a_trades if t.get("entry_time")])
             if earliest_entry:
-                holding_seconds = (datetime.datetime.now() - earliest_entry).total_seconds()
+                holding_seconds = (utc_now_naive() - to_utc_naive(earliest_entry)).total_seconds()
                 if holding_seconds < MINIMUM_HOLD_TIME_SECONDS:
                     continue  # Strictly hold trade for at least 140 seconds before strategy exit!
 
@@ -1732,7 +1732,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
                     
                     pnl_emoji = "✅" if total_pnl >= 0 else "❌"
                     status_word = "PROFIT" if total_pnl >= 0 else "LOSS"
-                    now_str = datetime.datetime.now().strftime("%I:%M:%S %p")
+                    now_str = format_pkt_time(fmt="%I:%M:%S %p")
                     
                     discord_msg = (
                         f"⏹ **JANE STREET SIGNAL SET CLOSED ({sym_a} / {sym_b})** ⏹\n\n"
@@ -3203,14 +3203,14 @@ def main():
                                     h_res = send_signed_request("POST", "/fapi/v1/order", hedge_params)
                                     if h_res and h_res.status_code == 200:
                                         avg_price_b = float(h_res.json().get("avgPrice") or price_b)
-                                        log_trade_entry(h_res.json()["orderId"], S_B, side_b, qty_b, avg_price_b, datetime.datetime.now(), "Binance JS_HEDGE", signal_id)
+                                        log_trade_entry(h_res.json()["orderId"], S_B, side_b, qty_b, avg_price_b, utc_now_naive(), "Binance JS_HEDGE", signal_id)
                                         price_prec = get_symbol_filters(S_B)["pricePrecision"] if get_symbol_filters(S_B) else 2
                                         opp_side_b = "BUY" if side_b == "SELL" else "SELL"
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
                                     res_hedge = send_order(S_B, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
-                                        log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
+                                        log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, utc_now_naive(), "JS_HEDGE", signal_id)
                         else:
                             actual_lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
                             info_a_check = mt5.symbol_info(S_A_resolved)
@@ -3228,7 +3228,7 @@ def main():
                             
                             res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
                             if res_order and is_retcode_success(res_order):
-                                log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_SMC_STRUCTURE", signal_id)
+                                log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, utc_now_naive(), "JS_SMC_STRUCTURE", signal_id)
                                 try:
                                     send_discord_signal_notification(
                                         action="BUY",
@@ -3271,14 +3271,14 @@ def main():
                                     h_res = send_signed_request("POST", "/fapi/v1/order", hedge_params)
                                     if h_res and h_res.status_code == 200:
                                         avg_price_b = float(h_res.json().get("avgPrice") or price_b)
-                                        log_trade_entry(h_res.json()["orderId"], S_B, side_b, qty_b, avg_price_b, datetime.datetime.now(), "Binance JS_HEDGE", signal_id)
+                                        log_trade_entry(h_res.json()["orderId"], S_B, side_b, qty_b, avg_price_b, utc_now_naive(), "Binance JS_HEDGE", signal_id)
                                         price_prec = get_symbol_filters(S_B)["pricePrecision"] if get_symbol_filters(S_B) else 2
                                         opp_side_b = "BUY" if side_b == "SELL" else "SELL"
                                         send_signed_request("POST", "/fapi/v1/order", {"symbol": S_B, "side": opp_side_b, "type": "STOP_MARKET", "stopPrice": round(sl_b, price_prec), "closePosition": "true", "timeInForce": "GTC"})
                                 else:
                                     res_hedge = send_order(S_B, order_type_b, price_b, qty_b, sl_b, 0.0, "JS_HEDGE")
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
-                                        log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, datetime.datetime.now(), "JS_HEDGE", signal_id)
+                                        log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, utc_now_naive(), "JS_HEDGE", signal_id)
                         else:
                             actual_lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
                             info_a_check = mt5.symbol_info(S_A_resolved)
@@ -3296,7 +3296,7 @@ def main():
                             
                             res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
                             if res_order and is_retcode_success(res_order):
-                                log_trade_entry(res_order.order, S_A_resolved, "SELL", actual_lots_a, res_order.price, datetime.datetime.now(), "JS_SMC_STRUCTURE", signal_id)
+                                log_trade_entry(res_order.order, S_A_resolved, "SELL", actual_lots_a, res_order.price, utc_now_naive(), "JS_SMC_STRUCTURE", signal_id)
                                 try:
                                     send_discord_signal_notification(
                                         action="SELL",

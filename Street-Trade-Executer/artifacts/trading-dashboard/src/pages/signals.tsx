@@ -3,8 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { cn, formatPktDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
@@ -178,7 +177,7 @@ export default function Signals() {
   const handleCopySignal = (sig: any) => {
     const isBuy = sig.action === "BUY_SPREAD";
     const details = getSignalDetails(sig);
-    const timeStr = format(new Date(sig.timestamp), "EEEE, dd/MM/yyyy, hh:mm:ss a");
+    const timeStr = formatPktDateTime(sig.timestamp);
     
     const actionEmoji = isBuy ? "🟢" : "🔴";
     
@@ -289,7 +288,7 @@ export default function Signals() {
                   return (
                     <TableRow key={sig.id} className="border-border hover:bg-muted/30">
                       <TableCell className="font-mono text-xs text-muted-foreground">
-                        {format(new Date(sig.timestamp), "EEEE, dd/MM/yyyy, hh:mm:ss a")}
+                        {formatPktDateTime(sig.timestamp)}
                       </TableCell>
                       <TableCell>{getActionBadge(sig.action)}</TableCell>
                       <TableCell className="font-mono text-sm">

@@ -1,10 +1,71 @@
 import MetaTrader5 as mt5
 import datetime
 import logging
-from database import log_trade_entry, log_trade_exit, get_connection
+import os
+import time
+from database import log_trade_entry, log_trade_exit, get_connection, utc_now_naive
 
 logger = logging.getLogger("SMC_Forex_Bot")
 MAGIC_NUMBER = 992026           # Unique magic number for Jane Street system trades
+
+_BROKER_UTC_OFFSET_CACHE = {"offset_sec": None, "last_tick_time": None}
+
+
+def _detect_mt5_broker_offset_sec(symbol=None):
+    """Detects MT5 broker server timezone offset in seconds vs UTC, caching live readings."""
+    env_off = os.getenv("MT5_SERVER_OFFSET_HOURS")
+    if env_off is not None and str(env_off).strip() != "":
+        try:
+            return int(round(float(env_off) * 3600))
+        except Exception:
+            pass
+
+    now_utc_ts = time.time()
+    candidates = []
+    for sym in (symbol, "XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "BTCUSD"):
+        if sym and sym not in candidates:
+            candidates.append(sym)
+
+    tick_times = []
+    for sym in candidates:
+        try:
+            tk = mt5.symbol_info_tick(sym)
+            if tk and getattr(tk, "time", 0) and float(tk.time) > 1_000_000_000:
+                tick_times.append(float(tk.time))
+        except Exception:
+            pass
+
+    if tick_times:
+        ref_tick_time = max(tick_times)
+        diff = ref_tick_time - now_utc_ts
+        prev_tick = _BROKER_UTC_OFFSET_CACHE.get("last_tick_time")
+        prev_off = _BROKER_UTC_OFFSET_CACHE.get("offset_sec")
+        tick_advanced = (prev_tick is not None and ref_tick_time > prev_tick)
+
+        if -43200 <= diff <= 50400 and (tick_advanced or prev_off is None):
+            utc_now = datetime.datetime.now(datetime.timezone.utc)
+            utc_wd, utc_hr = utc_now.weekday(), utc_now.hour
+            is_fx_weekend = (utc_wd == 5) or (utc_wd == 4 and utc_hr >= 22) or (utc_wd == 6 and utc_hr < 22)
+            if tick_advanced or not is_fx_weekend:
+                est = int(round(diff / 1800.0) * 1800)
+                _BROKER_UTC_OFFSET_CACHE["offset_sec"] = est
+                _BROKER_UTC_OFFSET_CACHE["last_tick_time"] = ref_tick_time
+                return est
+        elif prev_tick is None or ref_tick_time > prev_tick:
+            _BROKER_UTC_OFFSET_CACHE["last_tick_time"] = ref_tick_time
+
+    if _BROKER_UTC_OFFSET_CACHE["offset_sec"] is not None:
+        return _BROKER_UTC_OFFSET_CACHE["offset_sec"]
+    return 0
+
+
+def mt5_epoch_to_utc_naive(epoch_ts, symbol=None):
+    """Converts MT5 broker-server-shifted epoch timestamp into a true naive UTC datetime."""
+    if epoch_ts is None or float(epoch_ts) <= 0:
+        return utc_now_naive()
+    offset_sec = _detect_mt5_broker_offset_sec(symbol)
+    utc_epoch = float(epoch_ts) - offset_sec
+    return datetime.datetime.fromtimestamp(utc_epoch, datetime.timezone.utc).replace(tzinfo=None)
 
 def is_retcode_success(res):
     """Returns True if MT5 order_send result (or raw int retcode) represents a successful fill."""
@@ -193,7 +254,7 @@ def execute_three_part_trade(symbol, is_long, entry_price, sl_price, total_lots,
                 order_type="BUY" if is_long else "SELL",
                 lots=filled_lots,
                 entry_price=entry_price,
-                entry_time=datetime.datetime.now(),
+                entry_time=utc_now_naive(),
                 comment=f"JaneStreet {part_name}",
                 signal_id=signal_id
             )
@@ -236,7 +297,7 @@ def execute_three_part_hedge_trade(symbol, is_long, entry_price, total_lots, sl_
                 order_type="BUY" if is_long else "SELL",
                 lots=filled_lots,
                 entry_price=entry_price,
-                entry_time=datetime.datetime.now(),
+                entry_time=utc_now_naive(),
                 comment=f"JaneStreet HEDGE_{part_name}",
                 signal_id=signal_id
             )
@@ -425,13 +486,13 @@ def check_closed_trades(symbol):
             
             # Fallback method: if direct position query returns nothing, search by date range
             if not history_deals:
-                from_date = datetime.datetime.now() - datetime.timedelta(days=30)
-                to_date = datetime.datetime.now() + datetime.timedelta(days=1)
+                from_date = utc_now_naive() - datetime.timedelta(days=30)
+                to_date = utc_now_naive() + datetime.timedelta(days=2)
                 history_deals = mt5.history_deals_get(from_date, to_date)
             
             close_price = 0.0
             profit = 0.0
-            close_time = datetime.datetime.now()
+            close_time = utc_now_naive()
             found_exit_deal = False
             
             if history_deals:
@@ -445,7 +506,7 @@ def check_closed_trades(symbol):
                     # Sum profit/commission/swaps for all deals associated with this ticket
                     all_deals_for_pos = [d for d in history_deals if d.position_id == ticket]
                     profit = sum(d.profit + d.commission + d.swap for d in all_deals_for_pos if d.entry == mt5.DEAL_ENTRY_OUT)
-                    close_time = datetime.datetime.fromtimestamp(deal.time)
+                    close_time = mt5_epoch_to_utc_naive(deal.time, symbol)
                     found_exit_deal = True
 
             if not found_exit_deal:
@@ -552,7 +613,7 @@ def close_position_by_ticket(symbol, ticket, volume_to_close):
             conn.close()
             if row and row[0] == 'OPEN':
                 logger.info(f"Ticket {ticket} open in DB but missing in MT5. Marking as CLOSED.")
-                log_trade_exit(ticket, 0.0, 0.0, datetime.datetime.now())
+                log_trade_exit(ticket, 0.0, 0.0, utc_now_naive())
             return False
         
     pos = positions[0]

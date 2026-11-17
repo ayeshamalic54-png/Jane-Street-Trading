@@ -3,6 +3,29 @@ from psycopg2 import extras
 import datetime
 import os
 
+PKT_TZ = datetime.timezone(datetime.timedelta(hours=5), name="PKT")
+
+def utc_now_naive():
+    """Returns current UTC time as a naive datetime (matching Postgres CURRENT_TIMESTAMP)."""
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+def to_utc_naive(dt):
+    """Normalizes a datetime (naive assumed UTC, or tz-aware converted to UTC) into naive UTC."""
+    if not isinstance(dt, datetime.datetime):
+        return utc_now_naive()
+    if dt.tzinfo is not None:
+        return dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
+    return dt
+
+def format_pkt_time(dt=None, fmt="%A, %d/%m/%Y, %I:%M:%S %p"):
+    """Formats a UTC datetime (or current UTC time if None) in Pakistani Standard Time (UTC+5)."""
+    if dt is None:
+        dt = utc_now_naive()
+    if not isinstance(dt, datetime.datetime):
+        return str(dt)
+    dt_utc = dt.replace(tzinfo=datetime.timezone.utc) if dt.tzinfo is None else dt.astimezone(datetime.timezone.utc)
+    return f"{dt_utc.astimezone(PKT_TZ).strftime(fmt)} PKT"
+
 def load_env():
     paths_to_check = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
@@ -758,7 +781,7 @@ def log_trade_entry(ticket, symbol, order_type, lots, entry_price, entry_time, c
         cur.close()
 
         # Send Discord OPEN position notification
-        time_str = entry_time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(entry_time, 'strftime') else str(entry_time)
+        time_str = format_pkt_time(entry_time, "%Y-%m-%d %I:%M:%S %p")
         open_msg = (
             f"🚀 **JANE STREET POSITION OPENED** 🚀\n\n"
             f"🎫 **Ticket:** `{ticket}`\n"
@@ -806,10 +829,11 @@ def log_trade_exit(ticket, close_price, profit, close_time):
     """
     conn = None
     try:
+        close_time_utc = to_utc_naive(close_time)
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(query, (
-            float(close_price), float(profit), close_time, int(ticket)
+            float(close_price), float(profit), close_time_utc, int(ticket)
         ))
         row = cur.fetchone()
         conn.commit()
@@ -822,6 +846,7 @@ def log_trade_exit(ticket, close_price, profit, close_time):
         pnl_val = float(profit)
         pnl_emoji = "🟢" if pnl_val >= 0 else "🔴"
         pnl_sign = "+" if pnl_val >= 0 else ""
+        close_time_str = format_pkt_time(close_time_utc, "%Y-%m-%d %I:%M:%S %p")
         
         print("================================================================================")
         print(f"🏁 [TRADE CLOSED] Symbol: {symbol_str} | Ticket #{ticket} | Close Price: {close_price} | Realized PnL: {pnl_sign}${pnl_val:.2f} USD {pnl_emoji}")
@@ -834,7 +859,7 @@ def log_trade_exit(ticket, close_price, profit, close_time):
             f"💱 **Symbol:** `{symbol_str}` ({dir_str} {lots_val:.2f} lots)\n"
             f"💵 **Close Price:** `{close_price:.5f}`\n"
             f"💰 **Realized PnL:** `{pnl_sign}${pnl_val:.2f} USD` {pnl_emoji}\n"
-            f"⏱ **Close Time:** `{close_time}`\n"
+            f"⏱ **Close Time:** `{close_time_str}`\n"
         )
         send_discord_message(disc_msg)
     except Exception as e:

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatPktTime } from "@/lib/utils";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 type Category = "all" | "forex" | "metals" | "stocks";
@@ -55,7 +55,7 @@ export default function Markets() {
           <h2 className="text-2xl font-bold tracking-tight">Live Markets</h2>
           <p className="text-sm text-muted-foreground">
             Forex: Frankfurter · Metals: MT5 · Stocks: MT5 CFD
-            {dataUpdatedAt ? ` · Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ""}
+            {dataUpdatedAt ? ` · Updated ${formatPktTime(dataUpdatedAt)}` : ""}
           </p>
         </div>
       </div>
