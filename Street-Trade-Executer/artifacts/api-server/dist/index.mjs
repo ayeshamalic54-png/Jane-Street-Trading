@@ -44362,7 +44362,7 @@ var botStateTable = pgTable("bot_state", {
   haltDrawdownLimit: numeric("halt_drawdown_limit", { precision: 5, scale: 2 }).default("1.00"),
   maxDrawdownLimit: numeric("max_drawdown_limit", { precision: 5, scale: 2 }).default("3.30"),
   sessionGuardEnabled: boolean("session_guard_enabled").default(true),
-  sessionStartHour: doublePrecision("session_start_hour").default(12.5),
+  sessionStartHour: doublePrecision("session_start_hour").default(12),
   sessionEndHour: doublePrecision("session_end_hour").default(16),
   session2Enabled: boolean("session2_enabled").default(true),
   session2StartHour: doublePrecision("session2_start_hour").default(18),
@@ -44484,7 +44484,7 @@ async function ensureSessionGuardColumns() {
   if (columnsEnsured) return;
   await db.execute(sql`
     ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT TRUE;
-    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.0;
     ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 16.0;
     ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
     ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
@@ -44494,7 +44494,7 @@ async function ensureSessionGuardColumns() {
 }
 function extractSessionGuardFields(row) {
   const enabled = Boolean(row?.sessionGuardEnabled ?? row?.session_guard_enabled ?? false);
-  const startHour = Number(row?.sessionStartHour ?? row?.session_start_hour ?? 12.5);
+  const startHour = Number(row?.sessionStartHour ?? row?.session_start_hour ?? 12);
   const endHour = Number(row?.sessionEndHour ?? row?.session_end_hour ?? 16);
   const session2Enabled = Boolean(row?.session2Enabled ?? row?.session2_enabled ?? true);
   const session2StartHour = Number(row?.session2StartHour ?? row?.session2_start_hour ?? 18);

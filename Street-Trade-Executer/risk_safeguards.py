@@ -25,7 +25,7 @@ MIN_BETA_CAP = 0.50
 MAX_BETA_CAP = 1.65
 
 SESSION_GUARD_ENABLED = True
-SESSION_START_HOUR = 12.5   # 12:30 PM PKT (London Killzone Open)
+SESSION_START_HOUR = 12.0   # 12:00 PM PKT (London Killzone Open)
 SESSION_END_HOUR = 16.0     # 04:00 PM PKT (London Killzone Close)
 SESSION2_ENABLED = True
 SESSION2_START_HOUR = 18.0  # 06:00 PM PKT (NY Overlap Open)
@@ -44,7 +44,7 @@ STAGNATION_FORCE_CLOSE_ENABLED = False
 MAX_SCALP_HOLDING_MINUTES = 90
 
 def is_session_time_allowed(
-    start_hour=12.5,
+    start_hour=12.0,
     end_hour=16.0,
     current_dt=None,
     session2_enabled=False,
@@ -54,7 +54,7 @@ def is_session_time_allowed(
     """
     Checks if current Pakistani Time (PKT = UTC+5) falls within allowed trading session window(s).
     Supports overnight wrapping (e.g. 17:00 to 02:00 PKT) and optional second killzone window
-    (e.g. Window 1: 12:30 PM - 04:00 PM PKT & Window 2: 06:00 PM - 10:00 PM PKT).
+    (e.g. Window 1: 12:00 PM - 04:00 PM PKT & Window 2: 06:00 PM - 10:00 PM PKT).
     Returns (is_allowed: bool, curr_pkt_str: str, allowed_window_str: str).
     """
     if current_dt is None:

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,11 @@ const HALF_HOUR_OPTIONS: { value: number; label: string }[] = Array.from({ lengt
   };
 });
 
+function formatHourPkt(val: number): string {
+  const matched = HALF_HOUR_OPTIONS.find((o) => Math.abs(o.value - val) < 0.01);
+  return matched ? matched.label : `${val}:00 PKT`;
+}
+
 function snapHalfHour(raw: any, fallback: number): number {
   const num = Number(raw);
   if (!Number.isFinite(num)) return fallback;
@@ -44,7 +49,7 @@ function snapHalfHour(raw: any, fallback: number): number {
 export function extractSessionState(data: any): SessionGuardState {
   return {
     enabled: Boolean(data?.sessionGuardEnabled ?? data?.session_guard_enabled ?? false),
-    startHour: snapHalfHour(data?.sessionStartHour ?? data?.session_start_hour, 12.5),
+    startHour: snapHalfHour(data?.sessionStartHour ?? data?.session_start_hour, 12.0),
     endHour: snapHalfHour(data?.sessionEndHour ?? data?.session_end_hour, 16.0),
     session2Enabled: Boolean(data?.session2Enabled ?? data?.session2_enabled ?? true),
     session2StartHour: snapHalfHour(data?.session2StartHour ?? data?.session2_start_hour, 18.0),
@@ -83,14 +88,25 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<SessionGuardState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [pktNow, setPktNow] = useState(() => getCurrentPktDecimal());
+
+  useEffect(() => {
+    const t = setInterval(() => setPktNow(getCurrentPktDecimal()), 15000);
+    return () => clearInterval(t);
+  }, []);
 
   const serverState = extractSessionState(data);
   const state = draft ?? serverState;
 
-  const pktNow = getCurrentPktDecimal();
   const windowOpenNow =
     isInWindow(pktNow.decimal, state.startHour, state.endHour) ||
     (state.session2Enabled && isInWindow(pktNow.decimal, state.session2StartHour, state.session2EndHour));
+
+  const scheduleSummary = !state.enabled
+    ? "Session Guard OFF — Bot trades 24/7 unrestricted"
+    : state.session2Enabled
+    ? `Active Windows: ${formatHourPkt(state.startHour)} – ${formatHourPkt(state.endHour)}  &  ${formatHourPkt(state.session2StartHour)} – ${formatHourPkt(state.session2EndHour)}`
+    : `Active Window: ${formatHourPkt(state.startHour)} – ${formatHourPkt(state.endHour)}`;
 
   const persistState = async (next: SessionGuardState, actionLabel: string) => {
     if (isReadOnly || isSaving) return;
@@ -148,8 +164,11 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
             <div className="font-bold text-sm text-zinc-100">
               Session Time Guard (Pakistani Time PKT Trading Windows)
             </div>
-            <div className="text-xs text-zinc-400">
-              Restricts new entries to high-win-rate PKT killzones. Active Breakeven &amp; SL/TP management stay active 24/7.
+            <div className="text-xs font-mono text-sky-300 mt-0.5">
+              {scheduleSummary}
+            </div>
+            <div className="text-[11px] text-zinc-400 mt-0.5">
+              Active Breakeven &amp; SL/TP management remain active 24/7.
             </div>
           </div>
         </div>
@@ -222,18 +241,18 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
               persistState(
                 {
                   enabled: true,
-                  startHour: 12.5,
+                  startHour: 12.0,
                   endHour: 16.0,
                   session2Enabled: true,
                   session2StartHour: 18.0,
                   session2EndHour: 22.0,
                 },
-                "Dual Killzones (12:30-4:00 PM & 6:00-10:00 PM PKT)"
+                "Dual Killzones (12:00-4:00 PM & 6:00-10:00 PM PKT)"
               )
             }
             className="w-full h-8 font-mono text-[11px] font-bold border-sky-500/40 text-sky-300 hover:bg-sky-500/15"
           >
-            ⚡ Optimal Preset: 12:30–4:00 PM &amp; 6:00–10:00 PM PKT
+            ⚡ Optimal Preset: 12:00–4:00 PM &amp; 6:00–10:00 PM PKT
           </Button>
         </div>
       </div>
@@ -242,7 +261,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
         <div className="p-2.5 rounded border border-emerald-500/20 bg-zinc-950/60 space-y-2">
           <div className="text-[10px] font-bold text-emerald-400 uppercase">
-            Window 1 (London Session · 75% Hist WR)
+            Window 1 (London Session · 12:00 PM – 04:00 PM PKT)
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -287,7 +306,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
         <div className="p-2.5 rounded border border-indigo-500/20 bg-zinc-950/60 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-indigo-400 uppercase">
-              Window 2 (NY Session · 70% Hist WR)
+              Window 2 (NY Session · 06:00 PM – 10:00 PM PKT)
             </span>
             <button
               type="button"

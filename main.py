@@ -113,7 +113,7 @@ def load_config():
         cur_mig = conn_mig.cursor()
         cur_mig.execute("""
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT TRUE;
-            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.0;
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 16.0;
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
@@ -232,7 +232,7 @@ def fetch_db_config():
                 float(row[17]) if len(row) > 17 and row[17] is not None else 1.00,
                 float(row[18]) if len(row) > 18 and row[18] is not None else 3.30,
                 bool(row[19] if len(row) > 19 and row[19] is not None else False),
-                float(row[20]) if len(row) > 20 and row[20] is not None else 12.5,
+                float(row[20]) if len(row) > 20 and row[20] is not None else 12.0,
                 float(row[21]) if len(row) > 21 and row[21] is not None else 16.0,
                 bool(row[22] if len(row) > 22 and row[22] is not None else True),
                 float(row[23]) if len(row) > 23 and row[23] is not None else 18.0,
@@ -246,7 +246,7 @@ def fetch_db_config():
             cur_fix = conn_fix.cursor()
             cur_fix.execute("""
                 ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT TRUE;
-                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.0;
                 ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 16.0;
                 ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
                 ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
