@@ -14,6 +14,61 @@ from smc_indicators import (
 logger = logging.getLogger("SMC_Strategy_Engine")
 
 
+def _compute_m15_opposing_target(
+    is_buy: bool,
+    df_m15: pd.DataFrame,
+    entry_p: float,
+    sl_d: float,
+    is_metals: bool,
+):
+    """
+    Computes the nearest opposing M15 structural liquidity target (Swing High/Low + Opposing OB/Breaker)
+    with institutional front-run buffer ($1.10 Gold / 3.5 pips Forex) so TP fills ahead of wick bounces.
+    """
+    min_amp = 2.50 if is_metals else 0.0012
+    sh_3, sl_3 = get_swing_points(df_m15, n_left=3, n_right=3)
+    sh_2, sl_2 = get_swing_points(df_m15, n_left=2, n_right=2, min_amplitude=min_amp)
+    if (is_buy and not sh_2) or (not is_buy and not sl_2):
+        fb_sh_2, fb_sl_2 = get_swing_points(df_m15, n_left=2, n_right=2)
+        if is_buy and not sh_2:
+            sh_2 = fb_sh_2
+        if not is_buy and not sl_2:
+            sl_2 = fb_sl_2
+
+    all_zones = detect_smc_zones(df_m15, min_idx=0)
+    min_move = 1.50 if is_metals else 0.0005
+    ob_buf = 1.10 if is_metals else 0.00035
+    min_rrr = 1.85
+    digits = 2 if is_metals else 5
+
+    if is_buy:
+        opp_obs = all_zones.get('bearish_ob', []) + all_zones.get('bearish_breaker', [])
+        candidates = [float(p_t) for p_t, _ in (sh_3 + sh_2) if p_t > entry_p + min_move]
+        candidates.extend(float(low_b) for low_b, _ in opp_obs if float(low_b) > entry_p + min_move)
+        candidates = sorted(set(round(x, digits) for x in candidates))
+        for t_lvl in candidates:
+            front_run_tp = t_lvl - ob_buf
+            cand_rrr = (front_run_tp - entry_p) / sl_d
+            if cand_rrr >= min_rrr:
+                if cand_rrr > 3.00:
+                    return round(entry_p + 3.00 * sl_d, digits), 3.00
+                return round(front_run_tp, digits), cand_rrr
+        return round(entry_p + 2.20 * sl_d, digits), 2.20
+
+    opp_obs = all_zones.get('bullish_ob', []) + all_zones.get('bullish_breaker', [])
+    candidates = [float(p_t) for p_t, _ in (sl_3 + sl_2) if p_t < entry_p - min_move]
+    candidates.extend(float(high_b) for _, high_b in opp_obs if float(high_b) < entry_p - min_move)
+    candidates = sorted(set(round(x, digits) for x in candidates), reverse=True)
+    for t_lvl in candidates:
+        front_run_tp = t_lvl + ob_buf
+        cand_rrr = (entry_p - front_run_tp) / sl_d
+        if cand_rrr >= min_rrr:
+            if cand_rrr > 3.00:
+                return round(entry_p - 3.00 * sl_d, digits), 3.00
+            return round(front_run_tp, digits), cand_rrr
+    return round(entry_p - 2.20 * sl_d, digits), 2.20
+
+
 def evaluate_smc_strategy_signal(
     df_m15: pd.DataFrame,
     df_m5: pd.DataFrame = None,
@@ -140,57 +195,8 @@ def evaluate_smc_strategy_signal(
     custom_step8_s = None
     custom_step9_s = None
     scan_tp = 0.0
-
-    def _compute_m15_target_buy(entry_p, sl_d):
-        m15_sh, _ = get_swing_points(df_m15, n_left=3, n_right=3)
-        if not m15_sh:
-            m15_sh, _ = get_swing_points(df_m15, n_left=2, n_right=2)
-        all_zones = detect_smc_zones(df_m15, min_idx=0)
-        opp_obs = all_zones.get('bearish_ob', []) + all_zones.get('bearish_breaker', [])
-
-        min_move = 1.0 if is_metals else 0.0005
-        target_candidates = [float(p_t) for p_t, _ in m15_sh if p_t > entry_p + min_move]
-        for low_b, _ in opp_obs:
-            if float(low_b) > entry_p + min_move:
-                target_candidates.append(float(low_b))
-        target_candidates = sorted(list(set([round(x, 2 if is_metals else 5) for x in target_candidates])))
-
-        ob_buf = 0.50 if is_metals else 0.00020
-        for t_lvl in target_candidates:
-            front_run_tp = t_lvl - ob_buf
-            cand_rrr = (front_run_tp - entry_p) / sl_d
-            if cand_rrr >= 2.00:
-                if cand_rrr > 3.00:
-                    return round(entry_p + 3.00 * sl_d, 2 if is_metals else 5), 3.00
-                return round(front_run_tp, 2 if is_metals else 5), cand_rrr
-
-        # No M15 swing blocker below 2.0R -> trend expansion 2.20R institutional target
-        return round(entry_p + 2.20 * sl_d, 2 if is_metals else 5), 2.20
-
-    def _compute_m15_target_sell(entry_p, sl_d):
-        _, m15_sl = get_swing_points(df_m15, n_left=3, n_right=3)
-        if not m15_sl:
-            _, m15_sl = get_swing_points(df_m15, n_left=2, n_right=2)
-        all_zones = detect_smc_zones(df_m15, min_idx=0)
-        opp_obs = all_zones.get('bullish_ob', []) + all_zones.get('bullish_breaker', [])
-
-        min_move = 1.0 if is_metals else 0.0005
-        target_candidates = [float(p_t) for p_t, _ in m15_sl if p_t < entry_p - min_move]
-        for _, high_b in opp_obs:
-            if float(high_b) < entry_p - min_move:
-                target_candidates.append(float(high_b))
-        target_candidates = sorted(list(set([round(x, 2 if is_metals else 5) for x in target_candidates])), reverse=True)
-
-        ob_buf = 0.50 if is_metals else 0.00020
-        for t_lvl in target_candidates:
-            front_run_tp = t_lvl + ob_buf
-            cand_rrr = (entry_p - front_run_tp) / sl_d
-            if cand_rrr >= 2.00:
-                if cand_rrr > 3.00:
-                    return round(entry_p - 3.00 * sl_d, 2 if is_metals else 5), 3.00
-                return round(front_run_tp, 2 if is_metals else 5), cand_rrr
-
-        return round(entry_p - 2.20 * sl_d, 2 if is_metals else 5), 2.20
+    front_run_lbl = "$1.10" if is_metals else "3.5p"
+    min_target_rrr = 1.85
 
     # ── 1. BUY SIGNAL EVALUATION (ALL 9 CONDITIONS STRICT) ──
     if is_m15_bullish and has_sell_sweep and has_bull_choch and (len(zones_bull['bullish_fvg']) > 0) and in_bull_fvg and p5_buy_rejection:
@@ -204,11 +210,11 @@ def evaluate_smc_strategy_signal(
         is_chasing = price > (fvg_high + max_chase_dist)
         max_sl_cap = 7.50 if is_metals else 0.0050
 
-        tp_price, target_rrr = _compute_m15_target_buy(price, sl_dist)
+        tp_price, target_rrr = _compute_m15_opposing_target(True, df_m15, price, sl_dist, is_metals)
         scan_tp = tp_price
 
         is_sl_ok = (sl_dist <= max_sl_cap and not is_chasing) or bypass_filters
-        is_target_ok = (target_rrr >= 2.00) or bypass_filters
+        is_target_ok = (target_rrr >= min_target_rrr) or bypass_filters
 
         if is_sl_ok and is_target_ok:
             reason = (
@@ -233,9 +239,9 @@ def evaluate_smc_strategy_signal(
                 custom_step8_s = f"PASS 🟢 (0.75 Buf - ${sl_dist:.2f} SL)"
 
             if not is_target_ok:
-                custom_step9_s = f"FAIL 🔴 (M15 Target {target_rrr:.2f}R < 2.0R)"
+                custom_step9_s = f"FAIL 🔴 (M15 Target {target_rrr:.2f}R < {min_target_rrr:.2f}R)"
             else:
-                custom_step9_s = f"PASS 🟢 ({target_rrr:.2f}R M15 Target - $0.50 Front-Run)"
+                custom_step9_s = f"PASS 🟢 ({target_rrr:.2f}R M15 Target - {front_run_lbl} Front-Run)"
 
     # ── 2. SELL SIGNAL EVALUATION (ALL 9 CONDITIONS STRICT) ──
     if is_m15_bearish and has_buy_sweep and has_bear_choch and (len(zones_bear['bearish_fvg']) > 0) and in_bear_fvg and p5_sell_rejection:
@@ -249,11 +255,11 @@ def evaluate_smc_strategy_signal(
         is_chasing = price < (fvg_low - max_chase_dist)
         max_sl_cap = 7.50 if is_metals else 0.0050
 
-        tp_price, target_rrr = _compute_m15_target_sell(price, sl_dist)
+        tp_price, target_rrr = _compute_m15_opposing_target(False, df_m15, price, sl_dist, is_metals)
         scan_tp = tp_price
 
         is_sl_ok = (sl_dist <= max_sl_cap and not is_chasing) or bypass_filters
-        is_target_ok = (target_rrr >= 2.00) or bypass_filters
+        is_target_ok = (target_rrr >= min_target_rrr) or bypass_filters
 
         if is_sl_ok and is_target_ok:
             reason = (
@@ -278,9 +284,9 @@ def evaluate_smc_strategy_signal(
                 custom_step8_s = f"PASS 🟢 (0.75 Buf - ${sl_dist:.2f} SL)"
 
             if not is_target_ok:
-                custom_step9_s = f"FAIL 🔴 (M15 Target {target_rrr:.2f}R < 2.0R)"
+                custom_step9_s = f"FAIL 🔴 (M15 Target {target_rrr:.2f}R < {min_target_rrr:.2f}R)"
             else:
-                custom_step9_s = f"PASS 🟢 ({target_rrr:.2f}R M15 Target - $0.50 Front-Run)"
+                custom_step9_s = f"PASS 🟢 ({target_rrr:.2f}R M15 Target - {front_run_lbl} Front-Run)"
 
     # ── 3. SCANNER LOGGING (ALL 9 STRICT STEPS INDIVIDUALLY DISPLAYED — NO '|' INSIDE VALUES) ──
     if is_m15_bullish:
@@ -314,7 +320,7 @@ def evaluate_smc_strategy_signal(
     else:
         step8_s = "PASS 🟢 (0.75 Buf - $7.50 Cap)" if is_metals else "PASS 🟢 (0.0004 Buf - Cap)"
 
-    # S9: M15 Opposing Liquidity Target (>= 2.0R)
+    # S9: M15 Opposing Liquidity Target (>= 1.85R with $1.10 Gold Front-Run)
     if custom_step9_s is not None:
         step9_s = custom_step9_s
     else:
@@ -324,19 +330,19 @@ def evaluate_smc_strategy_signal(
             if is_m15_bullish:
                 sl_p_check = (sweep_low_price - buf) if has_sell_sweep else (price - (2.5 if is_metals else 0.0015))
                 sl_d_check = max(min_dist, price - sl_p_check)
-                scan_tp, scan_rrr = _compute_m15_target_buy(price, sl_d_check)
+                scan_tp, scan_rrr = _compute_m15_opposing_target(True, df_m15, price, sl_d_check, is_metals)
             elif is_m15_bearish:
                 sl_p_check = (sweep_high_price + buf) if has_buy_sweep else (price + (2.5 if is_metals else 0.0015))
                 sl_d_check = max(min_dist, sl_p_check - price)
-                scan_tp, scan_rrr = _compute_m15_target_sell(price, sl_d_check)
+                scan_tp, scan_rrr = _compute_m15_opposing_target(False, df_m15, price, sl_d_check, is_metals)
             else:
                 scan_rrr = 2.00
                 scan_tp = 0.0
 
-            if scan_rrr >= 2.00:
-                step9_s = f"PASS 🟢 ({scan_rrr:.2f}R M15 Target - $0.50 Front-Run)"
+            if scan_rrr >= min_target_rrr:
+                step9_s = f"PASS 🟢 ({scan_rrr:.2f}R M15 Target - {front_run_lbl} Front-Run)"
             else:
-                step9_s = f"FAIL 🔴 ({scan_rrr:.2f}R M15 Target < 2.0R Min)"
+                step9_s = f"FAIL 🔴 ({scan_rrr:.2f}R M15 Target < {min_target_rrr:.2f}R Min)"
         except Exception:
             step9_s = "PASS 🟢 (2.00R M15 Target)"
             scan_tp = 0.0

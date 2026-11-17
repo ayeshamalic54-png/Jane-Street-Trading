@@ -28,14 +28,17 @@ SESSION_GUARD_ENABLED = True
 SESSION_START_HOUR = 12.5  # 12:30 PM PKT (London Open)
 SESSION_END_HOUR = 2.0     # 02:00 AM PKT (Before Rollover Close)
 
-# Breakeven Risk-Free Protection Guard (DISABLED per user directive: let trade breathe to structural TP / SL)
-BREAKEVEN_GUARD_ENABLED = False
-BREAKEVEN_TRIGGER_PROFIT_USD = 35.0  # +$35.00 USD (Shift SL to Entry Price, Risk-Free)
+# Pure Risk-Free Breakeven Protection Guard (NO Trailing Stop — SL moves ONCE to Entry +/- fee buffer, then runs to Full Structural TP)
+BREAKEVEN_GUARD_ENABLED = True
+BREAKEVEN_TRIGGER_PROFIT_USD = 35.0  # +$35.00 USD (Shift SL ONCE to Entry +/- fee buffer, zero profit trailing)
+BREAKEVEN_GOLD_BUFFER = 0.25         # $0.25 Gold buffer past Entry (covers spread/commission on 0.07 lots)
+BREAKEVEN_FX_BUFFER = 0.00020        # 2.0 pips Forex buffer past Entry
 
-# Scalping Stagnation & Time-Based Position Management
+# Scalping Stagnation Breakeven (No forced close timeout so structural TP is never cut early)
 STAGNATION_GUARD_ENABLED = True
-STAGNATION_BE_MINUTES = 60          # Shift SL to Breakeven if trade open >= 60 mins and floating in profit
-MAX_SCALP_HOLDING_MINUTES = 90      # Auto-exit if trade stagnates >= 90 mins without hitting TP
+STAGNATION_BE_MINUTES = 60           # Shift SL to Breakeven if trade open >= 60 mins and floating > +$5.00 USD
+STAGNATION_FORCE_CLOSE_ENABLED = False
+MAX_SCALP_HOLDING_MINUTES = 90
 
 def is_session_time_allowed(start_hour=12.5, end_hour=2.0, current_dt=None):
     """

@@ -1573,7 +1573,7 @@ export function SmcChartOverlay({
                 : !s7Pass
                 ? "Step 1-6 PASS 🟢 — Step 7 PENDING ⚪: Waiting for Candle Close Confirmation"
                 : !s9Pass
-                ? "Step 1-7 PASS 🟢 — Step 9 BLOCKED 🔴: Opposing M15 Liquidity Target < 2.0R"
+                ? "Step 1-7 PASS 🟢 — Step 9 BLOCKED 🔴: Opposing M15 Liquidity Target < 1.85R"
                 : "Step 1-9 PASS 🟢 — All 9 Pure SMC Conditions Verified!"}
             </p>
           </div>
@@ -2991,13 +2991,13 @@ export function SmcChartOverlay({
                 S9: M15 Opposing Target
               </span>
               <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0.2 font-bold", s9Pass ? "bg-emerald-500/20 text-emerald-300 border-emerald-400" : s9Status.includes("FAIL") ? "bg-rose-500/20 text-rose-300 border-rose-400" : "bg-zinc-800 text-zinc-400 border-zinc-700")}>
-                {s9Status || (s9Pass ? "PASS 🟢 (>=2.0R Target)" : "PENDING ⚪")}
+                {s9Status || (s9Pass ? "PASS 🟢 (>=1.85R Target)" : "PENDING ⚪")}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s9Pass
-                ? (effectiveTpPrice > 0 ? `M15 liquidity TP placed at $${effectiveTpPrice.toFixed(2)} (min 2.0R).` : "Verified >= 2.0R path to M15 opposing liquidity.")
-                : (s9Status.includes("FAIL") ? s9Status : "Requires >= 2.0R space to M15 structural liquidity pool.")}
+                ? (effectiveTpPrice > 0 ? `M15 liquidity TP placed at $${effectiveTpPrice.toFixed(2)} (min 1.85R).` : "Verified >= 1.85R path to M15 opposing liquidity.")
+                : (s9Status.includes("FAIL") ? s9Status : "Requires >= 1.85R space to M15 structural liquidity pool.")}
             </p>
           </div>
         </div>

@@ -371,15 +371,31 @@ def close_all_positions(symbol, comment_filter="JS_"):
                 err_msg = res.comment if res else "No response"
                 logger.error(f"Failed to close position ticket {pos.ticket}: {err_msg}")
 
+def _sync_open_sl_to_db(ticket, new_sl):
+    """Immediately updates SL for an OPEN ticket in PostgreSQL so dashboard/chart reflect Breakeven."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE trades SET sl = %s WHERE ticket = %s AND status = 'OPEN'", (float(new_sl), int(ticket)))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.debug(f"Could not sync updated SL to DB for ticket {ticket}: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+
 def modify_position_sl(ticket, symbol, new_sl):
     """
-    Modifies the Stop Loss of an active MT5 position to new_sl (e.g. Breakeven / Entry Price).
+    Modifies the Stop Loss of an active MT5 position to new_sl (e.g. Breakeven / Entry +/- fee buffer).
+    Enforces broker digits rounding, stops-level safety, and strictly forward SL ratcheting.
     """
     try:
         mt5.symbol_select(symbol, True)
         positions = mt5.positions_get(ticket=ticket)
         if not positions:
-            # Try searching by symbol if ticket lookup fails
             all_pos = mt5.positions_get(symbol=symbol)
             if all_pos:
                 positions = [p for p in all_pos if p.ticket == ticket]
@@ -388,26 +404,135 @@ def modify_position_sl(ticket, symbol, new_sl):
             return False
 
         pos = positions[0]
+        info = mt5.symbol_info(symbol)
+        tick = mt5.symbol_info_tick(symbol)
+        is_metals = any(m in symbol.upper() for m in ("XAU", "GOLD", "XAG", "SILVER"))
+        digits = int(info.digits) if (info and getattr(info, "digits", None) is not None) else (2 if is_metals else 5)
+        point = float(info.point) if (info and getattr(info, "point", 0.0)) else (10 ** -digits)
+        stops_level = float(getattr(info, "trade_stops_level", 0) or 0) if info else 0.0
+        min_stop_dist = stops_level * point + point
+
+        rounded_sl = round(float(new_sl), digits)
+        curr_sl = float(getattr(pos, "sl", 0.0) or 0.0)
+        tp_val = round(float(pos.tp), digits) if (getattr(pos, "tp", 0.0) or 0.0) > 0 else 0.0
+        pos_type = int(getattr(pos, "type", 0))
+
+        eps = point * 0.5
+        if pos_type == mt5.ORDER_TYPE_BUY:
+            if curr_sl > 0.0 and rounded_sl <= curr_sl + eps:
+                return False
+            if tick and getattr(tick, "bid", 0.0) > 0 and rounded_sl > tick.bid - min_stop_dist:
+                return False
+        else:
+            if curr_sl > 0.0 and rounded_sl >= curr_sl - eps:
+                return False
+            if tick and getattr(tick, "ask", 0.0) > 0 and rounded_sl < tick.ask + min_stop_dist:
+                return False
+
         request = {
             "action": mt5.TRADE_ACTION_SLTP,
             "position": ticket,
             "symbol": symbol,
-            "sl": float(new_sl),
-            "tp": float(pos.tp) if hasattr(pos, 'tp') and pos.tp else 0.0,
+            "sl": rounded_sl,
+            "tp": tp_val,
             "magic": MAGIC_NUMBER,
         }
         res = mt5.order_send(request)
         if is_retcode_success(res):
-            logger.info(f"🛡️ [BREAKEVEN SL ACTIVATED] Moved Stop Loss for ticket {ticket} ({symbol}) to Breakeven entry price: {new_sl:.5f}")
+            logger.info(f"🛡️ [BREAKEVEN SL ACTIVATED] Moved Stop Loss for ticket {ticket} ({symbol}) to {rounded_sl:.{digits}f}")
+            _sync_open_sl_to_db(ticket, rounded_sl)
             return True
         else:
             err_c = res.comment if res else mt5.last_error()
             logger.error(f"Failed to modify SL for ticket {ticket}: {err_c}")
-
             return False
     except Exception as e:
         logger.error(f"Error modifying SL for ticket {ticket}: {e}")
         return False
+
+
+def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_floating_profit=0.0, modify_fn=None):
+    """
+    Pure Risk-Free Breakeven Protection (NO trailing stop beyond Entry):
+    1. When position or basket profit hits BREAKEVEN_TRIGGER_PROFIT_USD (+$35.00), shifts SL ONCE to Entry +/- fee buffer.
+    2. When open >= STAGNATION_BE_MINUTES (60 mins) and floating >= +$5.00, shifts SL ONCE to Entry +/- fee buffer.
+    Never chases price or eats structural TP; leaves user's tighter manual SL untouched.
+    Returns True if any position currently sits risk-free at/past Breakeven SL.
+    """
+    if not active_positions:
+        return False
+
+    import risk_safeguards
+    is_be_enabled = getattr(risk_safeguards, "BREAKEVEN_GUARD_ENABLED", True)
+    be_trigger_usd = float(getattr(risk_safeguards, "BREAKEVEN_TRIGGER_PROFIT_USD", 35.0))
+    gold_buf = float(getattr(risk_safeguards, "BREAKEVEN_GOLD_BUFFER", 0.25))
+    fx_buf = float(getattr(risk_safeguards, "BREAKEVEN_FX_BUFFER", 0.00020))
+    is_stag_enabled = getattr(risk_safeguards, "STAGNATION_GUARD_ENABLED", True)
+    stag_mins = float(getattr(risk_safeguards, "STAGNATION_BE_MINUTES", 60.0))
+
+    sl_modifier = modify_fn or modify_position_sl
+    now_utc = utc_now_naive()
+    any_be_active = False
+
+    for p in active_positions:
+        sym = str(getattr(p, "symbol", ""))
+        sym_up = sym.upper()
+        if any(c in sym_up for c in ("BTC", "ETH", "SOL", "BNB", "XRP", "USDT")):
+            continue
+
+        entry_p = float(getattr(p, "price_open", 0.0) or 0.0)
+        if entry_p <= 0.0:
+            continue
+
+        is_metals = any(m in sym_up for m in ("XAU", "GOLD", "XAG", "SILVER"))
+        digits = 2 if is_metals else 5
+        be_buf = gold_buf if is_metals else fx_buf
+        tol = 0.01 if is_metals else 0.00005
+
+        curr_sl = float(getattr(p, "sl", 0.0) or 0.0)
+        pos_profit = float(getattr(p, "profit", 0.0) or 0.0)
+        pos_type = int(getattr(p, "type", 0))
+        is_buy = (pos_type == getattr(mt5, "ORDER_TYPE_BUY", 0))
+
+        if is_buy:
+            target_sl = round(entry_p + be_buf, digits)
+            already_be = (curr_sl > 0.0 and curr_sl >= entry_p - tol)
+        else:
+            target_sl = round(entry_p - be_buf, digits)
+            already_be = (curr_sl > 0.0 and curr_sl <= entry_p + tol)
+
+        if already_be:
+            any_be_active = True
+            continue
+
+        profit_hit = is_be_enabled and (
+            pos_profit >= be_trigger_usd
+            or floating_profit >= be_trigger_usd
+            or peak_floating_profit >= be_trigger_usd
+        )
+
+        elapsed_min = 0.0
+        pos_time = getattr(p, "time", None)
+        if pos_time:
+            open_utc = mt5_epoch_to_utc_naive(pos_time, sym)
+            elapsed_min = max(0.0, (now_utc - open_utc).total_seconds() / 60.0)
+
+        stag_hit = is_stag_enabled and elapsed_min >= stag_mins and pos_profit >= 5.0
+
+        if profit_hit or stag_hit:
+            reason = (
+                f"Profit ${pos_profit:.2f} (Peak ${peak_floating_profit:.2f}) >= ${be_trigger_usd:.2f}"
+                if profit_hit
+                else f"60m+ Stagnation ({elapsed_min:.1f}m, Profit +${pos_profit:.2f})"
+            )
+            if sl_modifier(p.ticket, sym, target_sl):
+                any_be_active = True
+                logger.info(
+                    f"🛡️ [PURE BREAKEVEN LOCKED 🟢] Ticket #{p.ticket} ({sym}) | {reason} | "
+                    f"SL moved ONCE to {target_sl:.{digits}f} (No Trailing — TP Untouched)"
+                )
+
+    return any_be_active
 
 
 def modify_sl_for_trade(symbol, new_sl):

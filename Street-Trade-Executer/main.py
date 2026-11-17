@@ -26,7 +26,7 @@ from video_strategy_engine import calculate_zscore_and_ema, evaluate_video_strat
 from smc_strategy_engine import evaluate_smc_strategy_signal
 
 
-from execution_bot import execute_three_part_trade, execute_three_part_hedge_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl, mt5_epoch_to_utc_naive
+from execution_bot import execute_three_part_trade, execute_three_part_hedge_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl, mt5_epoch_to_utc_naive, apply_pure_breakeven_guard
 
 
 from smc_indicators import detect_smc_zones, is_price_in_zones
@@ -1565,117 +1565,7 @@ def manage_spread_positions(symbol_a, symbol_b, z_score, kf=None):
             set_pair_cooldown(sym_a, sym_b, cooldown_seconds=600)
             break
 
-            # ── Emergency Maximum Floating Loss Guard ──
-            if has_positions and active_js_positions:
-                try:
-                    conn_eq = get_connection()
-                    cur_eq = conn_eq.cursor()
-                    cur_eq.execute("SELECT start_of_day_equity FROM bot_state WHERE id = 1")
-                    eq_row = cur_eq.fetchone()
-                    cur_eq.close()
-                    conn_eq.close()
-                    start_eq_guard = float(eq_row[0]) if (eq_row and eq_row[0]) else 10000.0
-                    
-                    daily_loss_usd = max(0.0, start_eq_guard - acc_info.equity) if acc_info else 0.0
-                    daily_loss_pct = (daily_loss_usd / start_eq_guard) * 100.0 if start_eq_guard > 0 else 0.0
-                    
-                    if RISK_LIMITS_ENABLED and floating_profit <= -330.0:
-                        logger.error(f"[EMERGENCY DRAWDOWN GUARD] Floating loss (${floating_profit:.2f}) breached safety cap (-$330.00). AUTO-CLOSING ALL TRADES IMMEDIATELY!")
-                        for pos in active_js_positions:
-                            pos_type_str = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
-                            close_single_trade(pos.symbol, pos.ticket, pos.volume, pos_type_str)
-
-                except Exception as ex_dd:
-                    logger.error(f"Error evaluating emergency drawdown guard: {ex_dd}")
-
-            # ── Breakeven Risk-Free Protection Guard (Shift SL to Breakeven Entry Price at +$35.00 USD) ──
-            if has_positions:
-                if floating_profit > peak_floating_profit:
-                    peak_floating_profit = floating_profit
-
-                import risk_safeguards
-                is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', False)
-                be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 35.0)
-
-                should_close_trail = False
-                trail_close_reason = ""
-
-                if is_be_enabled and (floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd) and (int(time.time()) % 20 == 0):
-                    logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVE 🟢] Profit: +${floating_profit:.2f} (Peak +${peak_floating_profit:.2f}) >= +${be_trigger_usd:.2f} USD. SL shifted to Entry Price (Breakeven). Trade running to Target!")
-
-                from execution_bot import modify_position_sl
-
-                for t_a in open_leg_a_trades:
-                    entry_p = t_a.get("entry_price")
-                    tkt = t_a.get("ticket")
-                    sym = t_a.get("symbol")
-                    pos_type = t_a.get("order_type")
-                    
-                    pos_info = mt5.positions_get(ticket=tkt)
-                    if pos_info and entry_p:
-                        curr_p = pos_info[0].price_current
-                        curr_sl = pos_info[0].sl
-
-                        if pos_type == "BUY":
-                            if is_be_enabled and (floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd):
-                                target_sl = float(entry_p)
-                                if curr_sl < target_sl - 0.01 or curr_sl == 0.0:
-                                    modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Entry Price ({target_sl:.5f})!")
-                        elif pos_type == "SELL":
-                            if is_be_enabled and (floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd):
-                                target_sl = float(entry_p)
-                                if curr_sl > target_sl + 0.01 or curr_sl == 0.0:
-                                    modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [BREAKEVEN GUARD SL MOVED] Ticket {tkt} ({sym}) Peak +${peak_floating_profit:.2f}. Moved SL to Entry Price ({target_sl:.5f})!")
-
-                # ── SCALPING STAGNATION GUARD (TIME-BASED BE & MAX DURATION TIMEOUT) ──
-                is_stagnation_enabled = getattr(risk_safeguards, 'STAGNATION_GUARD_ENABLED', True)
-                stagnation_be_mins = getattr(risk_safeguards, 'STAGNATION_BE_MINUTES', 60.0)
-                max_scalp_hold_mins = getattr(risk_safeguards, 'MAX_SCALP_HOLDING_MINUTES', 90.0)
-
-                for t_a in open_leg_a_trades:
-                    entry_p = t_a.get("entry_price")
-                    tkt = t_a.get("ticket")
-                    sym = t_a.get("symbol")
-                    pos_type = t_a.get("order_type")
-                    entry_t = t_a.get("entry_time")
-
-                    elapsed_min = 0.0
-                    if entry_t is not None:
-                        if hasattr(entry_t, "tzinfo") and entry_t.tzinfo is not None:
-                            elapsed_sec = abs((datetime.datetime.now(datetime.timezone.utc) - entry_t).total_seconds())
-                        else:
-                            elapsed_sec = abs((datetime.datetime.utcnow() - entry_t).total_seconds())
-                        elapsed_min = elapsed_sec / 60.0
-
-                    pos_info = mt5.positions_get(ticket=tkt)
-                    if pos_info and entry_p:
-                        curr_p = float(pos_info[0].price_current)
-                        curr_sl = float(pos_info[0].sl)
-                        pos_profit = float(pos_info[0].profit)
-
-                        is_metals_sym = any(m in sym.upper() for m in ['XAU', 'GOLD', 'XAG', 'SILVER'])
-                        be_buf = 0.20 if is_metals_sym else 0.00010
-
-                        # Rule 1: Stagnation Breakeven Lock after 60 mins if floating in profit
-                        if is_stagnation_enabled and elapsed_min >= stagnation_be_mins and (pos_profit > 0.0 or (pos_type == "BUY" and curr_p > float(entry_p)) or (pos_type == "SELL" and curr_p < float(entry_p))):
-                            if pos_type == "BUY":
-                                target_sl = round(float(entry_p) + be_buf, 2 if is_metals_sym else 5)
-                                if curr_sl < target_sl - 0.01 or curr_sl == 0.0:
-                                    modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [STAGNATION BREAKEVEN LOCK 🟢] Ticket #{tkt} ({sym}) open for {elapsed_min:.1f} mins >= {stagnation_be_mins} mins. Shifted SL to Entry + buffer ({target_sl:.2f})!")
-                            elif pos_type == "SELL":
-                                target_sl = round(float(entry_p) - be_buf, 2 if is_metals_sym else 5)
-                                if curr_sl > target_sl + 0.01 or curr_sl == 0.0:
-                                    modify_position_sl(tkt, sym, target_sl)
-                                    logger.info(f"🛡️ [STAGNATION BREAKEVEN LOCK 🔴] Ticket #{tkt} ({sym}) open for {elapsed_min:.1f} mins >= {stagnation_be_mins} mins. Shifted SL to Entry - buffer ({target_sl:.2f})!")
-
-                        # Rule 2: Max Scalp Duration Timeout Exit after 90 mins
-                        if is_stagnation_enabled and elapsed_min >= max_scalp_hold_mins and not exit_triggered:
-                            exit_triggered = True
-                            exit_reason = f"Scalp Stagnation Timeout ({elapsed_min:.1f} mins >= {max_scalp_hold_mins} mins) to avoid session spike"
-                            logger.info(f"⏱️ [SCALP STAGNATION TIMEOUT] Ticket #{tkt} ({sym}) open for {elapsed_min:.1f} mins >= {max_scalp_hold_mins} mins. Triggering safe market close to avoid session spike!")
+        # Pure Risk-Free Breakeven Protection is handled centrally by apply_pure_breakeven_guard() in main loop.
 
 
 
@@ -3322,42 +3212,15 @@ def main():
                                 logger.info("================================================================================")
                     invalidate_trades_cache()
 
-            # ── BREAKEVEN RISK-FREE PROTECTION GUARD (+ $35.00 USD TRIGGER) ──
-            # Only activates when trade profit reaches >= +$35.00 USD.
-            # Shifts Stop Loss directly to Entry Price (price_open) so trade is 100% risk-free.
-            # If price reverses, trade exits at entry price (0 loss, capital safe).
+            # ── PURE RISK-FREE BREAKEVEN PROTECTION (+$35.00 USD OR 60m STAGNATION — NO TRAILING STOP) ──
+            be_locked_active = False
             if len(active_js_positions) > 0:
                 try:
-                    import risk_safeguards
-                    is_be_enabled = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', False)
-                    be_trigger_usd = getattr(risk_safeguards, 'BREAKEVEN_TRIGGER_PROFIT_USD', 35.0)
-
-                    for p in active_js_positions:
-                        pos_cat = get_symbol_category(p.symbol)
-                        if pos_cat == "crypto":
-                            continue
-
-                        pos_profit = float(p.profit)
-                        # Breakeven triggers when this position's profit or total basket reaches >= $35 USD
-                        if is_be_enabled and (pos_profit >= be_trigger_usd or floating_profit >= be_trigger_usd or peak_floating_profit >= be_trigger_usd):
-                            entry_price = float(p.price_open)
-                            curr_sl = float(getattr(p, 'sl', 0.0))
-                            pos_type = "BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL"
-
-                            should_modify = False
-                            if pos_type == "BUY":
-                                # For BUY: move SL up to entry price if it's below entry price
-                                if curr_sl < entry_price - 0.01 or curr_sl == 0.0:
-                                    should_modify = True
-                            elif pos_type == "SELL":
-                                # For SELL: move SL down to entry price if it's above entry price
-                                if curr_sl > entry_price + 0.01 or curr_sl == 0.0:
-                                    should_modify = True
-
-                            if should_modify:
-                                trig_reason = f"Profit ${pos_profit:.2f} (Peak ${peak_floating_profit:.2f}) >= ${be_trigger_usd:.2f} USD"
-                                modify_position_sl(p.ticket, p.symbol, entry_price)
-                                logger.info(f"🛡️ [BREAKEVEN GUARD ACTIVATED 🟢] Triggered by {trig_reason}! Shifted SL for ticket #{p.ticket} ({p.symbol}) to Entry Price ${entry_price:.5f} (Risk-Free Mode Active) 🛡️")
+                    be_locked_active = apply_pure_breakeven_guard(
+                        active_js_positions,
+                        floating_profit=floating_profit,
+                        peak_floating_profit=peak_floating_profit,
+                    )
                 except Exception as ex_sl:
                     logger.error(f"Error evaluating breakeven guard: {ex_sl}")
 
@@ -3368,10 +3231,8 @@ def main():
             elif low_correlation_warning:
                 status_str = "RUNNING (Warning: Low Correlation)"
             elif has_positions:
-                import risk_safeguards
-                is_be_on = getattr(risk_safeguards, 'BREAKEVEN_GUARD_ENABLED', False)
-                if is_be_on and (peak_floating_profit >= 35.0 or floating_profit >= 35.0):
-                    status_str = f"RUNNING (Breakeven Active 🛡️ | SL @ Entry | Profit ${floating_profit:.2f})"
+                if be_locked_active:
+                    status_str = f"RUNNING (Breakeven Active 🛡️ | SL Risk-Free | Profit ${floating_profit:.2f})"
                 else:
                     status_str = f"RUNNING (In Trade 🚀 | PnL ${floating_profit:.2f} | Running to Opposing Target TP)"
             else:

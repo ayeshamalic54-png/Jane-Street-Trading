@@ -1596,10 +1596,10 @@ export default function Dashboard() {
                     <div className={getBoxClass(s9Valid, false, s9Failed)}>
                       <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 9: Opposing Target</div>
                       <div title={s9Text} className={cn("text-xs truncate", getTextColor(s9Valid, false, s9Failed))}>
-                        {s9Failed ? (s9Text || "FAIL 🔴 (<2.0R)") : s9Valid ? (isPassText(s9Text) ? s9Text : "PASS 🟢 (M15 Target)") : (s9Text || "WAITING ⚪")}
+                        {s9Failed ? (s9Text || "FAIL 🔴 (<1.85R)") : s9Valid ? (isPassText(s9Text) ? s9Text : "PASS 🟢 (M15 Target)") : (s9Text || "WAITING ⚪")}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s9Text}>
-                        {s9Failed ? "Below 2.00R Min R:R" : s9Valid ? "M15 Opposing Liq (-$0.50)" : "Min 2.00R M15 Structural TP"}
+                        {s9Failed ? "Below 1.85R Min R:R" : s9Valid ? "M15 Opposing Liq (-$1.10)" : "Min 1.85R M15 Structural TP"}
                       </div>
                     </div>
                   </div>
