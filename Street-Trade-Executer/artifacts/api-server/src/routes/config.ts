@@ -3,11 +3,14 @@ import { db } from "@workspace/db";
 import { botStateTable } from "@workspace/db";
 import { UpdateConfigBody } from "@workspace/api-zod";
 import { sql } from "drizzle-orm";
+import { ensureSessionGuardColumns, extractSessionGuardFields } from "../lib/sessionGuard";
+import { broadcastDashboardNow } from "../lib/ws";
 
 const router = Router();
 
 router.get("/config", async (req, res) => {
   try {
+    await ensureSessionGuardColumns();
     const rows = await db.select().from(botStateTable).limit(1);
     const state = rows[0];
     const pair = state?.activePair ?? "EURUSD/GBPUSD";
@@ -38,12 +41,7 @@ router.get("/config", async (req, res) => {
       initialBalance: Number(state?.initialBalance ?? 100000.00),
       haltDrawdownLimit: Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.83),
       maxDrawdownLimit: Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30),
-      sessionGuardEnabled: Boolean((state as any)?.session_guard_enabled ?? false),
-      sessionStartHour: Number((state as any)?.session_start_hour ?? 12.5),
-      sessionEndHour: Number((state as any)?.session_end_hour ?? 2.0),
-      session_guard_enabled: Boolean((state as any)?.session_guard_enabled ?? false),
-      session_start_hour: Number((state as any)?.session_start_hour ?? 12.5),
-      session_end_hour: Number((state as any)?.session_end_hour ?? 2.0),
+      ...extractSessionGuardFields(state),
     });
   } catch (err) {
     console.error("Failed to get config", err);
@@ -53,11 +51,13 @@ router.get("/config", async (req, res) => {
 
 router.post("/config", async (req, res) => {
   try {
+    await ensureSessionGuardColumns();
     const parsed = UpdateConfigBody.safeParse(req.body);
     const bodyObj = req.body || {};
 
     const rows = await db.select().from(botStateTable).limit(1);
     const state = rows[0];
+    const curSess = extractSessionGuardFields(state);
 
     const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, riskLimitsEnabled, defaultLots, maxDailyTrades, initialBalance, knifeProtectionEnabled, obiEnabled, volatilityFilterEnabled } = (parsed.success ? parsed.data : bodyObj) as any;
     const indicesEnabled = bodyObj.indicesEnabled !== undefined ? Boolean(bodyObj.indicesEnabled) : (state?.indicesEnabled ?? true);
@@ -66,9 +66,12 @@ router.post("/config", async (req, res) => {
     const haltLimit = bodyObj.haltDrawdownLimit !== undefined ? Number(bodyObj.haltDrawdownLimit) : (bodyObj.halt_drawdown_limit !== undefined ? Number(bodyObj.halt_drawdown_limit) : Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.83));
     const maxLimit = bodyObj.maxDrawdownLimit !== undefined ? Number(bodyObj.maxDrawdownLimit) : (bodyObj.max_drawdown_limit !== undefined ? Number(bodyObj.max_drawdown_limit) : Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30));
 
-    const sessEnabled = bodyObj.session_guard_enabled !== undefined ? Boolean(bodyObj.session_guard_enabled) : (bodyObj.sessionGuardEnabled !== undefined ? Boolean(bodyObj.sessionGuardEnabled) : Boolean((state as any)?.session_guard_enabled ?? (state as any)?.sessionGuardEnabled ?? false));
-    const sessStart = bodyObj.session_start_hour !== undefined ? Number(bodyObj.session_start_hour) : (bodyObj.sessionStartHour !== undefined ? Number(bodyObj.sessionStartHour) : Number((state as any)?.session_start_hour ?? (state as any)?.sessionStartHour ?? 12.5));
-    const sessEnd = bodyObj.session_end_hour !== undefined ? Number(bodyObj.session_end_hour) : (bodyObj.sessionEndHour !== undefined ? Number(bodyObj.sessionEndHour) : Number((state as any)?.session_end_hour ?? (state as any)?.sessionEndHour ?? 2.0));
+    const sessEnabled = bodyObj.sessionGuardEnabled !== undefined ? Boolean(bodyObj.sessionGuardEnabled) : (bodyObj.session_guard_enabled !== undefined ? Boolean(bodyObj.session_guard_enabled) : curSess.sessionGuardEnabled);
+    const sessStart = bodyObj.sessionStartHour !== undefined ? Number(bodyObj.sessionStartHour) : (bodyObj.session_start_hour !== undefined ? Number(bodyObj.session_start_hour) : curSess.sessionStartHour);
+    const sessEnd = bodyObj.sessionEndHour !== undefined ? Number(bodyObj.sessionEndHour) : (bodyObj.session_end_hour !== undefined ? Number(bodyObj.session_end_hour) : curSess.sessionEndHour);
+    const sess2Enabled = bodyObj.session2Enabled !== undefined ? Boolean(bodyObj.session2Enabled) : (bodyObj.session2_enabled !== undefined ? Boolean(bodyObj.session2_enabled) : curSess.session2Enabled);
+    const sess2Start = bodyObj.session2StartHour !== undefined ? Number(bodyObj.session2StartHour) : (bodyObj.session2_start_hour !== undefined ? Number(bodyObj.session2_start_hour) : curSess.session2StartHour);
+    const sess2End = bodyObj.session2EndHour !== undefined ? Number(bodyObj.session2EndHour) : (bodyObj.session2_end_hour !== undefined ? Number(bodyObj.session2_end_hour) : curSess.session2EndHour);
 
     const pairToSave = activePair || state?.activePair || "EURUSD/GBPUSD";
     let parts: string[] = ["EURUSD", "GBPUSD"];
@@ -98,8 +101,8 @@ router.post("/config", async (req, res) => {
     const initBalVal = initialBalance !== undefined ? Number(initialBalance) : Number(state?.initialBalance ?? 100000);
 
     await db.execute(
-      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit, session_guard_enabled, session_start_hour, session_end_hour)
-          SELECT 1, ${pairToSave}, ${slVal.toString()}, ${tpVal.toString()}, ${zEntry.toString()}, ${smcVal}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxTradesVal}, 'BOT OFFLINE', NOW(), ${initBalVal.toString()}, ${initBalVal.toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}
+      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit, session_guard_enabled, session_start_hour, session_end_hour, session2_enabled, session2_start_hour, session2_end_hour)
+          SELECT 1, ${pairToSave}, ${slVal.toString()}, ${tpVal.toString()}, ${zEntry.toString()}, ${smcVal}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxTradesVal}, 'BOT OFFLINE', NOW(), ${initBalVal.toString()}, ${initBalVal.toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}, ${sess2Enabled}, ${sess2Start}, ${sess2End}
           WHERE NOT EXISTS (SELECT 1 FROM bot_state)`
     );
 
@@ -127,10 +130,14 @@ router.post("/config", async (req, res) => {
               session_guard_enabled = ${sessEnabled},
               session_start_hour    = ${sessStart},
               session_end_hour      = ${sessEnd},
+              session2_enabled      = ${sess2Enabled},
+              session2_start_hour   = ${sess2Start},
+              session2_end_hour     = ${sess2End},
               updated_at   = NOW()
           WHERE id = (SELECT MIN(id) FROM bot_state)`
     );
 
+    void broadcastDashboardNow();
     const updated = (await db.select().from(botStateTable).limit(1))[0];
     const updatedPair = updated?.activePair ?? activePair;
     const updatedParts = updatedPair.split("/");
@@ -160,12 +167,14 @@ router.post("/config", async (req, res) => {
       initialBalance: Number(updated?.initialBalance ?? initialBalance ?? 100000),
       haltDrawdownLimit: haltLimit,
       maxDrawdownLimit: maxLimit,
-      sessionGuardEnabled: sessEnabled,
-      sessionStartHour: sessStart,
-      sessionEndHour: sessEnd,
-      session_guard_enabled: sessEnabled,
-      session_start_hour: sessStart,
-      session_end_hour: sessEnd,
+      ...extractSessionGuardFields({
+        sessionGuardEnabled: sessEnabled,
+        sessionStartHour: sessStart,
+        sessionEndHour: sessEnd,
+        session2Enabled: sess2Enabled,
+        session2StartHour: sess2Start,
+        session2EndHour: sess2End,
+      }),
     });
   } catch (err) {
     console.error("Failed to update config", err);
@@ -197,24 +206,45 @@ router.post("/toggle-risk-limits", async (req, res) => {
 
 router.post("/toggle-session-guard", async (req, res) => {
   try {
+    await ensureSessionGuardColumns();
+    const rows = await db.select().from(botStateTable).limit(1);
+    const curSess = extractSessionGuardFields(rows[0]);
     const body = req.body || {};
-    const enabled = body.enabled !== undefined ? Boolean(body.enabled) : false;
-    const startHour = body.start_hour !== undefined ? Number(body.start_hour) : (body.startHour !== undefined ? Number(body.startHour) : 12.5);
-    const endHour = body.end_hour !== undefined ? Number(body.end_hour) : (body.endHour !== undefined ? Number(body.endHour) : 2.0);
+
+    const enabled = body.enabled !== undefined ? Boolean(body.enabled) : (body.sessionGuardEnabled !== undefined ? Boolean(body.sessionGuardEnabled) : curSess.sessionGuardEnabled);
+    const startHour = body.start_hour !== undefined ? Number(body.start_hour) : (body.startHour !== undefined ? Number(body.startHour) : (body.sessionStartHour !== undefined ? Number(body.sessionStartHour) : curSess.sessionStartHour));
+    const endHour = body.end_hour !== undefined ? Number(body.end_hour) : (body.endHour !== undefined ? Number(body.endHour) : (body.sessionEndHour !== undefined ? Number(body.sessionEndHour) : curSess.sessionEndHour));
+    const session2Enabled = body.session2_enabled !== undefined ? Boolean(body.session2_enabled) : (body.session2Enabled !== undefined ? Boolean(body.session2Enabled) : curSess.session2Enabled);
+    const session2StartHour = body.session2_start_hour !== undefined ? Number(body.session2_start_hour) : (body.session2StartHour !== undefined ? Number(body.session2StartHour) : curSess.session2StartHour);
+    const session2EndHour = body.session2_end_hour !== undefined ? Number(body.session2_end_hour) : (body.session2EndHour !== undefined ? Number(body.session2EndHour) : curSess.session2EndHour);
 
     await db.execute(
-      sql`ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
-          ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
-          ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
-          UPDATE bot_state
+      sql`UPDATE bot_state
           SET session_guard_enabled = ${enabled},
               session_start_hour    = ${startHour},
               session_end_hour      = ${endHour},
+              session2_enabled      = ${session2Enabled},
+              session2_start_hour   = ${session2StartHour},
+              session2_end_hour     = ${session2EndHour},
               updated_at            = NOW()
           WHERE id = (SELECT MIN(id) FROM bot_state)`
     );
 
-    return res.json({ status: "success", enabled, start_hour: startHour, end_hour: endHour });
+    void broadcastDashboardNow();
+    return res.json({
+      status: "success",
+      enabled,
+      start_hour: startHour,
+      end_hour: endHour,
+      ...extractSessionGuardFields({
+        sessionGuardEnabled: enabled,
+        sessionStartHour: startHour,
+        sessionEndHour: endHour,
+        session2Enabled,
+        session2StartHour,
+        session2EndHour,
+      }),
+    });
   } catch (err) {
     console.error("Failed to toggle session guard", err);
     return res.status(500).json({ error: "Failed to toggle session guard" });

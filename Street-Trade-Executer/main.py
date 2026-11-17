@@ -112,9 +112,12 @@ def load_config():
         conn_mig = get_connection()
         cur_mig = conn_mig.cursor()
         cur_mig.execute("""
-            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT TRUE;
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
-            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 16.0;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_end_hour DOUBLE PRECISION DEFAULT 22.0;
         """)
         conn_mig.commit()
         cur_mig.close()
@@ -165,7 +168,8 @@ def fetch_db_config():
                risk_limits_enabled, z_entry_threshold, default_lots, max_trades,
                knife_protection_enabled, obi_enabled, volatility_filter_enabled,
                stocks_enabled, halt_drawdown_limit, max_drawdown_limit,
-               session_guard_enabled, session_start_hour, session_end_hour
+               session_guard_enabled, session_start_hour, session_end_hour,
+               session2_enabled, session2_start_hour, session2_end_hour
         FROM bot_state
         WHERE id = 1
     """
@@ -229,7 +233,10 @@ def fetch_db_config():
                 float(row[18]) if len(row) > 18 and row[18] is not None else 3.30,
                 bool(row[19] if len(row) > 19 and row[19] is not None else False),
                 float(row[20]) if len(row) > 20 and row[20] is not None else 12.5,
-                float(row[21]) if len(row) > 21 and row[21] is not None else 2.0
+                float(row[21]) if len(row) > 21 and row[21] is not None else 16.0,
+                bool(row[22] if len(row) > 22 and row[22] is not None else True),
+                float(row[23]) if len(row) > 23 and row[23] is not None else 18.0,
+                float(row[24]) if len(row) > 24 and row[24] is not None else 22.0,
             )
         else:
             cur.close()
@@ -238,9 +245,12 @@ def fetch_db_config():
             conn_fix = get_connection()
             cur_fix = conn_fix.cursor()
             cur_fix.execute("""
-                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT TRUE;
                 ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
-                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 16.0;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_end_hour DOUBLE PRECISION DEFAULT 22.0;
             """)
             conn_fix.commit()
             cur_fix.close()
@@ -286,22 +296,45 @@ def update_live_toggles_from_db():
             VOLATILITY_FILTER_ENABLED = False
             STOCKS_ENABLED = cfg[16]
             if len(cfg) > 19:
-                risk_safeguards.SESSION_GUARD_ENABLED = cfg[19]
-                risk_safeguards.SESSION_START_HOUR = cfg[20]
-                risk_safeguards.SESSION_END_HOUR = cfg[21]
+                risk_safeguards.SESSION_GUARD_ENABLED = bool(cfg[19])
+                risk_safeguards.SESSION_START_HOUR = float(cfg[20])
+                risk_safeguards.SESSION_END_HOUR = float(cfg[21])
+            if len(cfg) > 24:
+                risk_safeguards.SESSION2_ENABLED = bool(cfg[22])
+                risk_safeguards.SESSION2_START_HOUR = float(cfg[23])
+                risk_safeguards.SESSION2_END_HOUR = float(cfg[24])
 
+            _, curr_pkt_s, active_win_s = risk_safeguards.is_session_time_allowed(
+                risk_safeguards.SESSION_START_HOUR,
+                risk_safeguards.SESSION_END_HOUR,
+                session2_enabled=getattr(risk_safeguards, "SESSION2_ENABLED", True),
+                start2_hour=getattr(risk_safeguards, "SESSION2_START_HOUR", 18.0),
+                end2_hour=getattr(risk_safeguards, "SESSION2_END_HOUR", 22.0),
+            )
+            sess_win_key = (
+                f"{risk_safeguards.SESSION_START_HOUR}-{risk_safeguards.SESSION_END_HOUR}"
+                f"|{getattr(risk_safeguards, 'SESSION2_ENABLED', True)}:"
+                f"{getattr(risk_safeguards, 'SESSION2_START_HOUR', 18.0)}-{getattr(risk_safeguards, 'SESSION2_END_HOUR', 22.0)}"
+            )
             curr_state = {
                 "forex": FOREX_ENABLED,
                 "metals": METALS_ENABLED,
                 "auto_exec": AUTO_EXECUTE,
-                "risk_limits": RISK_LIMITS_ENABLED
+                "risk_limits": RISK_LIMITS_ENABLED,
+                "session_guard": bool(risk_safeguards.SESSION_GUARD_ENABLED),
+                "session_window": sess_win_key,
             }
 
             if PREV_TOGGLE_STATE and curr_state != PREV_TOGGLE_STATE:
                 changes = []
                 for k, v in curr_state.items():
                     if PREV_TOGGLE_STATE.get(k) != v:
-                        status_str = "ENABLED 🟢" if v else "DISABLED 🔴"
+                        if k == "session_guard":
+                            status_str = f"ENABLED 🟢 ({active_win_s} | Now: {curr_pkt_s})" if v else "DISABLED 🔴 (Trading 24/7)"
+                        elif k == "session_window":
+                            status_str = f"UPDATED ⏰ ({active_win_s})"
+                        else:
+                            status_str = "ENABLED 🟢" if v else "DISABLED 🔴"
                         changes.append(f"{k.upper()}: {status_str}")
                 logger.info(f"🔄 [DASHBOARD TOGGLE CHANGE DETECTED ⚡] " + " | ".join(changes))
 
@@ -1991,6 +2024,10 @@ def main():
             risk_safeguards.SESSION_GUARD_ENABLED = bool(db_cfg[19])
             risk_safeguards.SESSION_START_HOUR = float(db_cfg[20])
             risk_safeguards.SESSION_END_HOUR = float(db_cfg[21])
+        if len(db_cfg) > 24:
+            risk_safeguards.SESSION2_ENABLED = bool(db_cfg[22])
+            risk_safeguards.SESSION2_START_HOUR = float(db_cfg[23])
+            risk_safeguards.SESSION2_END_HOUR = float(db_cfg[24])
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
@@ -2882,7 +2919,13 @@ def main():
             
             from risk_safeguards import is_session_time_allowed
             import risk_safeguards
-            is_session_ok, curr_utc_s, window_utc_s = is_session_time_allowed(risk_safeguards.SESSION_START_HOUR, risk_safeguards.SESSION_END_HOUR)
+            is_session_ok, curr_utc_s, window_utc_s = is_session_time_allowed(
+                risk_safeguards.SESSION_START_HOUR,
+                risk_safeguards.SESSION_END_HOUR,
+                session2_enabled=getattr(risk_safeguards, "SESSION2_ENABLED", True),
+                start2_hour=getattr(risk_safeguards, "SESSION2_START_HOUR", 18.0),
+                end2_hour=getattr(risk_safeguards, "SESSION2_END_HOUR", 22.0),
+            )
 
             if active_pairs_cnt >= MAX_CONCURRENT_TRADES or len(active_symbols_set) > 0:
                 if candidate_signals:

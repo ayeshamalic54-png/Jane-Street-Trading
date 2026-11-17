@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { tradesTable, botStateTable, fvgZonesTable, scannedAssetsTable, smcTelemetryTable } from "@workspace/db";
 import { desc, eq, or, ilike } from "drizzle-orm";
+import { ensureSessionGuardColumns, extractSessionGuardFields } from "../lib/sessionGuard";
 
 const router = Router();
 
@@ -91,6 +92,7 @@ const ZONE_META: Record<string, { label: string; bullish: boolean }> = {
 
 router.get("/dashboard", async (req, res) => {
   try {
+    await ensureSessionGuardColumns();
     const [botStateRows, openDbTrades, recentClosedTradesRows, zoneRows, scannedAssetsRows] = await Promise.all([
       db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
       db.select().from(tradesTable).where(eq(tradesTable.status, "OPEN")),
@@ -214,12 +216,7 @@ router.get("/dashboard", async (req, res) => {
       stocksEnabled: botState?.stocksEnabled ?? true,
       halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? (botState as any)?.halt_drawdown_limit ?? 0.83),
       max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? (botState as any)?.max_drawdown_limit ?? 3.30),
-      sessionGuardEnabled: Boolean(botState?.sessionGuardEnabled ?? (botState as any)?.session_guard_enabled ?? false),
-      sessionStartHour: Number(botState?.sessionStartHour ?? (botState as any)?.session_start_hour ?? 12.5),
-      sessionEndHour: Number(botState?.sessionEndHour ?? (botState as any)?.session_end_hour ?? 2.0),
-      session_guard_enabled: Boolean(botState?.sessionGuardEnabled ?? (botState as any)?.session_guard_enabled ?? false),
-      session_start_hour: Number(botState?.sessionStartHour ?? (botState as any)?.session_start_hour ?? 12.5),
-      session_end_hour: Number(botState?.sessionEndHour ?? (botState as any)?.session_end_hour ?? 2.0),
+      ...extractSessionGuardFields(botState),
     });
 
   } catch (err) {

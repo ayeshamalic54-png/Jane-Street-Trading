@@ -173,6 +173,12 @@ def initialize_database():
         """
         ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS is_bot_running BOOLEAN DEFAULT TRUE;
         ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS target_login BIGINT DEFAULT NULL;
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT TRUE;
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 16.0;
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
+        ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_end_hour DOUBLE PRECISION DEFAULT 22.0;
 
         CREATE TABLE IF NOT EXISTS mt5_accounts (
             id SERIAL PRIMARY KEY,
@@ -537,18 +543,29 @@ def update_bot_state(active_pair, system_status, equity, drawdown_percent,
     except Exception as e:
         print(f"Error updating bot_state: {e}")
 
-def update_session_guard_settings(enabled, start_hour, end_hour):
-    """Updates session guard configuration in bot_state table (PKT time hours)."""
+def update_session_guard_settings(enabled, start_hour, end_hour, session2_enabled=True, start2_hour=18.0, end2_hour=22.0):
+    """Updates dual-window session guard configuration in bot_state table (PKT time hours)."""
     def _do_update():
         conn = get_connection()
         try:
             cur = conn.cursor()
             cur.execute("""
-                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT TRUE;
                 ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
-                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
-                UPDATE bot_state SET session_guard_enabled = %s, session_start_hour = %s, session_end_hour = %s, updated_at = CURRENT_TIMESTAMP WHERE id = 1;
-            """, (bool(enabled), float(start_hour), float(end_hour)))
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 16.0;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_end_hour DOUBLE PRECISION DEFAULT 22.0;
+                UPDATE bot_state
+                SET session_guard_enabled = %s,
+                    session_start_hour = %s,
+                    session_end_hour = %s,
+                    session2_enabled = %s,
+                    session2_start_hour = %s,
+                    session2_end_hour = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1;
+            """, (bool(enabled), float(start_hour), float(end_hour), bool(session2_enabled), float(start2_hour), float(end2_hour)))
             conn.commit()
             cur.close()
         finally:

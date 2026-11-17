@@ -1,4 +1,4 @@
-import { pgTable, bigint, varchar, numeric, timestamp, serial, integer, date, boolean, text } from "drizzle-orm/pg-core";
+import { pgTable, bigint, varchar, numeric, timestamp, serial, integer, date, boolean, text, doublePrecision } from "drizzle-orm/pg-core";
 
 export const tradesTable = pgTable("trades", {
   ticket: bigint("ticket", { mode: "number" }).primaryKey(),
@@ -69,9 +69,12 @@ export const botStateTable = pgTable("bot_state", {
   defaultLots: numeric("default_lots", { precision: 5, scale: 2 }).default("0.01"),
   haltDrawdownLimit: numeric("halt_drawdown_limit", { precision: 5, scale: 2 }).default("0.78"),
   maxDrawdownLimit: numeric("max_drawdown_limit", { precision: 5, scale: 2 }).default("3.30"),
-  sessionGuardEnabled: boolean("session_guard_enabled").default(false),
-  sessionStartHour: numeric("session_start_hour", { precision: 5, scale: 2 }).default("12.50"),
-  sessionEndHour: numeric("session_end_hour", { precision: 5, scale: 2 }).default("2.00"),
+  sessionGuardEnabled: boolean("session_guard_enabled").default(true),
+  sessionStartHour: doublePrecision("session_start_hour").default(12.5),
+  sessionEndHour: doublePrecision("session_end_hour").default(16.0),
+  session2Enabled: boolean("session2_enabled").default(true),
+  session2StartHour: doublePrecision("session2_start_hour").default(18.0),
+  session2EndHour: doublePrecision("session2_end_hour").default(22.0),
   lastHeartbeat: timestamp("last_heartbeat"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

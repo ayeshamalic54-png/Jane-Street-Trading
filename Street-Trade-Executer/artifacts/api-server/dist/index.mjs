@@ -44358,7 +44358,15 @@ var botStateTable = pgTable("bot_state", {
   targetLogin: bigint("target_login", { mode: "number" }),
   knifeProtectionEnabled: boolean("knife_protection_enabled").default(true),
   obiEnabled: boolean("obi_enabled").default(true),
-  volatilityFilterEnabled: boolean("volatility_filter_enabled").default(true)
+  volatilityFilterEnabled: boolean("volatility_filter_enabled").default(true),
+  haltDrawdownLimit: numeric("halt_drawdown_limit", { precision: 5, scale: 2 }).default("1.00"),
+  maxDrawdownLimit: numeric("max_drawdown_limit", { precision: 5, scale: 2 }).default("3.30"),
+  sessionGuardEnabled: boolean("session_guard_enabled").default(true),
+  sessionStartHour: doublePrecision("session_start_hour").default(12.5),
+  sessionEndHour: doublePrecision("session_end_hour").default(16),
+  session2Enabled: boolean("session2_enabled").default(true),
+  session2StartHour: doublePrecision("session2_start_hour").default(18),
+  session2EndHour: doublePrecision("session2_end_hour").default(22)
 });
 var tradesTable = pgTable("trades", {
   ticket: bigint("ticket", { mode: "number" }).primaryKey(),
@@ -44470,6 +44478,43 @@ var pool = new esm_default.Pool({
 });
 var db = drizzle(pool);
 
+// src/lib/sessionGuard.ts
+var columnsEnsured = false;
+async function ensureSessionGuardColumns() {
+  if (columnsEnsured) return;
+  await db.execute(sql`
+    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT TRUE;
+    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
+    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 16.0;
+    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
+    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
+    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_end_hour DOUBLE PRECISION DEFAULT 22.0;
+  `);
+  columnsEnsured = true;
+}
+function extractSessionGuardFields(row) {
+  const enabled = Boolean(row?.sessionGuardEnabled ?? row?.session_guard_enabled ?? false);
+  const startHour = Number(row?.sessionStartHour ?? row?.session_start_hour ?? 12.5);
+  const endHour = Number(row?.sessionEndHour ?? row?.session_end_hour ?? 16);
+  const session2Enabled = Boolean(row?.session2Enabled ?? row?.session2_enabled ?? true);
+  const session2StartHour = Number(row?.session2StartHour ?? row?.session2_start_hour ?? 18);
+  const session2EndHour = Number(row?.session2EndHour ?? row?.session2_end_hour ?? 22);
+  return {
+    sessionGuardEnabled: enabled,
+    sessionStartHour: startHour,
+    sessionEndHour: endHour,
+    session2Enabled,
+    session2StartHour,
+    session2EndHour,
+    session_guard_enabled: enabled,
+    session_start_hour: startHour,
+    session_end_hour: endHour,
+    session2_enabled: session2Enabled,
+    session2_start_hour: session2StartHour,
+    session2_end_hour: session2EndHour
+  };
+}
+
 // src/routes/dashboard.ts
 var router = (0, import_express.Router)();
 router.get("/smc_telemetry", async (req, res) => {
@@ -44544,6 +44589,7 @@ var ZONE_META = {
 };
 router.get("/dashboard", async (req, res) => {
   try {
+    await ensureSessionGuardColumns();
     const [botStateRows, openDbTrades, recentClosedTradesRows, zoneRows, scannedAssetsRows] = await Promise.all([
       db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
       db.select().from(tradesTable).where(eq(tradesTable.status, "OPEN")),
@@ -44652,12 +44698,7 @@ router.get("/dashboard", async (req, res) => {
       stocksEnabled: botState?.stocksEnabled ?? true,
       halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? botState?.halt_drawdown_limit ?? 0.83),
       max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? botState?.max_drawdown_limit ?? 3.3),
-      sessionGuardEnabled: Boolean(botState?.sessionGuardEnabled ?? botState?.session_guard_enabled ?? false),
-      sessionStartHour: Number(botState?.sessionStartHour ?? botState?.session_start_hour ?? 12.5),
-      sessionEndHour: Number(botState?.sessionEndHour ?? botState?.session_end_hour ?? 2),
-      session_guard_enabled: Boolean(botState?.sessionGuardEnabled ?? botState?.session_guard_enabled ?? false),
-      session_start_hour: Number(botState?.sessionStartHour ?? botState?.session_start_hour ?? 12.5),
-      session_end_hour: Number(botState?.sessionEndHour ?? botState?.session_end_hour ?? 2)
+      ...extractSessionGuardFields(botState)
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get dashboard data");
@@ -48796,10 +48837,227 @@ var GetPricesResponseItem = objectType({
 });
 var GetPricesResponse = arrayType(GetPricesResponseItem);
 
+// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/wrapper.mjs
+var import_stream = __toESM(require_stream2(), 1);
+var import_extension = __toESM(require_extension(), 1);
+var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
+var import_receiver = __toESM(require_receiver(), 1);
+var import_sender = __toESM(require_sender(), 1);
+var import_subprotocol = __toESM(require_subprotocol(), 1);
+var import_websocket = __toESM(require_websocket(), 1);
+var import_websocket_server = __toESM(require_websocket_server(), 1);
+
+// src/lib/logger.ts
+var import_pino = __toESM(require_pino(), 1);
+var isProduction = process.env.NODE_ENV === "production";
+var logger = (0, import_pino.default)({
+  level: process.env.LOG_LEVEL ?? "info",
+  redact: [
+    "req.headers.authorization",
+    "req.headers.cookie",
+    "res.headers['set-cookie']"
+  ],
+  ...isProduction ? {} : {
+    transport: {
+      target: "pino-pretty",
+      options: { colorize: true }
+    }
+  }
+});
+
+// src/lib/ws.ts
+var wss = null;
+var ZONE_META2 = {
+  bullish_ob: { label: "OB", bullish: true },
+  bearish_ob: { label: "OB", bullish: false },
+  bullish_fvg: { label: "FVG", bullish: true },
+  bearish_fvg: { label: "FVG", bullish: false },
+  bullish_breaker: { label: "BREAKER", bullish: true },
+  bearish_breaker: { label: "BREAKER", bullish: false },
+  bullish_ifvg: { label: "iFVG", bullish: true },
+  bearish_ifvg: { label: "iFVG", bullish: false }
+};
+function initWsServer(server) {
+  wss = new import_websocket_server.default({ server, path: "/api/ws" });
+  wss.on("connection", (ws) => {
+    logger.info("WS client connected");
+    ws.on("close", () => logger.info("WS client disconnected"));
+    ws.on("error", (err) => logger.warn({ err }, "WS client error"));
+    void sendSnapshot(ws);
+  });
+  setInterval(() => {
+    void broadcastAll();
+  }, 1e3);
+  logger.info("WebSocket server active on /api/ws \u2014 broadcasting every 1s");
+}
+var cachedRecentTrades = null;
+var lastTradesFetch = 0;
+var cachedZoneRows = null;
+var lastZonesFetch = 0;
+async function buildDashboardPayload() {
+  await ensureSessionGuardColumns();
+  const now = Date.now();
+  if (!cachedRecentTrades || now - lastTradesFetch > 3e3) {
+    cachedRecentTrades = await db.select().from(tradesTable).orderBy(desc(tradesTable.entryTime)).limit(5);
+    lastTradesFetch = now;
+  }
+  if (!cachedZoneRows || now - lastZonesFetch > 1e4) {
+    cachedZoneRows = await db.select().from(fvgZonesTable).orderBy(desc(fvgZonesTable.updatedAt)).limit(30);
+    lastZonesFetch = now;
+  }
+  const [botStateRows, scannedAssetsRows, smcTelRows] = await Promise.all([
+    db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
+    db.select().from(scannedAssetsTable).orderBy(desc(scannedAssetsTable.winRate)),
+    db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt)).limit(1)
+  ]);
+  const telRow = smcTelRows[0];
+  const smcTelemetryPayload = telRow ? {
+    symbol_pair: telRow.symbolPair,
+    m15_bias: telRow.m15Bias || "NEUTRAL \u26AA",
+    sweep_status: telRow.sweepStatus || "FAIL \u26AA",
+    sweep_price: Number(telRow.sweepPrice ?? 0),
+    choch_status: telRow.chochStatus || "FAIL \u26AA",
+    choch_price: Number(telRow.chochPrice ?? 0),
+    fvg_status: telRow.fvgStatus || "FAIL \u26AA",
+    fvg_bounds_json: telRow.fvgBoundsJson || "[]",
+    rejection_status: telRow.rejectionStatus || "FAIL \u26AA",
+    action: telRow.action || "NONE",
+    updated_at: telRow.updatedAt ? new Date(telRow.updatedAt).toISOString() : "",
+    retest_status: telRow.retestStatus || telRow.fvgStatus || "FAIL \u26AA",
+    s6_status: telRow.s6Status || telRow.rejectionStatus || "FAIL \u26AA",
+    s7_status: telRow.s7Status || "FAIL \u26AA",
+    s8_status: telRow.s8Status || "PASS \u{1F7E2} ($0.75 Fixed)",
+    s9_status: telRow.s9Status || "PASS \u{1F7E2} (2.0R Target Space)"
+  } : null;
+  const botState = botStateRows[0];
+  const isOnline = botState?.lastHeartbeat != null && Date.now() - new Date(botState.lastHeartbeat).getTime() < 3e4;
+  const openPositions = cachedRecentTrades.filter((t) => t.status === "OPEN").map((t) => ({
+    ticket: Number(t.ticket),
+    symbol: t.symbol,
+    type: t.orderType,
+    lots: Number(t.lots),
+    entry: Number(t.entryPrice),
+    entryPrice: Number(t.entryPrice),
+    current: Number(t.closePrice ?? t.entryPrice),
+    profit: Number(t.profit ?? 0),
+    comment: t.comment ?? "",
+    sl: t.sl != null ? Number(t.sl) : 0,
+    tp: t.tp != null ? Number(t.tp) : 0
+  }));
+  const forexOn = botState?.forexEnabled ?? true;
+  const metalsOn = botState?.metalsEnabled ?? true;
+  const indicesOn = botState?.indicesEnabled ?? true;
+  const stocksOn = botState?.stocksEnabled ?? true;
+  const isSymbolEnabled = (sym) => {
+    const s = (sym || "").toUpperCase();
+    if (s.includes("USDT")) return false;
+    if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
+    if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
+    if (s.includes("US30") || s.includes("NAS100") || s.includes("US500") || s.includes("GER30") || s.includes("UK100") || s.includes("USTEC")) return indicesOn;
+    return forexOn;
+  };
+  const rawPair = botState?.activePair ?? "EURUSD/GBPUSD";
+  const pairSymA = (rawPair.split(/[\/\s]/)[0] || "").toUpperCase();
+  const isRawPairEnabled = isSymbolEnabled(pairSymA);
+  let effectiveCurrentPair = rawPair;
+  if (!isRawPairEnabled) {
+    if (metalsOn) effectiveCurrentPair = "XAUUSD/XAGUSD";
+    else if (indicesOn) effectiveCurrentPair = "US30/NAS100";
+    else if (stocksOn) effectiveCurrentPair = "AAPL/MSFT";
+    else if (forexOn) effectiveCurrentPair = "EURUSD/GBPUSD";
+  }
+  const activeZones = (cachedZoneRows || []).filter((z) => isSymbolEnabled(z.symbol)).map((z) => {
+    const meta = ZONE_META2[z.zoneType] ?? { label: z.zoneType.toUpperCase(), bullish: true };
+    const dir = meta.bullish ? "BULLISH" : "BEARISH";
+    return {
+      type: `${dir}_${meta.label}`,
+      label: `${meta.bullish ? "\u{1F7E2}" : "\u{1F534}"} ${meta.label} \xB7 ${z.symbol}`,
+      range: `${Number(z.lowPrice).toFixed(5)}\u2013${Number(z.highPrice).toFixed(5)}`
+    };
+  });
+  return {
+    systemStatus: botState?.systemStatus ?? "BOT OFFLINE",
+    currentPair: effectiveCurrentPair,
+    lastUpdate: botState?.updatedAt?.toISOString() ?? null,
+    equity: Number(botState?.equity ?? 0),
+    drawdownPercent: Number(botState?.drawdownPercent ?? 0),
+    floatingProfit: Number(botState?.floatingProfit ?? 0),
+    zScore: Number(botState?.zScore ?? 0),
+    hedgeRatio: Number(botState?.hedgeRatio ?? 0),
+    obiA: Number(botState?.obiA ?? 0),
+    obiB: Number(botState?.obiB ?? 0),
+    tradesToday: botState?.tradesToday ?? 0,
+    maxTrades: Number(botState?.maxTrades ?? 3),
+    initialBalance: Number(botState?.initialBalance ?? 1e5),
+    overallDrawdown: Number(botState?.overallDrawdown ?? 0),
+    maxEquityPeak: Number(botState?.maxEquityPeak ?? 0),
+    mt5Login: botState?.mt5Login ?? 0,
+    activePositions: openPositions,
+    recentTrades: cachedRecentTrades.map((t) => ({
+      ticket: Number(t.ticket),
+      symbol: t.symbol,
+      orderType: t.orderType,
+      lots: Number(t.lots),
+      entryPrice: Number(t.entryPrice),
+      closePrice: t.closePrice != null ? Number(t.closePrice) : null,
+      profit: t.profit != null ? Number(t.profit) : null,
+      entryTime: t.entryTime.toISOString(),
+      closeTime: t.closeTime?.toISOString() ?? null,
+      status: t.status,
+      comment: t.comment ?? null
+    })),
+    activeZones,
+    scannedAssets: (scannedAssetsRows || []).filter((s) => isSymbolEnabled(s.symbolPair)).map((s) => ({
+      symbolPair: s.symbolPair,
+      priceA: Number(s.priceA ?? 0),
+      priceB: Number(s.priceB ?? 0),
+      winRate: Number(s.winRate ?? 50),
+      zScore: Number(s.zScore ?? 0),
+      action: s.action ?? "NONE"
+    })),
+    botOnline: isOnline,
+    autoExecute: botState?.autoExecute ?? true,
+    cryptoEnabled: botState?.cryptoEnabled ?? true,
+    metalsEnabled: botState?.metalsEnabled ?? true,
+    forexEnabled: botState?.forexEnabled ?? true,
+    indicesEnabled: botState?.indicesEnabled ?? true,
+    stocksEnabled: botState?.stocksEnabled ?? true,
+    halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? botState?.halt_drawdown_limit ?? 0.83),
+    max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? botState?.max_drawdown_limit ?? 3.3),
+    ...extractSessionGuardFields(botState),
+    smcTelemetry: smcTelemetryPayload
+  };
+}
+async function sendSnapshot(ws) {
+  if (ws.readyState !== import_websocket.default.OPEN) return;
+  try {
+    const data = await buildDashboardPayload();
+    ws.send(JSON.stringify({ type: "dashboard", data }));
+  } catch (err) {
+    logger.warn({ err }, "WS snapshot error");
+  }
+}
+function broadcastDashboardNow() {
+  return broadcastAll();
+}
+async function broadcastAll() {
+  if (!wss) return;
+  const clients = [...wss.clients].filter((c) => c.readyState === import_websocket.default.OPEN);
+  if (!clients.length) return;
+  try {
+    const data = await buildDashboardPayload();
+    const msg = JSON.stringify({ type: "dashboard", data });
+    clients.forEach((c) => c.send(msg));
+  } catch (err) {
+    logger.warn({ err }, "WS broadcast error");
+  }
+}
+
 // src/routes/config.ts
 var router2 = (0, import_express2.Router)();
 router2.get("/config", async (req, res) => {
   try {
+    await ensureSessionGuardColumns();
     const rows = await db.select().from(botStateTable).limit(1);
     const state = rows[0];
     const pair = state?.activePair ?? "EURUSD/GBPUSD";
@@ -48829,12 +49087,7 @@ router2.get("/config", async (req, res) => {
       initialBalance: Number(state?.initialBalance ?? 1e5),
       haltDrawdownLimit: Number(state?.haltDrawdownLimit ?? state?.halt_drawdown_limit ?? 0.83),
       maxDrawdownLimit: Number(state?.maxDrawdownLimit ?? state?.max_drawdown_limit ?? 3.3),
-      sessionGuardEnabled: Boolean(state?.session_guard_enabled ?? false),
-      sessionStartHour: Number(state?.session_start_hour ?? 12.5),
-      sessionEndHour: Number(state?.session_end_hour ?? 2),
-      session_guard_enabled: Boolean(state?.session_guard_enabled ?? false),
-      session_start_hour: Number(state?.session_start_hour ?? 12.5),
-      session_end_hour: Number(state?.session_end_hour ?? 2)
+      ...extractSessionGuardFields(state)
     });
   } catch (err) {
     console.error("Failed to get config", err);
@@ -48843,18 +49096,23 @@ router2.get("/config", async (req, res) => {
 });
 router2.post("/config", async (req, res) => {
   try {
+    await ensureSessionGuardColumns();
     const parsed = UpdateConfigBody.safeParse(req.body);
     const bodyObj = req.body || {};
     const rows = await db.select().from(botStateTable).limit(1);
     const state = rows[0];
+    const curSess = extractSessionGuardFields(state);
     const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, riskLimitsEnabled, defaultLots, maxDailyTrades, initialBalance, knifeProtectionEnabled, obiEnabled, volatilityFilterEnabled } = parsed.success ? parsed.data : bodyObj;
     const indicesEnabled = bodyObj.indicesEnabled !== void 0 ? Boolean(bodyObj.indicesEnabled) : state?.indicesEnabled ?? true;
     const stocksEnabled = bodyObj.stocksEnabled !== void 0 ? Boolean(bodyObj.stocksEnabled) : state?.stocks_enabled ?? true;
     const haltLimit = bodyObj.haltDrawdownLimit !== void 0 ? Number(bodyObj.haltDrawdownLimit) : bodyObj.halt_drawdown_limit !== void 0 ? Number(bodyObj.halt_drawdown_limit) : Number(state?.haltDrawdownLimit ?? state?.halt_drawdown_limit ?? 0.83);
     const maxLimit = bodyObj.maxDrawdownLimit !== void 0 ? Number(bodyObj.maxDrawdownLimit) : bodyObj.max_drawdown_limit !== void 0 ? Number(bodyObj.max_drawdown_limit) : Number(state?.maxDrawdownLimit ?? state?.max_drawdown_limit ?? 3.3);
-    const sessEnabled = bodyObj.session_guard_enabled !== void 0 ? Boolean(bodyObj.session_guard_enabled) : bodyObj.sessionGuardEnabled !== void 0 ? Boolean(bodyObj.sessionGuardEnabled) : Boolean(state?.session_guard_enabled ?? state?.sessionGuardEnabled ?? false);
-    const sessStart = bodyObj.session_start_hour !== void 0 ? Number(bodyObj.session_start_hour) : bodyObj.sessionStartHour !== void 0 ? Number(bodyObj.sessionStartHour) : Number(state?.session_start_hour ?? state?.sessionStartHour ?? 12.5);
-    const sessEnd = bodyObj.session_end_hour !== void 0 ? Number(bodyObj.session_end_hour) : bodyObj.sessionEndHour !== void 0 ? Number(bodyObj.sessionEndHour) : Number(state?.session_end_hour ?? state?.sessionEndHour ?? 2);
+    const sessEnabled = bodyObj.sessionGuardEnabled !== void 0 ? Boolean(bodyObj.sessionGuardEnabled) : bodyObj.session_guard_enabled !== void 0 ? Boolean(bodyObj.session_guard_enabled) : curSess.sessionGuardEnabled;
+    const sessStart = bodyObj.sessionStartHour !== void 0 ? Number(bodyObj.sessionStartHour) : bodyObj.session_start_hour !== void 0 ? Number(bodyObj.session_start_hour) : curSess.sessionStartHour;
+    const sessEnd = bodyObj.sessionEndHour !== void 0 ? Number(bodyObj.sessionEndHour) : bodyObj.session_end_hour !== void 0 ? Number(bodyObj.session_end_hour) : curSess.sessionEndHour;
+    const sess2Enabled = bodyObj.session2Enabled !== void 0 ? Boolean(bodyObj.session2Enabled) : bodyObj.session2_enabled !== void 0 ? Boolean(bodyObj.session2_enabled) : curSess.session2Enabled;
+    const sess2Start = bodyObj.session2StartHour !== void 0 ? Number(bodyObj.session2StartHour) : bodyObj.session2_start_hour !== void 0 ? Number(bodyObj.session2_start_hour) : curSess.session2StartHour;
+    const sess2End = bodyObj.session2EndHour !== void 0 ? Number(bodyObj.session2EndHour) : bodyObj.session2_end_hour !== void 0 ? Number(bodyObj.session2_end_hour) : curSess.session2EndHour;
     const pairToSave = activePair || state?.activePair || "EURUSD/GBPUSD";
     let parts = ["EURUSD", "GBPUSD"];
     if (pairToSave !== "ALL") {
@@ -48881,8 +49139,8 @@ router2.post("/config", async (req, res) => {
     const maxTradesVal = maxDailyTrades !== void 0 ? Number(maxDailyTrades) : Number(state?.maxTrades ?? 3);
     const initBalVal = initialBalance !== void 0 ? Number(initialBalance) : Number(state?.initialBalance ?? 1e5);
     await db.execute(
-      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit, session_guard_enabled, session_start_hour, session_end_hour)
-          SELECT 1, ${pairToSave}, ${slVal.toString()}, ${tpVal.toString()}, ${zEntry.toString()}, ${smcVal}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxTradesVal}, 'BOT OFFLINE', NOW(), ${initBalVal.toString()}, ${initBalVal.toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}
+      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit, session_guard_enabled, session_start_hour, session_end_hour, session2_enabled, session2_start_hour, session2_end_hour)
+          SELECT 1, ${pairToSave}, ${slVal.toString()}, ${tpVal.toString()}, ${zEntry.toString()}, ${smcVal}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxTradesVal}, 'BOT OFFLINE', NOW(), ${initBalVal.toString()}, ${initBalVal.toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}, ${sess2Enabled}, ${sess2Start}, ${sess2End}
           WHERE NOT EXISTS (SELECT 1 FROM bot_state)`
     );
     await db.execute(
@@ -48909,9 +49167,13 @@ router2.post("/config", async (req, res) => {
               session_guard_enabled = ${sessEnabled},
               session_start_hour    = ${sessStart},
               session_end_hour      = ${sessEnd},
+              session2_enabled      = ${sess2Enabled},
+              session2_start_hour   = ${sess2Start},
+              session2_end_hour     = ${sess2End},
               updated_at   = NOW()
           WHERE id = (SELECT MIN(id) FROM bot_state)`
     );
+    void broadcastDashboardNow();
     const updated = (await db.select().from(botStateTable).limit(1))[0];
     const updatedPair = updated?.activePair ?? activePair;
     const updatedParts = updatedPair.split("/");
@@ -48940,12 +49202,14 @@ router2.post("/config", async (req, res) => {
       initialBalance: Number(updated?.initialBalance ?? initialBalance ?? 1e5),
       haltDrawdownLimit: haltLimit,
       maxDrawdownLimit: maxLimit,
-      sessionGuardEnabled: sessEnabled,
-      sessionStartHour: sessStart,
-      sessionEndHour: sessEnd,
-      session_guard_enabled: sessEnabled,
-      session_start_hour: sessStart,
-      session_end_hour: sessEnd
+      ...extractSessionGuardFields({
+        sessionGuardEnabled: sessEnabled,
+        sessionStartHour: sessStart,
+        sessionEndHour: sessEnd,
+        session2Enabled: sess2Enabled,
+        session2StartHour: sess2Start,
+        session2EndHour: sess2End
+      })
     });
   } catch (err) {
     console.error("Failed to update config", err);
@@ -48973,22 +49237,42 @@ router2.post("/toggle-risk-limits", async (req, res) => {
 });
 router2.post("/toggle-session-guard", async (req, res) => {
   try {
+    await ensureSessionGuardColumns();
+    const rows = await db.select().from(botStateTable).limit(1);
+    const curSess = extractSessionGuardFields(rows[0]);
     const body = req.body || {};
-    const enabled = body.enabled !== void 0 ? Boolean(body.enabled) : false;
-    const startHour = body.start_hour !== void 0 ? Number(body.start_hour) : body.startHour !== void 0 ? Number(body.startHour) : 12.5;
-    const endHour = body.end_hour !== void 0 ? Number(body.end_hour) : body.endHour !== void 0 ? Number(body.endHour) : 2;
+    const enabled = body.enabled !== void 0 ? Boolean(body.enabled) : body.sessionGuardEnabled !== void 0 ? Boolean(body.sessionGuardEnabled) : curSess.sessionGuardEnabled;
+    const startHour = body.start_hour !== void 0 ? Number(body.start_hour) : body.startHour !== void 0 ? Number(body.startHour) : body.sessionStartHour !== void 0 ? Number(body.sessionStartHour) : curSess.sessionStartHour;
+    const endHour = body.end_hour !== void 0 ? Number(body.end_hour) : body.endHour !== void 0 ? Number(body.endHour) : body.sessionEndHour !== void 0 ? Number(body.sessionEndHour) : curSess.sessionEndHour;
+    const session2Enabled = body.session2_enabled !== void 0 ? Boolean(body.session2_enabled) : body.session2Enabled !== void 0 ? Boolean(body.session2Enabled) : curSess.session2Enabled;
+    const session2StartHour = body.session2_start_hour !== void 0 ? Number(body.session2_start_hour) : body.session2StartHour !== void 0 ? Number(body.session2StartHour) : curSess.session2StartHour;
+    const session2EndHour = body.session2_end_hour !== void 0 ? Number(body.session2_end_hour) : body.session2EndHour !== void 0 ? Number(body.session2EndHour) : curSess.session2EndHour;
     await db.execute(
-      sql`ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_guard_enabled BOOLEAN DEFAULT FALSE;
-          ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_start_hour DOUBLE PRECISION DEFAULT 12.5;
-          ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session_end_hour DOUBLE PRECISION DEFAULT 2.0;
-          UPDATE bot_state
+      sql`UPDATE bot_state
           SET session_guard_enabled = ${enabled},
               session_start_hour    = ${startHour},
               session_end_hour      = ${endHour},
+              session2_enabled      = ${session2Enabled},
+              session2_start_hour   = ${session2StartHour},
+              session2_end_hour     = ${session2EndHour},
               updated_at            = NOW()
           WHERE id = (SELECT MIN(id) FROM bot_state)`
     );
-    return res.json({ status: "success", enabled, start_hour: startHour, end_hour: endHour });
+    void broadcastDashboardNow();
+    return res.json({
+      status: "success",
+      enabled,
+      start_hour: startHour,
+      end_hour: endHour,
+      ...extractSessionGuardFields({
+        sessionGuardEnabled: enabled,
+        sessionStartHour: startHour,
+        sessionEndHour: endHour,
+        session2Enabled,
+        session2StartHour,
+        session2EndHour
+      })
+    });
   } catch (err) {
     console.error("Failed to toggle session guard", err);
     return res.status(500).json({ error: "Failed to toggle session guard" });
@@ -49069,7 +49353,7 @@ router2.post("/mt5/switch", async (req, res) => {
       SET target_login = ${Number(login)},
           mt5_login    = ${Number(login)},
           updated_at   = NOW()
-      WHERE id = (SELECT MIN(id) FROM bot_state)
+      WHERE id = (SELECT MIN(id) FROM bot_state);
     `);
     await db.execute(sql`
       UPDATE mt5_accounts
@@ -49534,7 +49818,7 @@ router7.get("/signals", async (req, res) => {
           if (tSymBase === symBaseA && t.entryTime && s.timestamp) {
             const sigTime = new Date(s.timestamp).getTime();
             const tradeTime = new Date(t.entryTime).getTime();
-            if (Math.abs(sigTime - tradeTime) <= 45000) return true;
+            if (Math.abs(sigTime - tradeTime) <= 45e3) return true;
           }
           return false;
         });
@@ -50074,24 +50358,6 @@ router12.use(backup_default);
 router12.use(auth_default);
 var routes_default = router12;
 
-// src/lib/logger.ts
-var import_pino = __toESM(require_pino(), 1);
-var isProduction = process.env.NODE_ENV === "production";
-var logger = (0, import_pino.default)({
-  level: process.env.LOG_LEVEL ?? "info",
-  redact: [
-    "req.headers.authorization",
-    "req.headers.cookie",
-    "res.headers['set-cookie']"
-  ],
-  ...isProduction ? {} : {
-    transport: {
-      target: "pino-pretty",
-      options: { colorize: true }
-    }
-  }
-});
-
 // src/app.ts
 var __filename = fileURLToPath(import.meta.url);
 var __dirname2 = path.dirname(__filename);
@@ -50132,205 +50398,6 @@ app.use((req, res, next) => {
   });
 });
 var app_default = app;
-
-// ../../node_modules/.pnpm/ws@8.21.0/node_modules/ws/wrapper.mjs
-var import_stream = __toESM(require_stream2(), 1);
-var import_extension = __toESM(require_extension(), 1);
-var import_permessage_deflate = __toESM(require_permessage_deflate(), 1);
-var import_receiver = __toESM(require_receiver(), 1);
-var import_sender = __toESM(require_sender(), 1);
-var import_subprotocol = __toESM(require_subprotocol(), 1);
-var import_websocket = __toESM(require_websocket(), 1);
-var import_websocket_server = __toESM(require_websocket_server(), 1);
-
-// src/lib/ws.ts
-var wss = null;
-var ZONE_META2 = {
-  bullish_ob: { label: "OB", bullish: true },
-  bearish_ob: { label: "OB", bullish: false },
-  bullish_fvg: { label: "FVG", bullish: true },
-  bearish_fvg: { label: "FVG", bullish: false },
-  bullish_breaker: { label: "BREAKER", bullish: true },
-  bearish_breaker: { label: "BREAKER", bullish: false },
-  bullish_ifvg: { label: "iFVG", bullish: true },
-  bearish_ifvg: { label: "iFVG", bullish: false }
-};
-function initWsServer(server) {
-  wss = new import_websocket_server.default({ server, path: "/api/ws" });
-  wss.on("connection", (ws) => {
-    logger.info("WS client connected");
-    ws.on("close", () => logger.info("WS client disconnected"));
-    ws.on("error", (err) => logger.warn({ err }, "WS client error"));
-    void sendSnapshot(ws);
-  });
-  setInterval(() => {
-    void broadcastAll();
-  }, 1e3);
-  logger.info("WebSocket server active on /api/ws \u2014 broadcasting every 1s");
-}
-var cachedRecentTrades = null;
-var lastTradesFetch = 0;
-var cachedZoneRows = null;
-var lastZonesFetch = 0;
-async function buildDashboardPayload() {
-  const now = Date.now();
-  if (!cachedRecentTrades || now - lastTradesFetch > 3e3) {
-    cachedRecentTrades = await db.select().from(tradesTable).orderBy(desc(tradesTable.entryTime)).limit(5);
-    lastTradesFetch = now;
-  }
-  if (!cachedZoneRows || now - lastZonesFetch > 1e4) {
-    cachedZoneRows = await db.select().from(fvgZonesTable).orderBy(desc(fvgZonesTable.updatedAt)).limit(30);
-    lastZonesFetch = now;
-  }
-  const [botStateRows, scannedAssetsRows, smcTelRows] = await Promise.all([
-    db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
-    db.select().from(scannedAssetsTable).orderBy(desc(scannedAssetsTable.winRate)),
-    db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt)).limit(1)
-  ]);
-  const telRow = smcTelRows[0];
-  const smcTelemetryPayload = telRow ? {
-    symbol_pair: telRow.symbolPair,
-    m15_bias: telRow.m15Bias || "NEUTRAL \u26AA",
-    sweep_status: telRow.sweepStatus || "FAIL \u26AA",
-    sweep_price: Number(telRow.sweepPrice ?? 0),
-    choch_status: telRow.chochStatus || "FAIL \u26AA",
-    choch_price: Number(telRow.chochPrice ?? 0),
-    fvg_status: telRow.fvgStatus || "FAIL \u26AA",
-    fvg_bounds_json: telRow.fvgBoundsJson || "[]",
-    rejection_status: telRow.rejectionStatus || "FAIL \u26AA",
-    action: telRow.action || "NONE",
-    updated_at: telRow.updatedAt ? new Date(telRow.updatedAt).toISOString() : "",
-    retest_status: telRow.retestStatus || telRow.fvgStatus || "FAIL \u26AA",
-    s6_status: telRow.s6Status || telRow.rejectionStatus || "FAIL \u26AA",
-    s7_status: telRow.s7Status || "FAIL \u26AA",
-    s8_status: telRow.s8Status || "PASS \u{1F7E2} ($0.75 Fixed)",
-    s9_status: telRow.s9Status || "PASS \u{1F7E2} (2.0R Target Space)"
-  } : null;
-  const botState = botStateRows[0];
-  const isOnline = botState?.lastHeartbeat != null && Date.now() - new Date(botState.lastHeartbeat).getTime() < 3e4;
-  const openPositions = cachedRecentTrades.filter((t) => t.status === "OPEN").map((t) => ({
-    ticket: Number(t.ticket),
-    symbol: t.symbol,
-    type: t.orderType,
-    lots: Number(t.lots),
-    entry: Number(t.entryPrice),
-    entryPrice: Number(t.entryPrice),
-    current: Number(t.closePrice ?? t.entryPrice),
-    profit: Number(t.profit ?? 0),
-    comment: t.comment ?? "",
-    sl: t.sl != null ? Number(t.sl) : 0,
-    tp: t.tp != null ? Number(t.tp) : 0
-  }));
-  const forexOn = botState?.forexEnabled ?? true;
-  const metalsOn = botState?.metalsEnabled ?? true;
-  const indicesOn = botState?.indicesEnabled ?? true;
-  const stocksOn = botState?.stocksEnabled ?? true;
-  const isSymbolEnabled = (sym) => {
-    const s = (sym || "").toUpperCase();
-    if (s.includes("USDT")) return false;
-    if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
-    if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
-    if (s.includes("US30") || s.includes("NAS100") || s.includes("US500") || s.includes("GER30") || s.includes("UK100") || s.includes("USTEC")) return indicesOn;
-    return forexOn;
-  };
-  const rawPair = botState?.activePair ?? "EURUSD/GBPUSD";
-  const pairSymA = (rawPair.split(/[\/\s]/)[0] || "").toUpperCase();
-  const isRawPairEnabled = isSymbolEnabled(pairSymA);
-  let effectiveCurrentPair = rawPair;
-  if (!isRawPairEnabled) {
-    if (metalsOn) effectiveCurrentPair = "XAUUSD/XAGUSD";
-    else if (indicesOn) effectiveCurrentPair = "US30/NAS100";
-    else if (stocksOn) effectiveCurrentPair = "AAPL/MSFT";
-    else if (forexOn) effectiveCurrentPair = "EURUSD/GBPUSD";
-  }
-  const activeZones = (cachedZoneRows || []).filter((z) => isSymbolEnabled(z.symbol)).map((z) => {
-    const meta = ZONE_META2[z.zoneType] ?? { label: z.zoneType.toUpperCase(), bullish: true };
-    const dir = meta.bullish ? "BULLISH" : "BEARISH";
-    return {
-      type: `${dir}_${meta.label}`,
-      label: `${meta.bullish ? "\u{1F7E2}" : "\u{1F534}"} ${meta.label} \xB7 ${z.symbol}`,
-      range: `${Number(z.lowPrice).toFixed(5)}\u2013${Number(z.highPrice).toFixed(5)}`
-    };
-  });
-  return {
-    systemStatus: botState?.systemStatus ?? "BOT OFFLINE",
-    currentPair: effectiveCurrentPair,
-    lastUpdate: botState?.updatedAt?.toISOString() ?? null,
-    equity: Number(botState?.equity ?? 0),
-    drawdownPercent: Number(botState?.drawdownPercent ?? 0),
-    floatingProfit: Number(botState?.floatingProfit ?? 0),
-    zScore: Number(botState?.zScore ?? 0),
-    hedgeRatio: Number(botState?.hedgeRatio ?? 0),
-    obiA: Number(botState?.obiA ?? 0),
-    obiB: Number(botState?.obiB ?? 0),
-    tradesToday: botState?.tradesToday ?? 0,
-    maxTrades: Number(botState?.maxTrades ?? 3),
-    initialBalance: Number(botState?.initialBalance ?? 1e5),
-    overallDrawdown: Number(botState?.overallDrawdown ?? 0),
-    maxEquityPeak: Number(botState?.maxEquityPeak ?? 0),
-    mt5Login: botState?.mt5Login ?? 0,
-    activePositions: openPositions,
-    recentTrades: cachedRecentTrades.map((t) => ({
-      ticket: Number(t.ticket),
-      symbol: t.symbol,
-      orderType: t.orderType,
-      lots: Number(t.lots),
-      entryPrice: Number(t.entryPrice),
-      closePrice: t.closePrice != null ? Number(t.closePrice) : null,
-      profit: t.profit != null ? Number(t.profit) : null,
-      entryTime: t.entryTime.toISOString(),
-      closeTime: t.closeTime?.toISOString() ?? null,
-      status: t.status,
-      comment: t.comment ?? null
-    })),
-    activeZones,
-    scannedAssets: (scannedAssetsRows || []).filter((s) => isSymbolEnabled(s.symbolPair)).map((s) => ({
-      symbolPair: s.symbolPair,
-      priceA: Number(s.priceA ?? 0),
-      priceB: Number(s.priceB ?? 0),
-      winRate: Number(s.winRate ?? 50),
-      zScore: Number(s.zScore ?? 0),
-      action: s.action ?? "NONE"
-    })),
-    botOnline: isOnline,
-    autoExecute: botState?.autoExecute ?? true,
-    cryptoEnabled: botState?.cryptoEnabled ?? true,
-    metalsEnabled: botState?.metalsEnabled ?? true,
-    forexEnabled: botState?.forexEnabled ?? true,
-    indicesEnabled: botState?.indicesEnabled ?? true,
-    stocksEnabled: botState?.stocksEnabled ?? true,
-    halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? botState?.halt_drawdown_limit ?? 0.83),
-    max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? botState?.max_drawdown_limit ?? 3.3),
-    sessionGuardEnabled: Boolean(botState?.sessionGuardEnabled ?? botState?.session_guard_enabled ?? false),
-    sessionStartHour: Number(botState?.sessionStartHour ?? botState?.session_start_hour ?? 12.5),
-    sessionEndHour: Number(botState?.sessionEndHour ?? botState?.session_end_hour ?? 2),
-    session_guard_enabled: Boolean(botState?.sessionGuardEnabled ?? botState?.session_guard_enabled ?? false),
-    session_start_hour: Number(botState?.sessionStartHour ?? botState?.session_start_hour ?? 12.5),
-    session_end_hour: Number(botState?.sessionEndHour ?? botState?.session_end_hour ?? 2),
-    smcTelemetry: smcTelemetryPayload
-  };
-}
-async function sendSnapshot(ws) {
-  if (ws.readyState !== import_websocket.default.OPEN) return;
-  try {
-    const data = await buildDashboardPayload();
-    ws.send(JSON.stringify({ type: "dashboard", data }));
-  } catch (err) {
-    logger.warn({ err }, "WS snapshot error");
-  }
-}
-async function broadcastAll() {
-  if (!wss) return;
-  const clients = [...wss.clients].filter((c) => c.readyState === import_websocket.default.OPEN);
-  if (!clients.length) return;
-  try {
-    const data = await buildDashboardPayload();
-    const msg = JSON.stringify({ type: "dashboard", data });
-    clients.forEach((c) => c.send(msg));
-  } catch (err) {
-    logger.warn({ err }, "WS broadcast error");
-  }
-}
 
 // src/lib/initDb.ts
 async function initDb() {

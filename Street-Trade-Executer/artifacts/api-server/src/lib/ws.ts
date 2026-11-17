@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { botStateTable, tradesTable, fvgZonesTable, scannedAssetsTable, smcTelemetryTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { logger } from "./logger";
+import { ensureSessionGuardColumns, extractSessionGuardFields } from "./sessionGuard";
 
 let wss: WebSocketServer | null = null;
 
@@ -39,6 +40,7 @@ let cachedZoneRows: any = null;
 let lastZonesFetch = 0;
 
 async function buildDashboardPayload() {
+  await ensureSessionGuardColumns();
   const now = Date.now();
 
   // Fetch recent trades every 3 seconds
@@ -190,12 +192,7 @@ async function buildDashboardPayload() {
     stocksEnabled: botState?.stocksEnabled ?? true,
     halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? (botState as any)?.halt_drawdown_limit ?? 0.83),
     max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? (botState as any)?.max_drawdown_limit ?? 3.30),
-    sessionGuardEnabled: Boolean(botState?.sessionGuardEnabled ?? (botState as any)?.session_guard_enabled ?? false),
-    sessionStartHour: Number(botState?.sessionStartHour ?? (botState as any)?.session_start_hour ?? 12.5),
-    sessionEndHour: Number(botState?.sessionEndHour ?? (botState as any)?.session_end_hour ?? 2.0),
-    session_guard_enabled: Boolean(botState?.sessionGuardEnabled ?? (botState as any)?.session_guard_enabled ?? false),
-    session_start_hour: Number(botState?.sessionStartHour ?? (botState as any)?.session_start_hour ?? 12.5),
-    session_end_hour: Number(botState?.sessionEndHour ?? (botState as any)?.session_end_hour ?? 2.0),
+    ...extractSessionGuardFields(botState),
     smcTelemetry: smcTelemetryPayload,
   };
 }
@@ -208,6 +205,10 @@ async function sendSnapshot(ws: WebSocket) {
   } catch (err) {
     logger.warn({ err }, "WS snapshot error");
   }
+}
+
+export function broadcastDashboardNow() {
+  return broadcastAll();
 }
 
 async function broadcastAll() {

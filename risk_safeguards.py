@@ -25,8 +25,11 @@ MIN_BETA_CAP = 0.50
 MAX_BETA_CAP = 1.65
 
 SESSION_GUARD_ENABLED = True
-SESSION_START_HOUR = 12.5  # 12:30 PM PKT (London Open)
-SESSION_END_HOUR = 2.0     # 02:00 AM PKT (Before Rollover Close)
+SESSION_START_HOUR = 12.5   # 12:30 PM PKT (London Killzone Open)
+SESSION_END_HOUR = 16.0     # 04:00 PM PKT (London Killzone Close)
+SESSION2_ENABLED = True
+SESSION2_START_HOUR = 18.0  # 06:00 PM PKT (NY Overlap Open)
+SESSION2_END_HOUR = 22.0    # 10:00 PM PKT (NY Overlap Close)
 
 # Pure Risk-Free Breakeven Protection Guard (NO Trailing Stop — SL moves ONCE to Entry +/- fee buffer, then runs to Full Structural TP)
 BREAKEVEN_GUARD_ENABLED = True
@@ -40,35 +43,56 @@ STAGNATION_BE_MINUTES = 60           # Shift SL to Breakeven if trade open >= 60
 STAGNATION_FORCE_CLOSE_ENABLED = False
 MAX_SCALP_HOLDING_MINUTES = 90
 
-def is_session_time_allowed(start_hour=12.5, end_hour=2.0, current_dt=None):
+def is_session_time_allowed(
+    start_hour=12.5,
+    end_hour=16.0,
+    current_dt=None,
+    session2_enabled=False,
+    start2_hour=18.0,
+    end2_hour=22.0,
+):
     """
-    Checks if current Pakistani Time (PKT = UTC+5) falls within allowed trading session window.
-    Supports 12:30 PM PKT (12.5) and overnight wrapping (e.g. 17.0 (5 PM PKT) to 2.0 (2 AM PKT)).
+    Checks if current Pakistani Time (PKT = UTC+5) falls within allowed trading session window(s).
+    Supports overnight wrapping (e.g. 17:00 to 02:00 PKT) and optional second killzone window
+    (e.g. Window 1: 12:30 PM - 04:00 PM PKT & Window 2: 06:00 PM - 10:00 PM PKT).
     Returns (is_allowed: bool, curr_pkt_str: str, allowed_window_str: str).
     """
     if current_dt is None:
-        # Calculate current Pakistani Time (PKT = UTC + 5 hours)
-        current_dt = datetime.datetime.utcnow() + datetime.timedelta(hours=5)
-        
-    curr_hour = current_dt.hour
-    curr_minute = current_dt.minute
-    curr_val = curr_hour + (curr_minute / 60.0)
-    
-    if start_hour <= end_hour:
-        is_allowed = (start_hour <= curr_val <= end_hour)
-    else:
-        # Overnight wrap (e.g. 17.0 (5:00 PM PKT) to 2.0 (2:00 AM PKT))
-        is_allowed = (curr_val >= start_hour or curr_val <= end_hour)
-        
+        current_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5)
+
+    curr_val = current_dt.hour + (current_dt.minute / 60.0)
+
+    def _in_window(val, s_h, e_h):
+        if abs(s_h - e_h) < 1e-6:
+            return True
+        if s_h < e_h:
+            return s_h <= val < e_h
+        return val >= s_h or val < e_h
+
     def _format_time_str(h_val):
-        h_int = int(h_val)
-        m_int = int(round((h_val - h_int) * 60))
+        h_mod = float(h_val) % 24.0
+        h_int = int(h_mod)
+        m_int = int(round((h_mod - h_int) * 60))
+        if m_int >= 60:
+            h_int = (h_int + 1) % 24
+            m_int = 0
         ampm = "AM" if h_int < 12 else "PM"
         display_h = h_int if (1 <= h_int <= 12) else (h_int - 12 if h_int > 12 else 12)
         return f"{display_h:02d}:{m_int:02d} {ampm}"
 
+    in_w1 = _in_window(curr_val, float(start_hour), float(end_hour))
+    w1_str = f"{_format_time_str(start_hour)} - {_format_time_str(end_hour)} PKT"
+
+    if session2_enabled:
+        in_w2 = _in_window(curr_val, float(start2_hour), float(end2_hour))
+        is_allowed = in_w1 or in_w2
+        w2_str = f"{_format_time_str(start2_hour)} - {_format_time_str(end2_hour)} PKT"
+        window_str = f"{w1_str} & {w2_str}"
+    else:
+        is_allowed = in_w1
+        window_str = w1_str
+
     curr_str = current_dt.strftime("%I:%M %p PKT")
-    window_str = f"{_format_time_str(start_hour)} - {_format_time_str(end_hour)} PKT"
     return is_allowed, curr_str, window_str
 
 _cached_start_equity = None
