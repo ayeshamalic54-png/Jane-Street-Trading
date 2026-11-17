@@ -689,7 +689,7 @@ export function SmcChartOverlay({
           const list = isBullishSetup
             ? parsed.bullish_fvg || []
             : parsed.bearish_fvg || [];
-          for (const item of list) {
+          for (const item of [...list].reverse()) {
             if (Array.isArray(item) && item.length >= 2) {
               const l = Number(item[0]);
               const h = Number(item[1]);
@@ -1145,7 +1145,7 @@ export function SmcChartOverlay({
         strokeDash = "3 3";
       }
 
-      const shortName = isOB ? "OB" : isBreaker ? "BREAKER" : isIFVG ? "iFVG" : "ZONE";
+      const shortName = isOB ? "OB" : isBreaker ? "BREAKER" : isIFVG ? "iFVG" : "FVG";
 
       list.push({
         id: `parsed-zone-${idx}`,

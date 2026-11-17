@@ -84,14 +84,29 @@ def detect_market_structure(df):
     has_ll = swing_lows[-1][0] < swing_lows[-2][0]
 
     curr_close = float(df['close'].iloc[-1])
+    closes_arr = df['close'].values
+    last_sh_val, last_sh_idx = swing_highs[-1]
+    last_sl_val, last_sl_idx = swing_lows[-1]
+    last_bull_bos_idx = max(
+        [last_sh_idx + 1 + k for k, c in enumerate(closes_arr[last_sh_idx + 1:]) if float(c) > last_sh_val],
+        default=-1,
+    )
+    last_bear_bos_idx = max(
+        [last_sl_idx + 1 + k for k, c in enumerate(closes_arr[last_sl_idx + 1:]) if float(c) < last_sl_val],
+        default=-1,
+    )
     recent_sh_levels = [p for p, idx in swing_highs]
     recent_sl_levels = [p for p, idx in swing_lows]
     key_resistance = max(recent_sh_levels[-2:]) if len(recent_sh_levels) >= 2 else (recent_sh_levels[-1] if recent_sh_levels else None)
     key_support = min(recent_sl_levels[-2:]) if len(recent_sl_levels) >= 2 else (recent_sl_levels[-1] if recent_sl_levels else None)
 
     if has_hh and has_hl:
+        if last_bear_bos_idx > last_bull_bos_idx and curr_close < last_sl_val:
+            return 'BEARISH'
         return 'BULLISH'
     elif has_lh and has_ll:
+        if last_bull_bos_idx > last_bear_bos_idx and curr_close > last_sh_val:
+            return 'BULLISH'
         return 'BEARISH'
     elif has_ll:
         if key_resistance is not None and curr_close > key_resistance:
@@ -102,11 +117,11 @@ def detect_market_structure(df):
             return 'BEARISH'
         return 'BULLISH'
     elif has_lh and has_hl:
-        # Inside contracting range (Lower High + Higher Low): only bias on confirmed close beyond recent swing
-        if recent_sh_levels and curr_close > recent_sh_levels[-1]:
-            return 'BULLISH'
-        if recent_sl_levels and curr_close < recent_sl_levels[-1]:
+        # Inside contracting range (Lower High + Higher Low): follow the most recent confirmed M15 BOS close
+        if last_bear_bos_idx > last_bull_bos_idx:
             return 'BEARISH'
+        if last_bull_bos_idx > last_bear_bos_idx:
+            return 'BULLISH'
         return 'NEUTRAL'
     elif has_hl and not has_ll:
         return 'BULLISH'
@@ -458,7 +473,7 @@ def check_fvg_retest(closed_open, closed_high, closed_low, closed_close, fvg_zon
     prev_close = float(prev_row['close']) if prev_row is not None else None
     prev_idx = (closed_idx - 1) if closed_idx is not None else None
 
-    for item in fvg_zones:
+    for item in reversed(fvg_zones):
         low_b, high_b = float(item[0]), float(item[1])
         creation_idx = int(item[2]) if len(item) >= 3 else -1
 
@@ -470,15 +485,20 @@ def check_fvg_retest(closed_open, closed_high, closed_low, closed_close, fvg_zon
             and (prev_idx is None or creation_idx < 0 or prev_idx > creation_idx)
         )
 
+        # Avoid shallow outer-lip touches on wide FVGs: require >=35% pullback into zone equilibrium
+        gap = max(0.0, high_b - low_b)
+        pen_depth = (0.35 * gap) if ((max_wick_buf >= 0.1 and gap >= 0.80) or (max_wick_buf < 0.1 and gap >= 0.00040)) else 0.0
+
         if is_bullish:
+            entry_ceil = high_b - pen_depth
             direct_touch = (
-                closed_low <= high_b
+                closed_low <= entry_ceil
                 and closed_low >= (low_b - max_wick_buf)
                 and closed_close >= (low_b - close_tol)
             )
             two_bar_retest = (
                 can_use_prev
-                and prev_low <= high_b
+                and prev_low <= entry_ceil
                 and prev_low >= (low_b - max_wick_buf)
                 and prev_close >= (low_b - close_tol)
                 and closed_close >= low_b
@@ -487,14 +507,15 @@ def check_fvg_retest(closed_open, closed_high, closed_low, closed_close, fvg_zon
             if direct_touch or two_bar_retest:
                 return True, (low_b, high_b)
         else:
+            entry_floor = low_b + pen_depth
             direct_touch = (
-                closed_high >= low_b
+                closed_high >= entry_floor
                 and closed_high <= (high_b + max_wick_buf)
                 and closed_close <= (high_b + close_tol)
             )
             two_bar_retest = (
                 can_use_prev
-                and prev_high >= low_b
+                and prev_high >= entry_floor
                 and prev_high <= (high_b + max_wick_buf)
                 and prev_close <= (high_b + close_tol)
                 and closed_close <= high_b
