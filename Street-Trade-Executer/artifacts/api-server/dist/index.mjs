@@ -49914,251 +49914,899 @@ var trades_default = router8;
 
 // src/routes/backtest.ts
 var import_express9 = __toESM(require_express2(), 1);
-var router9 = (0, import_express9.Router)();
-var KalmanFilterRegression = class {
-  state_mean;
-  state_covariance;
-  Q;
-  R;
-  zHistory;
-  spreadHistory;
-  constructor(transition_covariance = 1e-10, observation_covariance = 1e-3) {
-    this.state_mean = [0, 0];
-    this.state_covariance = [[1, 0], [0, 1]];
-    this.Q = [[transition_covariance, 0], [0, transition_covariance]];
-    this.R = observation_covariance;
-    this.zHistory = [];
-    this.spreadHistory = [];
-  }
-  update(x, y) {
-    const cov_pred_00 = this.state_covariance[0][0] + this.Q[0][0];
-    const cov_pred_11 = this.state_covariance[1][1] + this.Q[1][1];
-    const cov_pred_01 = this.state_covariance[0][1];
-    const cov_pred_10 = this.state_covariance[1][0];
-    const y_pred = x * this.state_mean[0] + this.state_mean[1];
-    const y_err = y - y_pred;
-    const S = x * (x * cov_pred_00 + cov_pred_10) + (x * cov_pred_01 + cov_pred_11) + this.R;
-    const K0 = (x * cov_pred_00 + cov_pred_01) / S;
-    const K1 = (x * cov_pred_10 + cov_pred_11) / S;
-    this.state_mean[0] += K0 * y_err;
-    this.state_mean[1] += K1 * y_err;
-    const kh00 = K0 * x;
-    const kh01 = K0;
-    const kh10 = K1 * x;
-    const kh11 = K1;
-    this.state_covariance[0][0] = (1 - kh00) * cov_pred_00 - kh01 * cov_pred_10;
-    this.state_covariance[0][1] = (1 - kh00) * cov_pred_01 - kh01 * cov_pred_11;
-    this.state_covariance[1][0] = -kh10 * cov_pred_00 + (1 - kh11) * cov_pred_10;
-    this.state_covariance[1][1] = -kh10 * cov_pred_01 + (1 - kh11) * cov_pred_11;
-    const std_dev = Math.sqrt(S);
-    const zScore = std_dev > 0 ? y_err / std_dev : 0;
-    this.zHistory.push(zScore);
-    this.spreadHistory.push(y_err);
-    if (this.zHistory.length > 1e3) {
-      this.zHistory.shift();
-      this.spreadHistory.shift();
-    }
-    return {
-      beta: this.state_mean[0],
-      alpha: this.state_mean[1],
-      spread: y_err,
-      zScore
-    };
-  }
-  getVelocity(k = 3) {
-    if (this.zHistory.length <= k) return 0;
-    return this.zHistory[this.zHistory.length - 1] - this.zHistory[this.zHistory.length - 1 - k];
-  }
-  getDynamicZEntry(baseZEntry, gamma = 0.3, shortW = 20, longW = 200) {
-    if (this.spreadHistory.length < longW) return baseZEntry;
-    const spreadsShort = this.spreadHistory.slice(-shortW);
-    const spreadsLong = this.spreadHistory.slice(-longW);
-    const getStd = (arr) => {
-      const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
-      const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / arr.length;
-      return Math.sqrt(variance);
-    };
-    const stdShort = getStd(spreadsShort);
-    const stdLong = getStd(spreadsLong);
-    const ratio = stdLong > 0 ? stdShort / stdLong : 1;
-    return baseZEntry * (1 + gamma * Math.max(0, ratio - 1));
-  }
+
+// src/lib/smcEngine.ts
+var FOREX_STANDARD_BASE = {
+  category: "forex",
+  digits: 5,
+  contractSize: 1e5,
+  isQuoteJpy: false,
+  isQuoteCadOrChf: false,
+  isEurGbp: false,
+  defaultMaxSlDist: 5e-3,
+  // 50 pips
+  m15MinAmp: 2e-3,
+  m15TargetMinAmp: 12e-4,
+  m5MinAmp: 15e-5,
+  minStructDepth: 1e-3,
+  minPenetration: 3e-5,
+  reclaimMaxDip: 8e-4,
+  minFvgGap: 18e-5,
+  maxZoneDist: 8e-3,
+  minObDisp: 25e-5,
+  mitTol: 1e-4,
+  wickBuf: 4e-4,
+  closeTol: 15e-5,
+  sweepMargin: 4e-4,
+  maxChaseDist: 1e-3,
+  targetMinMove: 5e-4,
+  frontRunBuf: 35e-5,
+  beBuffer: 2e-4
 };
-function calculateHalfLife(spreadHistory) {
-  if (spreadHistory.length < 50) return 45;
-  const y = spreadHistory.slice(1);
-  const x = spreadHistory.slice(0, -1);
-  const n = y.length;
-  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-  for (let i = 0; i < n; i++) {
-    sumX += x[i];
-    sumY += y[i];
-    sumXY += x[i] * y[i];
-    sumXX += x[i] * x[i];
+var FOREX_JPY_BASE = {
+  category: "forex",
+  digits: 3,
+  contractSize: 1e5,
+  isQuoteJpy: true,
+  isQuoteCadOrChf: false,
+  isEurGbp: false,
+  defaultMaxSlDist: 0.5,
+  // 50 pips JPY
+  m15MinAmp: 0.2,
+  m15TargetMinAmp: 0.12,
+  m5MinAmp: 0.015,
+  minStructDepth: 0.1,
+  minPenetration: 3e-3,
+  reclaimMaxDip: 0.08,
+  minFvgGap: 0.018,
+  maxZoneDist: 0.8,
+  minObDisp: 0.025,
+  mitTol: 0.01,
+  wickBuf: 0.04,
+  closeTol: 0.015,
+  sweepMargin: 0.04,
+  maxChaseDist: 0.1,
+  targetMinMove: 0.05,
+  frontRunBuf: 0.035,
+  beBuffer: 0.02
+};
+var SYMBOL_SPECS = {
+  XAUUSD: {
+    symbol: "XAUUSD",
+    label: "Gold (XAU/USD)",
+    category: "metals",
+    yahooTicker: "GC=F",
+    digits: 2,
+    contractSize: 100,
+    isQuoteJpy: false,
+    isQuoteCadOrChf: false,
+    isEurGbp: false,
+    defaultMaxSlDist: 7.5,
+    m15MinAmp: 3,
+    m15TargetMinAmp: 2.5,
+    m5MinAmp: 1.25,
+    minStructDepth: 1.5,
+    minPenetration: 0.1,
+    reclaimMaxDip: 1.5,
+    minFvgGap: 0.4,
+    maxZoneDist: 18,
+    minObDisp: 0.8,
+    mitTol: 0.2,
+    wickBuf: 0.75,
+    closeTol: 0.25,
+    sweepMargin: 0.5,
+    maxChaseDist: 2,
+    targetMinMove: 1.5,
+    frontRunBuf: 1.1,
+    beBuffer: 0.25
+  },
+  XAGUSD: {
+    symbol: "XAGUSD",
+    label: "Silver (XAG/USD)",
+    category: "metals",
+    yahooTicker: "SI=F",
+    digits: 3,
+    contractSize: 5e3,
+    isQuoteJpy: false,
+    isQuoteCadOrChf: false,
+    isEurGbp: false,
+    defaultMaxSlDist: 0.5,
+    m15MinAmp: 0.25,
+    m15TargetMinAmp: 0.2,
+    m5MinAmp: 0.08,
+    minStructDepth: 0.1,
+    minPenetration: 0.01,
+    reclaimMaxDip: 0.1,
+    minFvgGap: 0.04,
+    maxZoneDist: 2,
+    minObDisp: 0.06,
+    mitTol: 0.02,
+    wickBuf: 0.06,
+    closeTol: 0.02,
+    sweepMargin: 0.04,
+    maxChaseDist: 0.15,
+    targetMinMove: 0.12,
+    frontRunBuf: 0.08,
+    beBuffer: 0.02
+  },
+  EURUSD: { symbol: "EURUSD", label: "EUR/USD", yahooTicker: "EURUSD=X", ...FOREX_STANDARD_BASE },
+  GBPUSD: { symbol: "GBPUSD", label: "GBP/USD", yahooTicker: "GBPUSD=X", ...FOREX_STANDARD_BASE },
+  AUDUSD: { symbol: "AUDUSD", label: "AUD/USD", yahooTicker: "AUDUSD=X", ...FOREX_STANDARD_BASE },
+  NZDUSD: { symbol: "NZDUSD", label: "NZD/USD", yahooTicker: "NZDUSD=X", ...FOREX_STANDARD_BASE },
+  USDCAD: { symbol: "USDCAD", label: "USD/CAD", yahooTicker: "USDCAD=X", ...FOREX_STANDARD_BASE, isQuoteCadOrChf: true },
+  USDCHF: { symbol: "USDCHF", label: "USD/CHF", yahooTicker: "USDCHF=X", ...FOREX_STANDARD_BASE, isQuoteCadOrChf: true },
+  EURGBP: { symbol: "EURGBP", label: "EUR/GBP", yahooTicker: "EURGBP=X", ...FOREX_STANDARD_BASE, isEurGbp: true },
+  USDJPY: { symbol: "USDJPY", label: "USD/JPY", yahooTicker: "USDJPY=X", ...FOREX_JPY_BASE },
+  EURJPY: { symbol: "EURJPY", label: "EUR/JPY", yahooTicker: "EURJPY=X", ...FOREX_JPY_BASE },
+  GBPJPY: { symbol: "GBPJPY", label: "GBP/JPY", yahooTicker: "GBPJPY=X", ...FOREX_JPY_BASE }
+};
+var CRYPTO_KEYWORDS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "MATIC", "USDT", "USDC", "SHIB", "LINK"];
+function resolveSymbolSpec(rawSymbol) {
+  const cleaned = rawSymbol.trim().toUpperCase().split("/")[0].replace(/[^A-Z]/g, "");
+  if (!cleaned || CRYPTO_KEYWORDS.some((kw) => cleaned.includes(kw))) {
+    throw new Error(`Crypto symbols (${rawSymbol}) are disabled in this terminal. Select Metals (XAUUSD, XAGUSD) or Forex (EURUSD, GBPUSD, USDJPY).`);
   }
-  const denom = n * sumXX - sumX * sumX;
-  if (denom === 0) return 45;
-  const beta = (n * sumXY - sumX * sumY) / denom;
-  if (beta > 0 && beta < 1) {
-    const theta = -Math.log(beta);
-    const halfLife = Math.log(2) / theta;
-    return Math.max(5, Math.min(200, halfLife));
+  const spec = SYMBOL_SPECS[cleaned];
+  if (!spec) {
+    throw new Error(`Unsupported symbol "${rawSymbol}". Allowed Forex & Metals: ${Object.keys(SYMBOL_SPECS).join(", ")}`);
   }
-  return 45;
+  return spec;
 }
-async function fetchBinanceKlines(symbol, limit = 1e3) {
-  try {
-    const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol.toUpperCase()}&interval=5m&limit=${limit}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Binance returned ${res.status}`);
-    const data = await res.json();
-    return data.map((d) => [Number(d[0]), Number(d[4])]);
-  } catch (err) {
-    throw new Error(`Failed to fetch klines for {symbol}: ${err.message}`);
+function priceDeltaToUsd(deltaPrice, exitPrice, lotSize, spec) {
+  const grossQuote = deltaPrice * spec.contractSize * lotSize;
+  if (spec.isQuoteJpy) {
+    const jpyRate = spec.symbol === "USDJPY" && exitPrice > 50 ? exitPrice : 155;
+    return grossQuote / jpyRate;
   }
+  if (spec.isQuoteCadOrChf && exitPrice > 0.2) {
+    return grossQuote / exitPrice;
+  }
+  if (spec.isEurGbp) {
+    return grossQuote * 1.27;
+  }
+  return grossQuote;
 }
-router9.post("/backtest", async (req, res) => {
-  try {
-    const { symbolA, symbolB, zEntry = 2.8, zExit = 0.2, zSl = 4.2, slPercent = 2 } = req.body;
-    if (!symbolA || !symbolB) {
-      res.status(400).json({ error: "symbolA and symbolB are required" });
-      return;
+function getPktHourDecimal(utcMs) {
+  const pktMs = utcMs + 5 * 3600 * 1e3;
+  const d = new Date(pktMs);
+  return d.getUTCHours() + d.getUTCMinutes() / 60;
+}
+function isInPktKillzone(utcMs) {
+  const h = getPktHourDecimal(utcMs);
+  return h >= 12 && h < 16 || h >= 18 && h < 22;
+}
+function getPktSessionLabel(utcMs) {
+  const h = getPktHourDecimal(utcMs);
+  if (h >= 12 && h < 16) return "London PKT";
+  if (h >= 18 && h < 22) return "NY PKT";
+  return "Off-Peak";
+}
+function getSwingPoints(bars, nLeft = 3, nRight = 3, minAmplitude = 0) {
+  const n = bars.length;
+  if (n < nLeft + nRight + 1) return { highs: [], lows: [] };
+  const sh = [];
+  const sl = [];
+  for (let i = nLeft; i < n - nRight; i++) {
+    let isSh = true;
+    let isSl = true;
+    for (let j = 1; j <= nLeft; j++) {
+      if (bars[i].high <= bars[i - j].high) isSh = false;
+      if (bars[i].low >= bars[i - j].low) isSl = false;
     }
-    let symA = symbolA.trim().toUpperCase();
-    let symB = symbolB.trim().toUpperCase();
-    if (symA.endsWith("USD") && !symA.endsWith("USDT")) symA = symA + "T";
-    if (symB.endsWith("USD") && !symB.endsWith("USDT")) symB = symB + "T";
-    const [klinesA, klinesB] = await Promise.all([
-      fetchBinanceKlines(symA),
-      fetchBinanceKlines(symB)
-    ]);
-    const mapB = /* @__PURE__ */ new Map();
-    klinesB.forEach(([t, p]) => mapB.set(t, p));
-    const aligned = [];
-    klinesA.forEach(([t, pA]) => {
-      const pB = mapB.get(t);
-      if (pB !== void 0) {
-        aligned.push({ t, pA, pB });
+    for (let j = 1; j <= nRight; j++) {
+      if (bars[i].high <= bars[i + j].high) isSh = false;
+      if (bars[i].low >= bars[i + j].low) isSl = false;
+    }
+    if (isSh && minAmplitude > 0) {
+      let baseLow = Infinity;
+      for (let k = i - nLeft; k <= i + nRight; k++) {
+        if (bars[k].low < baseLow) baseLow = bars[k].low;
       }
-    });
-    if (aligned.length < 150) {
-      res.status(400).json({ error: "Insufficient aligned historical data for co-integration" });
-      return;
+      if (bars[i].high - baseLow < minAmplitude) isSh = false;
     }
-    const kf = new KalmanFilterRegression(1e-10, 1e-4);
-    for (let i = 0; i < 150; i++) {
-      kf.update(aligned[i].pB, aligned[i].pA);
+    if (isSh) sh.push([bars[i].high, i]);
+    if (isSl && minAmplitude > 0) {
+      let baseHigh = -Infinity;
+      for (let k = i - nLeft; k <= i + nRight; k++) {
+        if (bars[k].high > baseHigh) baseHigh = bars[k].high;
+      }
+      if (baseHigh - bars[i].low < minAmplitude) isSl = false;
     }
-    let inPosition = false;
-    let posType = null;
-    let entryPriceA = 0;
-    let entryPriceB = 0;
-    let entryBeta = 0;
-    let balance = 1e4;
-    let tradesCount = 0;
-    let winsCount = 0;
-    const equityCurve = [];
-    const tradesList = [];
-    let holdingBars = 0;
-    equityCurve.push({
-      time: new Date(aligned[150].t).toLocaleDateString(),
-      balance
-    });
-    for (let i = 150; i < aligned.length; i++) {
-      const { t, pA, pB } = aligned[i];
-      const { beta, zScore } = kf.update(pB, pA);
-      const zVelocity = kf.getVelocity(3);
-      const dynamicZEntry = kf.getDynamicZEntry(zEntry);
-      if (!inPosition) {
-        if (zScore < -dynamicZEntry && zVelocity > -0.05) {
-          inPosition = true;
-          posType = "BUY";
-          entryPriceA = pA;
-          entryPriceB = pB;
-          entryBeta = beta;
-          holdingBars = 0;
-        } else if (zScore > dynamicZEntry && zVelocity < 0.05) {
-          inPosition = true;
-          posType = "SELL";
-          entryPriceA = pA;
-          entryPriceB = pB;
-          entryBeta = beta;
-          holdingBars = 0;
+    if (isSl) sl.push([bars[i].low, i]);
+  }
+  return { highs: sh, lows: sl };
+}
+function detectMarketStructure(dfM15, spec) {
+  if (dfM15.length < 5) return "NEUTRAL";
+  let { highs, lows } = getSwingPoints(dfM15, 3, 3, spec.m15MinAmp);
+  if (highs.length < 2 || lows.length < 2) {
+    ({ highs, lows } = getSwingPoints(dfM15, 2, 2, spec.m15MinAmp * 0.65));
+  }
+  if (highs.length < 2 || lows.length < 2) {
+    ({ highs, lows } = getSwingPoints(dfM15, 2, 2, 0));
+  }
+  if (highs.length < 2 || lows.length < 2) return "NEUTRAL";
+  const hasHh = highs[highs.length - 1][0] > highs[highs.length - 2][0];
+  const hasHl = lows[lows.length - 1][0] > lows[lows.length - 2][0];
+  const hasLh = highs[highs.length - 1][0] < highs[highs.length - 2][0];
+  const hasLl = lows[lows.length - 1][0] < lows[lows.length - 2][0];
+  const currClose = dfM15[dfM15.length - 1].close;
+  const [lastShVal, lastShIdx] = highs[highs.length - 1];
+  const [lastSlVal, lastSlIdx] = lows[lows.length - 1];
+  let lastBullBos = -1;
+  for (let k = lastShIdx + 1; k < dfM15.length; k++) {
+    if (dfM15[k].close > lastShVal) lastBullBos = k;
+  }
+  let lastBearBos = -1;
+  for (let k = lastSlIdx + 1; k < dfM15.length; k++) {
+    if (dfM15[k].close < lastSlVal) lastBearBos = k;
+  }
+  const recentSh = highs.slice(-2).map((x) => x[0]);
+  const recentSl = lows.slice(-2).map((x) => x[0]);
+  const keyResistance = Math.max(...recentSh);
+  const keySupport = Math.min(...recentSl);
+  if (hasHh && hasHl) {
+    if (lastBearBos > lastBullBos && currClose < lastSlVal) return "BEARISH";
+    return "BULLISH";
+  }
+  if (hasLh && hasLl) {
+    if (lastBullBos > lastBearBos && currClose > lastShVal) return "BULLISH";
+    return "BEARISH";
+  }
+  if (hasLl) return currClose > keyResistance ? "BULLISH" : "BEARISH";
+  if (hasHh) return currClose < keySupport ? "BEARISH" : "BULLISH";
+  if (hasLh && hasHl) {
+    if (lastBearBos > lastBullBos) return "BEARISH";
+    if (lastBullBos > lastBearBos) return "BULLISH";
+    return "NEUTRAL";
+  }
+  if (hasHl && !hasLl) return "BULLISH";
+  if (hasLh && !hasHh) return "BEARISH";
+  return "NEUTRAL";
+}
+function detectLiquiditySweep(dfM5, spec) {
+  const empty = { found: false, sweepExtreme: 0, swingLevel: 0, sweepIdx: -1 };
+  const n = dfM5.length;
+  if (n < 10) return { sellSweep: empty, buySweep: empty };
+  let { highs: swingHighs, lows: swingLows } = getSwingPoints(dfM5, 3, 3, spec.m5MinAmp);
+  if (swingHighs.length < 2 || swingLows.length < 2) {
+    ({ highs: swingHighs, lows: swingLows } = getSwingPoints(dfM5, 2, 2, spec.m5MinAmp));
+  }
+  if (!swingHighs.length || !swingLows.length) {
+    ({ highs: swingHighs, lows: swingLows } = getSwingPoints(dfM5, 2, 2, 0));
+  }
+  if (!swingHighs.length || !swingLows.length) return { sellSweep: empty, buySweep: empty };
+  let sellSweep = empty;
+  let buySweep = empty;
+  const lookbackStart = Math.max(1, n - 18);
+  for (let i = n - 1; i >= lookbackStart && !sellSweep.found; i--) {
+    for (let sIdx = swingLows.length - 1; sIdx >= 0; sIdx--) {
+      const [slVal, slIdx] = swingLows[sIdx];
+      if (i <= slIdx + 1) continue;
+      let priorPeak = -Infinity;
+      for (let k = Math.max(0, slIdx - 6); k <= slIdx; k++) {
+        if (dfM5[k].high > priorPeak) priorPeak = dfM5[k].high;
+      }
+      if (priorPeak - slVal < spec.minStructDepth) continue;
+      if (dfM5[i - 1].close < slVal) continue;
+      const oneBar = slVal - dfM5[i].low >= spec.minPenetration && dfM5[i].close >= slVal;
+      const twoBar = i + 1 < n && slVal - dfM5[i].low >= spec.minPenetration && dfM5[i].close >= slVal - spec.reclaimMaxDip && dfM5[i + 1].close >= slVal;
+      if (oneBar || twoBar) {
+        const sweepLow = twoBar ? Math.min(dfM5[i].low, dfM5[i + 1].low) : dfM5[i].low;
+        const sweepEnd = twoBar ? i + 1 : i;
+        let priorLower = false;
+        for (let k = Math.max(slIdx + 1, i - 3); k < i; k++) {
+          if (dfM5[k].low < sweepLow) {
+            priorLower = true;
+            break;
+          }
+        }
+        let subsequentBreak = false;
+        for (let k = sweepEnd + 1; k < n; k++) {
+          if (dfM5[k].close < sweepLow) {
+            subsequentBreak = true;
+            break;
+          }
+        }
+        if (!priorLower && !subsequentBreak) {
+          sellSweep = { found: true, sweepExtreme: sweepLow, swingLevel: slVal, sweepIdx: i };
+          break;
+        }
+      }
+    }
+  }
+  for (let i = n - 1; i >= lookbackStart && !buySweep.found; i--) {
+    for (let sIdx = swingHighs.length - 1; sIdx >= 0; sIdx--) {
+      const [shVal, shIdx] = swingHighs[sIdx];
+      if (i <= shIdx + 1) continue;
+      let priorTrough = Infinity;
+      for (let k = Math.max(0, shIdx - 6); k <= shIdx; k++) {
+        if (dfM5[k].low < priorTrough) priorTrough = dfM5[k].low;
+      }
+      if (shVal - priorTrough < spec.minStructDepth) continue;
+      if (dfM5[i - 1].close > shVal) continue;
+      const oneBar = dfM5[i].high - shVal >= spec.minPenetration && dfM5[i].close <= shVal;
+      const twoBar = i + 1 < n && dfM5[i].high - shVal >= spec.minPenetration && dfM5[i].close <= shVal + spec.reclaimMaxDip && dfM5[i + 1].close <= shVal;
+      if (oneBar || twoBar) {
+        const sweepHigh = twoBar ? Math.max(dfM5[i].high, dfM5[i + 1].high) : dfM5[i].high;
+        const sweepEnd = twoBar ? i + 1 : i;
+        let priorHigher = false;
+        for (let k = Math.max(shIdx + 1, i - 3); k < i; k++) {
+          if (dfM5[k].high > sweepHigh) {
+            priorHigher = true;
+            break;
+          }
+        }
+        let subsequentBreak = false;
+        for (let k = sweepEnd + 1; k < n; k++) {
+          if (dfM5[k].close > sweepHigh) {
+            subsequentBreak = true;
+            break;
+          }
+        }
+        if (!priorHigher && !subsequentBreak) {
+          buySweep = { found: true, sweepExtreme: sweepHigh, swingLevel: shVal, sweepIdx: i };
+          break;
+        }
+      }
+    }
+  }
+  return { sellSweep, buySweep };
+}
+function detectChochBos(dfM5, sweepIdx, isBullish) {
+  if (sweepIdx < 0 || sweepIdx >= dfM5.length) return { found: false, level: 0, idx: -1 };
+  const { highs: sh, lows: sl } = getSwingPoints(dfM5, 2, 2, 0);
+  if (isBullish) {
+    const prior = sh.filter(([, idx]) => idx < sweepIdx);
+    let chochLvl = prior.length ? prior[prior.length - 1][0] : 0;
+    if (!prior.length) {
+      for (let k = Math.max(0, sweepIdx - 6); k < sweepIdx; k++) {
+        if (dfM5[k].high > chochLvl) chochLvl = dfM5[k].high;
+      }
+    }
+    if (chochLvl <= 0) return { found: false, level: 0, idx: -1 };
+    for (let j = sweepIdx + 1; j < dfM5.length; j++) {
+      if (dfM5[j].close > chochLvl) return { found: true, level: chochLvl, idx: j };
+    }
+  } else {
+    const prior = sl.filter(([, idx]) => idx < sweepIdx);
+    let chochLvl = prior.length ? prior[prior.length - 1][0] : Infinity;
+    if (!prior.length) {
+      for (let k = Math.max(0, sweepIdx - 6); k < sweepIdx; k++) {
+        if (dfM5[k].low < chochLvl) chochLvl = dfM5[k].low;
+      }
+    }
+    if (!Number.isFinite(chochLvl)) return { found: false, level: 0, idx: -1 };
+    for (let j = sweepIdx + 1; j < dfM5.length; j++) {
+      if (dfM5[j].close < chochLvl) return { found: true, level: chochLvl, idx: j };
+    }
+  }
+  return { found: false, level: 0, idx: -1 };
+}
+function detectOrderBlocksAndBreakers(bars, minDisp, maxDist) {
+  const n = bars.length;
+  const lastPrice = bars[n - 1].close;
+  const rawBull = [];
+  const rawBear = [];
+  for (let i = 2; i < n - 1; i++) {
+    const disp = Math.abs(bars[i].close - bars[i].open);
+    if (disp < minDisp) continue;
+    if (bars[i - 1].close < bars[i - 1].open && bars[i].close > bars[i - 2].high) {
+      const obL = bars[i - 1].low;
+      const obH = bars[i - 1].high;
+      if (Math.abs((obL + obH) / 2 - lastPrice) <= maxDist) rawBull.push({ low: obL, high: obH, idx: i });
+    } else if (bars[i - 1].close > bars[i - 1].open && bars[i].close < bars[i - 2].low) {
+      const obL = bars[i - 1].low;
+      const obH = bars[i - 1].high;
+      if (Math.abs((obL + obH) / 2 - lastPrice) <= maxDist) rawBear.push({ low: obL, high: obH, idx: i });
+    }
+  }
+  const bullOb = [];
+  const bearOb = [];
+  const bullBreaker = [];
+  const bearBreaker = [];
+  for (const b of rawBull) {
+    let mit = false;
+    for (let j = b.idx + 1; j < n; j++) {
+      if (bars[j].close < b.low) {
+        mit = true;
+        break;
+      }
+    }
+    if (!mit) bullOb.push(b);
+    else if (lastPrice >= b.low && Math.abs(lastPrice - b.low) <= maxDist) bearBreaker.push(b);
+  }
+  for (const b of rawBear) {
+    let mit = false;
+    for (let j = b.idx + 1; j < n; j++) {
+      if (bars[j].close > b.high) {
+        mit = true;
+        break;
+      }
+    }
+    if (!mit) bearOb.push(b);
+    else if (lastPrice <= b.high && Math.abs(lastPrice - b.high) <= maxDist) bullBreaker.push(b);
+  }
+  return {
+    bullOb: bullOb.slice(-2),
+    bearOb: bearOb.slice(-2),
+    bullBreaker: bullBreaker.slice(-2),
+    bearBreaker: bearBreaker.slice(-2)
+  };
+}
+function detectSmcZones(bars, spec, minIdx = 0, sweepLow, sweepHigh) {
+  const n = bars.length;
+  const lastPrice = bars[n - 1].close;
+  const rawBull = [];
+  const rawBear = [];
+  const startScan = Math.max(2, minIdx);
+  for (let i = startScan; i < n; i++) {
+    const gapUp = bars[i].low - bars[i - 2].high;
+    const gapDown = bars[i - 2].low - bars[i].high;
+    if (gapUp >= spec.minFvgGap) {
+      if (sweepLow === void 0 || bars[i - 2].high >= sweepLow - spec.sweepMargin) {
+        rawBull.push({ low: bars[i - 2].high, high: bars[i].low, idx: i });
+      }
+    } else if (gapDown >= spec.minFvgGap) {
+      if (sweepHigh === void 0 || bars[i - 2].low <= sweepHigh + spec.sweepMargin) {
+        rawBear.push({ low: bars[i].high, high: bars[i - 2].low, idx: i });
+      }
+    }
+  }
+  const activeBull = [];
+  const activeBear = [];
+  for (const f of rawBull) {
+    let mit = false;
+    for (let j = f.idx + 1; j < n - 1; j++) {
+      if (bars[j].close < f.low - spec.mitTol) {
+        mit = true;
+        break;
+      }
+    }
+    if (!mit && Math.abs((f.low + f.high) / 2 - lastPrice) <= spec.maxZoneDist) {
+      activeBull.push(f);
+    }
+  }
+  for (const f of rawBear) {
+    let mit = false;
+    for (let j = f.idx + 1; j < n - 1; j++) {
+      if (bars[j].close > f.high + spec.mitTol) {
+        mit = true;
+        break;
+      }
+    }
+    if (!mit && Math.abs((f.low + f.high) / 2 - lastPrice) <= spec.maxZoneDist) {
+      activeBear.push(f);
+    }
+  }
+  const obs = detectOrderBlocksAndBreakers(bars, spec.minObDisp, spec.maxZoneDist);
+  return {
+    bullFvg: activeBull.slice(-2),
+    bearFvg: activeBear.slice(-2),
+    ...obs
+  };
+}
+function checkFvgRetest(closedBar, prevBar, closedIdx, zones, isBullish, spec) {
+  const prevIdx = closedIdx - 1;
+  for (let k = zones.length - 1; k >= 0; k--) {
+    const z = zones[k];
+    if (closedIdx <= z.idx) continue;
+    const canUsePrev = prevIdx > z.idx;
+    const gap = Math.max(0, z.high - z.low);
+    const minDepthGap = spec.minFvgGap * 2.1;
+    const penDepth = gap >= minDepthGap ? 0.35 * gap : 0;
+    if (isBullish) {
+      const entryCeil = z.high - penDepth;
+      const directTouch = closedBar.low <= entryCeil && closedBar.low >= z.low - spec.wickBuf && closedBar.close >= z.low - spec.closeTol;
+      const twoBar = canUsePrev && prevBar.low <= entryCeil && prevBar.low >= z.low - spec.wickBuf && prevBar.close >= z.low - spec.closeTol && closedBar.close >= z.low && closedBar.close >= closedBar.open;
+      if (directTouch || twoBar) return z;
+    } else {
+      const entryFloor = z.low + penDepth;
+      const directTouch = closedBar.high >= entryFloor && closedBar.high <= z.high + spec.wickBuf && closedBar.close <= z.high + spec.closeTol;
+      const twoBar = canUsePrev && prevBar.high >= entryFloor && prevBar.high <= z.high + spec.wickBuf && prevBar.close <= z.high + spec.closeTol && closedBar.close <= z.high && closedBar.close <= closedBar.open;
+      if (directTouch || twoBar) return z;
+    }
+  }
+  return null;
+}
+function computeM15OpposingTarget(isBuy, dfM15, entryPrice, slDist, minTargetRrr, spec) {
+  const sh3 = getSwingPoints(dfM15, 3, 3, 0);
+  let sw2 = getSwingPoints(dfM15, 2, 2, spec.m15TargetMinAmp);
+  if (isBuy && !sw2.highs.length || !isBuy && !sw2.lows.length) {
+    const fb = getSwingPoints(dfM15, 2, 2, 0);
+    if (isBuy && !sw2.highs.length) sw2.highs = fb.highs;
+    if (!isBuy && !sw2.lows.length) sw2.lows = fb.lows;
+  }
+  const m15Zones = detectSmcZones(dfM15, spec, 0);
+  const factor = Math.pow(10, spec.digits);
+  const rnd = (v) => Math.round(v * factor) / factor;
+  if (isBuy) {
+    const candidates2 = [
+      ...sh3.highs.map(([p]) => p),
+      ...sw2.highs.map(([p]) => p),
+      ...m15Zones.bearOb.map((z) => z.low),
+      ...m15Zones.bearBreaker.map((z) => z.low)
+    ].filter((p) => p > entryPrice + spec.targetMinMove).map(rnd).sort((a, b) => a - b);
+    for (const lvl of candidates2) {
+      const frontRunTp = lvl - spec.frontRunBuf;
+      const candRrr = (frontRunTp - entryPrice) / slDist;
+      if (candRrr >= minTargetRrr) {
+        if (candRrr > 3) return { tpPrice: rnd(entryPrice + 3 * slDist), rrr: 3 };
+        return { tpPrice: rnd(frontRunTp), rrr: Number(candRrr.toFixed(2)) };
+      }
+    }
+    return { tpPrice: rnd(entryPrice + 2.2 * slDist), rrr: 2.2 };
+  }
+  const candidates = [
+    ...sh3.lows.map(([p]) => p),
+    ...sw2.lows.map(([p]) => p),
+    ...m15Zones.bullOb.map((z) => z.high),
+    ...m15Zones.bullBreaker.map((z) => z.high)
+  ].filter((p) => p < entryPrice - spec.targetMinMove).map(rnd).sort((a, b) => b - a);
+  for (const lvl of candidates) {
+    const frontRunTp = lvl + spec.frontRunBuf;
+    const candRrr = (entryPrice - frontRunTp) / slDist;
+    if (candRrr >= minTargetRrr) {
+      if (candRrr > 3) return { tpPrice: rnd(entryPrice - 3 * slDist), rrr: 3 };
+      return { tpPrice: rnd(frontRunTp), rrr: Number(candRrr.toFixed(2)) };
+    }
+  }
+  return { tpPrice: rnd(entryPrice - 2.2 * slDist), rrr: 2.2 };
+}
+function runSmcBacktest(params) {
+  const {
+    spec,
+    m5Bars,
+    m15Bars,
+    startTimeMs,
+    initialBalance,
+    lotSize,
+    maxSlDist,
+    minRrr,
+    sessionFilterEnabled,
+    breakevenEnabled,
+    beTriggerUsd = 35
+  } = params;
+  const factor = Math.pow(10, spec.digits);
+  const rnd = (v) => Math.round(v * factor) / factor;
+  let balance = initialBalance;
+  let peakEquity = initialBalance;
+  let maxDrawdownPct = 0;
+  let m15Ptr = 0;
+  while (m15Ptr + 1 < m15Bars.length && m15Bars[m15Ptr + 1].time <= m5Bars[0].time) {
+    m15Ptr++;
+  }
+  let openPos = null;
+  let lastTradeExitBar = -10;
+  const trades = [];
+  const equityCurve = [
+    { time: new Date(Math.max(startTimeMs, m5Bars[0].time)).toISOString(), balance: initialBalance }
+  ];
+  for (let i = 45; i < m5Bars.length - 1; i++) {
+    const currBar = m5Bars[i];
+    while (m15Ptr + 1 < m15Bars.length && m15Bars[m15Ptr + 1].time <= currBar.time) {
+      m15Ptr++;
+    }
+    if (openPos) {
+      let exitPrice = null;
+      let reason = null;
+      if (openPos.type === "BUY") {
+        if (currBar.low <= openPos.slPrice) {
+          exitPrice = openPos.slPrice;
+          reason = openPos.breakevenApplied ? "BREAKEVEN_LOCKED" : "SL_HIT";
+        } else if (currBar.high >= openPos.tpPrice) {
+          exitPrice = openPos.tpPrice;
+          reason = "TP_HIT";
+        } else if (breakevenEnabled && !openPos.breakevenApplied) {
+          const bestFloating = priceDeltaToUsd(currBar.high - openPos.entryPrice, currBar.high, lotSize, spec);
+          if (bestFloating >= beTriggerUsd) {
+            openPos.slPrice = rnd(openPos.entryPrice + spec.beBuffer);
+            openPos.breakevenApplied = true;
+          }
         }
       } else {
-        holdingBars++;
-        const perfA = posType === "BUY" ? (pA - entryPriceA) / entryPriceA : (entryPriceA - pA) / entryPriceA;
-        const perfB = posType === "BUY" ? (entryPriceB - pB) / entryPriceB : (pB - entryPriceB) / entryPriceB;
-        const tradeReturn = perfA + perfB * (Math.abs(entryBeta) * entryPriceB / entryPriceA);
-        let triggerExit = false;
-        let reason = "";
-        const halfLife = calculateHalfLife(kf.spreadHistory);
-        const maxHoldingBars = halfLife * 2.5;
-        if (tradeReturn <= -slPercent / 100) {
-          triggerExit = true;
-          reason = "STOP_LOSS";
-        } else if (posType === "BUY" && zScore >= zExit) {
-          triggerExit = true;
-          reason = "TP_REVERSION";
-        } else if (posType === "SELL" && zScore <= -zExit) {
-          triggerExit = true;
-          reason = "TP_REVERSION";
-        } else if (posType === "BUY" && zScore <= -zSl) {
-          triggerExit = true;
-          reason = "Z_STOP_LOSS";
-        } else if (posType === "SELL" && zScore >= zSl) {
-          triggerExit = true;
-          reason = "Z_STOP_LOSS";
-        } else if (holdingBars > maxHoldingBars) {
-          triggerExit = true;
-          reason = "OU_HALF_LIFE_EXPIRATION";
+        if (currBar.high >= openPos.slPrice) {
+          exitPrice = openPos.slPrice;
+          reason = openPos.breakevenApplied ? "BREAKEVEN_LOCKED" : "SL_HIT";
+        } else if (currBar.low <= openPos.tpPrice) {
+          exitPrice = openPos.tpPrice;
+          reason = "TP_HIT";
+        } else if (breakevenEnabled && !openPos.breakevenApplied) {
+          const bestFloating = priceDeltaToUsd(openPos.entryPrice - currBar.low, currBar.low, lotSize, spec);
+          if (bestFloating >= beTriggerUsd) {
+            openPos.slPrice = rnd(openPos.entryPrice - spec.beBuffer);
+            openPos.breakevenApplied = true;
+          }
         }
-        if (triggerExit) {
-          const profitAmt = balance * tradeReturn;
-          balance += profitAmt;
-          tradesCount++;
-          if (tradeReturn > 0) winsCount++;
-          tradesList.push({
-            type: posType,
-            entryPriceA,
-            exitPriceA: pA,
-            entryPriceB,
-            exitPriceB: pB,
-            beta: entryBeta,
-            zScoreAtExit: zScore,
-            profitPercent: tradeReturn * 100,
-            profitAmount: profitAmt,
-            reason,
-            time: new Date(t).toISOString()
-          });
-          equityCurve.push({
-            time: new Date(t).toLocaleDateString(),
-            balance
-          });
-          inPosition = false;
-          posType = null;
+      }
+      if (exitPrice !== null && reason !== null) {
+        const delta = openPos.type === "BUY" ? exitPrice - openPos.entryPrice : openPos.entryPrice - exitPrice;
+        const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, lotSize, spec).toFixed(2));
+        const profitPct = Number((profitUsd / Math.max(1, balance) * 100).toFixed(2));
+        balance = Number((balance + profitUsd).toFixed(2));
+        if (balance > peakEquity) peakEquity = balance;
+        const dd = peakEquity > 0 ? (peakEquity - balance) / peakEquity * 100 : 0;
+        if (dd > maxDrawdownPct) maxDrawdownPct = dd;
+        trades.push({
+          type: openPos.type,
+          symbol: spec.symbol,
+          entryPrice: openPos.entryPrice,
+          exitPrice: rnd(exitPrice),
+          slPrice: openPos.initialSlPrice,
+          tpPrice: openPos.tpPrice,
+          targetRrr: openPos.targetRrr,
+          achievedRrr: Number((delta / openPos.slDist).toFixed(2)),
+          profitUsd,
+          profitPercent: profitPct,
+          breakevenTriggered: openPos.breakevenApplied,
+          sessionLabel: openPos.sessionLabel,
+          reason,
+          entryTime: new Date(openPos.entryTimeMs).toISOString(),
+          exitTime: new Date(currBar.time).toISOString()
+        });
+        equityCurve.push({ time: new Date(currBar.time).toISOString(), balance });
+        openPos = null;
+        lastTradeExitBar = i;
+      }
+      continue;
+    }
+    if (currBar.time < startTimeMs || i - lastTradeExitBar < 2) continue;
+    const entryBar = m5Bars[i + 1];
+    if (sessionFilterEnabled && !isInPktKillzone(entryBar.time)) continue;
+    const m5Slice = m5Bars.slice(Math.max(0, i - 119), i + 1);
+    const m15Slice = m15Bars.slice(Math.max(0, m15Ptr - 99), m15Ptr + 1);
+    if (m15Slice.length < 15 || m5Slice.length < 12) continue;
+    const m15Bias = detectMarketStructure(m15Slice, spec);
+    if (m15Bias === "NEUTRAL") continue;
+    const { sellSweep, buySweep } = detectLiquiditySweep(m5Slice, spec);
+    const closedIdx = m5Slice.length - 1;
+    const closedBar = m5Slice[closedIdx];
+    const prevBar = m5Slice[closedIdx - 1];
+    const entryPrice = rnd(entryBar.open);
+    if (m15Bias === "BULLISH" && sellSweep.found) {
+      const choch = detectChochBos(m5Slice, sellSweep.sweepIdx, true);
+      if (choch.found && closedIdx - choch.idx <= 18 && closedBar.close >= sellSweep.sweepExtreme) {
+        const zones = detectSmcZones(m5Slice, spec, sellSweep.sweepIdx, sellSweep.sweepExtreme);
+        const matched = checkFvgRetest(closedBar, prevBar, closedIdx, zones.bullFvg, true, spec);
+        if (matched) {
+          const lowerWick = Math.min(closedBar.open, closedBar.close) - closedBar.low;
+          const range = Math.max(spec.digits <= 3 ? 0.01 : 1e-4, closedBar.high - closedBar.low);
+          const isGreen = closedBar.close > closedBar.open;
+          const isPin = lowerWick / range >= 0.45 && closedBar.open - closedBar.close <= 0.25 * range;
+          if (closedBar.close >= matched.low && (isGreen || isPin)) {
+            const slPrice = rnd(sellSweep.sweepExtreme - spec.wickBuf);
+            const slDist = entryPrice - slPrice;
+            const notChasing = entryPrice <= matched.high + spec.maxChaseDist;
+            if (slDist > 0 && slDist <= maxSlDist && notChasing) {
+              const target = computeM15OpposingTarget(true, m15Slice, entryPrice, slDist, minRrr, spec);
+              if (target.rrr >= minRrr) {
+                openPos = {
+                  type: "BUY",
+                  entryPrice,
+                  slPrice,
+                  initialSlPrice: slPrice,
+                  slDist,
+                  tpPrice: target.tpPrice,
+                  targetRrr: target.rrr,
+                  breakevenApplied: false,
+                  entryTimeMs: entryBar.time,
+                  sessionLabel: getPktSessionLabel(entryBar.time)
+                };
+              }
+            }
+          }
+        }
+      }
+    } else if (m15Bias === "BEARISH" && buySweep.found) {
+      const choch = detectChochBos(m5Slice, buySweep.sweepIdx, false);
+      if (choch.found && closedIdx - choch.idx <= 18 && closedBar.close <= buySweep.sweepExtreme) {
+        const zones = detectSmcZones(m5Slice, spec, buySweep.sweepIdx, void 0, buySweep.sweepExtreme);
+        const matched = checkFvgRetest(closedBar, prevBar, closedIdx, zones.bearFvg, false, spec);
+        if (matched) {
+          const upperWick = closedBar.high - Math.max(closedBar.open, closedBar.close);
+          const range = Math.max(spec.digits <= 3 ? 0.01 : 1e-4, closedBar.high - closedBar.low);
+          const isRed = closedBar.close < closedBar.open;
+          const isPin = upperWick / range >= 0.45 && closedBar.close - closedBar.open <= 0.25 * range;
+          if (closedBar.close <= matched.high && (isRed || isPin)) {
+            const slPrice = rnd(buySweep.sweepExtreme + spec.wickBuf);
+            const slDist = slPrice - entryPrice;
+            const notChasing = entryPrice >= matched.low - spec.maxChaseDist;
+            if (slDist > 0 && slDist <= maxSlDist && notChasing) {
+              const target = computeM15OpposingTarget(false, m15Slice, entryPrice, slDist, minRrr, spec);
+              if (target.rrr >= minRrr) {
+                openPos = {
+                  type: "SELL",
+                  entryPrice,
+                  slPrice,
+                  initialSlPrice: slPrice,
+                  slDist,
+                  tpPrice: target.tpPrice,
+                  targetRrr: target.rrr,
+                  breakevenApplied: false,
+                  entryTimeMs: entryBar.time,
+                  sessionLabel: getPktSessionLabel(entryBar.time)
+                };
+              }
+            }
+          }
         }
       }
     }
-    const winRate = tradesCount > 0 ? winsCount / tradesCount * 100 : 0;
-    const netProfit = balance - 1e4;
+  }
+  if (openPos && m5Bars.length > 0) {
+    const lastBar = m5Bars[m5Bars.length - 1];
+    const exitPrice = rnd(lastBar.close);
+    const delta = openPos.type === "BUY" ? exitPrice - openPos.entryPrice : openPos.entryPrice - exitPrice;
+    const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, lotSize, spec).toFixed(2));
+    const profitPct = Number((profitUsd / Math.max(1, balance) * 100).toFixed(2));
+    balance = Number((balance + profitUsd).toFixed(2));
+    if (balance > peakEquity) peakEquity = balance;
+    const dd = peakEquity > 0 ? (peakEquity - balance) / peakEquity * 100 : 0;
+    if (dd > maxDrawdownPct) maxDrawdownPct = dd;
+    trades.push({
+      type: openPos.type,
+      symbol: spec.symbol,
+      entryPrice: openPos.entryPrice,
+      exitPrice,
+      slPrice: openPos.initialSlPrice,
+      tpPrice: openPos.tpPrice,
+      targetRrr: openPos.targetRrr,
+      achievedRrr: Number((delta / openPos.slDist).toFixed(2)),
+      profitUsd,
+      profitPercent: profitPct,
+      breakevenTriggered: openPos.breakevenApplied,
+      sessionLabel: openPos.sessionLabel,
+      reason: "OPEN_END",
+      entryTime: new Date(openPos.entryTimeMs).toISOString(),
+      exitTime: new Date(lastBar.time).toISOString()
+    });
+    equityCurve.push({ time: new Date(lastBar.time).toISOString(), balance });
+  }
+  const wins = trades.filter((t) => t.profitUsd > 0).length;
+  const losses = trades.filter((t) => t.profitUsd < 0).length;
+  const breakevens = trades.filter((t) => t.reason === "BREAKEVEN_LOCKED").length;
+  const grossWin = trades.filter((t) => t.profitUsd > 0).reduce((s, t) => s + t.profitUsd, 0);
+  const grossLoss = Math.abs(trades.filter((t) => t.profitUsd < 0).reduce((s, t) => s + t.profitUsd, 0));
+  const profitFactor = grossLoss > 0 ? Number((grossWin / grossLoss).toFixed(2)) : grossWin > 0 ? 9.99 : 0;
+  const netProfit = Number((balance - initialBalance).toFixed(2));
+  const winRate = trades.length > 0 ? Number((wins / trades.length * 100).toFixed(2)) : 0;
+  const avgRrr = trades.length > 0 ? Number((trades.reduce((s, t) => s + t.achievedRrr, 0) / trades.length).toFixed(2)) : 0;
+  return {
+    symbol: spec.symbol,
+    label: spec.label,
+    category: spec.category,
+    totalTrades: trades.length,
+    wins,
+    losses,
+    breakevens,
+    winRate,
+    avgRrr,
+    maxDrawdownPct: Number(maxDrawdownPct.toFixed(2)),
+    initialBalance,
+    finalBalance: Number(balance.toFixed(2)),
+    netProfit,
+    profitFactor,
+    equityCurve: equityCurve.slice(-60),
+    trades: [...trades].reverse().slice(0, 50)
+  };
+}
+
+// src/routes/backtest.ts
+var router9 = (0, import_express9.Router)();
+async function fetchYahooOhlc(ticker, interval2, range) {
+  const hosts = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
+  let lastError = "Unknown fetch error";
+  for (const host of hosts) {
+    try {
+      const url = `https://${host}/v8/finance/chart/${encodeURIComponent(ticker)}?interval=${interval2}&range=${range}`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(1e4)
+      });
+      if (!res.ok) {
+        lastError = `Market feed returned HTTP ${res.status}`;
+        continue;
+      }
+      const json2 = await res.json();
+      const result = json2?.chart?.result?.[0];
+      if (!result) {
+        lastError = json2?.chart?.error?.description || "Empty market feed response";
+        continue;
+      }
+      const ts = result.timestamp || [];
+      const q = result.indicators?.quote?.[0] || {};
+      const opens = q.open || [];
+      const highs = q.high || [];
+      const lows = q.low || [];
+      const closes = q.close || [];
+      const bars = [];
+      const len = Math.min(ts.length, opens.length, highs.length, lows.length, closes.length);
+      for (let i = 0; i < len; i++) {
+        const t = ts[i];
+        const o = opens[i];
+        const h = highs[i];
+        const l = lows[i];
+        const c = closes[i];
+        if (typeof t === "number" && typeof o === "number" && typeof h === "number" && typeof l === "number" && typeof c === "number" && Number.isFinite(o) && Number.isFinite(h) && Number.isFinite(l) && Number.isFinite(c) && o > 0 && h > 0 && l > 0 && c > 0 && h >= l) {
+          bars.push({ time: t * 1e3, open: o, high: h, low: l, close: c });
+        }
+      }
+      if (bars.length >= 30) {
+        return bars;
+      }
+      lastError = `Insufficient valid ${interval2} candles (${bars.length})`;
+    } catch (err) {
+      lastError = err.message;
+    }
+  }
+  throw new Error(`Failed to fetch ${ticker} (${interval2}): ${lastError}`);
+}
+router9.get("/backtest/symbols", (_req, res) => {
+  const symbols = Object.values(SYMBOL_SPECS).map((s) => ({
+    symbol: s.symbol,
+    label: s.label,
+    category: s.category,
+    digits: s.digits,
+    defaultMaxSlDist: s.defaultMaxSlDist
+  }));
+  res.json({ symbols });
+});
+router9.post("/backtest", async (req, res) => {
+  try {
+    const rawSymbol = String(req.body?.symbol ?? req.body?.symbolA ?? "XAUUSD");
+    const spec = resolveSymbolSpec(rawSymbol);
+    const lookbackDays = Math.min(30, Math.max(3, Number(req.body?.lookbackDays ?? 14) || 14));
+    const lotSize = Math.min(10, Math.max(0.01, Number(req.body?.lotSize ?? 0.07) || 0.07));
+    const initialBalance = Math.max(100, Number(req.body?.initialBalance ?? 1e4) || 1e4);
+    const maxSlDist = Math.max(
+      spec.digits <= 3 ? 0.05 : 5e-4,
+      Number(req.body?.maxSlDist ?? spec.defaultMaxSlDist) || spec.defaultMaxSlDist
+    );
+    const minRrr = Math.min(5, Math.max(1, Number(req.body?.minRrr ?? 1.85) || 1.85));
+    const sessionFilterEnabled = req.body?.sessionFilterEnabled !== void 0 ? Boolean(req.body.sessionFilterEnabled) : true;
+    const breakevenEnabled = req.body?.breakevenEnabled !== void 0 ? Boolean(req.body.breakevenEnabled) : true;
+    const range = lookbackDays <= 5 ? "5d" : "1mo";
+    const [m5Bars, m15Bars] = await Promise.all([
+      fetchYahooOhlc(spec.yahooTicker, "5m", range),
+      fetchYahooOhlc(spec.yahooTicker, "15m", "1mo")
+    ]);
+    if (m5Bars.length < 100 || m15Bars.length < 30) {
+      res.status(400).json({ error: `Insufficient historical OHLC candles for ${spec.symbol}` });
+      return;
+    }
+    const latestMs = m5Bars[m5Bars.length - 1].time;
+    const warmupFloor = m5Bars[Math.min(60, m5Bars.length - 1)].time;
+    const requestedStart = latestMs - lookbackDays * 24 * 3600 * 1e3;
+    const startTimeMs = lookbackDays >= 28 ? warmupFloor : Math.max(warmupFloor, requestedStart);
+    const results = runSmcBacktest({
+      spec,
+      m5Bars,
+      m15Bars,
+      startTimeMs,
+      initialBalance,
+      lotSize,
+      maxSlDist,
+      minRrr,
+      sessionFilterEnabled,
+      breakevenEnabled,
+      beTriggerUsd: 35
+    });
     res.json({
-      symbolA: symA,
-      symbolB: symB,
-      totalTrades: tradesCount,
-      wins: winsCount,
-      losses: tradesCount - winsCount,
-      winRate: Number(winRate.toFixed(2)),
-      initialBalance: 1e4,
-      finalBalance: Number(balance.toFixed(2)),
-      netProfit: Number(netProfit.toFixed(2)),
-      profitFactor: tradesCount > 0 ? 1.5 : 0,
-      equityCurve: equityCurve.slice(-50),
-      trades: tradesList.reverse().slice(0, 30)
+      ...results,
+      lookbackDays,
+      lotSize,
+      maxSlDist,
+      minRrr,
+      sessionFilterEnabled,
+      breakevenEnabled,
+      barsScannedM5: m5Bars.length,
+      barsScannedM15: m15Bars.length
     });
   } catch (err) {
-    req.log.error({ err }, "Failed to run Binance backtest");
-    res.status(500).json({ error: err.message });
+    req.log?.error?.({ err }, "Failed to run Pure SMC backtest");
+    const msg = err.message || "Backtest failed";
+    const isValidation = msg.includes("Crypto") || msg.includes("Unsupported");
+    res.status(isValidation ? 400 : 500).json({ error: msg });
   }
 });
 var backtest_default = router9;
