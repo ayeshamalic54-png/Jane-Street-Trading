@@ -107,7 +107,7 @@ export const SYMBOL_SPECS: Record<string, SymbolSpec> = {
     isQuoteJpy: false,
     isQuoteCadOrChf: false,
     isEurGbp: false,
-    defaultMaxSlDist: 7.5,
+    defaultMaxSlDist: 10.0,
     m15MinAmp: 3.0,
     m15TargetMinAmp: 2.5,
     m5MinAmp: 1.25,
@@ -718,12 +718,15 @@ export interface SmcBacktestParams {
   minRrr: number;
   sessionFilterEnabled: boolean;
   breakevenEnabled: boolean;
+  smartRiskCapEnabled?: boolean;
+  riskCapUsd?: number;
   beTriggerUsd?: number;
 }
 
 export interface SmcTradeSim {
   type: "BUY" | "SELL";
   symbol: string;
+  lotUsed: number;
   entryPrice: number;
   exitPrice: number;
   slPrice: number;
@@ -739,6 +742,30 @@ export interface SmcTradeSim {
   exitTime: string;
 }
 
+function computeSafeTradeLot(
+  slDist: number,
+  entryPrice: number,
+  maxBaseLot: number,
+  spec: SymbolSpec,
+  smartRiskCapEnabled: boolean,
+  riskCapUsd: number
+): number {
+  if (!smartRiskCapEnabled || slDist <= 0 || spec.category !== "metals") {
+    return Number(maxBaseLot.toFixed(2));
+  }
+  const usdPerUnitLot1 = Math.abs(priceDeltaToUsd(1.0, entryPrice, 1.0, spec));
+  if (usdPerUnitLot1 <= 0) return Number(maxBaseLot.toFixed(2));
+  const safeLot = Math.floor((riskCapUsd / (slDist * usdPerUnitLot1)) * 100 + 1e-9) / 100;
+  return Number(Math.max(0.01, Math.min(maxBaseLot, safeLot)).toFixed(2));
+}
+
+function computeAdaptiveBeTrigger(lotUsed: number, spec: SymbolSpec, baseBeTriggerUsd: number): number {
+  if (spec.category !== "metals") return baseBeTriggerUsd;
+  if (lotUsed >= 0.065) return Math.max(baseBeTriggerUsd, 50.0);
+  if (lotUsed >= 0.055) return Math.max(baseBeTriggerUsd, 42.0);
+  return baseBeTriggerUsd;
+}
+
 export function runSmcBacktest(params: SmcBacktestParams) {
   const {
     spec,
@@ -751,6 +778,8 @@ export function runSmcBacktest(params: SmcBacktestParams) {
     minRrr,
     sessionFilterEnabled,
     breakevenEnabled,
+    smartRiskCapEnabled = true,
+    riskCapUsd = 52.0,
     beTriggerUsd = 35.0,
   } = params;
 
@@ -768,6 +797,8 @@ export function runSmcBacktest(params: SmcBacktestParams) {
 
   interface OpenPos {
     type: "BUY" | "SELL";
+    lotUsed: number;
+    beTrigger: number;
     entryPrice: number;
     slPrice: number;
     initialSlPrice: number;
@@ -807,8 +838,8 @@ export function runSmcBacktest(params: SmcBacktestParams) {
           exitPrice = openPos.tpPrice;
           reason = "TP_HIT";
         } else if (breakevenEnabled && !openPos.breakevenApplied) {
-          const bestFloating = priceDeltaToUsd(currBar.high - openPos.entryPrice, currBar.high, lotSize, spec);
-          if (bestFloating >= beTriggerUsd) {
+          const bestFloating = priceDeltaToUsd(currBar.high - openPos.entryPrice, currBar.high, openPos.lotUsed, spec);
+          if (bestFloating >= openPos.beTrigger) {
             openPos.slPrice = rnd(openPos.entryPrice + spec.beBuffer);
             openPos.breakevenApplied = true;
           }
@@ -821,8 +852,8 @@ export function runSmcBacktest(params: SmcBacktestParams) {
           exitPrice = openPos.tpPrice;
           reason = "TP_HIT";
         } else if (breakevenEnabled && !openPos.breakevenApplied) {
-          const bestFloating = priceDeltaToUsd(openPos.entryPrice - currBar.low, currBar.low, lotSize, spec);
-          if (bestFloating >= beTriggerUsd) {
+          const bestFloating = priceDeltaToUsd(openPos.entryPrice - currBar.low, currBar.low, openPos.lotUsed, spec);
+          if (bestFloating >= openPos.beTrigger) {
             openPos.slPrice = rnd(openPos.entryPrice - spec.beBuffer);
             openPos.breakevenApplied = true;
           }
@@ -831,7 +862,7 @@ export function runSmcBacktest(params: SmcBacktestParams) {
 
       if (exitPrice !== null && reason !== null) {
         const delta = openPos.type === "BUY" ? exitPrice - openPos.entryPrice : openPos.entryPrice - exitPrice;
-        const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, lotSize, spec).toFixed(2));
+        const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, openPos.lotUsed, spec).toFixed(2));
         const profitPct = Number(((profitUsd / Math.max(1, balance)) * 100).toFixed(2));
         balance = Number((balance + profitUsd).toFixed(2));
         if (balance > peakEquity) peakEquity = balance;
@@ -841,6 +872,7 @@ export function runSmcBacktest(params: SmcBacktestParams) {
         trades.push({
           type: openPos.type,
           symbol: spec.symbol,
+          lotUsed: openPos.lotUsed,
           entryPrice: openPos.entryPrice,
           exitPrice: rnd(exitPrice),
           slPrice: openPos.initialSlPrice,
@@ -902,8 +934,11 @@ export function runSmcBacktest(params: SmcBacktestParams) {
             if (slDist > 0 && slDist <= maxSlDist && notChasing) {
               const target = computeM15OpposingTarget(true, m15Slice, entryPrice, slDist, minRrr, spec);
               if (target.rrr >= minRrr) {
+                const tradeLot = computeSafeTradeLot(slDist, entryPrice, lotSize, spec, smartRiskCapEnabled, riskCapUsd);
                 openPos = {
                   type: "BUY",
+                  lotUsed: tradeLot,
+                  beTrigger: computeAdaptiveBeTrigger(tradeLot, spec, beTriggerUsd),
                   entryPrice,
                   slPrice,
                   initialSlPrice: slPrice,
@@ -936,8 +971,11 @@ export function runSmcBacktest(params: SmcBacktestParams) {
             if (slDist > 0 && slDist <= maxSlDist && notChasing) {
               const target = computeM15OpposingTarget(false, m15Slice, entryPrice, slDist, minRrr, spec);
               if (target.rrr >= minRrr) {
+                const tradeLot = computeSafeTradeLot(slDist, entryPrice, lotSize, spec, smartRiskCapEnabled, riskCapUsd);
                 openPos = {
                   type: "SELL",
+                  lotUsed: tradeLot,
+                  beTrigger: computeAdaptiveBeTrigger(tradeLot, spec, beTriggerUsd),
                   entryPrice,
                   slPrice,
                   initialSlPrice: slPrice,
@@ -961,7 +999,7 @@ export function runSmcBacktest(params: SmcBacktestParams) {
     const lastBar = m5Bars[m5Bars.length - 1]!;
     const exitPrice = rnd(lastBar.close);
     const delta = openPos.type === "BUY" ? exitPrice - openPos.entryPrice : openPos.entryPrice - exitPrice;
-    const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, lotSize, spec).toFixed(2));
+    const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, openPos.lotUsed, spec).toFixed(2));
     const profitPct = Number(((profitUsd / Math.max(1, balance)) * 100).toFixed(2));
     balance = Number((balance + profitUsd).toFixed(2));
     if (balance > peakEquity) peakEquity = balance;
@@ -971,6 +1009,7 @@ export function runSmcBacktest(params: SmcBacktestParams) {
     trades.push({
       type: openPos.type,
       symbol: spec.symbol,
+      lotUsed: openPos.lotUsed,
       entryPrice: openPos.entryPrice,
       exitPrice,
       slPrice: openPos.initialSlPrice,

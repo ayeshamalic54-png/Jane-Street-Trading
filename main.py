@@ -635,12 +635,22 @@ LEVERAGE_FACTORS = {
 
 def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
     """
-    Fixed Institutional Prop Firm Lot Sizing Engine:
-    Strictly 0.07 Lots for Metals (XAUUSD / XAGUSD), 0.51 Lots for Forex.
+    Smart $52 Max-Risk Institutional Prop Firm Lot Sizing Engine:
+    - Gold (XAUUSD): Base 0.07 lots when SL <= $7.42; auto-scales to 0.06 ($7.43-$8.66)
+      and 0.05 ($8.67-$10.00) so per-trade SL loss NEVER exceeds $52.00 USD.
+    - Forex: Fixed 0.51 Lots.
     """
+    import math
     sym_upper = symbol.upper()
-    if category == "metals" or "XAU" in sym_upper or "XAG" in sym_upper or "GOLD" in sym_upper or "SILVER" in sym_upper:
-        return 0.07
+    is_gold = ("XAU" in sym_upper) or ("GOLD" in sym_upper)
+    is_silver = ("XAG" in sym_upper) or ("SILVER" in sym_upper)
+    if is_gold or is_silver or category == "metals":
+        max_lot = 0.07
+        if sl_dist_price and sl_dist_price > 0:
+            contract_sz = 5000.0 if is_silver else 100.0
+            safe_lot = math.floor((52.0 / (float(sl_dist_price) * contract_sz)) * 100.0 + 1e-9) / 100.0
+            return round(max(0.01, min(max_lot, safe_lot)), 2)
+        return max_lot
     return 0.51
 
 
@@ -1157,7 +1167,8 @@ def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_pri
         tp_str = f"`{tp_price:.{digits_a}f}`" if tp_price > 0 else "`N/A`"
         
         cat = get_symbol_category(symbol_a)
-        lot_val = 0.07 if (cat == "metals" or "XAU" in symbol_a.upper() or "XAG" in symbol_a.upper()) else 0.51
+        sl_d_est = abs(float(entry_price) - float(sl_price)) if (entry_price and entry_price > 0 and sl_price and sl_price > 0) else 0.0
+        lot_val = get_blue_guardian_lots(symbol_a, cat, sl_dist_price=sl_d_est)
 
         entry_str = f"`{entry_price:.{digits_a}f}`" if (entry_price and entry_price > 0) else "`Live Market Price`"
         message = (
@@ -3035,8 +3046,21 @@ def main():
                         
                         entry_a = best_sig["tick_a"].ask if is_long else best_sig["tick_a"].bid
                         entry_b = best_sig["tick_b"].bid if is_long else best_sig["tick_b"].ask
-                        
-                        sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
+
+                        # Keep structural SL strictly anchored beyond sweep wick + buffer (never pull inside wick on tick slip)
+                        if best_sig.get("smc_sl") is not None and float(best_sig["smc_sl"]) > 0:
+                            raw_smc_sl = float(best_sig["smc_sl"])
+                            if is_long and raw_smc_sl < entry_a:
+                                sl_a = raw_smc_sl
+                                sl_dist = entry_a - sl_a
+                            elif (not is_long) and raw_smc_sl > entry_a:
+                                sl_a = raw_smc_sl
+                                sl_dist = sl_a - entry_a
+                            else:
+                                sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
+                        else:
+                            sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
+
                         # Condition 9: Pure SMC/ICT M15 Structural Take Profit Target
                         if best_sig.get("smc_tp") and best_sig["smc_tp"] is not None:
                             tp2_val = float(best_sig["smc_tp"])
@@ -3044,7 +3068,7 @@ def main():
                         else:
                             tp_dist = 2.0 * sl_dist
                             tp2_val = entry_a + tp_dist if is_long else entry_a - tp_dist
-                        
+
                         info_pip_a = mt5.symbol_info(S_A)
                         pt_a = info_pip_a.point if info_pip_a else 0.0001
                         pip_sz_a = (pt_a * 10.0) if (info_pip_a and info_pip_a.digits in (3, 5)) else pt_a
@@ -3053,7 +3077,9 @@ def main():
                         tp1_val = entry_a + (tp_dist * 0.5) if is_long else entry_a - (tp_dist * 0.5)
                         tp3_val = entry_a + (tp_dist * 1.5) if is_long else entry_a - (tp_dist * 1.5)
 
-                        if DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
+                        if best_cat_a == "metals" or "XAU" in S_A.upper() or "XAG" in S_A.upper():
+                            lots_a = get_blue_guardian_lots(S_A, best_cat_a, sl_dist_price=sl_dist)
+                        elif DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
                             disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                             mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                             lots_a = DEFAULT_LOTS * mult

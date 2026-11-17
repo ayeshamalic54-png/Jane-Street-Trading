@@ -89,8 +89,8 @@ def evaluate_smc_strategy_signal(
     5. Step 5 (S5) — Confirmed Closed Candle Retests THAT Displacement FVG
     6. Step 6 (S6) — FVG Retest Rejection Candle (Pinbar / Directional defense close)
     7. Step 7 (S7) — Confirmation Close (Strictly after rejection candle iloc[-2] closes)
-    8. Step 8 (S8) — Structural SL behind Sweep Wick ($0.75 Gold buffer / $7.50 max cap)
-    9. Step 9 (S9) — M15 Opposing Liquidity Target (>= 2.0R min, $67-$80+ Gold setups, no micro-scalps)
+    8. Step 8 (S8) — Structural SL behind Sweep Wick ($0.75 Gold buffer / $10.00 max cap)
+    9. Step 9 (S9) — M15 Opposing Liquidity Target (>= 1.85R, $1.10 Gold front-run, no micro-scalps)
     """
     if df_m15 is None or len(df_m15) < 15 or 'close' not in df_m15.columns:
         return "NONE", None, None, 0.0, "Insufficient candle data for SMC"
@@ -208,7 +208,7 @@ def evaluate_smc_strategy_signal(
         fvg_low, fvg_high = matched_bull_fvg
         max_chase_dist = 2.00 if is_metals else 0.00100
         is_chasing = price > (fvg_high + max_chase_dist)
-        max_sl_cap = 7.50 if is_metals else 0.0050
+        max_sl_cap = 10.00 if is_metals else 0.0050
 
         tp_price, target_rrr = _compute_m15_opposing_target(True, df_m15, price, sl_dist, is_metals)
         scan_tp = tp_price
@@ -253,7 +253,7 @@ def evaluate_smc_strategy_signal(
         fvg_low, fvg_high = matched_bear_fvg
         max_chase_dist = 2.00 if is_metals else 0.00100
         is_chasing = price < (fvg_low - max_chase_dist)
-        max_sl_cap = 7.50 if is_metals else 0.0050
+        max_sl_cap = 10.00 if is_metals else 0.0050
 
         tp_price, target_rrr = _compute_m15_opposing_target(False, df_m15, price, sl_dist, is_metals)
         scan_tp = tp_price
@@ -318,7 +318,7 @@ def evaluate_smc_strategy_signal(
     if custom_step8_s is not None:
         step8_s = custom_step8_s
     else:
-        step8_s = "PASS 🟢 (0.75 Buf - $7.50 Cap)" if is_metals else "PASS 🟢 (0.0004 Buf - Cap)"
+        step8_s = "PASS 🟢 (0.75 Buf - $10.00 Cap)" if is_metals else "PASS 🟢 (0.0004 Buf - Cap)"
 
     # S9: M15 Opposing Liquidity Target (>= 1.85R with $1.10 Gold Front-Run)
     if custom_step9_s is not None:

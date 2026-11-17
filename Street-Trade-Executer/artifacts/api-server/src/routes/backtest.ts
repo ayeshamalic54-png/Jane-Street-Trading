@@ -96,6 +96,7 @@ router.post("/backtest", async (req, res) => {
     const minRrr = Math.min(5.0, Math.max(1.0, Number(req.body?.minRrr ?? 1.85) || 1.85));
     const sessionFilterEnabled = req.body?.sessionFilterEnabled !== undefined ? Boolean(req.body.sessionFilterEnabled) : true;
     const breakevenEnabled = req.body?.breakevenEnabled !== undefined ? Boolean(req.body.breakevenEnabled) : true;
+    const smartRiskCapEnabled = req.body?.smartRiskCapEnabled !== undefined ? Boolean(req.body.smartRiskCapEnabled) : true;
 
     const range: "5d" | "1mo" = lookbackDays <= 5 ? "5d" : "1mo";
     const [m5Bars, m15Bars] = await Promise.all([
@@ -124,6 +125,8 @@ router.post("/backtest", async (req, res) => {
       minRrr,
       sessionFilterEnabled,
       breakevenEnabled,
+      smartRiskCapEnabled,
+      riskCapUsd: 52.0,
       beTriggerUsd: 35.0,
     });
 
@@ -135,6 +138,7 @@ router.post("/backtest", async (req, res) => {
       minRrr,
       sessionFilterEnabled,
       breakevenEnabled,
+      smartRiskCapEnabled,
       barsScannedM5: m5Bars.length,
       barsScannedM15: m15Bars.length,
     });

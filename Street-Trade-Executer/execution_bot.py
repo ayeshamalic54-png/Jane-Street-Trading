@@ -491,8 +491,21 @@ def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_float
 
         curr_sl = float(getattr(p, "sl", 0.0) or 0.0)
         pos_profit = float(getattr(p, "profit", 0.0) or 0.0)
+        pos_vol = float(getattr(p, "volume", 0.0) or 0.0)
         pos_type = int(getattr(p, "type", 0))
         is_buy = (pos_type == getattr(mt5, "ORDER_TYPE_BUY", 0))
+
+        # Scale Metals BE threshold with lot size (~$7.00+ Gold move before shifting SL)
+        # 0.07 lot -> +$50.00 | 0.06 lot -> +$42.00 | <=0.05 lot -> +$35.00
+        if is_metals:
+            if pos_vol >= 0.065:
+                eff_be_trigger = max(be_trigger_usd, 50.0)
+            elif pos_vol >= 0.055:
+                eff_be_trigger = max(be_trigger_usd, 42.0)
+            else:
+                eff_be_trigger = be_trigger_usd
+        else:
+            eff_be_trigger = be_trigger_usd
 
         if is_buy:
             target_sl = round(entry_p + be_buf, digits)
@@ -506,9 +519,9 @@ def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_float
             continue
 
         profit_hit = is_be_enabled and (
-            pos_profit >= be_trigger_usd
-            or floating_profit >= be_trigger_usd
-            or peak_floating_profit >= be_trigger_usd
+            pos_profit >= eff_be_trigger
+            or floating_profit >= eff_be_trigger
+            or peak_floating_profit >= eff_be_trigger
         )
 
         elapsed_min = 0.0
@@ -521,7 +534,7 @@ def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_float
 
         if profit_hit or stag_hit:
             reason = (
-                f"Profit ${pos_profit:.2f} (Peak ${peak_floating_profit:.2f}) >= ${be_trigger_usd:.2f}"
+                f"Profit ${pos_profit:.2f} (Peak ${peak_floating_profit:.2f}) >= ${eff_be_trigger:.2f}"
                 if profit_hit
                 else f"60m+ Stagnation ({elapsed_min:.1f}m, Profit +${pos_profit:.2f})"
             )

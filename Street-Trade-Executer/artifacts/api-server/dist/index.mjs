@@ -49981,7 +49981,7 @@ var SYMBOL_SPECS = {
     isQuoteJpy: false,
     isQuoteCadOrChf: false,
     isEurGbp: false,
-    defaultMaxSlDist: 7.5,
+    defaultMaxSlDist: 10,
     m15MinAmp: 3,
     m15TargetMinAmp: 2.5,
     m5MinAmp: 1.25,
@@ -50453,6 +50453,21 @@ function computeM15OpposingTarget(isBuy, dfM15, entryPrice, slDist, minTargetRrr
   }
   return { tpPrice: rnd(entryPrice - 2.2 * slDist), rrr: 2.2 };
 }
+function computeSafeTradeLot(slDist, entryPrice, maxBaseLot, spec, smartRiskCapEnabled, riskCapUsd) {
+  if (!smartRiskCapEnabled || slDist <= 0 || spec.category !== "metals") {
+    return Number(maxBaseLot.toFixed(2));
+  }
+  const usdPerUnitLot1 = Math.abs(priceDeltaToUsd(1, entryPrice, 1, spec));
+  if (usdPerUnitLot1 <= 0) return Number(maxBaseLot.toFixed(2));
+  const safeLot = Math.floor(riskCapUsd / (slDist * usdPerUnitLot1) * 100 + 1e-9) / 100;
+  return Number(Math.max(0.01, Math.min(maxBaseLot, safeLot)).toFixed(2));
+}
+function computeAdaptiveBeTrigger(lotUsed, spec, baseBeTriggerUsd) {
+  if (spec.category !== "metals") return baseBeTriggerUsd;
+  if (lotUsed >= 0.065) return Math.max(baseBeTriggerUsd, 50);
+  if (lotUsed >= 0.055) return Math.max(baseBeTriggerUsd, 42);
+  return baseBeTriggerUsd;
+}
 function runSmcBacktest(params) {
   const {
     spec,
@@ -50465,6 +50480,8 @@ function runSmcBacktest(params) {
     minRrr,
     sessionFilterEnabled,
     breakevenEnabled,
+    smartRiskCapEnabled = true,
+    riskCapUsd = 52,
     beTriggerUsd = 35
   } = params;
   const factor = Math.pow(10, spec.digits);
@@ -50498,8 +50515,8 @@ function runSmcBacktest(params) {
           exitPrice = openPos.tpPrice;
           reason = "TP_HIT";
         } else if (breakevenEnabled && !openPos.breakevenApplied) {
-          const bestFloating = priceDeltaToUsd(currBar.high - openPos.entryPrice, currBar.high, lotSize, spec);
-          if (bestFloating >= beTriggerUsd) {
+          const bestFloating = priceDeltaToUsd(currBar.high - openPos.entryPrice, currBar.high, openPos.lotUsed, spec);
+          if (bestFloating >= openPos.beTrigger) {
             openPos.slPrice = rnd(openPos.entryPrice + spec.beBuffer);
             openPos.breakevenApplied = true;
           }
@@ -50512,8 +50529,8 @@ function runSmcBacktest(params) {
           exitPrice = openPos.tpPrice;
           reason = "TP_HIT";
         } else if (breakevenEnabled && !openPos.breakevenApplied) {
-          const bestFloating = priceDeltaToUsd(openPos.entryPrice - currBar.low, currBar.low, lotSize, spec);
-          if (bestFloating >= beTriggerUsd) {
+          const bestFloating = priceDeltaToUsd(openPos.entryPrice - currBar.low, currBar.low, openPos.lotUsed, spec);
+          if (bestFloating >= openPos.beTrigger) {
             openPos.slPrice = rnd(openPos.entryPrice - spec.beBuffer);
             openPos.breakevenApplied = true;
           }
@@ -50521,7 +50538,7 @@ function runSmcBacktest(params) {
       }
       if (exitPrice !== null && reason !== null) {
         const delta = openPos.type === "BUY" ? exitPrice - openPos.entryPrice : openPos.entryPrice - exitPrice;
-        const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, lotSize, spec).toFixed(2));
+        const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, openPos.lotUsed, spec).toFixed(2));
         const profitPct = Number((profitUsd / Math.max(1, balance) * 100).toFixed(2));
         balance = Number((balance + profitUsd).toFixed(2));
         if (balance > peakEquity) peakEquity = balance;
@@ -50530,6 +50547,7 @@ function runSmcBacktest(params) {
         trades.push({
           type: openPos.type,
           symbol: spec.symbol,
+          lotUsed: openPos.lotUsed,
           entryPrice: openPos.entryPrice,
           exitPrice: rnd(exitPrice),
           slPrice: openPos.initialSlPrice,
@@ -50580,8 +50598,11 @@ function runSmcBacktest(params) {
             if (slDist > 0 && slDist <= maxSlDist && notChasing) {
               const target = computeM15OpposingTarget(true, m15Slice, entryPrice, slDist, minRrr, spec);
               if (target.rrr >= minRrr) {
+                const tradeLot = computeSafeTradeLot(slDist, entryPrice, lotSize, spec, smartRiskCapEnabled, riskCapUsd);
                 openPos = {
                   type: "BUY",
+                  lotUsed: tradeLot,
+                  beTrigger: computeAdaptiveBeTrigger(tradeLot, spec, beTriggerUsd),
                   entryPrice,
                   slPrice,
                   initialSlPrice: slPrice,
@@ -50614,8 +50635,11 @@ function runSmcBacktest(params) {
             if (slDist > 0 && slDist <= maxSlDist && notChasing) {
               const target = computeM15OpposingTarget(false, m15Slice, entryPrice, slDist, minRrr, spec);
               if (target.rrr >= minRrr) {
+                const tradeLot = computeSafeTradeLot(slDist, entryPrice, lotSize, spec, smartRiskCapEnabled, riskCapUsd);
                 openPos = {
                   type: "SELL",
+                  lotUsed: tradeLot,
+                  beTrigger: computeAdaptiveBeTrigger(tradeLot, spec, beTriggerUsd),
                   entryPrice,
                   slPrice,
                   initialSlPrice: slPrice,
@@ -50637,7 +50661,7 @@ function runSmcBacktest(params) {
     const lastBar = m5Bars[m5Bars.length - 1];
     const exitPrice = rnd(lastBar.close);
     const delta = openPos.type === "BUY" ? exitPrice - openPos.entryPrice : openPos.entryPrice - exitPrice;
-    const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, lotSize, spec).toFixed(2));
+    const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, openPos.lotUsed, spec).toFixed(2));
     const profitPct = Number((profitUsd / Math.max(1, balance) * 100).toFixed(2));
     balance = Number((balance + profitUsd).toFixed(2));
     if (balance > peakEquity) peakEquity = balance;
@@ -50646,6 +50670,7 @@ function runSmcBacktest(params) {
     trades.push({
       type: openPos.type,
       symbol: spec.symbol,
+      lotUsed: openPos.lotUsed,
       entryPrice: openPos.entryPrice,
       exitPrice,
       slPrice: openPos.initialSlPrice,
@@ -50765,6 +50790,7 @@ router9.post("/backtest", async (req, res) => {
     const minRrr = Math.min(5, Math.max(1, Number(req.body?.minRrr ?? 1.85) || 1.85));
     const sessionFilterEnabled = req.body?.sessionFilterEnabled !== void 0 ? Boolean(req.body.sessionFilterEnabled) : true;
     const breakevenEnabled = req.body?.breakevenEnabled !== void 0 ? Boolean(req.body.breakevenEnabled) : true;
+    const smartRiskCapEnabled = req.body?.smartRiskCapEnabled !== void 0 ? Boolean(req.body.smartRiskCapEnabled) : true;
     const range = lookbackDays <= 5 ? "5d" : "1mo";
     const [m5Bars, m15Bars] = await Promise.all([
       fetchYahooOhlc(spec.yahooTicker, "5m", range),
@@ -50789,6 +50815,8 @@ router9.post("/backtest", async (req, res) => {
       minRrr,
       sessionFilterEnabled,
       breakevenEnabled,
+      smartRiskCapEnabled,
+      riskCapUsd: 52,
       beTriggerUsd: 35
     });
     res.json({
@@ -50799,6 +50827,7 @@ router9.post("/backtest", async (req, res) => {
       minRrr,
       sessionFilterEnabled,
       breakevenEnabled,
+      smartRiskCapEnabled,
       barsScannedM5: m5Bars.length,
       barsScannedM15: m15Bars.length
     });

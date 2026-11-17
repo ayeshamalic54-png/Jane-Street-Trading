@@ -13,6 +13,7 @@ import { cn, formatPktDateTime } from "@/lib/utils";
 interface SmcTradeSim {
   type: "BUY" | "SELL";
   symbol: string;
+  lotUsed: number;
   entryPrice: number;
   exitPrice: number;
   slPrice: number;
@@ -49,6 +50,7 @@ interface SmcBacktestResponse {
   minRrr: number;
   sessionFilterEnabled: boolean;
   breakevenEnabled: boolean;
+  smartRiskCapEnabled?: boolean;
   barsScannedM5: number;
   barsScannedM15: number;
   equityCurve: Array<{ time: string; balance: number }>;
@@ -64,7 +66,7 @@ interface InstrumentOption {
 }
 
 const INSTRUMENTS: InstrumentOption[] = [
-  { symbol: "XAUUSD", label: "Gold (XAU/USD)", category: "metals", defaultMaxSl: "7.50", digits: 2 },
+  { symbol: "XAUUSD", label: "Gold (XAU/USD)", category: "metals", defaultMaxSl: "10.00", digits: 2 },
   { symbol: "XAGUSD", label: "Silver (XAG/USD)", category: "metals", defaultMaxSl: "0.50", digits: 3 },
   { symbol: "EURUSD", label: "EUR/USD", category: "forex", defaultMaxSl: "0.0050", digits: 5 },
   { symbol: "GBPUSD", label: "GBP/USD", category: "forex", defaultMaxSl: "0.0050", digits: 5 },
@@ -85,11 +87,12 @@ export default function Backtest() {
   const [selectedSymbol, setSelectedSymbol] = useState("XAUUSD");
   const [lookbackDays, setLookbackDays] = useState<number>(30);
   const [lotSize, setLotSize] = useState("0.07");
-  const [maxSlDist, setMaxSlDist] = useState("7.50");
+  const [maxSlDist, setMaxSlDist] = useState("10.00");
   const [minRrr, setMinRrr] = useState("1.85");
   const [initialBalance, setInitialBalance] = useState("10000");
   const [sessionFilterEnabled, setSessionFilterEnabled] = useState(true);
   const [breakevenEnabled, setBreakevenEnabled] = useState(true);
+  const [smartRiskCapEnabled, setSmartRiskCapEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SmcBacktestResponse | null>(null);
 
@@ -118,6 +121,7 @@ export default function Backtest() {
           initialBalance: parseFloat(initialBalance) || 10000,
           sessionFilterEnabled,
           breakevenEnabled,
+          smartRiskCapEnabled,
         }),
       });
 
@@ -300,15 +304,15 @@ export default function Backtest() {
           </div>
 
           {/* Live Safeguard Toggles */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
             <div className="flex items-center justify-between gap-3 p-3 rounded border border-border bg-muted/20">
               <div className="min-w-0 flex-1 space-y-0.5">
                 <div className="text-xs font-semibold flex items-center gap-1.5 text-zinc-100">
                   <Clock className="h-3.5 w-3.5 text-sky-400 shrink-0" />
-                  <span>PKT Session Guard (12:00–4:00 PM &amp; 6:00–10:00 PM)</span>
+                  <span>PKT Session Guard (12–4 &amp; 6–10 PM)</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  Restricts new SMC entries to London + NY PKT killzones (active SL/BE/TP run 24/7)
+                  New SMC entries only in London + NY PKT windows (active SL/BE run 24/7)
                 </p>
               </div>
               <Switch
@@ -322,10 +326,27 @@ export default function Backtest() {
               <div className="min-w-0 flex-1 space-y-0.5">
                 <div className="text-xs font-semibold flex items-center gap-1.5 text-zinc-100">
                   <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
-                  <span>Pure Risk-Free Breakeven (+$35.00 Lock)</span>
+                  <span>Smart $52 Max Risk Auto-Lot</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  Shifts SL once to Entry + buffer when floating profit hits +$35 (no trailing stop)
+                  Uses 0.07 lot (SL &le; $7.42), auto-scales 0.06/0.05 on $7.43–$10 SL (loss &le; $52)
+                </p>
+              </div>
+              <Switch
+                className="shrink-0"
+                checked={smartRiskCapEnabled}
+                onCheckedChange={setSmartRiskCapEnabled}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 p-3 rounded border border-border bg-muted/20">
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="text-xs font-semibold flex items-center gap-1.5 text-zinc-100">
+                  <ShieldCheck className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                  <span>Adaptive Breakeven ($7+ Move)</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  Locks Entry+$0.25 at +$50 (0.07), +$42 (0.06), +$35 (0.05) — avoids early pullback cuts
                 </p>
               </div>
               <Switch
@@ -358,7 +379,7 @@ export default function Backtest() {
               M5 Bars: {results.barsScannedM5.toLocaleString()} · M15 Bars: {results.barsScannedM15.toLocaleString()}
             </Badge>
             <Badge variant="outline" className="border-zinc-700 text-zinc-300">
-              Lot: {results.lotSize} · Min R:R: {results.minRrr}R
+              Max Lot: {results.lotSize} · {results.smartRiskCapEnabled !== false ? "Cap <=$52" : "Fixed Lot"} · Min R:R: {results.minRrr}R
             </Badge>
             <Badge variant="outline" className={results.sessionFilterEnabled ? "border-sky-500/40 text-sky-300" : "border-amber-500/40 text-amber-300"}>
               {results.sessionFilterEnabled ? "Session Filter: 12-4 & 6-10 PM PKT" : "Session Filter: 24/7 Unfiltered"}
@@ -502,6 +523,7 @@ export default function Backtest() {
                       <TableRow className="border-border">
                         <TableHead className="font-mono text-[10px] py-2 whitespace-nowrap">ENTRY TIME (PKT)</TableHead>
                         <TableHead className="font-mono text-[10px] py-2">SIDE</TableHead>
+                        <TableHead className="font-mono text-[10px] py-2">LOTS</TableHead>
                         <TableHead className="font-mono text-[10px] py-2">SESSION</TableHead>
                         <TableHead className="font-mono text-[10px] py-2 text-right whitespace-nowrap">ENTRY → EXIT</TableHead>
                         <TableHead className="font-mono text-[10px] py-2 text-right whitespace-nowrap">SL / TP</TableHead>
@@ -523,6 +545,9 @@ export default function Backtest() {
                             )}>
                               {t.type}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-[10px] py-2 text-sky-300 font-bold whitespace-nowrap">
+                            {(t.lotUsed ?? results.lotSize).toFixed(2)}
                           </TableCell>
                           <TableCell className="font-mono text-[10px] py-2 text-zinc-400 whitespace-nowrap">
                             {t.sessionLabel}
