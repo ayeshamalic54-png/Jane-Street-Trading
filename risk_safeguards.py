@@ -209,10 +209,10 @@ def get_or_create_daily_start_equity(current_equity):
             cur.execute(
                 """
                 UPDATE bot_state SET 
-                    initial_balance = %s, 
+                    initial_balance = COALESCE(NULLIF(initial_balance, 0), %s), 
                     mt5_login = %s, 
                     equity = %s,
-                    max_equity_peak = %s
+                    max_equity_peak = GREATEST(COALESCE(max_equity_peak, 0), %s)
                 WHERE id = 1
                 """,
                 (start_equity, current_login, current_equity, start_equity)

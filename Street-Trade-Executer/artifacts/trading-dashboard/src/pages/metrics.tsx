@@ -43,6 +43,12 @@ interface LiveMetricsSummary {
   profitFactor: number;
   maxDrawdown: number;
   liveEquity: number;
+  initialBalance?: number;
+  maxEquityPeak?: number;
+  overallDrawdown?: number;
+  accountNetProfit?: number;
+  accountNetPct?: number;
+  dailyDrawdown?: number;
   floatingProfit: number;
   openTradesCount: number;
   mt5Login: number;
@@ -127,15 +133,20 @@ export default function Metrics() {
     refetchInterval: 2500,
   });
 
-  // Trigger instant refresh whenever live WebSocket reports trade count / equity change
+  // Trigger instant refresh whenever live WebSocket reports trade count / equity / account switch change
   useEffect(() => {
     if (!wsData) return;
     void queryClient.invalidateQueries({ queryKey: ["live-metrics"] });
     void queryClient.invalidateQueries({ queryKey: ["live-metrics-summary"] });
-  }, [wsData?.tradesToday, wsData?.activePositions?.length, wsData?.recentTrades?.length, wsData?.equity, queryClient]);
+  }, [wsData?.mt5Login, wsData?.tradesToday, wsData?.activePositions?.length, wsData?.recentTrades?.length, wsData?.equity, wsData?.drawdownPercent, wsData?.overallDrawdown, queryClient]);
 
   const chartData = metrics ? [...metrics].reverse() : [];
   const liveEq = wsData?.equity ?? summary?.liveEquity ?? 0;
+  const liveInitial = wsData?.initialBalance ?? summary?.initialBalance ?? 10000;
+  const liveAccountNetProfit = liveInitial > 0 ? Number((liveEq - liveInitial).toFixed(2)) : (summary?.accountNetProfit ?? 0);
+  const liveAccountNetPct = liveInitial > 0 ? Number(((liveAccountNetProfit / liveInitial) * 100).toFixed(2)) : (summary?.accountNetPct ?? 0);
+  const liveOverallDd = wsData?.overallDrawdown ?? summary?.overallDrawdown ?? 0;
+  const liveDailyDd = wsData?.drawdownPercent ?? summary?.dailyDrawdown ?? 0;
   const liveFloat = wsData?.floatingProfit ?? summary?.floatingProfit ?? 0;
   const mt5Login = wsData?.mt5Login ?? summary?.mt5Login ?? 0;
 
@@ -198,11 +209,24 @@ export default function Metrics() {
       </div>
 
       {/* Live Account & Floating Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <Card className="bg-zinc-900/60 border-zinc-800">
           <CardContent className="p-3 sm:p-4 space-y-1">
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Live MT5 Equity</div>
             <div className="text-lg sm:text-xl font-mono font-bold text-sky-400">{formatMoney(liveEq)}</div>
+            <div className="text-[10px] text-zinc-500 font-mono">Base: {formatMoney(liveInitial)}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-zinc-900/60 border-zinc-800">
+          <CardContent className="p-3 sm:p-4 space-y-1">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Account Net / DD</div>
+            <div className={cn("text-base sm:text-lg font-mono font-bold", liveAccountNetProfit >= 0 ? "text-emerald-400" : "text-amber-400")}>
+              {liveAccountNetProfit > 0 ? "+" : ""}{formatMoney(liveAccountNetProfit)}{" "}
+              <span className="text-xs">({liveAccountNetPct > 0 ? "+" : ""}{liveAccountNetPct.toFixed(2)}%)</span>
+            </div>
+            <div className="text-[10px] text-zinc-400 font-mono">
+              Daily DD: <span className="text-rose-400 font-bold">{liveDailyDd.toFixed(2)}%</span> · Overall: <span className="text-rose-400 font-bold">{liveOverallDd.toFixed(2)}%</span>
+            </div>
           </CardContent>
         </Card>
         <Card className="bg-zinc-900/60 border-zinc-800">
@@ -219,7 +243,7 @@ export default function Metrics() {
             <div className="text-lg sm:text-xl font-mono font-bold text-cyan-400">{summary ? summary.profitFactor.toFixed(2) : "—"}</div>
           </CardContent>
         </Card>
-        <Card className="bg-zinc-900/60 border-zinc-800">
+        <Card className="col-span-2 sm:col-span-1 bg-zinc-900/60 border-zinc-800">
           <CardContent className="p-3 sm:p-4 space-y-1">
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Avg Trade P&amp;L</div>
             <div className={cn("text-lg sm:text-xl font-mono font-bold", (summary?.avgPnl ?? 0) >= 0 ? "text-emerald-400" : "text-rose-400")}>

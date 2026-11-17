@@ -2167,19 +2167,22 @@ def main():
             login_changed = (active_login_id is not None and active_login_id != current_login) or (startup_mismatch and db_login > 0 and db_login != current_login)
             
             if login_changed:
-                logger.info(f"🔄 [GENUINE ACCOUNT SWITCH DETECTED] Connected new MT5 Login #{current_login} (Previous DB Login #{db_login}). Initializing fresh account session.")
+                logger.info(f"🔄 [GENUINE ACCOUNT SWITCH DETECTED] Connected new MT5 Login #{current_login} (Previous DB Login #{db_login}). Restoring/syncing account session.")
                 from database import reset_database_metrics_for_new_account
-                reset_database_metrics_for_new_account(current_login, acc_info.equity)
+                restored_acc = reset_database_metrics_for_new_account(current_login, acc_info.equity) or {}
                 
-                # Reset local daily start equity in memory to the new account's equity
-                daily_start_equity = float(acc_info.equity)
+                # Restore saved daily start equity (never zero out an account's daily/overall stats on switch)
+                daily_start_equity = float(restored_acc.get("daily_start_equity") or acc_info.equity)
                 
                 # Update safeguards cache here to prevent circular imports
                 try:
                     import risk_safeguards
-                    risk_safeguards._cached_start_equity = float(acc_info.equity)
-                    risk_safeguards._cached_start_equity_date = datetime.date.today()
+                    risk_safeguards._cached_start_equity = daily_start_equity
+                    risk_safeguards._cached_start_equity_date = risk_safeguards.get_broker_today_date()
                     risk_safeguards._cached_last_login = int(current_login)
+                    risk_safeguards._PEAK_DAILY_DRAWDOWN_PCT = float(restored_acc.get("daily_max_dd") or 0.0)
+                    risk_safeguards._PEAK_DAILY_DRAWDOWN_DATE = risk_safeguards.get_broker_today_date()
+                    risk_safeguards._PEAK_DAILY_DRAWDOWN_LOGIN = int(current_login)
                 except Exception as ex:
                     logger.error(f"Error updating risk_safeguards cache in main loop: {ex}")
 

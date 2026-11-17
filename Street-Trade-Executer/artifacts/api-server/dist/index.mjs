@@ -49053,6 +49053,14 @@ async function broadcastAll() {
 
 // src/routes/config.ts
 var router2 = (0, import_express2.Router)();
+function parseSessionHour(fallback, ...vals) {
+  for (const v of vals) {
+    if (v === void 0 || v === null || v === "") continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return (n % 24 + 24) % 24;
+  }
+  return fallback;
+}
 router2.get("/config", async (req, res) => {
   try {
     await ensureSessionGuardColumns();
@@ -49106,11 +49114,11 @@ router2.post("/config", async (req, res) => {
     const haltLimit = bodyObj.haltDrawdownLimit !== void 0 ? Number(bodyObj.haltDrawdownLimit) : bodyObj.halt_drawdown_limit !== void 0 ? Number(bodyObj.halt_drawdown_limit) : Number(state?.haltDrawdownLimit ?? state?.halt_drawdown_limit ?? 0.83);
     const maxLimit = bodyObj.maxDrawdownLimit !== void 0 ? Number(bodyObj.maxDrawdownLimit) : bodyObj.max_drawdown_limit !== void 0 ? Number(bodyObj.max_drawdown_limit) : Number(state?.maxDrawdownLimit ?? state?.max_drawdown_limit ?? 3.3);
     const sessEnabled = bodyObj.sessionGuardEnabled !== void 0 ? Boolean(bodyObj.sessionGuardEnabled) : bodyObj.session_guard_enabled !== void 0 ? Boolean(bodyObj.session_guard_enabled) : curSess.sessionGuardEnabled;
-    const sessStart = bodyObj.sessionStartHour !== void 0 ? Number(bodyObj.sessionStartHour) : bodyObj.session_start_hour !== void 0 ? Number(bodyObj.session_start_hour) : curSess.sessionStartHour;
-    const sessEnd = bodyObj.sessionEndHour !== void 0 ? Number(bodyObj.sessionEndHour) : bodyObj.session_end_hour !== void 0 ? Number(bodyObj.session_end_hour) : curSess.sessionEndHour;
+    const sessStart = parseSessionHour(curSess.sessionStartHour, bodyObj.sessionStartHour, bodyObj.session_start_hour);
+    const sessEnd = parseSessionHour(curSess.sessionEndHour, bodyObj.sessionEndHour, bodyObj.session_end_hour);
     const sess2Enabled = bodyObj.session2Enabled !== void 0 ? Boolean(bodyObj.session2Enabled) : bodyObj.session2_enabled !== void 0 ? Boolean(bodyObj.session2_enabled) : curSess.session2Enabled;
-    const sess2Start = bodyObj.session2StartHour !== void 0 ? Number(bodyObj.session2StartHour) : bodyObj.session2_start_hour !== void 0 ? Number(bodyObj.session2_start_hour) : curSess.session2StartHour;
-    const sess2End = bodyObj.session2EndHour !== void 0 ? Number(bodyObj.session2EndHour) : bodyObj.session2_end_hour !== void 0 ? Number(bodyObj.session2_end_hour) : curSess.session2EndHour;
+    const sess2Start = parseSessionHour(curSess.session2StartHour, bodyObj.session2StartHour, bodyObj.session2_start_hour);
+    const sess2End = parseSessionHour(curSess.session2EndHour, bodyObj.session2EndHour, bodyObj.session2_end_hour);
     const pairToSave = activePair || state?.activePair || "EURUSD/GBPUSD";
     let parts = ["EURUSD", "GBPUSD"];
     if (pairToSave !== "ALL") {
@@ -49240,11 +49248,11 @@ router2.post("/toggle-session-guard", async (req, res) => {
     const curSess = extractSessionGuardFields(rows[0]);
     const body = req.body || {};
     const enabled = body.enabled !== void 0 ? Boolean(body.enabled) : body.sessionGuardEnabled !== void 0 ? Boolean(body.sessionGuardEnabled) : curSess.sessionGuardEnabled;
-    const startHour = body.start_hour !== void 0 ? Number(body.start_hour) : body.startHour !== void 0 ? Number(body.startHour) : body.sessionStartHour !== void 0 ? Number(body.sessionStartHour) : curSess.sessionStartHour;
-    const endHour = body.end_hour !== void 0 ? Number(body.end_hour) : body.endHour !== void 0 ? Number(body.endHour) : body.sessionEndHour !== void 0 ? Number(body.sessionEndHour) : curSess.sessionEndHour;
+    const startHour = parseSessionHour(curSess.sessionStartHour, body.start_hour, body.startHour, body.sessionStartHour);
+    const endHour = parseSessionHour(curSess.sessionEndHour, body.end_hour, body.endHour, body.sessionEndHour);
     const session2Enabled = body.session2_enabled !== void 0 ? Boolean(body.session2_enabled) : body.session2Enabled !== void 0 ? Boolean(body.session2Enabled) : curSess.session2Enabled;
-    const session2StartHour = body.session2_start_hour !== void 0 ? Number(body.session2_start_hour) : body.session2StartHour !== void 0 ? Number(body.session2StartHour) : curSess.session2StartHour;
-    const session2EndHour = body.session2_end_hour !== void 0 ? Number(body.session2_end_hour) : body.session2EndHour !== void 0 ? Number(body.session2EndHour) : curSess.session2EndHour;
+    const session2StartHour = parseSessionHour(curSess.session2StartHour, body.session2_start_hour, body.session2StartHour);
+    const session2EndHour = parseSessionHour(curSess.session2EndHour, body.session2_end_hour, body.session2EndHour);
     await db.execute(
       sql`UPDATE bot_state
           SET session_guard_enabled = ${enabled},
@@ -49346,18 +49354,40 @@ router2.post("/mt5/switch", async (req, res) => {
     if (!login) {
       return res.status(400).json({ error: "Login number is required" });
     }
+    const targetLogin = Number(login);
+    const [accStateRes, mt5AccRes, dailyRes] = await Promise.all([
+      db.execute(sql`SELECT initial_balance, max_equity_peak, overall_drawdown FROM account_states WHERE mt5_login = ${targetLogin} LIMIT 1`),
+      db.execute(sql`SELECT equity, balance FROM mt5_accounts WHERE login = ${targetLogin} LIMIT 1`),
+      db.execute(sql`SELECT start_equity, current_equity, max_drawdown_percent, trades_today FROM daily_metrics WHERE mt5_login = ${targetLogin} AND trading_date = (NOW() AT TIME ZONE 'Asia/Karachi')::date LIMIT 1`)
+    ]);
+    const accRow = (accStateRes.rows || [])[0];
+    const mt5Row = (mt5AccRes.rows || [])[0];
+    const dmRow = (dailyRes.rows || [])[0];
+    const restoredEquity = mt5Row?.equity != null ? Number(mt5Row.equity) : dmRow?.current_equity != null ? Number(dmRow.current_equity) : null;
+    const restoredInitial = accRow?.initial_balance != null ? Number(accRow.initial_balance) : mt5Row?.balance != null ? Number(mt5Row.balance) : null;
+    const restoredPeak = accRow?.max_equity_peak != null ? Number(accRow.max_equity_peak) : restoredInitial;
+    const restoredOverallDd = restoredInitial != null && restoredInitial > 0 && restoredEquity != null ? Number(Math.max(0, (restoredInitial - restoredEquity) / restoredInitial * 100).toFixed(2)) : accRow?.overall_drawdown != null ? Number(accRow.overall_drawdown) : null;
+    const restoredDailyDd = dmRow?.max_drawdown_percent != null ? Number(dmRow.max_drawdown_percent) : null;
+    const restoredTradesToday = dmRow?.trades_today != null ? Number(dmRow.trades_today) : null;
     await db.execute(sql`
       UPDATE bot_state
-      SET target_login = ${Number(login)},
-          mt5_login    = ${Number(login)},
-          updated_at   = NOW()
+      SET target_login     = ${targetLogin},
+          mt5_login        = ${targetLogin},
+          equity           = COALESCE(${restoredEquity != null ? restoredEquity.toFixed(2) : null}::numeric, equity),
+          initial_balance  = COALESCE(${restoredInitial != null ? restoredInitial.toFixed(2) : null}::numeric, initial_balance),
+          max_equity_peak  = COALESCE(${restoredPeak != null ? restoredPeak.toFixed(2) : null}::numeric, max_equity_peak),
+          overall_drawdown = COALESCE(${restoredOverallDd != null ? restoredOverallDd.toFixed(2) : null}::numeric, overall_drawdown),
+          drawdown_percent = COALESCE(${restoredDailyDd != null ? restoredDailyDd.toFixed(2) : null}::numeric, drawdown_percent),
+          trades_today     = COALESCE(${restoredTradesToday}::integer, trades_today),
+          updated_at       = NOW()
       WHERE id = (SELECT MIN(id) FROM bot_state);
     `);
     await db.execute(sql`
       UPDATE mt5_accounts
-      SET is_active = (login = ${Number(login)})
+      SET is_active = (login = ${targetLogin})
     `);
-    return res.json({ status: "success", targetLogin: Number(login), message: `Switch command queued for Account #${login}` });
+    void broadcastDashboardNow();
+    return res.json({ status: "success", targetLogin, message: `Switch command queued for Account #${login}` });
   } catch (err) {
     console.error("Failed to queue account switch:", err);
     return res.status(500).json({ error: "Failed to queue account switch" });
@@ -49472,6 +49502,17 @@ async function loadClosedSetupsAndState(daysParam) {
     db.select().from(dailyMetricsTable).orderBy(desc(dailyMetricsTable.tradingDate))
   ]);
   const botState = botRows[0];
+  const activeLogin = Number(botState?.mt5Login ?? 0);
+  let accStateRow = null;
+  if (activeLogin > 0) {
+    try {
+      const accRes = await db.execute(
+        sql`SELECT initial_balance, max_equity_peak, overall_drawdown FROM account_states WHERE mt5_login = ${activeLogin} LIMIT 1`
+      );
+      accStateRow = (accRes.rows || [])[0] ?? null;
+    } catch {
+    }
+  }
   const cutoffStr = daysParam > 0 ? getPktCutoffDateStr(daysParam) : "1970-01-01";
   const signalGroups = /* @__PURE__ */ new Map();
   const setups = [];
@@ -49516,7 +49557,7 @@ async function loadClosedSetupsAndState(daysParam) {
   }
   setups.sort((a, b) => b.closeTime.getTime() - a.closeTime.getTime());
   const filteredSetups = setups.filter((s) => s.pktDate >= cutoffStr);
-  return { botState, setups: filteredSetups, openRows: allOpenRows, dmRows, cutoffStr };
+  return { botState, accStateRow, setups: filteredSetups, openRows: allOpenRows, dmRows, cutoffStr };
 }
 router5.get("/metrics", async (req, res) => {
   try {
@@ -49603,7 +49644,7 @@ router5.get("/metrics/summary", async (req, res) => {
   try {
     const rawDays = req.query.days !== void 0 ? Number(req.query.days) : 30;
     const days = Number.isFinite(rawDays) && rawDays >= 0 ? Math.min(365, Math.floor(rawDays)) : 30;
-    const { botState, setups, openRows, dmRows, cutoffStr } = await loadClosedSetupsAndState(days);
+    const { botState, accStateRow, setups, openRows, dmRows, cutoffStr } = await loadClosedSetupsAndState(days);
     const profits = setups.map((s) => s.profit);
     const totalTrades = profits.length;
     const winning = profits.filter((p) => p > 0);
@@ -49624,6 +49665,12 @@ router5.get("/metrics/summary", async (req, res) => {
     }
     const realizedDdPct = baseEquity > 0 ? Number((maxDropUsd / baseEquity * 100).toFixed(2)) : 0;
     const dmMaxDd = dmRows.filter((r) => String(r.tradingDate).slice(0, 10) >= cutoffStr).reduce((max, r) => Math.max(max, Number(r.maxDrawdownPercent ?? 0)), 0);
+    const liveEqVal = Number(botState?.equity ?? 0);
+    const accInitialBal = Number(accStateRow?.initial_balance ?? botState?.initialBalance ?? 1e4) || 1e4;
+    const accMaxPeak = Number(accStateRow?.max_equity_peak ?? botState?.maxEquityPeak ?? accInitialBal) || accInitialBal;
+    const accNetProfit = Number((liveEqVal - accInitialBal).toFixed(2));
+    const accNetPct = accInitialBal > 0 ? Number((accNetProfit / accInitialBal * 100).toFixed(2)) : 0;
+    const accOverallDd = accInitialBal > 0 && liveEqVal < accInitialBal ? Number(((accInitialBal - liveEqVal) / accInitialBal * 100).toFixed(2)) : Number(accStateRow?.overall_drawdown ?? botState?.overallDrawdown ?? 0);
     res.json({
       days,
       totalTrades,
@@ -49636,8 +49683,14 @@ router5.get("/metrics/summary", async (req, res) => {
       worstTrade: profits.length > 0 ? Number(Math.min(...profits).toFixed(2)) : 0,
       profitFactor,
       maxDrawdown: Number(Math.max(realizedDdPct, dmMaxDd, Number(botState?.drawdownPercent ?? 0)).toFixed(2)),
-      // Live real-time snapshot fields
-      liveEquity: Number(botState?.equity ?? 0),
+      // Live real-time active MT5 account snapshot fields (preserved per mt5_login)
+      liveEquity: liveEqVal,
+      initialBalance: accInitialBal,
+      maxEquityPeak: accMaxPeak,
+      overallDrawdown: Number(accOverallDd.toFixed(2)),
+      accountNetProfit: accNetProfit,
+      accountNetPct: accNetPct,
+      dailyDrawdown: Number(botState?.drawdownPercent ?? 0),
       floatingProfit: Number(botState?.floatingProfit ?? 0),
       openTradesCount: openRows.length,
       mt5Login: Number(botState?.mt5Login ?? 0),

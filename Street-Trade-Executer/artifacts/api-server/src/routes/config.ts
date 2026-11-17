@@ -8,6 +8,15 @@ import { broadcastDashboardNow } from "../lib/ws";
 
 const router = Router();
 
+function parseSessionHour(fallback: number, ...vals: unknown[]): number {
+  for (const v of vals) {
+    if (v === undefined || v === null || v === "") continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return ((n % 24) + 24) % 24;
+  }
+  return fallback;
+}
+
 router.get("/config", async (req, res) => {
   try {
     await ensureSessionGuardColumns();
@@ -67,11 +76,11 @@ router.post("/config", async (req, res) => {
     const maxLimit = bodyObj.maxDrawdownLimit !== undefined ? Number(bodyObj.maxDrawdownLimit) : (bodyObj.max_drawdown_limit !== undefined ? Number(bodyObj.max_drawdown_limit) : Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30));
 
     const sessEnabled = bodyObj.sessionGuardEnabled !== undefined ? Boolean(bodyObj.sessionGuardEnabled) : (bodyObj.session_guard_enabled !== undefined ? Boolean(bodyObj.session_guard_enabled) : curSess.sessionGuardEnabled);
-    const sessStart = bodyObj.sessionStartHour !== undefined ? Number(bodyObj.sessionStartHour) : (bodyObj.session_start_hour !== undefined ? Number(bodyObj.session_start_hour) : curSess.sessionStartHour);
-    const sessEnd = bodyObj.sessionEndHour !== undefined ? Number(bodyObj.sessionEndHour) : (bodyObj.session_end_hour !== undefined ? Number(bodyObj.session_end_hour) : curSess.sessionEndHour);
+    const sessStart = parseSessionHour(curSess.sessionStartHour, bodyObj.sessionStartHour, bodyObj.session_start_hour);
+    const sessEnd = parseSessionHour(curSess.sessionEndHour, bodyObj.sessionEndHour, bodyObj.session_end_hour);
     const sess2Enabled = bodyObj.session2Enabled !== undefined ? Boolean(bodyObj.session2Enabled) : (bodyObj.session2_enabled !== undefined ? Boolean(bodyObj.session2_enabled) : curSess.session2Enabled);
-    const sess2Start = bodyObj.session2StartHour !== undefined ? Number(bodyObj.session2StartHour) : (bodyObj.session2_start_hour !== undefined ? Number(bodyObj.session2_start_hour) : curSess.session2StartHour);
-    const sess2End = bodyObj.session2EndHour !== undefined ? Number(bodyObj.session2EndHour) : (bodyObj.session2_end_hour !== undefined ? Number(bodyObj.session2_end_hour) : curSess.session2EndHour);
+    const sess2Start = parseSessionHour(curSess.session2StartHour, bodyObj.session2StartHour, bodyObj.session2_start_hour);
+    const sess2End = parseSessionHour(curSess.session2EndHour, bodyObj.session2EndHour, bodyObj.session2_end_hour);
 
     const pairToSave = activePair || state?.activePair || "EURUSD/GBPUSD";
     let parts: string[] = ["EURUSD", "GBPUSD"];
@@ -212,11 +221,11 @@ router.post("/toggle-session-guard", async (req, res) => {
     const body = req.body || {};
 
     const enabled = body.enabled !== undefined ? Boolean(body.enabled) : (body.sessionGuardEnabled !== undefined ? Boolean(body.sessionGuardEnabled) : curSess.sessionGuardEnabled);
-    const startHour = body.start_hour !== undefined ? Number(body.start_hour) : (body.startHour !== undefined ? Number(body.startHour) : (body.sessionStartHour !== undefined ? Number(body.sessionStartHour) : curSess.sessionStartHour));
-    const endHour = body.end_hour !== undefined ? Number(body.end_hour) : (body.endHour !== undefined ? Number(body.endHour) : (body.sessionEndHour !== undefined ? Number(body.sessionEndHour) : curSess.sessionEndHour));
+    const startHour = parseSessionHour(curSess.sessionStartHour, body.start_hour, body.startHour, body.sessionStartHour);
+    const endHour = parseSessionHour(curSess.sessionEndHour, body.end_hour, body.endHour, body.sessionEndHour);
     const session2Enabled = body.session2_enabled !== undefined ? Boolean(body.session2_enabled) : (body.session2Enabled !== undefined ? Boolean(body.session2Enabled) : curSess.session2Enabled);
-    const session2StartHour = body.session2_start_hour !== undefined ? Number(body.session2_start_hour) : (body.session2StartHour !== undefined ? Number(body.session2StartHour) : curSess.session2StartHour);
-    const session2EndHour = body.session2_end_hour !== undefined ? Number(body.session2_end_hour) : (body.session2EndHour !== undefined ? Number(body.session2EndHour) : curSess.session2EndHour);
+    const session2StartHour = parseSessionHour(curSess.session2StartHour, body.session2_start_hour, body.session2StartHour);
+    const session2EndHour = parseSessionHour(curSess.session2EndHour, body.session2_end_hour, body.session2EndHour);
 
     await db.execute(
       sql`UPDATE bot_state
@@ -327,18 +336,48 @@ router.post("/mt5/switch", async (req, res) => {
     if (!login) {
       return res.status(400).json({ error: "Login number is required" });
     }
+    const targetLogin = Number(login);
+
+    // Immediately restore saved equity/initial_balance/drawdown for target account so UI never flashes 0
+    const [accStateRes, mt5AccRes, dailyRes] = await Promise.all([
+      db.execute(sql`SELECT initial_balance, max_equity_peak, overall_drawdown FROM account_states WHERE mt5_login = ${targetLogin} LIMIT 1`),
+      db.execute(sql`SELECT equity, balance FROM mt5_accounts WHERE login = ${targetLogin} LIMIT 1`),
+      db.execute(sql`SELECT start_equity, current_equity, max_drawdown_percent, trades_today FROM daily_metrics WHERE mt5_login = ${targetLogin} AND trading_date = (NOW() AT TIME ZONE 'Asia/Karachi')::date LIMIT 1`),
+    ]);
+
+    const accRow = ((accStateRes as any).rows || [])[0];
+    const mt5Row = ((mt5AccRes as any).rows || [])[0];
+    const dmRow = ((dailyRes as any).rows || [])[0];
+
+    const restoredEquity = mt5Row?.equity != null ? Number(mt5Row.equity) : (dmRow?.current_equity != null ? Number(dmRow.current_equity) : null);
+    const restoredInitial = accRow?.initial_balance != null ? Number(accRow.initial_balance) : (mt5Row?.balance != null ? Number(mt5Row.balance) : null);
+    const restoredPeak = accRow?.max_equity_peak != null ? Number(accRow.max_equity_peak) : restoredInitial;
+    const restoredOverallDd =
+      restoredInitial != null && restoredInitial > 0 && restoredEquity != null
+        ? Number(Math.max(0, ((restoredInitial - restoredEquity) / restoredInitial) * 100).toFixed(2))
+        : (accRow?.overall_drawdown != null ? Number(accRow.overall_drawdown) : null);
+    const restoredDailyDd = dmRow?.max_drawdown_percent != null ? Number(dmRow.max_drawdown_percent) : null;
+    const restoredTradesToday = dmRow?.trades_today != null ? Number(dmRow.trades_today) : null;
+
     await db.execute(sql`
       UPDATE bot_state
-      SET target_login = ${Number(login)},
-          mt5_login    = ${Number(login)},
-          updated_at   = NOW()
+      SET target_login     = ${targetLogin},
+          mt5_login        = ${targetLogin},
+          equity           = COALESCE(${restoredEquity != null ? restoredEquity.toFixed(2) : null}::numeric, equity),
+          initial_balance  = COALESCE(${restoredInitial != null ? restoredInitial.toFixed(2) : null}::numeric, initial_balance),
+          max_equity_peak  = COALESCE(${restoredPeak != null ? restoredPeak.toFixed(2) : null}::numeric, max_equity_peak),
+          overall_drawdown = COALESCE(${restoredOverallDd != null ? restoredOverallDd.toFixed(2) : null}::numeric, overall_drawdown),
+          drawdown_percent = COALESCE(${restoredDailyDd != null ? restoredDailyDd.toFixed(2) : null}::numeric, drawdown_percent),
+          trades_today     = COALESCE(${restoredTradesToday}::integer, trades_today),
+          updated_at       = NOW()
       WHERE id = (SELECT MIN(id) FROM bot_state);
     `);
     await db.execute(sql`
       UPDATE mt5_accounts
-      SET is_active = (login = ${Number(login)})
+      SET is_active = (login = ${targetLogin})
     `);
-    return res.json({ status: "success", targetLogin: Number(login), message: `Switch command queued for Account #${login}` });
+    void broadcastDashboardNow();
+    return res.json({ status: "success", targetLogin, message: `Switch command queued for Account #${login}` });
   } catch (err) {
     console.error("Failed to queue account switch:", err);
     return res.status(500).json({ error: "Failed to queue account switch" });

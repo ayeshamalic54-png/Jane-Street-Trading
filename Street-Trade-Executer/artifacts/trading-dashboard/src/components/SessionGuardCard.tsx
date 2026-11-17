@@ -28,9 +28,10 @@ const HALF_HOUR_OPTIONS: { value: number; label: string }[] = Array.from({ lengt
   const mins = value % 1 === 0.5 ? "30" : "00";
   const ampm = h24 < 12 ? "AM" : "PM";
   const h12 = h24 === 0 ? 12 : h24 > 12 ? h24 - 12 : h24;
+  const tag = h24 === 0 && mins === "00" ? " (Midnight)" : h24 === 12 && mins === "00" ? " (Noon)" : "";
   return {
     value,
-    label: `${String(h12).padStart(2, "0")}:${mins} ${ampm} PKT`,
+    label: `${String(h12).padStart(2, "0")}:${mins} ${ampm}${tag} PKT`,
   };
 });
 

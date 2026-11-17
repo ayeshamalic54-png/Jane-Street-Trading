@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { dailyMetricsTable, tradesTable, botStateTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -48,6 +48,16 @@ async function loadClosedSetupsAndState(daysParam: number) {
   ]);
 
   const botState = botRows[0];
+  const activeLogin = Number(botState?.mt5Login ?? 0);
+  let accStateRow: { initial_balance?: any; max_equity_peak?: any; overall_drawdown?: any } | null = null;
+  if (activeLogin > 0) {
+    try {
+      const accRes = await db.execute(
+        sql`SELECT initial_balance, max_equity_peak, overall_drawdown FROM account_states WHERE mt5_login = ${activeLogin} LIMIT 1`
+      );
+      accStateRow = ((accRes as any).rows || [])[0] ?? null;
+    } catch {}
+  }
   const cutoffStr = daysParam > 0 ? getPktCutoffDateStr(daysParam) : "1970-01-01";
 
   // Group multi-leg trades sharing the same signalId into one logical setup,
@@ -101,7 +111,7 @@ async function loadClosedSetupsAndState(daysParam: number) {
 
   const filteredSetups = setups.filter((s) => s.pktDate >= cutoffStr);
 
-  return { botState, setups: filteredSetups, openRows: allOpenRows, dmRows, cutoffStr };
+  return { botState, accStateRow, setups: filteredSetups, openRows: allOpenRows, dmRows, cutoffStr };
 }
 
 router.get("/metrics", async (req, res) => {
@@ -205,7 +215,7 @@ router.get("/metrics/summary", async (req, res) => {
     const rawDays = req.query.days !== undefined ? Number(req.query.days) : 30;
     const days = Number.isFinite(rawDays) && rawDays >= 0 ? Math.min(365, Math.floor(rawDays)) : 30;
 
-    const { botState, setups, openRows, dmRows, cutoffStr } = await loadClosedSetupsAndState(days);
+    const { botState, accStateRow, setups, openRows, dmRows, cutoffStr } = await loadClosedSetupsAndState(days);
 
     const profits = setups.map((s) => s.profit);
     const totalTrades = profits.length;
@@ -232,6 +242,16 @@ router.get("/metrics/summary", async (req, res) => {
       .filter((r) => String(r.tradingDate).slice(0, 10) >= cutoffStr)
       .reduce((max, r) => Math.max(max, Number(r.maxDrawdownPercent ?? 0)), 0);
 
+    const liveEqVal = Number(botState?.equity ?? 0);
+    const accInitialBal = Number(accStateRow?.initial_balance ?? botState?.initialBalance ?? 10000) || 10000;
+    const accMaxPeak = Number(accStateRow?.max_equity_peak ?? botState?.maxEquityPeak ?? accInitialBal) || accInitialBal;
+    const accNetProfit = Number((liveEqVal - accInitialBal).toFixed(2));
+    const accNetPct = accInitialBal > 0 ? Number(((accNetProfit / accInitialBal) * 100).toFixed(2)) : 0;
+    const accOverallDd =
+      accInitialBal > 0 && liveEqVal < accInitialBal
+        ? Number((((accInitialBal - liveEqVal) / accInitialBal) * 100).toFixed(2))
+        : Number(accStateRow?.overall_drawdown ?? botState?.overallDrawdown ?? 0);
+
     res.json({
       days,
       totalTrades,
@@ -244,8 +264,14 @@ router.get("/metrics/summary", async (req, res) => {
       worstTrade: profits.length > 0 ? Number(Math.min(...profits).toFixed(2)) : 0,
       profitFactor,
       maxDrawdown: Number(Math.max(realizedDdPct, dmMaxDd, Number(botState?.drawdownPercent ?? 0)).toFixed(2)),
-      // Live real-time snapshot fields
-      liveEquity: Number(botState?.equity ?? 0),
+      // Live real-time active MT5 account snapshot fields (preserved per mt5_login)
+      liveEquity: liveEqVal,
+      initialBalance: accInitialBal,
+      maxEquityPeak: accMaxPeak,
+      overallDrawdown: Number(accOverallDd.toFixed(2)),
+      accountNetProfit: accNetProfit,
+      accountNetPct: accNetPct,
+      dailyDrawdown: Number(botState?.drawdownPercent ?? 0),
       floatingProfit: Number(botState?.floatingProfit ?? 0),
       openTradesCount: openRows.length,
       mt5Login: Number(botState?.mt5Login ?? 0),
