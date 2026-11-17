@@ -101,6 +101,13 @@ def detect_market_structure(df):
         if key_support is not None and curr_close < key_support:
             return 'BEARISH'
         return 'BULLISH'
+    elif has_lh and has_hl:
+        # Inside contracting range (Lower High + Higher Low): only bias on confirmed close beyond recent swing
+        if recent_sh_levels and curr_close > recent_sh_levels[-1]:
+            return 'BULLISH'
+        if recent_sl_levels and curr_close < recent_sl_levels[-1]:
+            return 'BEARISH'
+        return 'NEUTRAL'
     elif has_hl and not has_ll:
         return 'BULLISH'
     elif has_lh and not has_hh:
@@ -158,6 +165,9 @@ def detect_liquidity_sweep(df_m5):
                 if (prior_peak - sl_val) < min_structural_depth:
                     continue
 
+                if i - 1 < 0 or closes[i - 1] < sl_val:
+                    continue  # Genuine sweep must originate from above swing low just prior to bar i
+
                 is_one_bar_sweep = (sl_val - lows[i]) >= min_penetration and closes[i] >= sl_val
                 is_two_bar_reclaim = (
                     (i + 1 < n - 1)
@@ -168,9 +178,11 @@ def detect_liquidity_sweep(df_m5):
                 if is_one_bar_sweep or is_two_bar_reclaim:
                     sweep_low = float(min(lows[i], lows[i + 1])) if is_two_bar_reclaim else float(lows[i])
                     sweep_end_idx = (i + 1) if is_two_bar_reclaim else i
+                    # Ensure adjacent prior candle didn't already dip lower than sweep_low (avoids late bounce mislabeling)
+                    prior_lower = any(lows[k] < sweep_low for k in range(max(sl_idx + 1, i - 3), i))
                     # Check confirmed closed bars after reclaim so a single forming tick doesn't erase active setup
                     subsequent_break = any(closes[k] < sweep_low for k in range(sweep_end_idx + 1, max(sweep_end_idx + 1, n - 1)))
-                    if not subsequent_break:
+                    if not prior_lower and not subsequent_break:
                         sell_sweep = (True, sweep_low, float(sl_val), i)
                         break
         if sell_sweep[0]:
@@ -184,6 +196,9 @@ def detect_liquidity_sweep(df_m5):
                 if (sh_val - prior_trough) < min_structural_depth:
                     continue
 
+                if i - 1 < 0 or closes[i - 1] > sh_val:
+                    continue  # Genuine sweep must originate from below swing high just prior to bar i
+
                 is_one_bar_sweep = (highs[i] - sh_val) >= min_penetration and closes[i] <= sh_val
                 is_two_bar_reclaim = (
                     (i + 1 < n - 1)
@@ -194,8 +209,9 @@ def detect_liquidity_sweep(df_m5):
                 if is_one_bar_sweep or is_two_bar_reclaim:
                     sweep_high = float(max(highs[i], highs[i + 1])) if is_two_bar_reclaim else float(highs[i])
                     sweep_end_idx = (i + 1) if is_two_bar_reclaim else i
+                    prior_higher = any(highs[k] > sweep_high for k in range(max(sh_idx + 1, i - 3), i))
                     subsequent_break = any(closes[k] > sweep_high for k in range(sweep_end_idx + 1, max(sweep_end_idx + 1, n - 1)))
-                    if not subsequent_break:
+                    if not prior_higher and not subsequent_break:
                         buy_sweep = (True, sweep_high, float(sh_val), i)
                         break
         if buy_sweep[0]:

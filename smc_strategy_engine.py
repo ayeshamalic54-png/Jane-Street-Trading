@@ -94,21 +94,27 @@ def evaluate_smc_strategy_signal(
         bear_fvg_list, is_bullish=False, max_wick_buf=wick_buf, prev_row=prev_closed_row, closed_idx=closed_idx
     )
 
-    # S6 & S7: Confirmed Closed Rejection Candle (Restored!)
-    bull_lower_wick = (closed_close - closed_low) if closed_close >= closed_open else (closed_open - closed_low)
+    # S6 & S7: Confirmed Closed Rejection Candle (True Wick Calculation — Never Count Opposite Body as Wick!)
+    bull_lower_wick = min(closed_open, closed_close) - closed_low
     bull_candle_range = max(0.01 if is_metals else 0.0001, closed_high - closed_low)
+    bull_is_green = closed_close > closed_open
+    bull_is_pinbar = (bull_lower_wick / bull_candle_range >= 0.45) and ((closed_open - closed_close) <= 0.25 * bull_candle_range)
     p5_buy_rejection = (
         in_bull_fvg
         and matched_bull_fvg is not None
-        and ((closed_close > closed_open) or (bull_lower_wick / bull_candle_range >= 0.35 and closed_close >= matched_bull_fvg[0]))
+        and closed_close >= matched_bull_fvg[0]
+        and (bull_is_green or bull_is_pinbar)
     )
 
-    bear_upper_wick = (closed_high - closed_close) if closed_close <= closed_open else (closed_high - closed_open)
+    bear_upper_wick = closed_high - max(closed_open, closed_close)
     bear_candle_range = max(0.01 if is_metals else 0.0001, closed_high - closed_low)
+    bear_is_red = closed_close < closed_open
+    bear_is_pinbar = (bear_upper_wick / bear_candle_range >= 0.45) and ((closed_close - closed_open) <= 0.25 * bear_candle_range)
     p5_sell_rejection = (
         in_bear_fvg
         and matched_bear_fvg is not None
-        and ((closed_close < closed_open) or (bear_upper_wick / bear_candle_range >= 0.35 and closed_close <= matched_bear_fvg[1]))
+        and closed_close <= matched_bear_fvg[1]
+        and (bear_is_red or bear_is_pinbar)
     )
 
     # Freshness & Structure Invalidation Guard (18 M5 bars = 90 mins window)
