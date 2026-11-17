@@ -110,8 +110,6 @@ export const dailyMetricsTable = pgTable("daily_metrics", {
   updatedAt: timestamp("updated_at").defaultNow(),
   botId: integer("bot_id").default(1),
   mt5Login: bigint("mt5_login", { mode: "number" }).default(0),
-  isBotRunning: boolean("is_bot_running").default(true),
-  targetLogin: bigint("target_login", { mode: "number" }),
 });
 
 export const tradeCommandsTable = pgTable("trade_commands", {

@@ -44413,9 +44413,7 @@ var dailyMetricsTable = pgTable("daily_metrics", {
   tradesToday: integer("trades_today").default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
   botId: integer("bot_id").default(1),
-  mt5Login: bigint("mt5_login", { mode: "number" }).default(0),
-  isBotRunning: boolean("is_bot_running").default(true),
-  targetLogin: bigint("target_login", { mode: "number" })
+  mt5Login: bigint("mt5_login", { mode: "number" }).default(0)
 });
 var tradeCommandsTable = pgTable("trade_commands", {
   id: serial("id").primaryKey(),
@@ -49450,51 +49448,152 @@ var health_default = router4;
 // src/routes/metrics.ts
 var import_express5 = __toESM(require_express2(), 1);
 var router5 = (0, import_express5.Router)();
+var pktDateFmt = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Karachi",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit"
+});
+function toPktDateStr(d) {
+  return pktDateFmt.format(d);
+}
+function getPktCutoffDateStr(days) {
+  const nowPktStr = toPktDateStr(/* @__PURE__ */ new Date());
+  const [y, m, day] = nowPktStr.split("-").map(Number);
+  const utcMid = new Date(Date.UTC(y, m - 1, day));
+  utcMid.setUTCDate(utcMid.getUTCDate() - Math.max(0, days - 1));
+  return utcMid.toISOString().slice(0, 10);
+}
+async function loadClosedSetupsAndState(daysParam) {
+  const [botRows, allClosedRows, allOpenRows, dmRows] = await Promise.all([
+    db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
+    db.select().from(tradesTable).where(eq(tradesTable.status, "CLOSED")).orderBy(desc(tradesTable.closeTime)),
+    db.select().from(tradesTable).where(eq(tradesTable.status, "OPEN")),
+    db.select().from(dailyMetricsTable).orderBy(desc(dailyMetricsTable.tradingDate))
+  ]);
+  const botState = botRows[0];
+  const cutoffStr = daysParam > 0 ? getPktCutoffDateStr(daysParam) : "1970-01-01";
+  const signalGroups = /* @__PURE__ */ new Map();
+  const setups = [];
+  for (const t of allClosedRows) {
+    if (!t.closeTime || t.profit == null) continue;
+    if (t.signalId != null) {
+      const list = signalGroups.get(t.signalId) ?? [];
+      list.push(t);
+      signalGroups.set(t.signalId, list);
+    } else {
+      const pktDate = toPktDateStr(t.closeTime);
+      setups.push({
+        key: String(t.ticket),
+        symbol: t.symbol,
+        orderType: t.orderType,
+        lots: Number(t.lots ?? 0),
+        profit: Number(t.profit),
+        closeTime: t.closeTime,
+        pktDate,
+        comment: t.comment ?? ""
+      });
+    }
+  }
+  for (const [sigId, legs] of signalGroups.entries()) {
+    const validLegs = legs.filter((l) => l.closeTime != null && l.profit != null);
+    if (!validLegs.length) continue;
+    validLegs.sort((a, b) => a.closeTime.getTime() - b.closeTime.getTime());
+    const lastLeg = validLegs[validLegs.length - 1];
+    const firstLeg = validLegs[0];
+    const netProfit = validLegs.reduce((acc, l) => acc + Number(l.profit ?? 0), 0);
+    const totalLots = validLegs.reduce((acc, l) => acc + Number(l.lots ?? 0), 0);
+    setups.push({
+      key: `sig-${sigId}`,
+      symbol: firstLeg.symbol,
+      orderType: firstLeg.orderType,
+      lots: Number(totalLots.toFixed(2)),
+      profit: Number(netProfit.toFixed(2)),
+      closeTime: lastLeg.closeTime,
+      pktDate: toPktDateStr(lastLeg.closeTime),
+      comment: firstLeg.comment ?? ""
+    });
+  }
+  setups.sort((a, b) => b.closeTime.getTime() - a.closeTime.getTime());
+  const filteredSetups = setups.filter((s) => s.pktDate >= cutoffStr);
+  return { botState, setups: filteredSetups, openRows: allOpenRows, dmRows, cutoffStr };
+}
 router5.get("/metrics", async (req, res) => {
   try {
-    const parsed = GetMetricsQueryParams.safeParse(req.query);
-    const days = parsed.success ? parsed.data.days ?? 7 : 7;
-    const cutoff = /* @__PURE__ */ new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = cutoff.toISOString().split("T")[0];
-    const botState = await db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1);
-    const activeLogin = botState[0]?.mt5Login ?? 0;
-    const rows = await db.select().from(dailyMetricsTable).where(
-      and(
-        gte(dailyMetricsTable.tradingDate, cutoffStr),
-        eq(dailyMetricsTable.mt5Login, activeLogin)
-      )
-    ).orderBy(desc(dailyMetricsTable.tradingDate)).limit(days);
-    const trades = await db.select().from(tradesTable).where(gte(tradesTable.closeTime, cutoff));
-    const profitByDate = {};
-    const tradesCountByDate = {};
-    for (const t of trades) {
-      if (t.closeTime && t.profit != null) {
-        const offset = t.closeTime.getTimezoneOffset();
-        const localDate = new Date(t.closeTime.getTime() - offset * 60 * 1e3);
-        const dateStr = localDate.toISOString().split("T")[0];
-        profitByDate[dateStr] = (profitByDate[dateStr] ?? 0) + Number(t.profit);
-        const c = t.comment ?? "";
-        if (c.includes("TP1") || c.includes("Manual") || c.includes("MANUAL")) {
-          tradesCountByDate[dateStr] = (tradesCountByDate[dateStr] ?? 0) + 1;
-        }
+    const rawDays = req.query.days !== void 0 ? Number(req.query.days) : 14;
+    const days = Number.isFinite(rawDays) && rawDays >= 0 ? Math.min(365, Math.floor(rawDays)) : 14;
+    const { botState, setups, dmRows, cutoffStr } = await loadClosedSetupsAndState(days);
+    const todayPktStr = toPktDateStr(/* @__PURE__ */ new Date());
+    const activeLogin = Number(botState?.mt5Login ?? 0);
+    const liveEquity = Number(botState?.equity ?? 0);
+    const baseInitialEq = Number(botState?.initialBalance ?? 1e4);
+    const setupsByDate = /* @__PURE__ */ new Map();
+    for (const s of setups) {
+      const list = setupsByDate.get(s.pktDate) ?? [];
+      list.push(s);
+      setupsByDate.set(s.pktDate, list);
+    }
+    const dmByDate = /* @__PURE__ */ new Map();
+    for (const m of dmRows) {
+      const dStr = String(m.tradingDate).slice(0, 10);
+      if (dStr < cutoffStr) continue;
+      const existing = dmByDate.get(dStr);
+      const isMatch = activeLogin > 0 && Number(m.mt5Login ?? 0) === activeLogin;
+      const dd = Number(m.maxDrawdownPercent ?? 0);
+      if (!existing) {
+        dmByDate.set(dStr, {
+          startEquity: Number(m.startEquity ?? baseInitialEq),
+          currentEquity: Number(m.currentEquity ?? liveEquity),
+          maxDrawdownPercent: dd
+        });
+      } else {
+        dmByDate.set(dStr, {
+          startEquity: isMatch ? Number(m.startEquity ?? existing.startEquity) : existing.startEquity,
+          currentEquity: isMatch ? Number(m.currentEquity ?? existing.currentEquity) : existing.currentEquity,
+          maxDrawdownPercent: Math.max(existing.maxDrawdownPercent, dd)
+        });
       }
     }
-    res.json(
-      rows.map((m) => {
-        const dateStr = m.tradingDate;
-        const dynamicPnl = profitByDate[dateStr] ?? 0;
-        const dynamicTrades = tradesCountByDate[dateStr] ?? m.tradesToday ?? 0;
-        return {
-          tradingDate: m.tradingDate,
-          startEquity: Number(m.startEquity),
-          currentEquity: Number(m.currentEquity),
-          maxDrawdownPercent: Number(m.maxDrawdownPercent ?? 0),
-          tradesToday: dynamicTrades,
-          pnl: dynamicPnl
-        };
-      })
-    );
+    const activeDates = new Set(setupsByDate.keys());
+    if (days === 0 || todayPktStr >= cutoffStr) {
+      if (setupsByDate.has(todayPktStr) || dmByDate.has(todayPktStr)) {
+        activeDates.add(todayPktStr);
+      }
+    }
+    const sortedDates = Array.from(activeDates).sort((a, b) => a < b ? 1 : a > b ? -1 : 0);
+    const result = sortedDates.map((dateStr) => {
+      const daySetups = (setupsByDate.get(dateStr) ?? []).slice().sort(
+        (a, b) => a.closeTime.getTime() - b.closeTime.getTime()
+      );
+      const dayPnl = Number(daySetups.reduce((acc, s) => acc + s.profit, 0).toFixed(2));
+      const wins = daySetups.filter((s) => s.profit > 0).length;
+      const losses = daySetups.filter((s) => s.profit < 0).length;
+      const dm = dmByDate.get(dateStr);
+      const startEq = dm?.startEquity ?? (liveEquity > 0 ? Number((liveEquity - dayPnl).toFixed(2)) : baseInitialEq);
+      const currEq = dateStr === todayPktStr && liveEquity > 0 ? liveEquity : dm?.currentEquity ?? Number((startEq + dayPnl).toFixed(2));
+      let cum = 0;
+      let peak = 0;
+      let maxLossFromPeak = 0;
+      for (const s of daySetups) {
+        cum += s.profit;
+        if (cum > peak) peak = cum;
+        const ddUsd = peak - cum;
+        if (ddUsd > maxLossFromPeak) maxLossFromPeak = ddUsd;
+      }
+      const computedDdPct = startEq > 0 ? Number((maxLossFromPeak / startEq * 100).toFixed(2)) : 0;
+      const maxDd = Math.max(dm?.maxDrawdownPercent ?? 0, computedDdPct);
+      return {
+        tradingDate: dateStr,
+        startEquity: Number(startEq.toFixed(2)),
+        currentEquity: Number(currEq.toFixed(2)),
+        maxDrawdownPercent: Number(maxDd.toFixed(2)),
+        tradesToday: daySetups.length,
+        wins,
+        losses,
+        pnl: dayPnl
+      };
+    });
+    res.json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to get metrics");
     res.status(500).json({ error: "Failed to get metrics" });
@@ -49502,48 +49601,57 @@ router5.get("/metrics", async (req, res) => {
 });
 router5.get("/metrics/summary", async (req, res) => {
   try {
-    const rows = await db.select().from(tradesTable);
-    const closed = rows.filter((t) => t.status === "CLOSED" && t.profit != null);
-    const groups = {};
-    const individualTrades = [];
-    for (const t of closed) {
-      if (t.signalId != null) {
-        const key = String(t.signalId);
-        if (!groups[key]) {
-          groups[key] = [];
-        }
-        groups[key].push(t);
-      } else {
-        individualTrades.push(t);
-      }
+    const rawDays = req.query.days !== void 0 ? Number(req.query.days) : 30;
+    const days = Number.isFinite(rawDays) && rawDays >= 0 ? Math.min(365, Math.floor(rawDays)) : 30;
+    const { botState, setups, openRows, dmRows, cutoffStr } = await loadClosedSetupsAndState(days);
+    const profits = setups.map((s) => s.profit);
+    const totalTrades = profits.length;
+    const winning = profits.filter((p) => p > 0);
+    const losing = profits.filter((p) => p < 0);
+    const totalPnl = Number(profits.reduce((a, b) => a + b, 0).toFixed(2));
+    const grossWin = winning.reduce((a, b) => a + b, 0);
+    const grossLoss = Math.abs(losing.reduce((a, b) => a + b, 0));
+    const profitFactor = grossLoss > 0 ? Number((grossWin / grossLoss).toFixed(2)) : grossWin > 0 ? 9.99 : 0;
+    const baseEquity = Number(botState?.initialBalance ?? 1e4) || 1e4;
+    const chronoSetups = [...setups].sort((a, b) => a.closeTime.getTime() - b.closeTime.getTime());
+    let cum = 0;
+    let peak = 0;
+    let maxDropUsd = 0;
+    for (const s of chronoSetups) {
+      cum += s.profit;
+      if (cum > peak) peak = cum;
+      if (peak - cum > maxDropUsd) maxDropUsd = peak - cum;
     }
-    const netProfits = [];
-    for (const sigId in groups) {
-      const sum = groups[sigId].reduce((acc, t) => acc + Number(t.profit ?? 0), 0);
-      netProfits.push(sum);
-    }
-    for (const t of individualTrades) {
-      netProfits.push(Number(t.profit ?? 0));
-    }
-    const totalTrades = netProfits.length;
-    const winning = netProfits.filter((p) => p > 0);
-    const losing = netProfits.filter((p) => p < 0);
-    const totalPnl = netProfits.reduce((a, b) => a + b, 0);
-    const ddRows = await db.select().from(dailyMetricsTable);
-    const maxDrawdown = ddRows.reduce(
-      (max, r) => Math.max(max, Number(r.maxDrawdownPercent ?? 0)),
-      0
-    );
+    const realizedDdPct = baseEquity > 0 ? Number((maxDropUsd / baseEquity * 100).toFixed(2)) : 0;
+    const dmMaxDd = dmRows.filter((r) => String(r.tradingDate).slice(0, 10) >= cutoffStr).reduce((max, r) => Math.max(max, Number(r.maxDrawdownPercent ?? 0)), 0);
     res.json({
+      days,
       totalTrades,
       winningTrades: winning.length,
       losingTrades: losing.length,
-      winRate: totalTrades > 0 ? winning.length / totalTrades * 100 : 0,
+      winRate: totalTrades > 0 ? Number((winning.length / totalTrades * 100).toFixed(2)) : 0,
       totalPnl,
-      avgPnl: totalTrades > 0 ? totalPnl / totalTrades : 0,
-      bestTrade: netProfits.length > 0 ? Math.max(...netProfits) : 0,
-      worstTrade: netProfits.length > 0 ? Math.min(...netProfits) : 0,
-      maxDrawdown
+      avgPnl: totalTrades > 0 ? Number((totalPnl / totalTrades).toFixed(2)) : 0,
+      bestTrade: profits.length > 0 ? Number(Math.max(...profits).toFixed(2)) : 0,
+      worstTrade: profits.length > 0 ? Number(Math.min(...profits).toFixed(2)) : 0,
+      profitFactor,
+      maxDrawdown: Number(Math.max(realizedDdPct, dmMaxDd, Number(botState?.drawdownPercent ?? 0)).toFixed(2)),
+      // Live real-time snapshot fields
+      liveEquity: Number(botState?.equity ?? 0),
+      floatingProfit: Number(botState?.floatingProfit ?? 0),
+      openTradesCount: openRows.length,
+      mt5Login: Number(botState?.mt5Login ?? 0),
+      systemStatus: botState?.systemStatus ?? "BOT OFFLINE",
+      lastHeartbeat: botState?.lastHeartbeat ? botState.lastHeartbeat.toISOString() : null,
+      recentTrades: setups.slice(0, 15).map((s) => ({
+        symbol: s.symbol,
+        orderType: s.orderType,
+        lots: s.lots,
+        profit: s.profit,
+        closeTime: s.closeTime.toISOString(),
+        pktDate: s.pktDate,
+        comment: s.comment
+      }))
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get metrics summary");
