@@ -59,6 +59,7 @@ export const botStateTable = pgTable("bot_state", {
   session2Enabled: boolean("session2_enabled").default(true),
   session2StartHour: doublePrecision("session2_start_hour").default(18.0),
   session2EndHour: doublePrecision("session2_end_hour").default(22.0),
+  metricsResetAt: timestamp("metrics_reset_at"),
 });
 
 export const tradesTable = pgTable("trades", {
@@ -76,6 +77,7 @@ export const tradesTable = pgTable("trades", {
   signalId: integer("signal_id"),
   sl: numeric("sl", { precision: 15, scale: 5 }),
   tp: numeric("tp", { precision: 15, scale: 5 }),
+  mt5Login: bigint("mt5_login", { mode: "number" }),
 });
 
 export const signalsTable = pgTable("signals", {

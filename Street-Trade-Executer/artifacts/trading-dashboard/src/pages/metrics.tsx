@@ -2,12 +2,25 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine } from "recharts";
-import { Activity, RefreshCw } from "lucide-react";
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
+import { Activity, RefreshCw, RotateCcw } from "lucide-react";
 import { cn, formatPktDateTime } from "@/lib/utils";
 import { useLiveDashboard } from "@/hooks/use-ws";
+import { useToast } from "@/hooks/use-toast";
 
 interface DailyMetricRow {
   tradingDate: string;
@@ -18,6 +31,15 @@ interface DailyMetricRow {
   wins?: number;
   losses?: number;
   pnl: number;
+}
+
+interface EquityCurvePoint {
+  label: string;
+  pktTime: string;
+  tradePnl: number;
+  cumPnl: number;
+  symbol: string;
+  orderType: string;
 }
 
 interface RecentClosedTrade {
@@ -54,6 +76,8 @@ interface LiveMetricsSummary {
   mt5Login: number;
   systemStatus: string;
   lastHeartbeat: string | null;
+  metricsResetAt?: string | null;
+  equityCurve?: EquityCurvePoint[];
   recentTrades: RecentClosedTrade[];
 }
 
@@ -71,30 +95,56 @@ function formatFullPktDate(dateStr: string): string {
   if (parts.length !== 3) return dateStr;
   const [y, m, d] = parts.map(Number);
   const dt = new Date(Date.UTC(y!, m! - 1, d!));
-  return dt.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }) + " (PKT)";
+  return (
+    dt.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    }) + " (PKT)"
+  );
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CurveTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const pt = payload[0]?.payload as EquityCurvePoint | undefined;
+    if (!pt) return null;
+    const isPos = pt.cumPnl >= 0;
+    const isTradePos = pt.tradePnl >= 0;
+    return (
+      <div className="bg-background/95 backdrop-blur-md border border-border/80 p-3 rounded-lg shadow-2xl font-mono text-xs space-y-1">
+        <p className="text-muted-foreground">
+          {pt.label} {pt.symbol !== "BASELINE" ? `· ${pt.symbol} (${pt.orderType})` : ""}
+        </p>
+        {pt.pktTime && <p className="text-[10px] text-zinc-400">{pt.pktTime} PKT</p>}
+        <p className={cn("font-bold text-sm", isPos ? "text-emerald-400" : "text-rose-400")}>
+          Cumulative P&amp;L: {isPos ? "+" : ""}{formatMoney(pt.cumPnl)}
+        </p>
+        {pt.symbol !== "BASELINE" && (
+          <p className={cn("text-[11px]", isTradePos ? "text-emerald-400" : "text-rose-400")}>
+            Trade P&amp;L: {isTradePos ? "+" : ""}{formatMoney(pt.tradePnl)}
+          </p>
+        )}
+      </div>
+    );
+  }
+  return null;
+};
+
+const BarTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     const row = payload[0]?.payload as DailyMetricRow | undefined;
-    const pnl = Number(payload[0]?.value ?? 0);
-    const isPos = pnl >= 0;
+    if (!row) return null;
+    const isPos = row.pnl >= 0;
     return (
       <div className="bg-background/95 backdrop-blur-md border border-border/80 p-3 rounded-lg shadow-2xl font-mono text-xs space-y-1">
         <p className="text-muted-foreground">{formatFullPktDate(String(label))}</p>
         <p className={cn("font-bold text-sm", isPos ? "text-emerald-400" : "text-rose-400")}>
-          Realized P&amp;L: {isPos ? "+" : ""}{formatMoney(pnl)}
+          Realized P&amp;L: {isPos ? "+" : ""}{formatMoney(row.pnl)}
         </p>
-        {row && (
-          <p className="text-[11px] text-zinc-400">
-            Trades: {row.tradesToday} ({row.wins ?? 0}W / {row.losses ?? 0}L) · DD: {row.maxDrawdownPercent.toFixed(2)}%
-          </p>
-        )}
+        <p className="text-[11px] text-zinc-400">
+          Trades: {row.tradesToday} ({row.wins ?? 0}W / {row.losses ?? 0}L) · DD: {row.maxDrawdownPercent.toFixed(2)}%
+        </p>
       </div>
     );
   }
@@ -110,8 +160,12 @@ const PERIOD_OPTIONS = [
 
 export default function Metrics() {
   const [days, setDays] = useState<number>(30);
+  const [chartView, setChartView] = useState<"curve" | "bars">("curve");
+  const [isResetting, setIsResetting] = useState(false);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { data: wsData, wsConnected } = useLiveDashboard();
+  const isReadOnly = localStorage.getItem("wasee_role")?.toLowerCase() === "user";
 
   const { data: metrics, isLoading: loadingMetrics, isError: errorMetrics, refetch: refetchMetrics } = useQuery<DailyMetricRow[]>({
     queryKey: ["live-metrics", days],
@@ -133,14 +187,41 @@ export default function Metrics() {
     refetchInterval: 2500,
   });
 
-  // Trigger instant refresh whenever live WebSocket reports trade count / equity / account switch change
+  // Refresh immediately when MT5 account switches or trades open/close on WebSocket
+  const firstTradeTicket = wsData?.recentTrades?.[0]?.ticket;
+  const firstTradeStatus = wsData?.recentTrades?.[0]?.status;
   useEffect(() => {
     if (!wsData) return;
     void queryClient.invalidateQueries({ queryKey: ["live-metrics"] });
     void queryClient.invalidateQueries({ queryKey: ["live-metrics-summary"] });
-  }, [wsData?.mt5Login, wsData?.tradesToday, wsData?.activePositions?.length, wsData?.recentTrades?.length, wsData?.equity, wsData?.drawdownPercent, wsData?.overallDrawdown, queryClient]);
+  }, [wsData?.mt5Login, wsData?.tradesToday, wsData?.activePositions?.length, firstTradeTicket, firstTradeStatus, queryClient]);
 
-  const chartData = metrics ? [...metrics].reverse() : [];
+  const handleResetMetrics = async () => {
+    if (isReadOnly || isResetting) return;
+    if (!window.confirm("Clear old Performance Metrics history and start fresh from the next trade?")) return;
+    setIsResetting(true);
+    try {
+      const res = await fetch("/api/metrics/reset", { method: "POST" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["live-metrics"] }),
+        queryClient.invalidateQueries({ queryKey: ["live-metrics-summary"] }),
+      ]);
+      toast({
+        title: "Metrics Blanked Cleanly",
+        description: "Starting fresh — all stats & P&L Curve will dynamically track from the next executed trade.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "Failed to reset metrics",
+        description: e?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const liveEq = wsData?.equity ?? summary?.liveEquity ?? 0;
   const liveInitial = wsData?.initialBalance ?? summary?.initialBalance ?? 10000;
   const liveAccountNetProfit = liveInitial > 0 ? Number((liveEq - liveInitial).toFixed(2)) : (summary?.accountNetProfit ?? 0);
@@ -150,14 +231,30 @@ export default function Metrics() {
   const liveFloat = wsData?.floatingProfit ?? summary?.floatingProfit ?? 0;
   const mt5Login = wsData?.mt5Login ?? summary?.mt5Login ?? 0;
 
+  const rawCurve = summary?.equityCurve ?? [];
+  const hasRealTrades = rawCurve.length > 0;
+  const curveData: EquityCurvePoint[] = hasRealTrades
+    ? rawCurve
+    : [
+        { label: "Baseline", pktTime: "", tradePnl: 0, cumPnl: 0, symbol: "BASELINE", orderType: "BASE" },
+        { label: "Next Trade", pktTime: "", tradePnl: 0, cumPnl: 0, symbol: "BASELINE", orderType: "BASE" },
+      ];
+  const curveStroke = (summary?.totalPnl ?? 0) >= 0 ? "#10B981" : "#F43F5E";
+
+  const barData = (metrics ? [...metrics].reverse() : []).map((d) => ({
+    ...d,
+    winPnl: d.pnl >= 0 ? d.pnl : 0,
+    lossPnl: d.pnl < 0 ? d.pnl : 0,
+  }));
+
   return (
     <div className="flex flex-col h-full overflow-auto bg-background p-3 sm:p-6 space-y-4 sm:space-y-6 w-full max-w-[1600px] mx-auto">
-      {/* Header + Period Switch + Live Sync Status */}
+      {/* Header + Period Switch + Reset + Live Sync Status */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div className="space-y-1">
           <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Performance Metrics</h2>
           <p className="text-xs sm:text-sm text-muted-foreground font-sans">
-            Real-time synchronized P&amp;L, drawdown, and win rate from executed MT5 trades (PKT Timezone)
+            Real-time synchronized P&amp;L curve, drawdown, and win rate from executed MT5 trades (PKT Timezone)
           </p>
         </div>
 
@@ -172,11 +269,17 @@ export default function Metrics() {
             )}
           >
             <Activity className="h-3 w-3 animate-pulse" />
-            {wsConnected ? "WS REAL-TIME SYNC" : "LIVE POLLING (2.5s)"}
-            {mt5Login > 0 && ` · #${mt5Login}`}
+            {wsConnected ? "LIVE WS + 2.5s SYNC" : "2.5s LIVE POLL"}
+            {mt5Login > 0 ? ` · #${mt5Login}` : ""}
           </Badge>
 
-          <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded p-0.5">
+          {summary?.metricsResetAt && (
+            <Badge variant="outline" className="font-mono text-[10px] px-2 py-1 border-zinc-700 text-zinc-400">
+              Clean From: {formatPktDateTime(summary.metricsResetAt).replace(/^[^,]+,\s*/, "")}
+            </Badge>
+          )}
+
+          <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-md p-0.5">
             {PERIOD_OPTIONS.map((opt) => (
               <button
                 key={opt.days}
@@ -193,6 +296,21 @@ export default function Metrics() {
               </button>
             ))}
           </div>
+
+          {!isReadOnly && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isResetting}
+              onClick={handleResetMetrics}
+              className="h-7 px-2.5 font-mono text-[11px] border-rose-500/30 text-rose-300 hover:bg-rose-500/15"
+              title="Blank historical metrics and track fresh from the next trade"
+            >
+              <RotateCcw className="h-3 w-3 mr-1" />
+              Reset / Blank
+            </Button>
+          )}
 
           <button
             type="button"
@@ -288,7 +406,7 @@ export default function Metrics() {
             <CardContent className="p-3 sm:p-4 space-y-1">
               <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-mono">Best / Worst</div>
               <div className="text-sm sm:text-base font-mono font-bold text-emerald-400 truncate">
-                +{formatMoney(summary.bestTrade)}{" "}
+                {summary.bestTrade > 0 ? "+" : ""}{formatMoney(summary.bestTrade)}{" "}
                 <span className="text-rose-400 text-xs">/ {formatMoney(summary.worstTrade)}</span>
               </div>
             </CardContent>
@@ -307,70 +425,122 @@ export default function Metrics() {
         </div>
       )}
 
-      {/* Daily P&L Chart + Recent Active Trading Days Table */}
+      {/* Realized P&L Curve / Daily Bars + Recent Active Trading Days Table */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <Card className="lg:col-span-2 bg-card/30 border-border/80 backdrop-blur-sm shadow-lg">
-          <CardHeader className="p-4 sm:p-6 pb-2">
-            <CardTitle className="text-xs font-semibold tracking-wider font-mono uppercase text-muted-foreground">
-              Daily P&amp;L History (Real Closed Trades · PKT)
-            </CardTitle>
+          <CardHeader className="p-4 sm:p-6 pb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <CardTitle className="text-xs font-semibold tracking-wider font-mono uppercase text-muted-foreground">
+                {chartView === "curve"
+                  ? "Realized P&L Curve (Live Closed Trades · PKT)"
+                  : "Daily P&L History (Real Closed Trades · PKT)"}
+              </CardTitle>
+              <CardDescription className="text-[11px]">
+                {hasRealTrades
+                  ? `Showing ${summary?.totalTrades ?? 0} real closed setup(s) dynamically from MT5 DB`
+                  : "Clean baseline active ($0.00) — curve & metrics update automatically on next trade"}
+              </CardDescription>
+            </div>
+            <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-md p-0.5 self-start">
+              <button
+                type="button"
+                onClick={() => setChartView("curve")}
+                className={cn(
+                  "px-2.5 py-1 rounded-sm font-mono text-[10px] font-bold transition-colors",
+                  chartView === "curve" ? "bg-emerald-600 text-white" : "text-zinc-400 hover:text-foreground"
+                )}
+              >
+                P&amp;L Curve
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartView("bars")}
+                className={cn(
+                  "px-2.5 py-1 rounded-sm font-mono text-[10px] font-bold transition-colors",
+                  chartView === "bars" ? "bg-sky-600 text-white" : "text-zinc-400 hover:text-foreground"
+                )}
+              >
+                Daily Bars
+              </button>
+            </div>
           </CardHeader>
           <CardContent className="p-3 sm:p-6 pt-0">
-            {errorMetrics ? (
+            {errorMetrics || errorSummary ? (
               <div className="h-[280px] flex items-center justify-center text-xs font-mono text-rose-400">
-                Failed to load Daily P&amp;L History.
+                Failed to load P&amp;L chart data.
               </div>
-            ) : loadingMetrics || !metrics ? (
+            ) : loadingMetrics || loadingSummary ? (
               <Skeleton className="h-[280px] w-full" />
-            ) : chartData.length === 0 ? (
-              <div className="h-[280px] flex items-center justify-center text-xs font-mono text-muted-foreground">
-                No closed trades recorded in selected period ({days === 0 ? "ALL" : `${days}D`}).
-              </div>
-            ) : (
-              <div className="h-[280px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#10B981" stopOpacity={0.85} />
-                        <stop offset="100%" stopColor="#059669" stopOpacity={0.25} />
-                      </linearGradient>
-                      <linearGradient id="colorLoss" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#F43F5E" stopOpacity={0.85} />
-                        <stop offset="100%" stopColor="#E11D48" stopOpacity={0.25} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} vertical={false} />
+            ) : chartView === "curve" ? (
+              <div className="w-full" style={{ height: 280 }}>
+                <ResponsiveContainer width="100%" height={280}>
+                  <AreaChart data={curveData} margin={{ top: 14, right: 16, left: -8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
                     <XAxis
-                      dataKey="tradingDate"
-                      tickFormatter={formatShortPktDate}
-                      stroke="hsl(var(--muted-foreground))"
+                      dataKey="label"
+                      stroke="#71717a"
                       fontSize={11}
                       fontFamily="monospace"
                       tickLine={false}
                       axisLine={false}
-                      dy={10}
+                      dy={8}
                     />
                     <YAxis
-                      stroke="hsl(var(--muted-foreground))"
+                      stroke="#71717a"
+                      fontSize={11}
+                      fontFamily="monospace"
+                      tickLine={false}
+                      axisLine={false}
+                      domain={hasRealTrades ? ["auto", "auto"] : [-50, 50]}
+                      tickFormatter={(val) => `$${val}`}
+                    />
+                    <RechartsTooltip content={<CurveTooltip />} />
+                    <ReferenceLine y={0} stroke="#52525b" strokeDasharray="3 3" />
+                    <Area
+                      type="monotone"
+                      dataKey="cumPnl"
+                      stroke={hasRealTrades ? curveStroke : "#38bdf8"}
+                      strokeWidth={2.5}
+                      fill={hasRealTrades ? curveStroke : "#38bdf8"}
+                      fillOpacity={0.16}
+                      dot={hasRealTrades ? { r: 3.5, fill: curveStroke } : { r: 3, fill: "#38bdf8" }}
+                      activeDot={{ r: 5 }}
+                      isAnimationActive={false}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            ) : barData.length === 0 ? (
+              <div className="h-[280px] flex items-center justify-center text-xs font-mono text-muted-foreground">
+                No closed trades since clean reset — waiting for next executed trade.
+              </div>
+            ) : (
+              <div className="w-full" style={{ height: 280 }}>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={barData} margin={{ top: 14, right: 16, left: -8, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                    <XAxis
+                      dataKey="tradingDate"
+                      tickFormatter={formatShortPktDate}
+                      stroke="#71717a"
+                      fontSize={11}
+                      fontFamily="monospace"
+                      tickLine={false}
+                      axisLine={false}
+                      dy={8}
+                    />
+                    <YAxis
+                      stroke="#71717a"
                       fontSize={11}
                       fontFamily="monospace"
                       tickLine={false}
                       axisLine={false}
                       tickFormatter={(val) => `$${val}`}
-                      dx={-5}
                     />
-                    <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
-                    <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" opacity={0.4} strokeDasharray="3 3" />
-                    <Bar dataKey="pnl" radius={[4, 4, 0, 0]} maxBarSize={45}>
-                      {chartData.map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={entry.pnl >= 0 ? "url(#colorProfit)" : "url(#colorLoss)"}
-                          className="transition-all duration-300 hover:opacity-90 cursor-pointer"
-                        />
-                      ))}
-                    </Bar>
+                    <RechartsTooltip content={<BarTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                    <ReferenceLine y={0} stroke="#52525b" strokeDasharray="3 3" />
+                    <Bar dataKey="winPnl" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={42} isAnimationActive={false} />
+                    <Bar dataKey="lossPnl" fill="#F43F5E" radius={[0, 0, 4, 4]} maxBarSize={42} isAnimationActive={false} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -384,7 +554,7 @@ export default function Metrics() {
               Recent Days ({days === 0 ? "ALL" : `${days}D`})
             </CardTitle>
             <CardDescription className="text-[11px]">
-              Exact sum of closed trades per PKT date
+              Exact sum of post-reset closed trades per PKT date
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0 max-h-[320px] overflow-y-auto">
@@ -396,7 +566,7 @@ export default function Metrics() {
               </div>
             ) : metrics.length === 0 ? (
               <div className="p-6 text-center text-xs font-mono text-muted-foreground">
-                No trading activity in selected period.
+                Clean baseline active — waiting for next closed trade.
               </div>
             ) : (
               <Table>
@@ -442,15 +612,15 @@ export default function Metrics() {
         </Card>
       </div>
 
-      {/* Live Audit Feed: Exact Real Closed Trades Backing These Metrics */}
+      {/* Live Audit Feed: Exact Real Closed Trades Since Reset */}
       {summary?.recentTrades && summary.recentTrades.length > 0 && (
         <Card className="bg-card/30 border-border/80 backdrop-blur-sm shadow-lg">
           <CardHeader className="p-4 sm:p-6 pb-2">
             <CardTitle className="text-xs font-semibold tracking-wider font-mono uppercase text-muted-foreground">
-              Verified Closed Trades Feed (Latest {summary.recentTrades.length} in Window)
+              Verified Closed Trades Feed (Latest {summary.recentTrades.length})
             </CardTitle>
             <CardDescription className="text-[11px]">
-              Every metric above is dynamically summed directly from these executed MT5 database records
+              Every metric &amp; curve point above is dynamically calculated from these closed MT5 records
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0 max-h-[300px] overflow-y-auto">

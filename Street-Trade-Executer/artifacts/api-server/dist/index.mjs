@@ -44366,7 +44366,8 @@ var botStateTable = pgTable("bot_state", {
   sessionEndHour: doublePrecision("session_end_hour").default(16),
   session2Enabled: boolean("session2_enabled").default(true),
   session2StartHour: doublePrecision("session2_start_hour").default(18),
-  session2EndHour: doublePrecision("session2_end_hour").default(22)
+  session2EndHour: doublePrecision("session2_end_hour").default(22),
+  metricsResetAt: timestamp("metrics_reset_at")
 });
 var tradesTable = pgTable("trades", {
   ticket: bigint("ticket", { mode: "number" }).primaryKey(),
@@ -44382,7 +44383,8 @@ var tradesTable = pgTable("trades", {
   comment: varchar("comment", { length: 100 }),
   signalId: integer("signal_id"),
   sl: numeric("sl", { precision: 15, scale: 5 }),
-  tp: numeric("tp", { precision: 15, scale: 5 })
+  tp: numeric("tp", { precision: 15, scale: 5 }),
+  mt5Login: bigint("mt5_login", { mode: "number" })
 });
 var signalsTable = pgTable("signals", {
   id: serial("id").primaryKey(),
@@ -49478,11 +49480,28 @@ var health_default = router4;
 // src/routes/metrics.ts
 var import_express5 = __toESM(require_express2(), 1);
 var router5 = (0, import_express5.Router)();
+var metricsColsEnsured = false;
+async function ensureMetricsColumns() {
+  if (metricsColsEnsured) return;
+  await db.execute(sql`
+    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS metrics_reset_at TIMESTAMP DEFAULT NULL;
+    ALTER TABLE trades ADD COLUMN IF NOT EXISTS mt5_login BIGINT DEFAULT NULL;
+  `);
+  metricsColsEnsured = true;
+}
 var pktDateFmt = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Karachi",
   year: "numeric",
   month: "2-digit",
   day: "2-digit"
+});
+var pktTimeFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Karachi",
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: true
 });
 function toPktDateStr(d) {
   return pktDateFmt.format(d);
@@ -49495,6 +49514,7 @@ function getPktCutoffDateStr(days) {
   return utcMid.toISOString().slice(0, 10);
 }
 async function loadClosedSetupsAndState(daysParam) {
+  await ensureMetricsColumns();
   const [botRows, allClosedRows, allOpenRows, dmRows] = await Promise.all([
     db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
     db.select().from(tradesTable).where(eq(tradesTable.status, "CLOSED")).orderBy(desc(tradesTable.closeTime)),
@@ -49503,6 +49523,7 @@ async function loadClosedSetupsAndState(daysParam) {
   ]);
   const botState = botRows[0];
   const activeLogin = Number(botState?.mt5Login ?? 0);
+  const resetAt = botState?.metricsResetAt ? new Date(botState.metricsResetAt) : null;
   let accStateRow = null;
   if (activeLogin > 0) {
     try {
@@ -49514,10 +49535,15 @@ async function loadClosedSetupsAndState(daysParam) {
     }
   }
   const cutoffStr = daysParam > 0 ? getPktCutoffDateStr(daysParam) : "1970-01-01";
+  const effectiveCutoffStr = resetAt && toPktDateStr(resetAt) > cutoffStr ? toPktDateStr(resetAt) : cutoffStr;
   const signalGroups = /* @__PURE__ */ new Map();
   const setups = [];
   for (const t of allClosedRows) {
     if (!t.closeTime || t.profit == null) continue;
+    if (resetAt && t.closeTime.getTime() < resetAt.getTime()) continue;
+    if (t.mt5Login != null && Number(t.mt5Login) > 0 && activeLogin > 0 && Number(t.mt5Login) !== activeLogin) {
+      continue;
+    }
     if (t.signalId != null) {
       const list = signalGroups.get(t.signalId) ?? [];
       list.push(t);
@@ -49556,14 +49582,40 @@ async function loadClosedSetupsAndState(daysParam) {
     });
   }
   setups.sort((a, b) => b.closeTime.getTime() - a.closeTime.getTime());
-  const filteredSetups = setups.filter((s) => s.pktDate >= cutoffStr);
-  return { botState, accStateRow, setups: filteredSetups, openRows: allOpenRows, dmRows, cutoffStr };
+  const filteredSetups = setups.filter((s) => s.pktDate >= effectiveCutoffStr);
+  return {
+    botState,
+    accStateRow,
+    resetAt,
+    setups: filteredSetups,
+    openRows: allOpenRows,
+    dmRows,
+    cutoffStr: effectiveCutoffStr
+  };
 }
+router5.post("/metrics/reset", async (req, res) => {
+  try {
+    await ensureMetricsColumns();
+    const upd = await db.execute(sql`
+      UPDATE bot_state
+      SET metrics_reset_at = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+          updated_at = NOW()
+      WHERE id = (SELECT MIN(id) FROM bot_state)
+      RETURNING metrics_reset_at
+    `);
+    const row = (upd.rows || [])[0];
+    const ts = row?.metrics_reset_at ? (/* @__PURE__ */ new Date(String(row.metrics_reset_at) + " UTC")).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
+    return res.json({ status: "success", metricsResetAt: ts });
+  } catch (err) {
+    req.log.error({ err }, "Failed to reset metrics baseline");
+    return res.status(500).json({ error: "Failed to reset metrics baseline" });
+  }
+});
 router5.get("/metrics", async (req, res) => {
   try {
     const rawDays = req.query.days !== void 0 ? Number(req.query.days) : 14;
     const days = Number.isFinite(rawDays) && rawDays >= 0 ? Math.min(365, Math.floor(rawDays)) : 14;
-    const { botState, setups, dmRows, cutoffStr } = await loadClosedSetupsAndState(days);
+    const { botState, resetAt, setups, dmRows, cutoffStr } = await loadClosedSetupsAndState(days);
     const todayPktStr = toPktDateStr(/* @__PURE__ */ new Date());
     const activeLogin = Number(botState?.mt5Login ?? 0);
     const liveEquity = Number(botState?.equity ?? 0);
@@ -49578,6 +49630,7 @@ router5.get("/metrics", async (req, res) => {
     for (const m of dmRows) {
       const dStr = String(m.tradingDate).slice(0, 10);
       if (dStr < cutoffStr) continue;
+      if (resetAt && m.updatedAt && new Date(m.updatedAt).getTime() < resetAt.getTime()) continue;
       const existing = dmByDate.get(dStr);
       const isMatch = activeLogin > 0 && Number(m.mt5Login ?? 0) === activeLogin;
       const dd = Number(m.maxDrawdownPercent ?? 0);
@@ -49595,13 +49648,7 @@ router5.get("/metrics", async (req, res) => {
         });
       }
     }
-    const activeDates = new Set(setupsByDate.keys());
-    if (days === 0 || todayPktStr >= cutoffStr) {
-      if (setupsByDate.has(todayPktStr) || dmByDate.has(todayPktStr)) {
-        activeDates.add(todayPktStr);
-      }
-    }
-    const sortedDates = Array.from(activeDates).sort((a, b) => a < b ? 1 : a > b ? -1 : 0);
+    const sortedDates = Array.from(setupsByDate.keys()).sort((a, b) => a < b ? 1 : a > b ? -1 : 0);
     const result = sortedDates.map((dateStr) => {
       const daySetups = (setupsByDate.get(dateStr) ?? []).slice().sort(
         (a, b) => a.closeTime.getTime() - b.closeTime.getTime()
@@ -49644,7 +49691,7 @@ router5.get("/metrics/summary", async (req, res) => {
   try {
     const rawDays = req.query.days !== void 0 ? Number(req.query.days) : 30;
     const days = Number.isFinite(rawDays) && rawDays >= 0 ? Math.min(365, Math.floor(rawDays)) : 30;
-    const { botState, accStateRow, setups, openRows, dmRows, cutoffStr } = await loadClosedSetupsAndState(days);
+    const { botState, accStateRow, resetAt, setups, openRows, dmRows, cutoffStr } = await loadClosedSetupsAndState(days);
     const profits = setups.map((s) => s.profit);
     const totalTrades = profits.length;
     const winning = profits.filter((p) => p > 0);
@@ -49653,24 +49700,50 @@ router5.get("/metrics/summary", async (req, res) => {
     const grossWin = winning.reduce((a, b) => a + b, 0);
     const grossLoss = Math.abs(losing.reduce((a, b) => a + b, 0));
     const profitFactor = grossLoss > 0 ? Number((grossWin / grossLoss).toFixed(2)) : grossWin > 0 ? 9.99 : 0;
-    const baseEquity = Number(botState?.initialBalance ?? 1e4) || 1e4;
+    const baseEquity = Number(accStateRow?.initial_balance ?? botState?.initialBalance ?? 1e4) || 1e4;
     const chronoSetups = [...setups].sort((a, b) => a.closeTime.getTime() - b.closeTime.getTime());
     let cum = 0;
     let peak = 0;
     let maxDropUsd = 0;
-    for (const s of chronoSetups) {
-      cum += s.profit;
-      if (cum > peak) peak = cum;
-      if (peak - cum > maxDropUsd) maxDropUsd = peak - cum;
+    const equityCurve = [];
+    if (chronoSetups.length > 0) {
+      equityCurve.push({
+        label: "Start",
+        pktTime: resetAt ? pktTimeFmt.format(resetAt) : "Reset",
+        tradePnl: 0,
+        cumPnl: 0,
+        symbol: "BASELINE",
+        orderType: "BASE"
+      });
+      chronoSetups.forEach((s, i) => {
+        cum = Number((cum + s.profit).toFixed(2));
+        if (cum > peak) peak = cum;
+        if (peak - cum > maxDropUsd) maxDropUsd = peak - cum;
+        equityCurve.push({
+          label: `#${i + 1}`,
+          pktTime: pktTimeFmt.format(s.closeTime),
+          tradePnl: s.profit,
+          cumPnl: cum,
+          symbol: s.symbol,
+          orderType: s.orderType
+        });
+      });
     }
     const realizedDdPct = baseEquity > 0 ? Number((maxDropUsd / baseEquity * 100).toFixed(2)) : 0;
-    const dmMaxDd = dmRows.filter((r) => String(r.tradingDate).slice(0, 10) >= cutoffStr).reduce((max, r) => Math.max(max, Number(r.maxDrawdownPercent ?? 0)), 0);
+    const activeDatesSet = new Set(setups.map((s) => s.pktDate));
+    const dmMaxDd = dmRows.filter((r) => {
+      const dStr = String(r.tradingDate).slice(0, 10);
+      if (dStr < cutoffStr || !activeDatesSet.has(dStr)) return false;
+      if (resetAt && r.updatedAt && new Date(r.updatedAt).getTime() < resetAt.getTime()) return false;
+      return true;
+    }).reduce((max, r) => Math.max(max, Number(r.maxDrawdownPercent ?? 0)), 0);
     const liveEqVal = Number(botState?.equity ?? 0);
     const accInitialBal = Number(accStateRow?.initial_balance ?? botState?.initialBalance ?? 1e4) || 1e4;
     const accMaxPeak = Number(accStateRow?.max_equity_peak ?? botState?.maxEquityPeak ?? accInitialBal) || accInitialBal;
     const accNetProfit = Number((liveEqVal - accInitialBal).toFixed(2));
     const accNetPct = accInitialBal > 0 ? Number((accNetProfit / accInitialBal * 100).toFixed(2)) : 0;
     const accOverallDd = accInitialBal > 0 && liveEqVal < accInitialBal ? Number(((accInitialBal - liveEqVal) / accInitialBal * 100).toFixed(2)) : Number(accStateRow?.overall_drawdown ?? botState?.overallDrawdown ?? 0);
+    const maxDdComposite = totalTrades > 0 ? Math.max(realizedDdPct, dmMaxDd) : 0;
     res.json({
       days,
       totalTrades,
@@ -49682,8 +49755,8 @@ router5.get("/metrics/summary", async (req, res) => {
       bestTrade: profits.length > 0 ? Number(Math.max(...profits).toFixed(2)) : 0,
       worstTrade: profits.length > 0 ? Number(Math.min(...profits).toFixed(2)) : 0,
       profitFactor,
-      maxDrawdown: Number(Math.max(realizedDdPct, dmMaxDd, Number(botState?.drawdownPercent ?? 0)).toFixed(2)),
-      // Live real-time active MT5 account snapshot fields (preserved per mt5_login)
+      maxDrawdown: Number(maxDdComposite.toFixed(2)),
+      // Live real-time active MT5 account snapshot fields
       liveEquity: liveEqVal,
       initialBalance: accInitialBal,
       maxEquityPeak: accMaxPeak,
@@ -49696,7 +49769,9 @@ router5.get("/metrics/summary", async (req, res) => {
       mt5Login: Number(botState?.mt5Login ?? 0),
       systemStatus: botState?.systemStatus ?? "BOT OFFLINE",
       lastHeartbeat: botState?.lastHeartbeat ? botState.lastHeartbeat.toISOString() : null,
-      recentTrades: setups.slice(0, 15).map((s) => ({
+      metricsResetAt: resetAt ? resetAt.toISOString() : null,
+      equityCurve,
+      recentTrades: setups.slice(0, 20).map((s) => ({
         symbol: s.symbol,
         orderType: s.orderType,
         lots: s.lots,
@@ -51340,7 +51415,9 @@ async function initDb() {
       z_score NUMERIC(10, 4),
       action VARCHAR(20),
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`
+    )`,
+    `ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS metrics_reset_at TIMESTAMP DEFAULT NULL`,
+    `ALTER TABLE trades ADD COLUMN IF NOT EXISTS mt5_login BIGINT DEFAULT NULL`
   ];
   const client = await pool.connect();
   try {
