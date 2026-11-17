@@ -35,10 +35,10 @@ export default function Metrics() {
   });
 
   return (
-    <div className="flex flex-col h-full overflow-auto bg-background p-6 space-y-6">
+    <div className="flex flex-col h-full overflow-auto bg-background p-3 sm:p-6 space-y-4 sm:space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">Performance Metrics</h2>
-        <p className="text-sm text-muted-foreground font-sans">Historical P&L, drawdown, and win rate analysis</p>
+        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Performance Metrics</h2>
+        <p className="text-xs sm:text-sm text-muted-foreground font-sans">Historical P&L, drawdown, and win rate analysis</p>
       </div>
 
       {loadingSummary || !summary ? (

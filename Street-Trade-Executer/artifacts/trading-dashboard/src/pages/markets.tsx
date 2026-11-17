@@ -49,11 +49,11 @@ export default function Markets() {
   const categoryOrder: Category[] = ["forex", "metals", "stocks"];
 
   return (
-    <div className="flex flex-col h-full overflow-auto bg-background p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-full overflow-auto bg-background p-3 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Live Markets</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Live Markets</h2>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Forex: Frankfurter · Metals: MT5 · Stocks: MT5 CFD
             {dataUpdatedAt ? ` · Updated ${formatPktTime(dataUpdatedAt)}` : ""}
           </p>

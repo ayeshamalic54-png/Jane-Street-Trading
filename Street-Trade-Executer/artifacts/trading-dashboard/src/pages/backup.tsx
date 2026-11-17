@@ -101,12 +101,12 @@ export default function Backup() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-auto bg-background p-6 space-y-6">
+    <div className="flex flex-col h-full overflow-auto bg-background p-3 sm:p-6 space-y-4 sm:space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-          <Database className="h-6 w-6 text-indigo-400" /> Database Backup &amp; Restore
+        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+          <Database className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-400 shrink-0" /> Database Backup &amp; Restore
         </h2>
-        <p className="text-sm text-muted-foreground font-sans">
+        <p className="text-xs sm:text-sm text-muted-foreground font-sans">
           Export full database snapshot or restore systems to historical checkpoints.
         </p>
       </div>

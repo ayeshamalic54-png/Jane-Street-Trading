@@ -86,10 +86,10 @@ export default function Backtest() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-auto bg-background p-6 space-y-6">
+    <div className="flex flex-col h-full overflow-auto bg-background p-3 sm:p-6 space-y-4 sm:space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">Arbitrage Backtesting</h2>
-        <p className="text-sm text-muted-foreground">Run co-integration Kalman Filter simulations on Binance Futures historical data</p>
+        <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Arbitrage Backtesting</h2>
+        <p className="text-xs sm:text-sm text-muted-foreground">Run co-integration Kalman Filter simulations on Binance Futures historical data</p>
       </div>
 
       {/* Control Panel Card */}

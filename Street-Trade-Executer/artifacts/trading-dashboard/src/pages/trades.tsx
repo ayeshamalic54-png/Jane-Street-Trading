@@ -42,15 +42,15 @@ export default function Trades() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-auto bg-background p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-full overflow-auto bg-background p-3 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">Trade History</h2>
-          <p className="text-sm text-muted-foreground">Historical order execution and P&L logs</p>
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Trade History</h2>
+          <p className="text-xs sm:text-sm text-muted-foreground">Historical order execution and P&L logs</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <Select value={status} onValueChange={(val: any) => setStatus(val)}>
-            <SelectTrigger className="w-[150px] font-mono text-xs">
+            <SelectTrigger className="w-full sm:w-[150px] font-mono text-xs">
               <SelectValue placeholder="Filter Status" />
             </SelectTrigger>
             <SelectContent>

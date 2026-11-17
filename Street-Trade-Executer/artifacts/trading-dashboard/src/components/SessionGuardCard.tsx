@@ -154,30 +154,30 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
 
   return (
     <Card className={cn(
-      "rounded-md p-4 transition-all border space-y-3",
+      "@container rounded-md p-3 sm:p-4 transition-all border space-y-3.5 overflow-hidden",
       state.enabled ? "bg-blue-500/5 border-blue-500/40" : "bg-zinc-900/60 border-zinc-800"
     )}>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div className="flex items-start gap-2.5">
-          <span className="text-xl leading-none mt-0.5">⏰</span>
-          <div>
-            <div className="font-bold text-sm text-zinc-100">
+      <div className="flex flex-col @md:flex-row @md:items-start @md:justify-between gap-2.5">
+        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+          <span className="text-lg sm:text-xl leading-none mt-0.5 shrink-0">⏰</span>
+          <div className="min-w-0 flex-1">
+            <div className="font-bold text-xs sm:text-sm text-zinc-100 leading-snug break-words">
               Session Time Guard (Pakistani Time PKT Trading Windows)
             </div>
-            <div className="text-xs font-mono text-sky-300 mt-0.5">
+            <div className="text-[11px] sm:text-xs font-mono text-sky-300 mt-1 leading-relaxed break-words">
               {scheduleSummary}
             </div>
-            <div className="text-[11px] text-zinc-400 mt-0.5">
+            <div className="text-[11px] text-zinc-400 mt-0.5 leading-snug">
               Active Breakeven &amp; SL/TP management remain active 24/7.
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Badge variant="outline" className="font-mono text-[10px] border-zinc-700 text-zinc-300">
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+          <Badge variant="outline" className="font-mono text-[10px] border-zinc-700 text-zinc-300 px-2 py-0.5 whitespace-nowrap">
             Now: {pktNow.label}
           </Badge>
           <span className={cn(
-            "px-2.5 py-1 rounded text-xs font-bold border",
+            "px-2.5 py-1 rounded text-[11px] font-bold border whitespace-nowrap",
             !state.enabled
               ? "bg-zinc-800 text-zinc-400 border-zinc-700"
               : windowOpenNow
@@ -194,9 +194,9 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
       </div>
 
       {/* Top row: Master Toggle + Preset Button */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border/50">
-        <div>
-          <label className="text-[10px] font-bold text-blue-400 uppercase block mb-1">
+      <div className="grid grid-cols-1 @xl:grid-cols-2 gap-3 pt-2.5 border-t border-border/50">
+        <div className="min-w-0">
+          <label className="text-[10px] font-bold text-blue-400 uppercase block mb-1.5">
             Session Guard Toggle
           </label>
           <div className="flex gap-2">
@@ -206,7 +206,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
               disabled={isReadOnly || isSaving}
               onClick={() => persistState({ ...state, enabled: true }, "Restricted to PKT windows")}
               className={cn(
-                "flex-1 font-mono text-xs font-bold h-8",
+                "min-w-0 flex-1 font-mono text-[11px] sm:text-xs font-bold min-h-9 h-auto py-1.5 px-2.5 whitespace-normal text-center leading-tight",
                 state.enabled
                   ? "bg-emerald-600 hover:bg-emerald-500 text-white"
                   : "bg-zinc-900 hover:bg-zinc-800 text-zinc-400 border border-zinc-700"
@@ -220,7 +220,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
               disabled={isReadOnly || isSaving}
               onClick={() => persistState({ ...state, enabled: false }, "Trading 24/7 unrestricted")}
               className={cn(
-                "flex-1 font-mono text-xs font-bold h-8",
+                "min-w-0 flex-1 font-mono text-[11px] sm:text-xs font-bold min-h-9 h-auto py-1.5 px-2.5 whitespace-normal text-center leading-tight",
                 !state.enabled
                   ? "bg-rose-600 hover:bg-rose-500 text-white"
                   : "bg-zinc-900 hover:bg-zinc-800 text-zinc-400 border border-zinc-700"
@@ -231,7 +231,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
           </div>
         </div>
 
-        <div className="flex items-end">
+        <div className="flex items-end min-w-0">
           <Button
             type="button"
             variant="outline"
@@ -250,7 +250,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
                 "Dual Killzones (12:00-4:00 PM & 6:00-10:00 PM PKT)"
               )
             }
-            className="w-full h-8 font-mono text-[11px] font-bold border-sky-500/40 text-sky-300 hover:bg-sky-500/15"
+            className="w-full min-h-9 h-auto py-2 px-3 font-mono text-[11px] font-bold border-sky-500/40 text-sky-300 hover:bg-sky-500/15 whitespace-normal text-center leading-snug"
           >
             ⚡ Optimal Preset: 12:00–4:00 PM &amp; 6:00–10:00 PM PKT
           </Button>
@@ -258,13 +258,13 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
       </div>
 
       {/* Window 1 (London) & Window 2 (NY) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-        <div className="p-2.5 rounded border border-emerald-500/20 bg-zinc-950/60 space-y-2">
-          <div className="text-[10px] font-bold text-emerald-400 uppercase">
+      <div className="grid grid-cols-1 @xl:grid-cols-2 gap-3 pt-1">
+        <div className="@container p-3 rounded border border-emerald-500/20 bg-zinc-950/60 space-y-2.5 min-w-0">
+          <div className="text-[11px] font-bold text-emerald-400 uppercase leading-snug">
             Window 1 (London Session · 12:00 PM – 04:00 PM PKT)
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
+          <div className="grid grid-cols-1 @xs:grid-cols-2 gap-2.5">
+            <div className="min-w-0">
               <label className="text-[10px] text-zinc-400 block mb-1">Start (PKT)</label>
               <select
                 disabled={isReadOnly || isSaving}
@@ -273,7 +273,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
                   const next = { ...state, startHour: parseFloat(e.target.value) };
                   void persistState(next, "Window 1 start updated");
                 }}
-                className="w-full bg-background border border-input rounded p-1.5 text-xs font-mono font-bold text-foreground focus:outline-none"
+                className="w-full min-w-0 min-h-[38px] bg-background border border-input rounded px-2.5 py-1.5 text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 {HALF_HOUR_OPTIONS.map((opt) => (
                   <option key={opt.value} value={String(opt.value)}>
@@ -282,7 +282,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
                 ))}
               </select>
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="text-[10px] text-zinc-400 block mb-1">End (PKT)</label>
               <select
                 disabled={isReadOnly || isSaving}
@@ -291,7 +291,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
                   const next = { ...state, endHour: parseFloat(e.target.value) };
                   void persistState(next, "Window 1 end updated");
                 }}
-                className="w-full bg-background border border-input rounded p-1.5 text-xs font-mono font-bold text-foreground focus:outline-none"
+                className="w-full min-w-0 min-h-[38px] bg-background border border-input rounded px-2.5 py-1.5 text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 {HALF_HOUR_OPTIONS.map((opt) => (
                   <option key={opt.value} value={String(opt.value)}>
@@ -303,9 +303,9 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
           </div>
         </div>
 
-        <div className="p-2.5 rounded border border-indigo-500/20 bg-zinc-950/60 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold text-indigo-400 uppercase">
+        <div className="@container p-3 rounded border border-indigo-500/20 bg-zinc-950/60 space-y-2.5 min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[11px] font-bold text-indigo-400 uppercase leading-snug">
               Window 2 (NY Session · 06:00 PM – 10:00 PM PKT)
             </span>
             <button
@@ -316,7 +316,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
                 void persistState(next, `Window 2 ${next.session2Enabled ? "ENABLED" : "DISABLED"}`);
               }}
               className={cn(
-                "text-[10px] font-mono font-bold px-2 py-0.5 rounded border",
+                "shrink-0 text-[10px] font-mono font-bold px-2.5 py-1 rounded border",
                 state.session2Enabled
                   ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                   : "bg-zinc-800 text-zinc-400 border-zinc-700"
@@ -325,8 +325,8 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
               {state.session2Enabled ? "ON 🟢" : "OFF 🔴"}
             </button>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
+          <div className="grid grid-cols-1 @xs:grid-cols-2 gap-2.5">
+            <div className="min-w-0">
               <label className="text-[10px] text-zinc-400 block mb-1">Start (PKT)</label>
               <select
                 disabled={isReadOnly || isSaving || !state.session2Enabled}
@@ -335,7 +335,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
                   const next = { ...state, session2StartHour: parseFloat(e.target.value) };
                   void persistState(next, "Window 2 start updated");
                 }}
-                className="w-full bg-background border border-input rounded p-1.5 text-xs font-mono font-bold text-foreground focus:outline-none disabled:opacity-40"
+                className="w-full min-w-0 min-h-[38px] bg-background border border-input rounded px-2.5 py-1.5 text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
               >
                 {HALF_HOUR_OPTIONS.map((opt) => (
                   <option key={opt.value} value={String(opt.value)}>
@@ -344,7 +344,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
                 ))}
               </select>
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="text-[10px] text-zinc-400 block mb-1">End (PKT)</label>
               <select
                 disabled={isReadOnly || isSaving || !state.session2Enabled}
@@ -353,7 +353,7 @@ export function SessionGuardCard({ data, isReadOnly = false, onSynced }: Session
                   const next = { ...state, session2EndHour: parseFloat(e.target.value) };
                   void persistState(next, "Window 2 end updated");
                 }}
-                className="w-full bg-background border border-input rounded p-1.5 text-xs font-mono font-bold text-foreground focus:outline-none disabled:opacity-40"
+                className="w-full min-w-0 min-h-[38px] bg-background border border-input rounded px-2.5 py-1.5 text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-40"
               >
                 {HALF_HOUR_OPTIONS.map((opt) => (
                   <option key={opt.value} value={String(opt.value)}>

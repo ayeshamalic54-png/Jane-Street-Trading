@@ -121,16 +121,16 @@ function MarketHoursCards() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
       {/* STOCKS CARD */}
-      <div className="relative overflow-hidden rounded-xl border border-purple-500/30 bg-gradient-to-br from-indigo-950/40 via-purple-950/30 to-zinc-950 p-4 transition-all duration-300 hover:border-purple-500/60 hover:shadow-[0_0_20px_rgba(168,85,247,0.15)]">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl p-2 rounded-lg bg-purple-500/10 border border-purple-500/20">🇺🇸</span>
-            <div>
-              <div className="font-semibold text-sm text-zinc-100 font-sans">US Stock Exchanges</div>
-              <div className="text-[11px] text-purple-300/70 font-mono">NYSE & NASDAQ (AAPL, NVDA, AMZN)</div>
+      <div className="relative overflow-hidden rounded-xl border border-purple-500/30 bg-gradient-to-br from-indigo-950/40 via-purple-950/30 to-zinc-950 p-3.5 sm:p-4 transition-all duration-300 hover:border-purple-500/60 hover:shadow-[0_0_20px_rgba(168,85,247,0.15)]">
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-xl sm:text-2xl p-1.5 sm:p-2 rounded-lg bg-purple-500/10 border border-purple-500/20 shrink-0">🇺🇸</span>
+            <div className="min-w-0">
+              <div className="font-semibold text-sm text-zinc-100 font-sans truncate">US Stock Exchanges</div>
+              <div className="text-[11px] text-purple-300/70 font-mono truncate">NYSE & NASDAQ (AAPL, NVDA, AMZN)</div>
             </div>
           </div>
-          <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isStocksOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
+          <span className={cn("shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isStocksOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
             {isStocksOpen ? "LIVE OPEN 🟢" : "MARKET CLOSED 🔴"}
           </span>
         </div>
@@ -152,16 +152,16 @@ function MarketHoursCards() {
       </div>
 
       {/* FOREX CARD */}
-      <div className="relative overflow-hidden rounded-xl border border-sky-500/30 bg-gradient-to-br from-cyan-950/40 via-sky-950/30 to-zinc-950 p-4 transition-all duration-300 hover:border-sky-500/60 hover:shadow-[0_0_20px_rgba(56,189,248,0.15)]">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl p-2 rounded-lg bg-sky-500/10 border border-sky-500/20">💱</span>
-            <div>
-              <div className="font-semibold text-sm text-zinc-100 font-sans">Global Forex Market</div>
-              <div className="text-[11px] text-sky-300/70 font-mono">Currencies (EUR, USD, GBP, JPY)</div>
+      <div className="relative overflow-hidden rounded-xl border border-sky-500/30 bg-gradient-to-br from-cyan-950/40 via-sky-950/30 to-zinc-950 p-3.5 sm:p-4 transition-all duration-300 hover:border-sky-500/60 hover:shadow-[0_0_20px_rgba(56,189,248,0.15)]">
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-xl sm:text-2xl p-1.5 sm:p-2 rounded-lg bg-sky-500/10 border border-sky-500/20 shrink-0">💱</span>
+            <div className="min-w-0">
+              <div className="font-semibold text-sm text-zinc-100 font-sans truncate">Global Forex Market</div>
+              <div className="text-[11px] text-sky-300/70 font-mono truncate">Currencies (EUR, USD, GBP, JPY)</div>
             </div>
           </div>
-          <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isForexOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
+          <span className={cn("shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isForexOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
             {isForexOpen ? "LIVE OPEN 🟢" : "MARKET CLOSED 🔴"}
           </span>
         </div>
@@ -208,16 +208,16 @@ function MarketHoursCards() {
       </div>
 
       {/* METALS CARD */}
-      <div className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-950/40 via-yellow-950/30 to-zinc-950 p-4 transition-all duration-300 hover:border-amber-500/60 hover:shadow-[0_0_20px_rgba(245,158,11,0.15)]">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">🥇</span>
-            <div>
-              <div className="font-semibold text-sm text-zinc-100 font-sans">Precious Metals</div>
-              <div className="text-[11px] text-amber-300/70 font-mono">Commodities (XAU/Gold, XAG, XPT)</div>
+      <div className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-950/40 via-yellow-950/30 to-zinc-950 p-3.5 sm:p-4 transition-all duration-300 hover:border-amber-500/60 hover:shadow-[0_0_20px_rgba(245,158,11,0.15)]">
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-xl sm:text-2xl p-1.5 sm:p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 shrink-0">🥇</span>
+            <div className="min-w-0">
+              <div className="font-semibold text-sm text-zinc-100 font-sans truncate">Precious Metals</div>
+              <div className="text-[11px] text-amber-300/70 font-mono truncate">Commodities (XAU/Gold, XAG, XPT)</div>
             </div>
           </div>
-          <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isMetalsOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : isMetalBreak ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
+          <span className={cn("shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isMetalsOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : isMetalBreak ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
             {isMetalsOpen ? "LIVE OPEN 🟢" : isMetalBreak ? "DAILY BREAK ⏸" : "MARKET CLOSED 🔴"}
           </span>
         </div>
@@ -239,16 +239,16 @@ function MarketHoursCards() {
       </div>
 
       {/* INDICES CARD */}
-      <div className="relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/40 via-teal-950/30 to-zinc-950 p-4 transition-all duration-300 hover:border-emerald-500/60 hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]">
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">📊</span>
-            <div>
-              <div className="font-semibold text-sm text-zinc-100 font-sans">Stock Indices</div>
-              <div className="text-[11px] text-emerald-300/70 font-mono">Futures (US500, US30, USTEC)</div>
+      <div className="relative overflow-hidden rounded-xl border border-emerald-500/30 bg-gradient-to-br from-emerald-950/40 via-teal-950/30 to-zinc-950 p-3.5 sm:p-4 transition-all duration-300 hover:border-emerald-500/60 hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-xl sm:text-2xl p-1.5 sm:p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shrink-0">📊</span>
+            <div className="min-w-0">
+              <div className="font-semibold text-sm text-zinc-100 font-sans truncate">Stock Indices</div>
+              <div className="text-[11px] text-emerald-300/70 font-mono truncate">Futures (US500, US30, USTEC)</div>
             </div>
           </div>
-          <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isIndicesOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : isIndexBreak ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
+          <span className={cn("shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isIndicesOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : isIndexBreak ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
             {isIndicesOpen ? "LIVE OPEN 🟢" : isIndexBreak ? "DAILY BREAK ⏸" : "MARKET CLOSED 🔴"}
           </span>
         </div>
@@ -732,16 +732,16 @@ export default function Dashboard() {
     <div className="flex flex-col h-full overflow-auto bg-zinc-950 text-foreground">
       {/* Top Banner */}
       <div className={cn(
-        "flex items-center justify-between px-6 py-2 text-xs font-semibold tracking-wider",
+        "flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 px-3 sm:px-6 py-2.5 text-xs font-semibold tracking-wider",
         botOnline
           ? "bg-green-500/10 text-green-500 border-b border-green-500/20"
           : "bg-amber-500/10 text-amber-500 border-b border-amber-500/20"
       )}>
-        <div className="flex items-center gap-3">
-          {botOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-          {botOnline ? "BOT CONNECTED — LIVE DATA" : "BOT OFFLINE — LAST KNOWN DATA"}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {botOnline ? <Wifi className="h-4 w-4 shrink-0" /> : <WifiOff className="h-4 w-4 shrink-0" />}
+          <span>{botOnline ? "BOT CONNECTED — LIVE DATA" : "BOT OFFLINE — LAST KNOWN DATA"}</span>
           <span className={cn(
-            "flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] border",
+            "flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] border whitespace-nowrap",
             wsConnected
               ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
               : "bg-muted/30 text-muted-foreground border-border"
@@ -750,31 +750,30 @@ export default function Dashboard() {
             {wsConnected ? "WS LIVE" : "POLLING"}
           </span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-2">
             {autoExecute ? (
-              <span className="flex items-center gap-1 text-green-400">
+              <span className="flex items-center gap-1 text-green-400 whitespace-nowrap">
                 <Zap className="h-3 w-3" />AUTO EXEC ON
               </span>
             ) : (
-              <span className="flex items-center gap-1 text-amber-400">
+              <span className="flex items-center gap-1 text-amber-400 whitespace-nowrap">
                 <ZapOff className="h-3 w-3" />SIGNALS ONLY
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <div className={cn("h-2 w-2 rounded-full", getStatusColor(systemStatus))} />
-            <span>{systemStatus}</span>
+          <div className="flex items-center gap-1.5 max-w-full">
+            <div className={cn("h-2 w-2 rounded-full shrink-0", getStatusColor(systemStatus))} />
+            <span className="truncate max-w-[200px] sm:max-w-none">{systemStatus}</span>
           </div>
-          <div className="text-zinc-500 font-mono text-[10px] uppercase flex items-center gap-2">
+          <div className="text-zinc-500 font-mono text-[10px] uppercase flex flex-wrap items-center gap-1.5">
             <span>Scan Feed:</span>
-            
             <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.metalsEnabled ? "bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Metals</span>
             <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.forexEnabled ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Forex</span>
             <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", dashboard.indicesEnabled ? "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Indices</span>
             <span className={cn("px-1.5 py-0.5 rounded-sm text-[10px] font-bold border transition-all duration-300", (dashboard as any)?.stocksEnabled ? "bg-purple-500/10 text-purple-400 border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.15)]" : "text-zinc-600 border-zinc-800 bg-zinc-900/20 opacity-50")}>Stocks</span>
           </div>
-          <div className="font-mono bg-zinc-900/70 border border-zinc-800 px-2 py-0.5 rounded text-[11px] text-zinc-400 shadow-[0_0_8px_rgba(255,255,255,0.02)]">
+          <div className="font-mono bg-zinc-900/70 border border-zinc-800 px-2 py-0.5 rounded text-[11px] text-zinc-400 shadow-[0_0_8px_rgba(255,255,255,0.02)] whitespace-nowrap">
             TARGET LEG: <span className="font-bold text-zinc-100">{currentPair}</span>
           </div>
           <Button
@@ -795,7 +794,7 @@ export default function Dashboard() {
             }}
             size="sm"
             variant="destructive"
-            className="bg-red-600 hover:bg-red-500 text-white font-mono text-[10px] font-bold h-6 px-2 shadow-[0_0_12px_rgba(239,68,68,0.25)] rounded border border-red-500/30 ml-2"
+            className="bg-red-600 hover:bg-red-500 text-white font-mono text-[10px] font-bold h-7 px-2.5 shadow-[0_0_12px_rgba(239,68,68,0.25)] rounded border border-red-500/30 shrink-0"
             disabled={executeTrade.isPending || !botOnline || isReadOnly}
           >
             🚨 CLOSE ALL
@@ -804,9 +803,9 @@ export default function Dashboard() {
       </div>
 
       {/* ── REMOTE BOT CONTROL & ACCOUNT SWITCHER STRIP (Zero-Overlap Guarantee) ── */}
-      <div className="bg-zinc-900/90 border-b border-zinc-800 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+      <div className="bg-zinc-900/90 border-b border-zinc-800 px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <span
               className={cn(
                 "font-mono text-xs font-black h-8 px-3 rounded flex items-center gap-1.5 border",
@@ -1074,24 +1073,24 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      <div className="p-6 space-y-6">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* High-Impact News Protection Card */}
         <Card className={cn(
-          "bg-zinc-900 border transition-all rounded-md p-4",
+          "bg-zinc-900 border transition-all rounded-md p-3.5 sm:p-4",
           systemStatus.includes("HALTED (News")
             ? "border-red-500/60 bg-red-950/20 text-red-400"
             : "border-emerald-500/40 bg-zinc-900/80 text-zinc-100"
         )}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-xl">📰</span>
-              <div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+            <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
+              <span className="text-xl shrink-0">📰</span>
+              <div className="min-w-0">
                 <div className="font-bold text-sm text-zinc-100">High-Impact News Protection (15-Min Buffer)</div>
                 <div className="text-xs text-zinc-400">Real-time safeguard against NFP, CPI, FOMC volatility</div>
               </div>
             </div>
             <span className={cn(
-              "px-2.5 py-1 rounded text-xs font-bold border",
+              "self-start sm:self-auto shrink-0 whitespace-nowrap px-2.5 py-1 rounded text-xs font-bold border",
               systemStatus.includes("HALTED (News")
                 ? "bg-red-500/20 text-red-400 border-red-500/40 animate-pulse"
                 : "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
@@ -1126,16 +1125,16 @@ export default function Dashboard() {
                 : "border-zinc-800 bg-zinc-900/80 text-zinc-100"
             )}>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-xl">🛡️</span>
-                  <div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
+                  <span className="text-xl shrink-0">🛡️</span>
+                  <div className="min-w-0">
                     <div className="font-bold text-sm text-zinc-100">Multi-Tier Equity Profit Lock Guard (Option B - Balanced Buffer)</div>
                     <div className="text-xs text-zinc-400">Tier 1 (+$67 Peak locks +$53.00) | Tier 2 (+$99 Peak locks +$80.00) | Tier 3 (+$142 Peak locks +$120.00) | Tier 4 (+$185+ Peak locks +$155.00)</div>
                   </div>
                 </div>
                 <span className={cn(
-                  "px-2.5 py-1 rounded text-xs font-bold border",
+                  "self-start sm:self-auto shrink-0 px-2.5 py-1 rounded text-xs font-bold border whitespace-normal sm:whitespace-nowrap",
                   isTier4 || isTier3
                     ? "bg-emerald-500/30 text-emerald-300 border-emerald-500 animate-pulse shadow-[0_0_12px_rgba(52,211,153,0.4)]"
                     : isTier2
@@ -1250,7 +1249,7 @@ export default function Dashboard() {
                   : "border-t-amber-500 hover:border-amber-400/40 shadow-[0_4px_24px_rgba(245,158,11,0.06)]"
               )}>
                 <CardHeader className="pb-1">
-                  <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono flex items-center justify-between">
+                  <CardTitle className="text-xs text-zinc-500 uppercase tracking-wider font-mono flex flex-wrap items-center justify-between gap-1">
                     <span>{isNetGain ? "Daily Net Gain" : "Daily Drawdown"}</span>
                     <span className="text-[9px] text-zinc-500 font-mono">
                       Halt: <span className="text-amber-500">{Number((dashboard as any)?.halt_drawdown_limit ?? (dashboard as any)?.haltDrawdownLimit ?? 0.83).toFixed(2)}%</span> · Limit: <span className="text-red-500">{Number((dashboard as any)?.max_drawdown_limit ?? (dashboard as any)?.maxDrawdownLimit ?? 3.3).toFixed(1)}%</span>
@@ -1335,9 +1334,9 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="bg-card border-border border-t-2 border-t-emerald-500 shadow-[0_4px_24px_rgba(16,185,129,0.06)]">
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs text-emerald-400 uppercase tracking-wider font-mono flex items-center justify-between">
+              <CardTitle className="text-xs text-emerald-400 uppercase tracking-wider font-mono flex flex-wrap items-center justify-between gap-2">
                 <span>Pure SMC / ICT 9-Condition Live Telemetry Engine</span>
-                <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/40 text-[10px]">🟢 9-CONDITION SMC ENGINE ACTIVE</Badge>
+                <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/40 text-[10px] shrink-0">🟢 9-CONDITION SMC ENGINE ACTIVE</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -1394,7 +1393,7 @@ export default function Dashboard() {
                 };
 
                 return (
-                  <div className="grid grid-cols-3 gap-2 font-mono">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono">
                     {/* Step 1: M15 Bias */}
                     <div className={getBoxClass(s1Valid && isM15Bull, !s1Valid, s1Valid && isM15Bear)}>
                       <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 1: M15 Bias</div>
@@ -1843,7 +1842,7 @@ export default function Dashboard() {
             {hasCalc && (
               <div className="p-3 bg-muted/20 border border-border rounded-md space-y-2">
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Targets Price Preview</div>
-                <div className="grid grid-cols-2 gap-4 text-xs font-mono">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs font-mono">
                   <div className="space-y-1 bg-green-500/5 p-2 rounded border border-green-500/10">
                     <div className="text-green-400 font-bold mb-1">BUY TARGETS:</div>
                     <div className="flex justify-between"><span>Stop Loss:</span> <span className="text-red-400 font-semibold">{buySlPrice}</span></div>
