@@ -5,6 +5,7 @@ import { botStateTable, tradesTable, fvgZonesTable, scannedAssetsTable, smcTelem
 import { desc, eq } from "drizzle-orm";
 import { logger } from "./logger";
 import { ensureSessionGuardColumns, extractSessionGuardFields } from "./sessionGuard";
+import { buildEnrichedScannedAssets, formatSmcTelemetryPayload } from "./smcTelemetrySummary";
 
 let wss: WebSocketServer | null = null;
 
@@ -59,30 +60,33 @@ async function buildDashboardPayload() {
   const [botStateRows, scannedAssetsRows, smcTelRows] = await Promise.all([
     db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
     db.select().from(scannedAssetsTable).orderBy(desc(scannedAssetsTable.winRate)),
-    db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt)).limit(1),
+    db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt)),
   ]);
 
-  const telRow = smcTelRows[0];
-  const smcTelemetryPayload = telRow ? {
-    symbol_pair: telRow.symbolPair,
-    m15_bias: telRow.m15Bias || "NEUTRAL ⚪",
-    sweep_status: telRow.sweepStatus || "FAIL ⚪",
-    sweep_price: Number(telRow.sweepPrice ?? 0),
-    choch_status: telRow.chochStatus || "FAIL ⚪",
-    choch_price: Number(telRow.chochPrice ?? 0),
-    fvg_status: telRow.fvgStatus || "FAIL ⚪",
-    fvg_bounds_json: telRow.fvgBoundsJson || "[]",
-    rejection_status: telRow.rejectionStatus || "FAIL ⚪",
-    action: telRow.action || "NONE",
-    updated_at: telRow.updatedAt ? new Date(telRow.updatedAt).toISOString() : "",
-    retest_status: telRow.retestStatus || telRow.fvgStatus || "FAIL ⚪",
-    s6_status: telRow.s6Status || telRow.rejectionStatus || "FAIL ⚪",
-    s7_status: telRow.s7Status || "FAIL ⚪",
-    s8_status: telRow.s8Status || "PASS 🟢 ($0.75 Fixed)",
-    s9_status: telRow.s9Status || "PASS 🟢 (2.0R Target Space)",
-  } : null;
-
   const botState = botStateRows[0];
+  const forexOn = botState?.forexEnabled ?? true;
+  const metalsOn = botState?.metalsEnabled ?? true;
+  const indicesOn = botState?.indicesEnabled ?? true;
+  const stocksOn = botState?.stocksEnabled ?? true;
+
+  const isSymbolEnabled = (sym: string) => {
+    const s = (sym || "").toUpperCase();
+    if (s.includes("USDT") || s.includes("US500") || s.includes("SPX")) return false;
+    if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
+    if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
+    if (["US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "US100", "NDX", "GER30", "UK100", "USTEC"].some((k) => s.includes(k))) return indicesOn;
+    return forexOn;
+  };
+
+  const enabledTelRows = (smcTelRows || []).filter((r: any) => isSymbolEnabled(r.symbolPair));
+  const smcTelemetryAll: Record<string, any> = {};
+  for (const r of enabledTelRows) {
+    const formatted = formatSmcTelemetryPayload(r);
+    if (formatted) smcTelemetryAll[r.symbolPair] = formatted;
+  }
+  const telRow = enabledTelRows[0] ?? smcTelRows[0];
+  const smcTelemetryPayload = formatSmcTelemetryPayload(telRow);
+
   const isOnline =
     botState?.lastHeartbeat != null &&
     Date.now() - new Date(botState.lastHeartbeat).getTime() < 30_000;
@@ -102,20 +106,6 @@ async function buildDashboardPayload() {
       sl: t.sl != null ? Number(t.sl) : 0,
       tp: t.tp != null ? Number(t.tp) : 0,
     }));
-
-  const forexOn = botState?.forexEnabled ?? true;
-  const metalsOn = botState?.metalsEnabled ?? true;
-  const indicesOn = botState?.indicesEnabled ?? true;
-  const stocksOn = botState?.stocksEnabled ?? true;
-
-  const isSymbolEnabled = (sym: string) => {
-    const s = (sym || "").toUpperCase();
-    if (s.includes("USDT")) return false; // Strictly exclude crypto USDT from this Metals/Forex dashboard
-    if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
-    if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
-    if (s.includes("US30") || s.includes("NAS100") || s.includes("US500") || s.includes("GER30") || s.includes("UK100") || s.includes("USTEC")) return indicesOn;
-    return forexOn;
-  };
 
   const rawPair = botState?.activePair ?? "EURUSD/GBPUSD";
   const pairSymA = (rawPair.split(/[\/\s]/)[0] || "").toUpperCase();
@@ -173,16 +163,7 @@ async function buildDashboardPayload() {
       comment: t.comment ?? null,
     })),
     activeZones,
-    scannedAssets: (scannedAssetsRows || [])
-      .filter((s: any) => isSymbolEnabled(s.symbolPair))
-      .map((s: any) => ({
-        symbolPair: s.symbolPair,
-        priceA: Number(s.priceA ?? 0),
-        priceB: Number(s.priceB ?? 0),
-        winRate: Number(s.winRate ?? 50.0),
-        zScore: Number(s.zScore ?? 0),
-        action: s.action ?? "NONE",
-      })),
+    scannedAssets: buildEnrichedScannedAssets(scannedAssetsRows || [], smcTelRows || [], isSymbolEnabled),
     botOnline: isOnline,
     autoExecute: botState?.autoExecute ?? true,
     cryptoEnabled: botState?.cryptoEnabled ?? true,
@@ -194,6 +175,7 @@ async function buildDashboardPayload() {
     max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? (botState as any)?.max_drawdown_limit ?? 3.30),
     ...extractSessionGuardFields(botState),
     smcTelemetry: smcTelemetryPayload,
+    smcTelemetryAll,
   };
 }
 

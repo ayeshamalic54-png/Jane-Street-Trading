@@ -427,6 +427,17 @@ export default function Dashboard() {
   };
 
   const activeSmcTel = useMemo(() => {
+    const httpTelAll = (httpData as any)?.smcTelemetryAll || {};
+    const wsTelAll = wsData?.smcTelemetryAll || {};
+    const allMap: Record<string, any> = {
+      ...httpTelAll,
+      ...wsTelAll,
+    };
+    for (const [pairKey, telObj] of Object.entries(allMap)) {
+      if (symbolMatchesAlias(pairKey, selectedChartSymbol) && telObj) {
+        return telObj;
+      }
+    }
     const wsPair = (wsData?.smcTelemetry?.symbol_pair || "").toUpperCase();
     if (symbolMatchesAlias(wsPair, selectedChartSymbol)) {
       return wsData?.smcTelemetry;
@@ -436,7 +447,7 @@ export default function Dashboard() {
       return smcTelemetry;
     }
     return smcTelemetry || wsData?.smcTelemetry;
-  }, [selectedChartSymbol, wsData?.smcTelemetry, smcTelemetry]);
+  }, [selectedChartSymbol, wsData?.smcTelemetry, wsData?.smcTelemetryAll, httpData, smcTelemetry]);
 
   useEffect(() => {
     if (!wsData) return;
@@ -1759,85 +1770,126 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Scanned Assets & Signals */}
+        {/* Pure SMC Multi-Asset Live Scanner (Crypto-App Parity Layout) */}
         <Card className="bg-card border-border border-t-2 border-t-blue-500/70 hover:border-blue-500/40 transition-all rounded-md">
           <CardHeader className="pb-3 flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider font-mono">Multi-Asset Live Auto-Scan & Win Rates</CardTitle>
+              <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider font-mono">Multi-Asset Pure SMC Live Scanner</CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Bot scans enabled Forex, Metals, and Stocks/Indices. Selects the highest win rate symbol with an active signal.
+                Click any asset row to load its M5 candles, FVG, iFVG, OB, Breaker, SL, TP &amp; S1–S9 Pipeline
               </p>
             </div>
-            <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20 font-mono text-[10px] rounded-sm">
+            <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 font-mono text-[10px] rounded-sm">
               {dashboard.scannedAssets?.length ?? 0} ASSETS SCANNED
             </Badge>
           </CardHeader>
           <CardContent>
             {!dashboard.scannedAssets || dashboard.scannedAssets.length === 0 ? (
-              <div className="text-sm text-muted-foreground py-8 text-center border border-dashed border-border rounded">
-                No scanned assets found. Ensure the trading bot is running.
+              <div className="text-sm text-muted-foreground py-8 text-center border border-dashed border-border rounded font-mono">
+                No scanned assets found. Ensure the MT5 VPS trading bot is running.
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border hover:bg-transparent">
-                    <TableHead className="font-mono text-xs">ASSET PAIR</TableHead>
-                    <TableHead className="font-mono text-xs text-right">PRICE A</TableHead>
-                    <TableHead className="font-mono text-xs text-right">PRICE B</TableHead>
-                    <TableHead className="font-mono text-xs text-right">HISTORICAL WIN RATE</TableHead>
-                    <TableHead className="font-mono text-xs text-center">CURRENT SIGNAL</TableHead>
-                    <TableHead className="font-mono text-xs text-center">ACTION</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(dashboard?.scannedAssets || []).map((asset: any) => (
-                    <TableRow 
-                      key={asset.symbolPair} 
-                      className="border-border hover:bg-muted/30 cursor-pointer"
-                      onClick={() => {
-                        const parts = (asset?.symbolPair || "").split('/');
-                        if (parts.length === 2) {
-                          setSelectedChartSymbol(parts[0]);
-                        }
-                      }}
-                    >
-                      <TableCell className="font-mono font-medium">{asset.symbolPair}</TableCell>
-                      <TableCell className="font-mono text-right">{formatAssetPrice(asset?.priceA, (asset?.symbolPair || "").split('/')[0])}</TableCell>
-                      <TableCell className="font-mono text-right">{formatAssetPrice(asset?.priceB, (asset?.symbolPair || "").split('/')[1] || "")}</TableCell>
-                      <TableCell className="font-mono text-right font-semibold text-blue-400">
-                        {Number(asset?.winRate || 0).toFixed(1)}%
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="outline" className={cn(
-                          "rounded-sm text-xs font-mono px-2 py-0.5 border font-extrabold transition-all duration-300",
-                          asset.action === "BUY_SPREAD"
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.12)]"
-                            : asset.action === "SELL_SPREAD"
-                            ? "bg-rose-500/10 text-rose-400 border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.12)]"
-                            : "bg-zinc-900/60 text-zinc-500 border-zinc-800"
-                        )}>
-                          {asset.action === "NONE" ? "WAITING" : asset.action.replace("_SPREAD", "")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {asset.action !== "NONE" && (
-                          <Button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOneClickExecute(asset.symbolPair, asset.action);
-                            }}
-                            size="sm"
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold h-7 px-2"
-                            disabled={executeTrade.isPending || !botOnline || isReadOnly}
-                          >
-                            ⚡ EXECUTE
-                          </Button>
-                        )}
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border hover:bg-transparent">
+                      <TableHead className="font-mono text-xs">ASSET (MT5)</TableHead>
+                      <TableHead className="font-mono text-xs text-right">MARK PRICE</TableHead>
+                      <TableHead className="font-mono text-xs text-right">M15 TARGET TP</TableHead>
+                      <TableHead className="font-mono text-xs text-right">SMC SCORE</TableHead>
+                      <TableHead className="font-mono text-xs text-right">R:R</TableHead>
+                      <TableHead className="font-mono text-xs text-center">M15 BIAS / SIGNAL</TableHead>
+                      <TableHead className="font-mono text-xs text-center">ACTION</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {(dashboard?.scannedAssets || []).map((asset: any) => {
+                      const pairStr = String(asset?.symbolPair || "");
+                      const legA = String(asset?.symbol || pairStr.split("/")[0] || pairStr);
+                      const isRowSelected = symbolMatchesAlias(legA, selectedChartSymbol);
+                      const isMetalOrFx = !["US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "USTEC", "US100", "NDX"].some((k) => legA.toUpperCase().includes(k));
+                      const pPrefix = isMetalOrFx ? "$" : "";
+                      const markPx = Number(asset?.priceA || 0);
+                      const tpPx = Number(asset?.opposingTp || 0);
+                      const stepsPassed = Number(asset?.stepsPassed ?? 0);
+                      const targetRrr = Number(asset?.targetRrr ?? 0);
+                      const rawBias = String(asset?.m15Bias || "NEUTRAL").toUpperCase();
+                      const rawAct = String(asset?.action || "NONE").toUpperCase();
+                      const badgeTxt =
+                        rawAct === "BUY" || rawAct === "BUY_SPREAD"
+                          ? "LONG EXECUTE 🟢"
+                          : rawAct === "SELL" || rawAct === "SELL_SPREAD"
+                          ? "SHORT EXECUTE 🔴"
+                          : rawBias;
+
+                      return (
+                        <TableRow
+                          key={pairStr}
+                          onClick={() => setSelectedChartSymbol(legA)}
+                          className={cn(
+                            "cursor-pointer border-border transition-colors",
+                            isRowSelected ? "bg-indigo-500/10 hover:bg-indigo-500/15" : "hover:bg-muted/30"
+                          )}
+                        >
+                          <TableCell className="font-mono font-bold text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className={cn(isRowSelected ? "text-indigo-300" : "text-zinc-100")}>{legA}</span>
+                              {pairStr.includes("/") && (
+                                <span className="text-[10px] font-normal text-zinc-500">({pairStr})</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-right">
+                            {markPx > 0 ? `${pPrefix}${formatAssetPrice(markPx, legA)}` : "-"}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-right text-emerald-400">
+                            {tpPx > 0 ? `${pPrefix}${formatAssetPrice(tpPx, legA)}` : "-"}
+                          </TableCell>
+                          <TableCell className={cn(
+                            "font-mono text-xs text-right font-semibold",
+                            stepsPassed >= 5 ? "text-emerald-400" : stepsPassed >= 3 ? "text-amber-300" : "text-zinc-200"
+                          )}>
+                            {stepsPassed} / 9 Steps
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-right text-sky-400 font-bold">
+                            {targetRrr > 0 ? `${targetRrr.toFixed(2)}R` : "-"}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "font-mono text-[10px] px-2.5 py-0.5 rounded-sm font-bold",
+                                badgeTxt.includes("LONG") || badgeTxt === "BULL_BIAS"
+                                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                  : badgeTxt.includes("SHORT") || badgeTxt === "BEAR_BIAS"
+                                  ? "bg-rose-500/15 text-rose-400 border-rose-500/30"
+                                  : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                              )}
+                            >
+                              {badgeTxt}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {rawAct !== "NONE" && (
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOneClickExecute(pairStr, rawAct);
+                                }}
+                                size="sm"
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold h-7 px-2"
+                                disabled={executeTrade.isPending || !botOnline || isReadOnly}
+                              >
+                                ⚡ EXECUTE
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>

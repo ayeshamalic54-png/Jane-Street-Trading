@@ -224,29 +224,44 @@ def resolve_broker_symbol(symbol):
     if sym_upper in _RESOLVED_CACHE:
         return _RESOLVED_CACHE[sym_upper]
 
+    disabled_fallback = None
     try:
-        # 1. Direct match on exact symbol
-        info = mt5.symbol_info(symbol)
-        if info is not None:
-            _RESOLVED_CACHE[sym_upper] = symbol
-            return symbol
+        def _is_tradeable(cand_sym):
+            info_c = mt5.symbol_info(cand_sym)
+            if info_c is None:
+                return False, False
+            if getattr(info_c, "trade_mode", 4) == getattr(mt5, "SYMBOL_TRADE_MODE_DISABLED", 0):
+                return True, False
+            return True, True
+
+        # 1. Direct match on exact symbol (only cache immediately if tradeable)
+        exists_s, ok_s = _is_tradeable(symbol)
+        if exists_s:
+            if ok_s:
+                _RESOLVED_CACHE[sym_upper] = symbol
+                return symbol
+            disabled_fallback = disabled_fallback or symbol
 
         # 2. Direct match on uppercase
         if sym_upper != symbol:
-            info = mt5.symbol_info(sym_upper)
-            if info is not None:
-                _RESOLVED_CACHE[sym_upper] = sym_upper
-                return sym_upper
+            exists_u, ok_u = _is_tradeable(sym_upper)
+            if exists_u:
+                if ok_u:
+                    _RESOLVED_CACHE[sym_upper] = sym_upper
+                    return sym_upper
+                disabled_fallback = disabled_fallback or sym_upper
 
         # 3. Check aliases with common broker suffixes (takes < 0.005s total)
         candidates = SYMBOL_ALIASES.get(sym_upper, [sym_upper])
         for alias in candidates:
             for sfx in COMMON_SUFFIXES:
                 cand = f"{alias}{sfx}"
-                info = mt5.symbol_info(cand)
-                if info is not None:
-                    _RESOLVED_CACHE[sym_upper] = cand
-                    return cand
+                exists_c, ok_c = _is_tradeable(cand)
+                if exists_c:
+                    if ok_c:
+                        _RESOLVED_CACHE[sym_upper] = cand
+                        return cand
+                    disabled_fallback = disabled_fallback or cand
 
         # 4. Targeted group search across ALL aliases (covers #USTEC, US100.cash, DJ30.pro, etc.)
         search_terms = list(dict.fromkeys([sym_upper[:3]] + candidates))
@@ -255,7 +270,7 @@ def resolve_broker_symbol(symbol):
             if not group_syms:
                 continue
             for s in group_syms:
-                if s.trade_mode != mt5.SYMBOL_TRADE_MODE_DISABLED:
+                if s.trade_mode != getattr(mt5, "SYMBOL_TRADE_MODE_DISABLED", 0):
                     s_name_u = s.name.upper()
                     if sym_upper in s_name_u or s_name_u.startswith(sym_upper) or any(a in s_name_u for a in candidates):
                         _RESOLVED_CACHE[sym_upper] = s.name
@@ -263,4 +278,4 @@ def resolve_broker_symbol(symbol):
     except Exception as e:
         logger.debug(f"Symbol resolution exception for {symbol}: {e}")
 
-    return symbol
+    return disabled_fallback or symbol

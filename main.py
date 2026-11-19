@@ -565,7 +565,7 @@ CANDIDATE_PAIRS = {
 def is_market_open(symbol: str) -> bool:
     """
     Checks if market for the symbol is open and receiving active live ticks.
-    Prevents scanning or generating signals for closed stocks/indices outside market hours.
+    Timezone-resilient against MT5 broker server clock offsets (GMT+2/GMT+3/EST).
     """
     try:
         cat = get_symbol_category(symbol)
@@ -583,15 +583,27 @@ def is_market_open(symbol: str) -> bool:
             return False
             
         tick = mt5.symbol_info_tick(symbol)
-        if tick is None:
+        if tick is None or (getattr(tick, "bid", 0.0) or 0.0) <= 0:
             return False
             
         import time
-        # Allow slightly wider 600s tick staleness window so quiet CFD sessions aren't skipped falsely
-        if (time.time() - tick.time) > 600:
-            return False
-            
-        return True
+        now_utc = time.time()
+        tick_ts = float(getattr(tick, "time", 0) or 0)
+        # Normal UTC/ahead broker clock check (broker ahead e.g. GMT+2/+3 gives negative diff <= 900)
+        if (now_utc - tick_ts) <= 900:
+            return True
+
+        # Handle MT5 brokers whose tick.time is EST/CST behind UTC: compare tick.time to latest M5 bar timestamp
+        try:
+            bars = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 1)
+            if bars is not None and len(bars) > 0:
+                last_bar_t = float(bars[-1]["time"])
+                if abs(tick_ts - last_bar_t) <= 900:
+                    return True
+        except Exception:
+            pass
+
+        return False
     except Exception as e:
         logger.warning(f"Error checking is_market_open for {symbol}: {e}")
         return True
@@ -2077,8 +2089,32 @@ def main():
     h_thread.start()
     logger.info("Background heartbeat thread started.")
     
-    # Clean up any stale disabled categories on startup
-    cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED)
+    db_cfg = fetch_db_config()
+    if db_cfg:
+        new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg[:19]
+        SL_PIPS = new_sl
+        TP_PIPS = new_tp
+        AUTO_EXECUTE = bool(new_auto_exec)
+        METALS_ENABLED = bool(new_metals)
+        FOREX_ENABLED = bool(new_forex)
+        INDICES_ENABLED = bool(new_indices)
+        STOCKS_ENABLED = bool(new_stocks)
+        RISK_LIMITS_ENABLED = bool(new_risk_limits)
+        import risk_safeguards
+        risk_safeguards.HALT_DAILY_DRAWDOWN_PCT = float(new_halt) if new_halt is not None else 1.00
+        risk_safeguards.MAX_DAILY_LOSS_PERCENT = float(new_halt) if new_halt is not None else 1.00
+        risk_safeguards.MAX_DAILY_DRAWDOWN_PCT = float(new_max_dd) if new_max_dd is not None else 3.30
+        if len(db_cfg) > 19:
+            risk_safeguards.SESSION_GUARD_ENABLED = bool(db_cfg[19])
+            risk_safeguards.SESSION_START_HOUR = float(db_cfg[20])
+            risk_safeguards.SESSION_END_HOUR = float(db_cfg[21])
+        if len(db_cfg) > 24:
+            risk_safeguards.SESSION2_ENABLED = bool(db_cfg[22])
+            risk_safeguards.SESSION2_START_HOUR = float(db_cfg[23])
+            risk_safeguards.SESSION2_END_HOUR = float(db_cfg[24])
+
+    # Clean up ONLY genuinely disabled categories after syncing live DB toggles
+    cleanup_disabled_scanned_assets(CRYPTO_ENABLED, METALS_ENABLED, FOREX_ENABLED, INDICES_ENABLED, STOCKS_ENABLED)
 
     acc_info = initialize_mt5()
     q_cov, r_cov = get_kf_parameters(GLOBAL_CONFIG["SYMBOL_A"])
@@ -2096,25 +2132,6 @@ def main():
     active_pair_beta = float(init_beta_val)
     active_pair_z_score = 0.0
     active_pair_velocity = 0.0
-
-
-    db_cfg = fetch_db_config()
-    if db_cfg:
-        new_pair, new_sl, new_tp, new_smc, new_auto_exec, new_crypto, new_metals, new_forex, new_indices, new_risk_limits, new_z_entry, new_def_lots, new_max_trades, new_knife, new_obi, new_vol, new_stocks, new_halt, new_max_dd = db_cfg[:19]
-        SL_PIPS = new_sl
-        TP_PIPS = new_tp
-        import risk_safeguards
-        risk_safeguards.HALT_DAILY_DRAWDOWN_PCT = float(new_halt) if new_halt is not None else 1.00
-        risk_safeguards.MAX_DAILY_LOSS_PERCENT = float(new_halt) if new_halt is not None else 1.00
-        risk_safeguards.MAX_DAILY_DRAWDOWN_PCT = float(new_max_dd) if new_max_dd is not None else 3.30
-        if len(db_cfg) > 19:
-            risk_safeguards.SESSION_GUARD_ENABLED = bool(db_cfg[19])
-            risk_safeguards.SESSION_START_HOUR = float(db_cfg[20])
-            risk_safeguards.SESSION_END_HOUR = float(db_cfg[21])
-        if len(db_cfg) > 24:
-            risk_safeguards.SESSION2_ENABLED = bool(db_cfg[22])
-            risk_safeguards.SESSION2_START_HOUR = float(db_cfg[23])
-            risk_safeguards.SESSION2_END_HOUR = float(db_cfg[24])
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
@@ -2677,10 +2694,14 @@ def main():
                     check_and_subscribe_symbol(s_b_resolved)
 
                 # ── MARKET CLOSED GUARD ──
-                # Check Leg A (traded Pure SMC instrument); log throttled diagnostic if skipped so VPS never stays silent
+                # Check Leg A (traded Pure SMC instrument); log diagnostic immediately on startup & every 10 loops if skipped
                 if not sub_a_ok or not is_market_open(s_a_resolved):
-                    if win_rate_loop_counter % 30 == 0:
-                        logger.info(f"⏸️ [SCAN SKIPPED] {pk} ({s_a_resolved}) | Market closed, stale tick, or broker symbol unavailable")
+                    if win_rate_loop_counter <= 3 or win_rate_loop_counter % 10 == 0:
+                        info_dbg = mt5.symbol_info(s_a_resolved)
+                        tm_dbg = getattr(info_dbg, "trade_mode", None) if info_dbg else "NONE"
+                        tick_dbg = mt5.symbol_info_tick(s_a_resolved)
+                        tt_dbg = getattr(tick_dbg, "time", None) if tick_dbg else "NONE"
+                        logger.info(f"⏸️ [SCAN SKIPPED] {pk} (resolved={s_a_resolved} sub={sub_a_ok} trade_mode={tm_dbg} tick_t={tt_dbg})")
                     continue
 
                 # Fetch ticks
@@ -3510,9 +3531,11 @@ def main():
             tp_inflect_log_str = "DISABLED 🔴 (OFF)"
             metals_log_str = "ENABLED 🟢" if METALS_ENABLED else "DISABLED 🔴"
             forex_log_str = "ENABLED 🟢" if FOREX_ENABLED else "DISABLED 🔴"
+            indices_log_str = "ENABLED 🟢" if INDICES_ENABLED else "DISABLED 🔴"
+            scanned_pool_str = ", ".join(f"{a}/{b}" for a, b in pairs_to_scan)
             logger.info(
-                f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Engine: Pure SMC/ICT Active 🟢 "
-                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | Dynamic ATR Target: DISABLED ❌ (M15 Structural Target: 1:1.85 Target) "
+                f"📊 [LIVE SCAN DETAIL] Focus: {S_A}/{S_B} | Pool: [{scanned_pool_str}] | Engine: Pure SMC/ICT Active 🟢 "
+                f"| Forex: {forex_log_str} | Metals: {metals_log_str} | Indices: {indices_log_str} | Auto-Exec: {auto_exec_str} | Session Guard: {sess_log_str} | M15 Structural Target: 1:1.85+ Target "
             )
 
             eff_dd_log = max(daily_loss_p, peak_dd_p)

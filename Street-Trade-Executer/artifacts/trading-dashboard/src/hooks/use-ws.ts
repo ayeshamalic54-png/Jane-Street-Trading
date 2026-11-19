@@ -39,11 +39,17 @@ export interface WsDashboardData {
   activeZones: Array<{ type: string; label: string; range: string }>;
   scannedAssets: Array<{
     symbolPair: string;
+    symbol?: string;
     priceA: number;
     priceB: number;
     winRate: number;
     zScore: number;
     action: string;
+    opposingTp?: number;
+    targetRrr?: number;
+    stepsPassed?: number;
+    m15Bias?: string;
+    telemetryUpdatedAt?: string | null;
   }>;
   botOnline: boolean;
   autoExecute: boolean;
@@ -65,6 +71,7 @@ export interface WsDashboardData {
   session_start_hour?: number;
   session_end_hour?: number;
   smcTelemetry?: any;
+  smcTelemetryAll?: Record<string, any>;
 }
 
 export function useLiveDashboard() {

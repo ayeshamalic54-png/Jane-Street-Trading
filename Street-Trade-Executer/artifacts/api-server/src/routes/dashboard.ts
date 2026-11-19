@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { tradesTable, botStateTable, fvgZonesTable, scannedAssetsTable, smcTelemetryTable } from "@workspace/db";
 import { desc, eq, or, ilike } from "drizzle-orm";
 import { ensureSessionGuardColumns, extractSessionGuardFields } from "../lib/sessionGuard";
+import { buildEnrichedScannedAssets, formatSmcTelemetryPayload } from "../lib/smcTelemetrySummary";
 
 const router = Router();
 
@@ -118,12 +119,13 @@ const ZONE_META: Record<string, { label: string; bullish: boolean }> = {
 router.get("/dashboard", async (req, res) => {
   try {
     await ensureSessionGuardColumns();
-    const [botStateRows, openDbTrades, recentClosedTradesRows, zoneRows, scannedAssetsRows] = await Promise.all([
+    const [botStateRows, openDbTrades, recentClosedTradesRows, zoneRows, scannedAssetsRows, smcTelRows] = await Promise.all([
       db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
       db.select().from(tradesTable).where(eq(tradesTable.status, "OPEN")),
       db.select().from(tradesTable).where(eq(tradesTable.status, "CLOSED")).orderBy(desc(tradesTable.entryTime)).limit(10),
       db.select().from(fvgZonesTable).orderBy(desc(fvgZonesTable.updatedAt)).limit(30),
       db.select().from(scannedAssetsTable).orderBy(desc(scannedAssetsTable.winRate)),
+      db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt)),
     ]);
 
     const botState = botStateRows[0];
@@ -166,12 +168,20 @@ router.get("/dashboard", async (req, res) => {
 
     const isSymbolEnabled = (sym: string) => {
       const s = (sym || "").toUpperCase();
-      if (s.includes("USDT")) return false; // Strictly exclude crypto USDT from this Metals/Forex dashboard
+      if (s.includes("USDT") || s.includes("US500") || s.includes("SPX")) return false;
       if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
       if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
-      if (s.includes("US30") || s.includes("NAS100") || s.includes("US500") || s.includes("GER30") || s.includes("UK100") || s.includes("USTEC")) return indicesOn;
+      if (["US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "US100", "NDX", "GER30", "UK100", "USTEC"].some((k) => s.includes(k))) return indicesOn;
       return forexOn;
     };
+
+    const enabledTelRows = (smcTelRows || []).filter((r: any) => isSymbolEnabled(r.symbolPair));
+    const smcTelemetryAll: Record<string, any> = {};
+    for (const r of enabledTelRows) {
+      const formatted = formatSmcTelemetryPayload(r);
+      if (formatted) smcTelemetryAll[r.symbolPair] = formatted;
+    }
+    const smcTelemetryPayload = formatSmcTelemetryPayload(enabledTelRows[0] ?? smcTelRows[0]);
 
     const rawPair = botState?.activePair ?? "EURUSD/GBPUSD";
     const pairSymA = (rawPair.split(/[\/\s]/)[0] || "").toUpperCase();
@@ -221,16 +231,7 @@ router.get("/dashboard", async (req, res) => {
       activePositions: openPositions,
       recentTrades: recentClosedTrades,
       activeZones,
-      scannedAssets: scannedAssetsRows
-        .filter((s) => isSymbolEnabled(s.symbolPair))
-        .map((s) => ({
-          symbolPair: s.symbolPair,
-          priceA: Number(s.priceA ?? 0),
-          priceB: Number(s.priceB ?? 0),
-          winRate: Number(s.winRate ?? 50.0),
-          zScore: Number(s.zScore ?? 0),
-          action: s.action ?? "NONE",
-        })),
+      scannedAssets: buildEnrichedScannedAssets(scannedAssetsRows || [], smcTelRows || [], isSymbolEnabled),
       botOnline: isOnline,
       isBotRunning: !String(botState?.systemStatus ?? "").toUpperCase().includes("STOPPED") && Boolean((botState as any)?.is_bot_running ?? (botState as any)?.isBotRunning ?? true),
       autoExecute: botState?.autoExecute ?? true,
@@ -242,6 +243,8 @@ router.get("/dashboard", async (req, res) => {
       halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? (botState as any)?.halt_drawdown_limit ?? 0.83),
       max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? (botState as any)?.max_drawdown_limit ?? 3.30),
       ...extractSessionGuardFields(botState),
+      smcTelemetry: smcTelemetryPayload,
+      smcTelemetryAll,
     });
 
   } catch (err) {

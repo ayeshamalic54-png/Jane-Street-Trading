@@ -44515,6 +44515,153 @@ function extractSessionGuardFields(row) {
   };
 }
 
+// src/lib/smcTelemetrySummary.ts
+var isPassVal = (v) => typeof v === "string" && (v.includes("PASS") || v.includes("\u{1F7E2}") || v.includes("\u{1F534}"));
+function parseJsonSafe(raw) {
+  if (!raw) return null;
+  if (typeof raw === "object") return raw;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function extractSmcMetrics(telRow) {
+  if (!telRow) {
+    return { opposingTp: 0, targetRrr: 0, stepsPassed: 0, lastCandlePrice: 0, biasTag: "NEUTRAL" };
+  }
+  const m15Bias = String(telRow.m15Bias ?? telRow.m15_bias ?? "NEUTRAL").toUpperCase();
+  const sweepSt = String(telRow.sweepStatus ?? telRow.sweep_status ?? "FAIL");
+  const chochSt = String(telRow.chochStatus ?? telRow.choch_status ?? "FAIL");
+  const fvgSt = String(telRow.fvgStatus ?? telRow.fvg_status ?? "FAIL");
+  const retestSt = String(telRow.retestStatus ?? telRow.retest_status ?? fvgSt);
+  const s6St = String(telRow.s6Status ?? telRow.s6_status ?? telRow.rejectionStatus ?? telRow.rejection_status ?? "FAIL");
+  const s7St = String(telRow.s7Status ?? telRow.s7_status ?? "FAIL");
+  const s8St = String(telRow.s8Status ?? telRow.s8_status ?? "");
+  const s9St = String(telRow.s9Status ?? telRow.s9_status ?? "");
+  const act = String(telRow.action ?? "NONE").toUpperCase();
+  const isBull = m15Bias.includes("BULLISH");
+  const isBear = m15Bias.includes("BEARISH");
+  const s1 = (isBull || isBear) && !m15Bias.includes("NEUTRAL");
+  const s2 = s1 && isPassVal(sweepSt);
+  const s3 = s2 && isPassVal(chochSt);
+  const s4 = s3 && isPassVal(fvgSt);
+  const s5 = s4 && isPassVal(retestSt);
+  const s6 = s5 && isPassVal(s6St);
+  const s7 = s6 && isPassVal(s7St);
+  const isSig = (act === "BUY" || act === "SELL") && s7;
+  const s8 = typeof s8St === "string" && (s8St.includes("PASS") || s8St.includes("\u{1F7E2}")) || s2 && isSig;
+  const s9 = typeof s9St === "string" && (s9St.includes("PASS") || s9St.includes("\u{1F7E2}")) || s7 && isSig;
+  const stepsPassed = [s1, s2, s3, s4, s5, s6, s7, s8, s9].filter(Boolean).length;
+  const parsed = parseJsonSafe(telRow.fvgBoundsJson ?? telRow.fvg_bounds_json);
+  const opposingTp = Number(parsed?.opposing_tp ?? parsed?.tp_price ?? 0) || 0;
+  const candles = Array.isArray(parsed?.candles) ? parsed.candles : [];
+  const lastCandlePrice = candles.length > 0 ? Number(candles[candles.length - 1]?.close ?? 0) || 0 : 0;
+  let targetRrr = 0;
+  const rrrMatch = s9St.match(/(\d+(?:\.\d+)?)R/i);
+  if (rrrMatch) {
+    targetRrr = Number(rrrMatch[1]) || 0;
+  }
+  let biasTag = "NEUTRAL";
+  if (act === "BUY" || act === "BUY_SPREAD") biasTag = "BUY";
+  else if (act === "SELL" || act === "SELL_SPREAD") biasTag = "SELL";
+  else if (isBull) biasTag = "BULL_BIAS";
+  else if (isBear) biasTag = "BEAR_BIAS";
+  return { opposingTp, targetRrr, stepsPassed, lastCandlePrice, biasTag };
+}
+function formatSmcTelemetryPayload(telRow) {
+  if (!telRow) return null;
+  const m = extractSmcMetrics(telRow);
+  return {
+    symbol_pair: telRow.symbolPair,
+    m15_bias: telRow.m15Bias || "NEUTRAL \u26AA",
+    sweep_status: telRow.sweepStatus || "FAIL \u26AA",
+    sweep_price: Number(telRow.sweepPrice ?? 0),
+    choch_status: telRow.chochStatus || "FAIL \u26AA",
+    choch_price: Number(telRow.chochPrice ?? 0),
+    fvg_status: telRow.fvgStatus || "FAIL \u26AA",
+    fvg_bounds_json: telRow.fvgBoundsJson || "[]",
+    rejection_status: telRow.rejectionStatus || "FAIL \u26AA",
+    action: telRow.action || "NONE",
+    updated_at: telRow.updatedAt ? new Date(telRow.updatedAt).toISOString() : "",
+    retest_status: telRow.retestStatus || telRow.fvgStatus || "FAIL \u26AA",
+    s6_status: telRow.s6Status || telRow.rejectionStatus || "FAIL \u26AA",
+    s7_status: telRow.s7Status || "FAIL \u26AA",
+    s8_status: telRow.s8Status || "PASS \u{1F7E2} (Structural Cap)",
+    s9_status: telRow.s9Status || "PASS \u{1F7E2} (>=1.85R Target)",
+    opposing_tp: m.opposingTp,
+    target_rrr: m.targetRrr,
+    steps_passed: m.stepsPassed
+  };
+}
+function buildEnrichedScannedAssets(scannedRows, telemetryRows, isSymbolEnabled) {
+  const telByPair = /* @__PURE__ */ new Map();
+  const telByLegA = /* @__PURE__ */ new Map();
+  for (const t of telemetryRows || []) {
+    const sp = String(t.symbolPair || "");
+    const spU = sp.toUpperCase();
+    if (!sp || spU.includes("US500") || spU.includes("SPX") || !isSymbolEnabled(sp)) continue;
+    if (!telByPair.has(spU)) telByPair.set(spU, t);
+    const legA = spU.split("/")[0]?.trim() || spU;
+    if (legA && !telByLegA.has(legA)) telByLegA.set(legA, t);
+  }
+  const seenPairs = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const s of scannedRows || []) {
+    const sp = String(s.symbolPair || "");
+    const spU = sp.toUpperCase();
+    if (!sp || spU.includes("US500") || spU.includes("SPX") || !isSymbolEnabled(sp)) continue;
+    seenPairs.add(spU);
+    const legA = spU.split("/")[0]?.trim() || spU;
+    const tel = telByPair.get(spU) ?? telByLegA.get(legA);
+    const m = extractSmcMetrics(tel);
+    const priceA = Number(s.priceA ?? 0) || m.lastCandlePrice;
+    const telAct = String(tel?.action ?? "NONE").toUpperCase();
+    const rowAct = String(s.action ?? "NONE").toUpperCase();
+    const effectiveAct = telAct !== "NONE" ? telAct : rowAct;
+    result.push({
+      symbolPair: sp,
+      symbol: legA,
+      priceA,
+      priceB: Number(s.priceB ?? 0),
+      winRate: Number(s.winRate ?? 50),
+      zScore: Number(s.zScore ?? 0),
+      action: effectiveAct,
+      opposingTp: m.opposingTp,
+      targetRrr: m.targetRrr,
+      stepsPassed: m.stepsPassed,
+      m15Bias: m.biasTag,
+      telemetryUpdatedAt: tel?.updatedAt ? new Date(tel.updatedAt).toISOString() : null
+    });
+  }
+  for (const t of telemetryRows || []) {
+    const sp = String(t.symbolPair || "");
+    const spU = sp.toUpperCase();
+    if (!sp || seenPairs.has(spU) || spU.includes("US500") || spU.includes("SPX") || !isSymbolEnabled(sp)) continue;
+    seenPairs.add(spU);
+    const legA = spU.split("/")[0]?.trim() || spU;
+    const m = extractSmcMetrics(t);
+    result.push({
+      symbolPair: sp,
+      symbol: legA,
+      priceA: m.lastCandlePrice,
+      priceB: 0,
+      winRate: 50,
+      zScore: 0,
+      action: String(t.action ?? "NONE"),
+      opposingTp: m.opposingTp,
+      targetRrr: m.targetRrr,
+      stepsPassed: m.stepsPassed,
+      m15Bias: m.biasTag,
+      telemetryUpdatedAt: t.updatedAt ? new Date(t.updatedAt).toISOString() : null
+    });
+  }
+  return result;
+}
+
 // src/routes/dashboard.ts
 var router = (0, import_express.Router)();
 router.get("/smc_telemetry", async (req, res) => {
@@ -44603,12 +44750,13 @@ var ZONE_META = {
 router.get("/dashboard", async (req, res) => {
   try {
     await ensureSessionGuardColumns();
-    const [botStateRows, openDbTrades, recentClosedTradesRows, zoneRows, scannedAssetsRows] = await Promise.all([
+    const [botStateRows, openDbTrades, recentClosedTradesRows, zoneRows, scannedAssetsRows, smcTelRows] = await Promise.all([
       db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
       db.select().from(tradesTable).where(eq(tradesTable.status, "OPEN")),
       db.select().from(tradesTable).where(eq(tradesTable.status, "CLOSED")).orderBy(desc(tradesTable.entryTime)).limit(10),
       db.select().from(fvgZonesTable).orderBy(desc(fvgZonesTable.updatedAt)).limit(30),
-      db.select().from(scannedAssetsTable).orderBy(desc(scannedAssetsTable.winRate))
+      db.select().from(scannedAssetsTable).orderBy(desc(scannedAssetsTable.winRate)),
+      db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt))
     ]);
     const botState = botStateRows[0];
     const isOnline = botState?.lastHeartbeat != null && Date.now() - new Date(botState.lastHeartbeat).getTime() < 6e4;
@@ -44644,12 +44792,19 @@ router.get("/dashboard", async (req, res) => {
     const stocksOn = botState?.stocksEnabled ?? true;
     const isSymbolEnabled = (sym) => {
       const s = (sym || "").toUpperCase();
-      if (s.includes("USDT")) return false;
+      if (s.includes("USDT") || s.includes("US500") || s.includes("SPX")) return false;
       if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
       if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
-      if (s.includes("US30") || s.includes("NAS100") || s.includes("US500") || s.includes("GER30") || s.includes("UK100") || s.includes("USTEC")) return indicesOn;
+      if (["US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "US100", "NDX", "GER30", "UK100", "USTEC"].some((k) => s.includes(k))) return indicesOn;
       return forexOn;
     };
+    const enabledTelRows = (smcTelRows || []).filter((r) => isSymbolEnabled(r.symbolPair));
+    const smcTelemetryAll = {};
+    for (const r of enabledTelRows) {
+      const formatted = formatSmcTelemetryPayload(r);
+      if (formatted) smcTelemetryAll[r.symbolPair] = formatted;
+    }
+    const smcTelemetryPayload = formatSmcTelemetryPayload(enabledTelRows[0] ?? smcTelRows[0]);
     const rawPair = botState?.activePair ?? "EURUSD/GBPUSD";
     const pairSymA = (rawPair.split(/[\/\s]/)[0] || "").toUpperCase();
     const isRawPairEnabled = isSymbolEnabled(pairSymA);
@@ -44693,14 +44848,7 @@ router.get("/dashboard", async (req, res) => {
       activePositions: openPositions,
       recentTrades: recentClosedTrades,
       activeZones,
-      scannedAssets: scannedAssetsRows.filter((s) => isSymbolEnabled(s.symbolPair)).map((s) => ({
-        symbolPair: s.symbolPair,
-        priceA: Number(s.priceA ?? 0),
-        priceB: Number(s.priceB ?? 0),
-        winRate: Number(s.winRate ?? 50),
-        zScore: Number(s.zScore ?? 0),
-        action: s.action ?? "NONE"
-      })),
+      scannedAssets: buildEnrichedScannedAssets(scannedAssetsRows || [], smcTelRows || [], isSymbolEnabled),
       botOnline: isOnline,
       isBotRunning: !String(botState?.systemStatus ?? "").toUpperCase().includes("STOPPED") && Boolean(botState?.is_bot_running ?? botState?.isBotRunning ?? true),
       autoExecute: botState?.autoExecute ?? true,
@@ -44711,7 +44859,9 @@ router.get("/dashboard", async (req, res) => {
       stocksEnabled: botState?.stocksEnabled ?? true,
       halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? botState?.halt_drawdown_limit ?? 0.83),
       max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? botState?.max_drawdown_limit ?? 3.3),
-      ...extractSessionGuardFields(botState)
+      ...extractSessionGuardFields(botState),
+      smcTelemetry: smcTelemetryPayload,
+      smcTelemetryAll
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get dashboard data");
@@ -48921,28 +49071,29 @@ async function buildDashboardPayload() {
   const [botStateRows, scannedAssetsRows, smcTelRows] = await Promise.all([
     db.select().from(botStateTable).where(eq(botStateTable.id, 1)).limit(1),
     db.select().from(scannedAssetsTable).orderBy(desc(scannedAssetsTable.winRate)),
-    db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt)).limit(1)
+    db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt))
   ]);
-  const telRow = smcTelRows[0];
-  const smcTelemetryPayload = telRow ? {
-    symbol_pair: telRow.symbolPair,
-    m15_bias: telRow.m15Bias || "NEUTRAL \u26AA",
-    sweep_status: telRow.sweepStatus || "FAIL \u26AA",
-    sweep_price: Number(telRow.sweepPrice ?? 0),
-    choch_status: telRow.chochStatus || "FAIL \u26AA",
-    choch_price: Number(telRow.chochPrice ?? 0),
-    fvg_status: telRow.fvgStatus || "FAIL \u26AA",
-    fvg_bounds_json: telRow.fvgBoundsJson || "[]",
-    rejection_status: telRow.rejectionStatus || "FAIL \u26AA",
-    action: telRow.action || "NONE",
-    updated_at: telRow.updatedAt ? new Date(telRow.updatedAt).toISOString() : "",
-    retest_status: telRow.retestStatus || telRow.fvgStatus || "FAIL \u26AA",
-    s6_status: telRow.s6Status || telRow.rejectionStatus || "FAIL \u26AA",
-    s7_status: telRow.s7Status || "FAIL \u26AA",
-    s8_status: telRow.s8Status || "PASS \u{1F7E2} ($0.75 Fixed)",
-    s9_status: telRow.s9Status || "PASS \u{1F7E2} (2.0R Target Space)"
-  } : null;
   const botState = botStateRows[0];
+  const forexOn = botState?.forexEnabled ?? true;
+  const metalsOn = botState?.metalsEnabled ?? true;
+  const indicesOn = botState?.indicesEnabled ?? true;
+  const stocksOn = botState?.stocksEnabled ?? true;
+  const isSymbolEnabled = (sym) => {
+    const s = (sym || "").toUpperCase();
+    if (s.includes("USDT") || s.includes("US500") || s.includes("SPX")) return false;
+    if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
+    if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
+    if (["US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "US100", "NDX", "GER30", "UK100", "USTEC"].some((k) => s.includes(k))) return indicesOn;
+    return forexOn;
+  };
+  const enabledTelRows = (smcTelRows || []).filter((r) => isSymbolEnabled(r.symbolPair));
+  const smcTelemetryAll = {};
+  for (const r of enabledTelRows) {
+    const formatted = formatSmcTelemetryPayload(r);
+    if (formatted) smcTelemetryAll[r.symbolPair] = formatted;
+  }
+  const telRow = enabledTelRows[0] ?? smcTelRows[0];
+  const smcTelemetryPayload = formatSmcTelemetryPayload(telRow);
   const isOnline = botState?.lastHeartbeat != null && Date.now() - new Date(botState.lastHeartbeat).getTime() < 3e4;
   const openPositions = cachedRecentTrades.filter((t) => t.status === "OPEN").map((t) => ({
     ticket: Number(t.ticket),
@@ -48957,18 +49108,6 @@ async function buildDashboardPayload() {
     sl: t.sl != null ? Number(t.sl) : 0,
     tp: t.tp != null ? Number(t.tp) : 0
   }));
-  const forexOn = botState?.forexEnabled ?? true;
-  const metalsOn = botState?.metalsEnabled ?? true;
-  const indicesOn = botState?.indicesEnabled ?? true;
-  const stocksOn = botState?.stocksEnabled ?? true;
-  const isSymbolEnabled = (sym) => {
-    const s = (sym || "").toUpperCase();
-    if (s.includes("USDT")) return false;
-    if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
-    if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
-    if (s.includes("US30") || s.includes("NAS100") || s.includes("US500") || s.includes("GER30") || s.includes("UK100") || s.includes("USTEC")) return indicesOn;
-    return forexOn;
-  };
   const rawPair = botState?.activePair ?? "EURUSD/GBPUSD";
   const pairSymA = (rawPair.split(/[\/\s]/)[0] || "").toUpperCase();
   const isRawPairEnabled = isSymbolEnabled(pairSymA);
@@ -49020,14 +49159,7 @@ async function buildDashboardPayload() {
       comment: t.comment ?? null
     })),
     activeZones,
-    scannedAssets: (scannedAssetsRows || []).filter((s) => isSymbolEnabled(s.symbolPair)).map((s) => ({
-      symbolPair: s.symbolPair,
-      priceA: Number(s.priceA ?? 0),
-      priceB: Number(s.priceB ?? 0),
-      winRate: Number(s.winRate ?? 50),
-      zScore: Number(s.zScore ?? 0),
-      action: s.action ?? "NONE"
-    })),
+    scannedAssets: buildEnrichedScannedAssets(scannedAssetsRows || [], smcTelRows || [], isSymbolEnabled),
     botOnline: isOnline,
     autoExecute: botState?.autoExecute ?? true,
     cryptoEnabled: botState?.cryptoEnabled ?? true,
@@ -49038,7 +49170,8 @@ async function buildDashboardPayload() {
     halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? botState?.halt_drawdown_limit ?? 0.83),
     max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? botState?.max_drawdown_limit ?? 3.3),
     ...extractSessionGuardFields(botState),
-    smcTelemetry: smcTelemetryPayload
+    smcTelemetry: smcTelemetryPayload,
+    smcTelemetryAll
   };
 }
 async function sendSnapshot(ws) {
