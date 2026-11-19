@@ -485,9 +485,18 @@ def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_float
             continue
 
         is_metals = any(m in sym_up for m in ("XAU", "GOLD", "XAG", "SILVER"))
-        digits = 2 if is_metals else 5
-        be_buf = gold_buf if is_metals else fx_buf
-        tol = 0.01 if is_metals else 0.00005
+        is_indices = any(idx in sym_up for idx in ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX"))
+        info = mt5.symbol_info(sym) if mt5 else None
+        digits = int(info.digits) if (info and getattr(info, "digits", None) is not None) else (2 if (is_metals or is_indices) else 5)
+        if is_metals:
+            be_buf = gold_buf
+            tol = 0.01
+        elif is_indices:
+            be_buf = 2.15
+            tol = 0.05
+        else:
+            be_buf = fx_buf
+            tol = 0.00005
 
         curr_sl = float(getattr(p, "sl", 0.0) or 0.0)
         pos_profit = float(getattr(p, "profit", 0.0) or 0.0)
@@ -495,8 +504,7 @@ def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_float
         pos_type = int(getattr(p, "type", 0))
         is_buy = (pos_type == getattr(mt5, "ORDER_TYPE_BUY", 0))
 
-        # Scale Metals BE threshold with lot size (~$7.00+ Gold move before shifting SL)
-        # 0.07 lot -> +$50.00 | 0.06 lot -> +$42.00 | <=0.05 lot -> +$35.00
+        # Scale BE threshold across Gold & Indices (~$50 trigger on $52 risk moves SL to BE cleanly without early chop)
         if is_metals:
             if pos_vol >= 0.065:
                 eff_be_trigger = max(be_trigger_usd, 50.0)
@@ -504,6 +512,8 @@ def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_float
                 eff_be_trigger = max(be_trigger_usd, 42.0)
             else:
                 eff_be_trigger = be_trigger_usd
+        elif is_indices:
+            eff_be_trigger = max(be_trigger_usd, 50.0)
         else:
             eff_be_trigger = be_trigger_usd
 

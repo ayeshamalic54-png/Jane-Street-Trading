@@ -15,7 +15,7 @@ export interface OhlcBar {
 export interface SymbolSpec {
   symbol: string;
   label: string;
-  category: "metals" | "forex";
+  category: "metals" | "forex" | "indices";
   yahooTicker: string;
   digits: number;
   contractSize: number;
@@ -155,6 +155,64 @@ export const SYMBOL_SPECS: Record<string, SymbolSpec> = {
     frontRunBuf: 0.08,
     beBuffer: 0.02,
   },
+  US30: {
+    symbol: "US30",
+    label: "Dow Jones 30 (US30)",
+    category: "indices",
+    yahooTicker: "YM=F",
+    digits: 2,
+    contractSize: 1,
+    isQuoteJpy: false,
+    isQuoteCadOrChf: false,
+    isEurGbp: false,
+    defaultMaxSlDist: 105.0,
+    m15MinAmp: 25.5,
+    m15TargetMinAmp: 21.25,
+    m5MinAmp: 10.6,
+    minStructDepth: 12.75,
+    minPenetration: 0.85,
+    reclaimMaxDip: 12.75,
+    minFvgGap: 3.4,
+    maxZoneDist: 153.0,
+    minObDisp: 6.8,
+    mitTol: 1.7,
+    wickBuf: 6.5,
+    closeTol: 2.15,
+    sweepMargin: 4.25,
+    maxChaseDist: 17.0,
+    targetMinMove: 12.75,
+    frontRunBuf: 9.35,
+    beBuffer: 2.15,
+  },
+  NAS100: {
+    symbol: "NAS100",
+    label: "Nasdaq 100 (NAS100)",
+    category: "indices",
+    yahooTicker: "NQ=F",
+    digits: 2,
+    contractSize: 1,
+    isQuoteJpy: false,
+    isQuoteCadOrChf: false,
+    isEurGbp: false,
+    defaultMaxSlDist: 85.0,
+    m15MinAmp: 25.5,
+    m15TargetMinAmp: 21.25,
+    m5MinAmp: 10.6,
+    minStructDepth: 12.75,
+    minPenetration: 0.85,
+    reclaimMaxDip: 12.75,
+    minFvgGap: 3.4,
+    maxZoneDist: 153.0,
+    minObDisp: 6.8,
+    mitTol: 1.7,
+    wickBuf: 6.5,
+    closeTol: 2.15,
+    sweepMargin: 4.25,
+    maxChaseDist: 17.0,
+    targetMinMove: 12.75,
+    frontRunBuf: 9.35,
+    beBuffer: 2.15,
+  },
   EURUSD: { symbol: "EURUSD", label: "EUR/USD", yahooTicker: "EURUSD=X", ...FOREX_STANDARD_BASE },
   GBPUSD: { symbol: "GBPUSD", label: "GBP/USD", yahooTicker: "GBPUSD=X", ...FOREX_STANDARD_BASE },
   AUDUSD: { symbol: "AUDUSD", label: "AUD/USD", yahooTicker: "AUDUSD=X", ...FOREX_STANDARD_BASE },
@@ -167,16 +225,31 @@ export const SYMBOL_SPECS: Record<string, SymbolSpec> = {
   GBPJPY: { symbol: "GBPJPY", label: "GBP/JPY", yahooTicker: "GBPJPY=X", ...FOREX_JPY_BASE },
 };
 
+const SYMBOL_ALIAS_MAP: Record<string, string> = {
+  GOLD: "XAUUSD",
+  SILVER: "XAGUSD",
+  DJ30: "US30",
+  WS30: "US30",
+  DOW30: "US30",
+  DJI: "US30",
+  USTEC: "NAS100",
+  US100: "NAS100",
+  NDX: "NAS100",
+  NDX100: "NAS100",
+  NQ100: "NAS100",
+};
+
 const CRYPTO_KEYWORDS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "MATIC", "USDT", "USDC", "SHIB", "LINK"];
 
 export function resolveSymbolSpec(rawSymbol: string): SymbolSpec {
-  const cleaned = rawSymbol.trim().toUpperCase().split("/")[0].replace(/[^A-Z]/g, "");
+  const cleanedRaw = rawSymbol.trim().toUpperCase().split("/")[0].replace(/[^A-Z0-9]/g, "");
+  const cleaned = SYMBOL_ALIAS_MAP[cleanedRaw] ?? cleanedRaw;
   if (!cleaned || CRYPTO_KEYWORDS.some((kw) => cleaned.includes(kw))) {
-    throw new Error(`Crypto symbols (${rawSymbol}) are disabled in this terminal. Select Metals (XAUUSD, XAGUSD) or Forex (EURUSD, GBPUSD, USDJPY).`);
+    throw new Error(`Crypto symbols (${rawSymbol}) are disabled in this terminal. Select Metals (XAUUSD, XAGUSD), Indices (US30, NAS100), or Forex (EURUSD, GBPUSD, USDJPY).`);
   }
   const spec = SYMBOL_SPECS[cleaned];
   if (!spec) {
-    throw new Error(`Unsupported symbol "${rawSymbol}". Allowed Forex & Metals: ${Object.keys(SYMBOL_SPECS).join(", ")}`);
+    throw new Error(`Unsupported symbol "${rawSymbol}". Allowed Metals, Indices & Forex: ${Object.keys(SYMBOL_SPECS).join(", ")}`);
   }
   return spec;
 }
@@ -750,16 +823,18 @@ function computeSafeTradeLot(
   smartRiskCapEnabled: boolean,
   riskCapUsd: number
 ): number {
-  if (!smartRiskCapEnabled || slDist <= 0 || spec.category !== "metals") {
+  if (!smartRiskCapEnabled || slDist <= 0 || (spec.category !== "metals" && spec.category !== "indices")) {
     return Number(maxBaseLot.toFixed(2));
   }
   const usdPerUnitLot1 = Math.abs(priceDeltaToUsd(1.0, entryPrice, 1.0, spec));
   if (usdPerUnitLot1 <= 0) return Number(maxBaseLot.toFixed(2));
   const safeLot = Math.floor((riskCapUsd / (slDist * usdPerUnitLot1)) * 100 + 1e-9) / 100;
-  return Number(Math.max(0.01, Math.min(maxBaseLot, safeLot)).toFixed(2));
+  const lotCap = spec.category === "indices" ? Math.max(maxBaseLot, 5.0) : maxBaseLot;
+  return Number(Math.max(0.01, Math.min(lotCap, safeLot)).toFixed(2));
 }
 
 function computeAdaptiveBeTrigger(lotUsed: number, spec: SymbolSpec, baseBeTriggerUsd: number): number {
+  if (spec.category === "indices") return Math.max(baseBeTriggerUsd, 50.0);
   if (spec.category !== "metals") return baseBeTriggerUsd;
   if (lotUsed >= 0.065) return Math.max(baseBeTriggerUsd, 50.0);
   if (lotUsed >= 0.055) return Math.max(baseBeTriggerUsd, 42.0);

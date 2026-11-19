@@ -44520,8 +44520,21 @@ var router = (0, import_express.Router)();
 router.get("/smc_telemetry", async (req, res) => {
   try {
     const pair = req.query.pair || "XAUUSD/XAGUSD";
-    const rows = await db.select().from(smcTelemetryTable).where(or(eq(smcTelemetryTable.symbolPair, pair), ilike(smcTelemetryTable.symbolPair, `%${pair}%`))).orderBy(desc(smcTelemetryTable.updatedAt)).limit(1);
-    let row = rows[0];
+    const baseSym = pair.split("/")[0]?.trim().toUpperCase() || pair.toUpperCase();
+    const prefixAliases = baseSym === "NAS100" ? ["NAS100", "USTEC", "US100", "NDX"] : baseSym === "US30" ? ["US30", "DJ30", "WS30", "DOW30", "DJI"] : baseSym === "XAUUSD" ? ["XAUUSD", "GOLD"] : [baseSym];
+    const prefixConditions = [
+      eq(smcTelemetryTable.symbolPair, pair),
+      ...prefixAliases.flatMap((alias) => [
+        ilike(smcTelemetryTable.symbolPair, `${alias}/%`),
+        ilike(smcTelemetryTable.symbolPair, alias)
+      ])
+    ];
+    const prefixRows = await db.select().from(smcTelemetryTable).where(or(...prefixConditions)).orderBy(desc(smcTelemetryTable.updatedAt)).limit(1);
+    let row = prefixRows[0];
+    if (!row) {
+      const broadRows = await db.select().from(smcTelemetryTable).where(ilike(smcTelemetryTable.symbolPair, `%${pair}%`)).orderBy(desc(smcTelemetryTable.updatedAt)).limit(1);
+      row = broadRows[0];
+    }
     if (!row) {
       const fallbackRows = await db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt)).limit(1);
       row = fallbackRows[0];
@@ -50265,6 +50278,64 @@ var SYMBOL_SPECS = {
     frontRunBuf: 0.08,
     beBuffer: 0.02
   },
+  US30: {
+    symbol: "US30",
+    label: "Dow Jones 30 (US30)",
+    category: "indices",
+    yahooTicker: "YM=F",
+    digits: 2,
+    contractSize: 1,
+    isQuoteJpy: false,
+    isQuoteCadOrChf: false,
+    isEurGbp: false,
+    defaultMaxSlDist: 105,
+    m15MinAmp: 25.5,
+    m15TargetMinAmp: 21.25,
+    m5MinAmp: 10.6,
+    minStructDepth: 12.75,
+    minPenetration: 0.85,
+    reclaimMaxDip: 12.75,
+    minFvgGap: 3.4,
+    maxZoneDist: 153,
+    minObDisp: 6.8,
+    mitTol: 1.7,
+    wickBuf: 6.5,
+    closeTol: 2.15,
+    sweepMargin: 4.25,
+    maxChaseDist: 17,
+    targetMinMove: 12.75,
+    frontRunBuf: 9.35,
+    beBuffer: 2.15
+  },
+  NAS100: {
+    symbol: "NAS100",
+    label: "Nasdaq 100 (NAS100)",
+    category: "indices",
+    yahooTicker: "NQ=F",
+    digits: 2,
+    contractSize: 1,
+    isQuoteJpy: false,
+    isQuoteCadOrChf: false,
+    isEurGbp: false,
+    defaultMaxSlDist: 85,
+    m15MinAmp: 25.5,
+    m15TargetMinAmp: 21.25,
+    m5MinAmp: 10.6,
+    minStructDepth: 12.75,
+    minPenetration: 0.85,
+    reclaimMaxDip: 12.75,
+    minFvgGap: 3.4,
+    maxZoneDist: 153,
+    minObDisp: 6.8,
+    mitTol: 1.7,
+    wickBuf: 6.5,
+    closeTol: 2.15,
+    sweepMargin: 4.25,
+    maxChaseDist: 17,
+    targetMinMove: 12.75,
+    frontRunBuf: 9.35,
+    beBuffer: 2.15
+  },
   EURUSD: { symbol: "EURUSD", label: "EUR/USD", yahooTicker: "EURUSD=X", ...FOREX_STANDARD_BASE },
   GBPUSD: { symbol: "GBPUSD", label: "GBP/USD", yahooTicker: "GBPUSD=X", ...FOREX_STANDARD_BASE },
   AUDUSD: { symbol: "AUDUSD", label: "AUD/USD", yahooTicker: "AUDUSD=X", ...FOREX_STANDARD_BASE },
@@ -50276,15 +50347,29 @@ var SYMBOL_SPECS = {
   EURJPY: { symbol: "EURJPY", label: "EUR/JPY", yahooTicker: "EURJPY=X", ...FOREX_JPY_BASE },
   GBPJPY: { symbol: "GBPJPY", label: "GBP/JPY", yahooTicker: "GBPJPY=X", ...FOREX_JPY_BASE }
 };
+var SYMBOL_ALIAS_MAP = {
+  GOLD: "XAUUSD",
+  SILVER: "XAGUSD",
+  DJ30: "US30",
+  WS30: "US30",
+  DOW30: "US30",
+  DJI: "US30",
+  USTEC: "NAS100",
+  US100: "NAS100",
+  NDX: "NAS100",
+  NDX100: "NAS100",
+  NQ100: "NAS100"
+};
 var CRYPTO_KEYWORDS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "MATIC", "USDT", "USDC", "SHIB", "LINK"];
 function resolveSymbolSpec(rawSymbol) {
-  const cleaned = rawSymbol.trim().toUpperCase().split("/")[0].replace(/[^A-Z]/g, "");
+  const cleanedRaw = rawSymbol.trim().toUpperCase().split("/")[0].replace(/[^A-Z0-9]/g, "");
+  const cleaned = SYMBOL_ALIAS_MAP[cleanedRaw] ?? cleanedRaw;
   if (!cleaned || CRYPTO_KEYWORDS.some((kw) => cleaned.includes(kw))) {
-    throw new Error(`Crypto symbols (${rawSymbol}) are disabled in this terminal. Select Metals (XAUUSD, XAGUSD) or Forex (EURUSD, GBPUSD, USDJPY).`);
+    throw new Error(`Crypto symbols (${rawSymbol}) are disabled in this terminal. Select Metals (XAUUSD, XAGUSD), Indices (US30, NAS100), or Forex (EURUSD, GBPUSD, USDJPY).`);
   }
   const spec = SYMBOL_SPECS[cleaned];
   if (!spec) {
-    throw new Error(`Unsupported symbol "${rawSymbol}". Allowed Forex & Metals: ${Object.keys(SYMBOL_SPECS).join(", ")}`);
+    throw new Error(`Unsupported symbol "${rawSymbol}". Allowed Metals, Indices & Forex: ${Object.keys(SYMBOL_SPECS).join(", ")}`);
   }
   return spec;
 }
@@ -50690,15 +50775,17 @@ function computeM15OpposingTarget(isBuy, dfM15, entryPrice, slDist, minTargetRrr
   return { tpPrice: rnd(entryPrice - 2.2 * slDist), rrr: 2.2 };
 }
 function computeSafeTradeLot(slDist, entryPrice, maxBaseLot, spec, smartRiskCapEnabled, riskCapUsd) {
-  if (!smartRiskCapEnabled || slDist <= 0 || spec.category !== "metals") {
+  if (!smartRiskCapEnabled || slDist <= 0 || spec.category !== "metals" && spec.category !== "indices") {
     return Number(maxBaseLot.toFixed(2));
   }
   const usdPerUnitLot1 = Math.abs(priceDeltaToUsd(1, entryPrice, 1, spec));
   if (usdPerUnitLot1 <= 0) return Number(maxBaseLot.toFixed(2));
   const safeLot = Math.floor(riskCapUsd / (slDist * usdPerUnitLot1) * 100 + 1e-9) / 100;
-  return Number(Math.max(0.01, Math.min(maxBaseLot, safeLot)).toFixed(2));
+  const lotCap = spec.category === "indices" ? Math.max(maxBaseLot, 5) : maxBaseLot;
+  return Number(Math.max(0.01, Math.min(lotCap, safeLot)).toFixed(2));
 }
 function computeAdaptiveBeTrigger(lotUsed, spec, baseBeTriggerUsd) {
+  if (spec.category === "indices") return Math.max(baseBeTriggerUsd, 50);
   if (spec.category !== "metals") return baseBeTriggerUsd;
   if (lotUsed >= 0.065) return Math.max(baseBeTriggerUsd, 50);
   if (lotUsed >= 0.055) return Math.max(baseBeTriggerUsd, 42);

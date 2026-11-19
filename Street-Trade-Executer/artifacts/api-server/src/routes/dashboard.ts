@@ -9,14 +9,39 @@ const router = Router();
 router.get("/smc_telemetry", async (req, res) => {
   try {
     const pair = (req.query.pair as string) || "XAUUSD/XAGUSD";
-    const rows = await db
+    const baseSym = pair.split("/")[0]?.trim().toUpperCase() || pair.toUpperCase();
+    const prefixAliases =
+      baseSym === "NAS100"
+        ? ["NAS100", "USTEC", "US100", "NDX"]
+        : baseSym === "US30"
+        ? ["US30", "DJ30", "WS30", "DOW30", "DJI"]
+        : baseSym === "XAUUSD"
+        ? ["XAUUSD", "GOLD"]
+        : [baseSym];
+    const prefixConditions = [
+      eq(smcTelemetryTable.symbolPair, pair),
+      ...prefixAliases.flatMap((alias) => [
+        ilike(smcTelemetryTable.symbolPair, `${alias}/%`),
+        ilike(smcTelemetryTable.symbolPair, alias),
+      ]),
+    ];
+    const prefixRows = await db
       .select()
       .from(smcTelemetryTable)
-      .where(or(eq(smcTelemetryTable.symbolPair, pair), ilike(smcTelemetryTable.symbolPair, `%${pair}%`)))
+      .where(or(...prefixConditions))
       .orderBy(desc(smcTelemetryTable.updatedAt))
       .limit(1);
 
-    let row = rows[0];
+    let row = prefixRows[0];
+    if (!row) {
+      const broadRows = await db
+        .select()
+        .from(smcTelemetryTable)
+        .where(ilike(smcTelemetryTable.symbolPair, `%${pair}%`))
+        .orderBy(desc(smcTelemetryTable.updatedAt))
+        .limit(1);
+      row = broadRows[0];
+    }
     if (!row) {
       const fallbackRows = await db
         .select()

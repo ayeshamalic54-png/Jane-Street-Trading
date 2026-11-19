@@ -45,8 +45,9 @@ function TradingViewWidget({ symbol }: { symbol: string }) {
       if (s === "NVDA") return "NASDAQ:NVDA";
       if (s === "META") return "NASDAQ:META";
       if (s === "US500" || s === "SPX") return "SP:SPX";
-      if (s === "NAS100" || s === "NDX") return "NASDAQ:NDX";
-      return s;
+      if (["NAS100", "USTEC", "US100", "NDX", "NQ100"].includes(s)) return "OANDA:NAS100USD";
+      if (["US30", "DJ30", "WS30", "DOW30", "DJI"].includes(s)) return "OANDA:US30USD";
+      return `FX:${s}`;
     };
 
     const tvSymbol = mapSymbolToTV(symbol);
@@ -245,7 +246,7 @@ function MarketHoursCards() {
             <span className="text-xl sm:text-2xl p-1.5 sm:p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shrink-0">📊</span>
             <div className="min-w-0">
               <div className="font-semibold text-sm text-zinc-100 font-sans truncate">Stock Indices</div>
-              <div className="text-[11px] text-emerald-300/70 font-mono truncate">Futures (US500, US30, USTEC)</div>
+              <div className="text-[11px] text-emerald-300/70 font-mono truncate">US Indices (US30, NAS100)</div>
             </div>
           </div>
           <span className={cn("shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border", isIndicesOpen ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_12px_rgba(52,211,153,0.3)] animate-pulse" : isIndexBreak ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-rose-500/20 text-rose-400 border-rose-500/40")}>
@@ -326,9 +327,19 @@ export default function Dashboard() {
     if (s.includes("ETH")) return 0.1;
     if (s.includes("SOL") || s.includes("BNB") || s.includes("AVAX")) return 0.01;
     if (s.includes("XRP") || s.includes("ADA") || s.includes("DOGE") || s.includes("MATIC")) return 0.0001;
-    if (["US500", "US30", "NAS100", "GER30", "UK100", "SPX", "DJI", "NDX"].some(x => s.includes(x))) return 1.0;
+    if (["US500", "US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "GER30", "UK100", "SPX", "DJI", "NDX"].some(x => s.includes(x))) return 1.0;
     if (["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"].some(x => s.includes(x))) return 0.1;
     return 0.0001;
+  };
+
+  const formatAssetPrice = (price: any, sym: string) => {
+    const s = (sym || "").toUpperCase();
+    const digits = ["XAU", "GOLD", "XAG", "SILVER", "US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX", "GER30", "UK100"].some((k) => s.includes(k))
+      ? 2
+      : s.includes("JPY")
+      ? 3
+      : 5;
+    return Number(price || 0).toFixed(digits);
   };
 
   const entryVal = parseFloat(manualEntry);
@@ -401,14 +412,27 @@ export default function Dashboard() {
     };
   }, [selectedChartSymbol]);
 
+  const symbolMatchesAlias = (candidate: string, selected: string) => {
+    const c = (candidate || "").toUpperCase().split("/")[0].trim();
+    const sel = (selected || "").toUpperCase().split("/")[0].trim();
+    if (!c || !sel) return false;
+    if (c === sel || c.startsWith(sel) || sel.startsWith(c)) return true;
+    const us30Aliases = ["US30", "DJ30", "WS30", "DOW", "DJI"];
+    const nasAliases = ["NAS100", "USTEC", "US100", "NDX", "NQ100"];
+    const goldAliases = ["XAUUSD", "GOLD", "XAU"];
+    if (us30Aliases.some((k) => sel.includes(k)) && us30Aliases.some((k) => c.includes(k))) return true;
+    if (nasAliases.some((k) => sel.includes(k)) && nasAliases.some((k) => c.includes(k))) return true;
+    if (goldAliases.some((k) => sel.includes(k)) && goldAliases.some((k) => c.includes(k))) return true;
+    return false;
+  };
+
   const activeSmcTel = useMemo(() => {
-    const chartSym = (selectedChartSymbol || "").toUpperCase();
     const wsPair = (wsData?.smcTelemetry?.symbol_pair || "").toUpperCase();
-    if (wsPair && (wsPair.includes(chartSym) || chartSym.includes(wsPair.split("/")[0]))) {
+    if (symbolMatchesAlias(wsPair, selectedChartSymbol)) {
       return wsData?.smcTelemetry;
     }
     const polledPair = (smcTelemetry?.symbol_pair || "").toUpperCase();
-    if (polledPair && (polledPair.includes(chartSym) || chartSym.includes(polledPair.split("/")[0]))) {
+    if (symbolMatchesAlias(polledPair, selectedChartSymbol)) {
       return smcTelemetry;
     }
     return smcTelemetry || wsData?.smcTelemetry;
@@ -434,7 +458,7 @@ export default function Dashboard() {
       const s = (sym || "").toUpperCase();
       if (s.includes("XAU") || s.includes("XAG") || s.includes("XPT") || s.includes("XPD")) return metalsOn;
       if (s.includes("AAPL") || s.includes("MSFT") || s.includes("GOOGL") || s.includes("TSLA") || s.includes("NVDA") || s.includes("AMD") || s.includes("META") || s.includes("AMZN")) return stocksOn;
-      if (s.includes("US30") || s.includes("NAS100") || s.includes("US500") || s.includes("GER30") || s.includes("UK100") || s.includes("USTEC")) return indicesOn;
+      if (["US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "US100", "NDX", "US500", "GER30", "UK100", "USTEC"].some((k) => s.includes(k))) return indicesOn;
       return forexOn;
     };
 
@@ -497,19 +521,21 @@ export default function Dashboard() {
   const overallGain = equity - (initialBalance ?? 100000.00);
   const overallGainPercent = (initialBalance ?? 100000.00) > 0 ? (overallGain / (initialBalance ?? 100000.00)) * 100 : 0;
 
-  const matchingAsset = dashboard?.scannedAssets?.find(
-    (a: any) => (a?.symbolPair || "").startsWith(selectedChartSymbol) || (a?.symbolPair || "").endsWith(selectedChartSymbol)
-  );
+  const matchingAsset =
+    dashboard?.scannedAssets?.find((a: any) =>
+      symbolMatchesAlias(a?.symbolPair || "", selectedChartSymbol)
+    ) ??
+    dashboard?.scannedAssets?.find(
+      (a: any) => (a?.symbolPair || "").startsWith(selectedChartSymbol) || (a?.symbolPair || "").endsWith(selectedChartSymbol)
+    );
 
   const selectedAssetAction = matchingAsset?.action ?? "NONE";
   const selectedAssetZScore = matchingAsset?.zScore ?? 0.0;
   const selectedAssetWinRate = matchingAsset?.winRate ?? 50.0;
 
-  const matchingPosition = dashboard?.activePositions?.find((p: any) => {
-    const symUpper = (p?.symbol || "").toUpperCase();
-    const chartUpper = (selectedChartSymbol || "").toUpperCase();
-    return symUpper.includes(chartUpper) || chartUpper.includes(symUpper);
-  });
+  const matchingPosition = dashboard?.activePositions?.find((p: any) =>
+    symbolMatchesAlias(p?.symbol || "", selectedChartSymbol)
+  );
   const hasActivePosition = matchingPosition != null;
   const activePositionType = matchingPosition?.type ?? "BUY";
 
@@ -518,7 +544,9 @@ export default function Dashboard() {
     if (z.label.toUpperCase().includes("USDT") || (z.type && z.type.toUpperCase().includes("USDT"))) return false;
     const labelUpper = z.label.toUpperCase();
     const chartUpper = selectedChartSymbol.toUpperCase();
-    return labelUpper.includes(`· ${chartUpper}`) || labelUpper.includes(` ${chartUpper} `) || labelUpper.endsWith(chartUpper);
+    if (labelUpper.includes(`· ${chartUpper}`) || labelUpper.includes(` ${chartUpper} `) || labelUpper.endsWith(chartUpper)) return true;
+    const afterDot = labelUpper.split("·").pop()?.trim() || "";
+    return symbolMatchesAlias(afterDot, chartUpper);
   }) ?? [];
 
   const getStatusColor = (status: string) => {
@@ -1471,34 +1499,54 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Step 8: SL Buffer */}
-                    <div className={getBoxClass(s8Valid, false, s8Failed)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 8: SL Buffer</div>
-                      <div title={s8Text} className={cn("text-xs truncate", getTextColor(s8Valid, false, s8Failed))}>
-                        {s8Failed ? (s8Text || "FAIL 🔴 (SL Cap)") : s8Valid ? (isPassText(s8Text) ? s8Text : "PASS 🟢 ($0.75 Buf)") : "WAITING SWEEP ⚪"}
-                      </div>
-                      <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s8Text}>
-                        {s8Failed ? "Exceeds $7.50 Max SL Cap" : s8Valid ? "Sweep ± $0.75 ($7.50 Cap)" : "Locks on Sweep (Step 2)"}
-                      </div>
-                    </div>
+                    {(() => {
+                      const symU = (selectedChartSymbol || "").toUpperCase();
+                      const isUs30Sel = ["US30", "DJ30", "WS30", "DOW", "DJI"].some((k) => symU.includes(k));
+                      const isNasSel = ["NAS100", "USTEC", "US100", "NDX", "NQ100"].some((k) => symU.includes(k));
+                      const isIdxSel = isUs30Sel || isNasSel;
+                      const isMetalSel = ["XAU", "GOLD", "XAG", "SILVER"].some((k) => symU.includes(k));
+                      const s8BufTxt = isIdxSel ? "6.50pt" : isMetalSel ? "$0.75" : "4p";
+                      const s8CapTxt = isUs30Sel ? "105pt" : isNasSel ? "85pt" : isMetalSel ? "$10.00" : "50p";
+                      const s9BufTxt = isIdxSel ? "-9.35pt" : isMetalSel ? "-$1.10" : "-3.5p";
+                      return (
+                        <>
+                          {/* Step 8: SL Buffer */}
+                          <div className={getBoxClass(s8Valid, false, s8Failed)}>
+                            <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 8: SL Buffer</div>
+                            <div title={s8Text} className={cn("text-xs truncate", getTextColor(s8Valid, false, s8Failed))}>
+                              {s8Failed ? (s8Text || "FAIL 🔴 (SL Cap)") : s8Valid ? (isPassText(s8Text) ? s8Text : `PASS 🟢 (${s8BufTxt} Buf)`) : "WAITING SWEEP ⚪"}
+                            </div>
+                            <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s8Text}>
+                              {s8Failed ? `Exceeds ${s8CapTxt} Max SL Cap` : s8Valid ? `Sweep ± ${s8BufTxt} (${s8CapTxt} Cap)` : "Locks on Sweep (Step 2)"}
+                            </div>
+                          </div>
 
-                    {/* Step 9: Opposing Target */}
-                    <div className={getBoxClass(s9Valid, false, s9Failed)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 9: Opposing Target</div>
-                      <div title={s9Text} className={cn("text-xs truncate", getTextColor(s9Valid, false, s9Failed))}>
-                        {s9Failed ? (s9Text || "FAIL 🔴 (<1.85R)") : s9Valid ? (isPassText(s9Text) ? s9Text : "PASS 🟢 (M15 Target)") : (s9Text || "WAITING ⚪")}
-                      </div>
-                      <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s9Text}>
-                        {s9Failed ? "Below 1.85R Min R:R" : s9Valid ? "M15 Opposing Liq (-$1.10)" : "Min 1.85R M15 Structural TP"}
-                      </div>
-                    </div>
+                          {/* Step 9: Opposing Target */}
+                          <div className={getBoxClass(s9Valid, false, s9Failed)}>
+                            <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 9: Opposing Target</div>
+                            <div title={s9Text} className={cn("text-xs truncate", getTextColor(s9Valid, false, s9Failed))}>
+                              {s9Failed ? (s9Text || "FAIL 🔴 (<1.85R)") : s9Valid ? (isPassText(s9Text) ? s9Text : "PASS 🟢 (M15 Target)") : (s9Text || "WAITING ⚪")}
+                            </div>
+                            <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s9Text}>
+                              {s9Failed ? "Below 1.85R Min R:R" : s9Valid ? `M15 Opposing Liq (${s9BufTxt})` : "Min 1.85R M15 Structural TP"}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 );
               })()}
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">
                 <div>
                   <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Max Risk Cap</div>
-                  <div className="font-mono text-sm font-bold text-amber-400">$50.54 USD ($7.50 Gold Move)</div>
+                  <div className="font-mono text-sm font-bold text-amber-400">
+                    {["US30", "DJ30", "WS30", "DOW", "DJI"].some((k) => (selectedChartSymbol || "").toUpperCase().includes(k))
+                      ? "$52.00 USD (105pt Max US30 SL)"
+                      : ["NAS100", "USTEC", "US100", "NDX", "NQ100"].some((k) => (selectedChartSymbol || "").toUpperCase().includes(k))
+                      ? "$52.00 USD (85pt Max NAS100 SL)"
+                      : "$52.00 USD ($10.00 Max Gold SL)"}
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Hedge Ratio (β)</div>
@@ -1559,8 +1607,31 @@ export default function Dashboard() {
               <div>
                 <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider font-mono">Live Market Chart & Pure SMC Structure</CardTitle>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Institutional real-time charting for: <span className="font-mono font-bold text-indigo-400">{selectedChartSymbol}</span> (Click on any asset below to view its chart)
+                  Institutional real-time charting for: <span className="font-mono font-bold text-indigo-400">{selectedChartSymbol}</span> (Click any pill or table asset below)
                 </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  ...(dashboard?.metalsEnabled ?? true ? ["XAUUSD"] : []),
+                  ...(dashboard?.indicesEnabled ?? true ? ["US30", "NAS100"] : []),
+                  ...(dashboard?.forexEnabled ? ["EURUSD", "GBPUSD"] : []),
+                ].map((quickSym) => (
+                  <Button
+                    key={quickSym}
+                    type="button"
+                    size="sm"
+                    variant={selectedChartSymbol.toUpperCase() === quickSym ? "default" : "outline"}
+                    className={cn(
+                      "h-7 px-2.5 text-[11px] font-mono font-bold",
+                      selectedChartSymbol.toUpperCase() === quickSym
+                        ? "bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-400"
+                        : "bg-zinc-900/70 border-zinc-700 text-zinc-300 hover:text-white"
+                    )}
+                    onClick={() => setSelectedChartSymbol(quickSym)}
+                  >
+                    {quickSym}
+                  </Button>
+                ))}
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1731,8 +1802,8 @@ export default function Dashboard() {
                       }}
                     >
                       <TableCell className="font-mono font-medium">{asset.symbolPair}</TableCell>
-                      <TableCell className="font-mono text-right">{Number(asset?.priceA || 0).toFixed(5)}</TableCell>
-                      <TableCell className="font-mono text-right">{Number(asset?.priceB || 0).toFixed(5)}</TableCell>
+                      <TableCell className="font-mono text-right">{formatAssetPrice(asset?.priceA, (asset?.symbolPair || "").split('/')[0])}</TableCell>
+                      <TableCell className="font-mono text-right">{formatAssetPrice(asset?.priceB, (asset?.symbolPair || "").split('/')[1] || "")}</TableCell>
                       <TableCell className="font-mono text-right font-semibold text-blue-400">
                         {Number(asset?.winRate || 0).toFixed(1)}%
                       </TableCell>
@@ -1926,8 +1997,8 @@ export default function Dashboard() {
                         </Badge>
                       </TableCell>
                       <TableCell className="font-mono text-right">{Number(pos?.lots || 0).toFixed(2)}</TableCell>
-                      <TableCell className="font-mono text-right">{Number(pos?.entry || 0).toFixed(5)}</TableCell>
-                      <TableCell className="font-mono text-right">{pos?.current != null ? Number(pos.current).toFixed(5) : "-"}</TableCell>
+                      <TableCell className="font-mono text-right">{formatAssetPrice(pos?.entry, pos?.symbol || "")}</TableCell>
+                      <TableCell className="font-mono text-right">{pos?.current != null ? formatAssetPrice(pos.current, pos?.symbol || "") : "-"}</TableCell>
                       <TableCell className={cn(
                         "font-mono text-right font-bold",
                         pos.profit >= 0 ? "text-green-500" : "text-red-500"

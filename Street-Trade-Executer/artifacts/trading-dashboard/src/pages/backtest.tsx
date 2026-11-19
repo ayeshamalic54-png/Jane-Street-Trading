@@ -32,7 +32,7 @@ interface SmcTradeSim {
 interface SmcBacktestResponse {
   symbol: string;
   label: string;
-  category: "metals" | "forex";
+  category: "metals" | "forex" | "indices";
   totalTrades: number;
   wins: number;
   losses: number;
@@ -60,7 +60,7 @@ interface SmcBacktestResponse {
 interface InstrumentOption {
   symbol: string;
   label: string;
-  category: "metals" | "forex";
+  category: "metals" | "forex" | "indices";
   defaultMaxSl: string;
   digits: number;
 }
@@ -68,6 +68,8 @@ interface InstrumentOption {
 const INSTRUMENTS: InstrumentOption[] = [
   { symbol: "XAUUSD", label: "Gold (XAU/USD)", category: "metals", defaultMaxSl: "10.00", digits: 2 },
   { symbol: "XAGUSD", label: "Silver (XAG/USD)", category: "metals", defaultMaxSl: "0.50", digits: 3 },
+  { symbol: "US30", label: "Dow Jones 30 (US30)", category: "indices", defaultMaxSl: "105.00", digits: 2 },
+  { symbol: "NAS100", label: "Nasdaq 100 (NAS100)", category: "indices", defaultMaxSl: "85.00", digits: 2 },
   { symbol: "EURUSD", label: "EUR/USD", category: "forex", defaultMaxSl: "0.0050", digits: 5 },
   { symbol: "GBPUSD", label: "GBP/USD", category: "forex", defaultMaxSl: "0.0050", digits: 5 },
   { symbol: "USDJPY", label: "USD/JPY", category: "forex", defaultMaxSl: "0.50", digits: 3 },
@@ -103,6 +105,9 @@ export default function Backtest() {
     const found = INSTRUMENTS.find((i) => i.symbol === sym);
     if (found) {
       setMaxSlDist(found.defaultMaxSl);
+      if (found.category === "indices") setLotSize("5.00");
+      else if (found.category === "metals") setLotSize("0.07");
+      else setLotSize("0.50");
     }
   };
 
@@ -211,7 +216,7 @@ export default function Backtest() {
                     <span className="font-mono font-bold text-xs truncate">{inst.symbol}</span>
                     <span className={cn(
                       "text-[9px] uppercase font-mono px-1 rounded shrink-0",
-                      inst.category === "metals" ? "bg-amber-500/15 text-amber-400" : "bg-sky-500/15 text-sky-400"
+                      inst.category === "metals" ? "bg-amber-500/15 text-amber-400" : inst.category === "indices" ? "bg-indigo-500/15 text-indigo-400" : "bg-sky-500/15 text-sky-400"
                     )}>
                       {inst.category}
                     </span>

@@ -202,8 +202,8 @@ def shutdown_mt5(symbol=None):
     logger.info("MT5 connection closed.")
 
 SYMBOL_ALIASES = {
-    "NAS100": ["NAS100", "USTEC", "US100", "NQ100", "NDX100", "NASDAQ"],
-    "US30": ["US30", "DJ30", "WS30", "USIND30", "DOW30"],
+    "NAS100": ["NAS100", "USTEC", "US100", "NQ100", "NDX100", "NASDAQ", "NDX"],
+    "US30": ["US30", "DJ30", "WS30", "USIND30", "DOW30", "DJI"],
     "US500": ["US500", "SPX500", "SP500", "USA500"],
     "GER30": ["GER30", "GER40", "DAX30", "DAX40", "DE30", "DE40"],
     "UK100": ["UK100", "FTSE100", "GB100"],
@@ -212,7 +212,7 @@ SYMBOL_ALIASES = {
 }
 
 _RESOLVED_CACHE = {}
-COMMON_SUFFIXES = ["", ".m", ".pro", ".raw", "+", "c", ".a", ".ecn", ".i", "m", "_i", "-", ".s"]
+COMMON_SUFFIXES = ["", ".m", ".pro", ".raw", ".cash", "+", "c", ".a", ".ecn", ".i", "m", "_i", "-", ".s"]
 
 def resolve_broker_symbol(symbol):
     """Resolves broker-specific symbol names (e.g. XAUUSD -> XAUUSD.m, NAS100 -> USTEC) with zero IPC lag using direct symbol_info and memory caching."""

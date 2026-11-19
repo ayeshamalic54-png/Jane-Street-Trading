@@ -29,7 +29,7 @@ from smc_strategy_engine import evaluate_smc_strategy_signal
 from execution_bot import execute_three_part_trade, execute_three_part_hedge_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl, mt5_epoch_to_utc_naive, apply_pure_breakeven_guard
 
 
-from smc_indicators import detect_smc_zones, is_price_in_zones
+from smc_indicators import detect_smc_zones, is_price_in_zones, get_smc_asset_profile
 from database import log_signal, get_connection, save_or_update_mt5_account, get_target_mt5_login, clear_target_mt5_login, get_bot_running_state, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset, purge_disabled_category_zones, utc_now_naive, to_utc_naive, format_pkt_time
 from news_guard import check_pair_news_block, check_post_news_stability
 try:
@@ -319,6 +319,7 @@ def update_live_toggles_from_db():
             curr_state = {
                 "forex": FOREX_ENABLED,
                 "metals": METALS_ENABLED,
+                "indices": INDICES_ENABLED,
                 "auto_exec": AUTO_EXECUTE,
                 "risk_limits": RISK_LIMITS_ENABLED,
                 "session_guard": bool(risk_safeguards.SESSION_GUARD_ENABLED),
@@ -556,9 +557,8 @@ CANDIDATE_PAIRS = {
         ("META", "GOOGL"),
     ],
     "indices": [
-        ("US30", "US500"),
         ("US30", "NAS100"),
-        ("US500", "NAS100"),
+        ("NAS100", "US30"),
     ]
 }
 
@@ -612,9 +612,8 @@ EXPECTED_BETA_SIGN = {
     "NVDA/AMD": 1,
     "AMZN/GOOGL": 1,
     "META/GOOGL": 1,
-    "US500/NAS100": 1,
-    "US30/US500": 1,
-    "US30/NAS100": 1
+    "US30/NAS100": 1,
+    "NAS100/US30": 1,
 }
 
 DEFAULT_LOT_SIZES = {
@@ -638,6 +637,8 @@ def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.
     Smart $52 Max-Risk Institutional Prop Firm Lot Sizing Engine:
     - Gold (XAUUSD): Base 0.07 lots when SL <= $7.42; auto-scales to 0.06 ($7.43-$8.66)
       and 0.05 ($8.67-$10.00) so per-trade SL loss NEVER exceeds $52.00 USD.
+    - Indices (US30, NAS100): Dynamic exact $52.00 risk sizing using live MT5 symbol
+      trade_tick_value / trade_tick_size (scaled to volume_step & <= 80% free margin).
     - Forex: Fixed 0.51 Lots.
     """
     import math
@@ -651,6 +652,69 @@ def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.
             safe_lot = math.floor((52.0 / (float(sl_dist_price) * contract_sz)) * 100.0 + 1e-9) / 100.0
             return round(max(0.01, min(max_lot, safe_lot)), 2)
         return max_lot
+
+    is_idx = (
+        category == "indices"
+        or any(x in sym_upper for x in ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"))
+    )
+    if is_idx:
+        resolved_sym = symbol
+        info = None
+        try:
+            if mt5.initialize():
+                info = mt5.symbol_info(symbol)
+                if info is None:
+                    resolved_sym = resolve_broker_symbol(symbol)
+                    info = mt5.symbol_info(resolved_sym)
+        except Exception:
+            info = None
+
+        vol_min = float(getattr(info, "volume_min", 0.01) or 0.01) if info else 0.01
+        vol_max = float(getattr(info, "volume_max", 25.0) or 25.0) if info else 25.0
+        vol_step = float(getattr(info, "volume_step", 0.01) or 0.01) if info else 0.01
+        if vol_step <= 0:
+            vol_step = 0.01
+        step_str = f"{vol_step:.8f}".rstrip("0")
+        step_dec = len(step_str.split(".")[1]) if "." in step_str else 0
+
+        tick_val = float(getattr(info, "trade_tick_value", 0.0) or 0.0) if info else 0.0
+        tick_sz = float(getattr(info, "trade_tick_size", 0.0) or 0.0) if info else 0.0
+        if tick_val > 0 and tick_sz > 0:
+            usd_per_pt_1lot = tick_val / tick_sz
+        else:
+            contract_sz = float(getattr(info, "trade_contract_size", 1.0) or 1.0) if info else 1.0
+            usd_per_pt_1lot = max(0.01, contract_sz)
+
+        max_idx_lot = min(vol_max, 5.0)
+        if sl_dist_price and sl_dist_price > 0 and usd_per_pt_1lot > 0:
+            raw_lot = 52.0 / (float(sl_dist_price) * usd_per_pt_1lot)
+        else:
+            raw_lot = 52.0 / (50.0 * usd_per_pt_1lot)
+
+        steps = math.floor((raw_lot / vol_step) + 1e-9)
+        safe_lot = round(max(vol_min, min(max_idx_lot, steps * vol_step)), step_dec)
+
+        # Free margin safety cap (never exceed 80% of available free margin)
+        try:
+            acc = mt5.account_info() if info else None
+            tick_now = mt5.symbol_info_tick(resolved_sym) if info else None
+            if acc and tick_now and acc.margin_free > 0:
+                ref_px = float(tick_now.ask or tick_now.bid or 0.0)
+                if ref_px > 0:
+                    max_safe_margin = acc.margin_free * 0.80
+                    while safe_lot > vol_min:
+                        req_m = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, resolved_sym, safe_lot, ref_px)
+                        if req_m is None or req_m <= max_safe_margin:
+                            break
+                        next_lot = round(max(vol_min, safe_lot - vol_step), step_dec)
+                        if next_lot >= safe_lot:
+                            break
+                        safe_lot = next_lot
+        except Exception:
+            pass
+
+        return safe_lot
+
     return 0.51
 
 
@@ -1063,9 +1127,21 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         act_str = "MARKET BUY 🟢" if "BUY" in str(action).upper() else "MARKET SELL 🔴"
         
         info_a = mt5.symbol_info(symbol_a) if mt5.initialize() else None
-        digits_a = info_a.digits if info_a else 5
+        prof_a = get_smc_asset_profile(symbol=symbol_a, category=get_symbol_category(symbol_a), ref_price=entry_a)
+        digits_a = info_a.digits if info_a else prof_a["digits"]
         
-        pip_sz = 0.01 if ("XAU" in symbol_a.upper() or "JPY" in symbol_a.upper()) else 0.0001
+        if prof_a["category"] == "indices":
+            pip_sz = 1.0
+            unit_lbl = "Pts"
+            buf_str = f"{prof_a['wick_buf']:.2f} Pts"
+        elif "XAU" in symbol_a.upper() or "JPY" in symbol_a.upper():
+            pip_sz = 0.01
+            unit_lbl = "Pips"
+            buf_str = f"${prof_a['wick_buf']:.2f}"
+        else:
+            pip_sz = 0.0001
+            unit_lbl = "Pips"
+            buf_str = f"{prof_a['wick_buf']:.4f}"
         sl_pips = abs(entry_a - sl_a) / pip_sz
         tp_pips = abs(tp2 - entry_a) / pip_sz
         z_type = "Oversold Trigger" if z_score < 0 else "Overbought Trigger"
@@ -1076,13 +1152,13 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         mode_header = "📢 **[ NEW PURE SMC TRADING SIGNAL ]** 📢\n*(Signals Only Mode — Auto-Execution OFF)*" if is_signal_only else "🚀 **[ NEW OPEN POSITION ]** 🚀"
         message = (
             f"@everyone\n"
-            f"📢 **PURE SMC / ICT 7-CONDITION SIGNAL ENGINE** 📢\n"
+            f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
             f"{mode_header}\n\n"
             f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
-            f"📊 **STRATEGY:** `Pure SMC Structure (7-Step Verified) 🟢`\n\n"
+            f"📊 **STRATEGY:** `Pure SMC Structure (9-Step Verified) 🟢`\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
-            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} Pips | Sweep {'-' if 'BUY' in act_str else '+'} $0.75 Buffer)*\n"
+            f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} {unit_lbl} | Sweep {'-' if 'BUY' in act_str else '+'} {buf_str} Buffer)*\n"
             f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.2f}R Opposing Structural Liquidity Target)*\n"
             f"📦 **LOT SIZE:** `{lots_a:.2f} Lots`\n"
         )
@@ -1734,7 +1810,7 @@ def get_symbol_category(symbol: str) -> str:
         return "metals"
     if any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"]):
         return "stocks"
-    if any(x in s for x in ["US500", "US30", "NAS100", "GER30", "UK100", "USTEC"]):
+    if any(x in s for x in ["US500", "US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "US100", "NDX", "NQ100", "GER30", "UK100", "USTEC", "SPX"]):
         return "indices"
     return "forex"
 
@@ -2593,9 +2669,13 @@ def main():
                 cat_a = get_symbol_category(s_a)
                 cat_b = get_symbol_category(s_b)
 
-                # Resolve broker aliases for MT5 symbols
+                # Resolve broker aliases for MT5 symbols and ensure Market Watch subscription before checking market open
                 s_a_resolved = resolve_broker_symbol(s_a) if cat_a != "crypto" else s_a
                 s_b_resolved = resolve_broker_symbol(s_b) if cat_b != "crypto" else s_b
+                if cat_a != "crypto":
+                    check_and_subscribe_symbol(s_a_resolved)
+                if cat_b != "crypto":
+                    check_and_subscribe_symbol(s_b_resolved)
 
                 # ── MARKET CLOSED GUARD ──
                 # Prevents scanning or generating signals for closed stocks/indices outside market hours
@@ -2657,7 +2737,9 @@ def main():
                         else:
                             r_df = get_rates_df(s_a_resolved, SMC_TIMEFRAME, count=100)
                         if r_df is not None and not r_df.empty:
-                            SMC_ZONES_CACHE[s_a_resolved] = detect_smc_zones(r_df)
+                            r_df.attrs["symbol"] = s_a_resolved
+                            r_df.attrs["category"] = cat_a
+                            SMC_ZONES_CACHE[s_a_resolved] = detect_smc_zones(r_df, symbol=s_a_resolved, category=cat_a)
                             log_fvg_zones(s_a_resolved, SMC_ZONES_CACHE[s_a_resolved])
                         smc_counter_cache[s_a_resolved] = 0
                     except Exception as e:
@@ -2699,12 +2781,17 @@ def main():
                 df_m5 = get_rates_df(s_a_resolved, mt5.TIMEFRAME_M5, count=100)
                 if df_a is not None and not df_a.empty:
                     df_a = calculate_zscore_and_ema(df_a)
+                    df_a.attrs["symbol"] = s_a_resolved
+                    df_a.attrs["category"] = cat_a
+                if df_m5 is not None and not df_m5.empty:
+                    df_m5.attrs["symbol"] = s_a_resolved
+                    df_m5.attrs["category"] = cat_a
 
                 # Pass live M5 & M15 data along with live broker tick price (p_a)
                 # Strategy engine evaluates confirmed closed candle (iloc[-2]) and executes on live price (p_a)
                 action = "NONE"
                 smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(
-                    df_a, df_m5, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED, live_price=p_a
+                    df_a, df_m5, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED, live_price=p_a, symbol=s_a_resolved
                 )
                 vid_reason = smc_reason
                 if smc_sig == "BUY":
@@ -2714,6 +2801,7 @@ def main():
 
 
                 logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: Opposing Structural Target 🟢")
+                asset_prof = get_smc_asset_profile(df_a, symbol=s_a_resolved, category=cat_a, ref_price=p_a)
                 try:
                     from database import update_smc_telemetry
                     import json
@@ -2725,24 +2813,26 @@ def main():
                     s5_st = "FAIL ⚪"
                     s6_st = "FAIL ⚪"
                     s7_st = "FAIL ⚪"
-                    s8_st = "PASS 🟢 ($0.75 Fixed)"
+                    s8_buf_val = float(asset_prof["wick_buf"])
+                    s8_buf_lbl = f"${s8_buf_val:.2f}" if asset_prof["category"] == "metals" else (f"{s8_buf_val:.2f}pts" if asset_prof["is_high_point"] else f"{s8_buf_val:.4f}")
+                    s8_st = f"PASS 🟢 ({s8_buf_lbl} Buf)"
                     s9_st = "WAITING ⚪ (Opposing Target)"
                     sweep_p_val = 0.0
                     choch_p_val = 0.0
                     opposing_tp_val = 0.0
 
                     if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason or "ALL SMC STEPS PASSED" in vid_reason:
-                        dyn_rrr = (abs(float(smc_tp) - float(p_a)) / max(0.01, abs(float(p_a) - float(smc_sl)))) if (smc_tp and smc_sl) else 2.0
+                        dyn_rrr = (abs(float(smc_tp) - float(p_a)) / max(asset_prof["min_dist"], abs(float(p_a) - float(smc_sl)))) if (smc_tp and smc_sl) else 2.0
                         if "BUY" in vid_reason:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢 (FVG Retested)", "PASS 🟢 (Bullish Rejection)", "PASS 🟢 (Candle Closed)", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R M15 Target)"
+                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢 (FVG Retested)", "PASS 🟢 (Bullish Rejection)", "PASS 🟢 (Candle Closed)", f"PASS 🟢 ({s8_buf_lbl} Buf)", f"PASS 🟢 ({dyn_rrr:.2f}R M15 Target)"
                             )
                         else:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴 (FVG Retested)", "PASS 🔴 (Bearish Rejection)", "PASS 🔴 (Candle Closed)", "PASS 🟢 ($0.75 Fixed)", f"PASS 🟢 ({dyn_rrr:.2f}R M15 Target)"
+                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴 (FVG Retested)", "PASS 🔴 (Bearish Rejection)", "PASS 🔴 (Candle Closed)", f"PASS 🟢 ({s8_buf_lbl} Buf)", f"PASS 🟢 ({dyn_rrr:.2f}R M15 Target)"
                             )
                         if smc_sl is not None:
-                            sweep_p_val = float(smc_sl) + (0.75 if "BUY" in vid_reason else -0.75)
+                            sweep_p_val = float(smc_sl) + (s8_buf_val if "BUY" in vid_reason else -s8_buf_val)
                         if smc_tp is not None:
                             opposing_tp_val = float(smc_tp)
                     elif "S1(" in vid_reason or "Scanning Strict" in vid_reason or "Scanning Pure SMC" in vid_reason:
@@ -2787,14 +2877,15 @@ def main():
                     candle_records = []
                     if df_m5 is not None and not df_m5.empty:
                         slice_m5 = df_m5.tail(45)
-                        is_metals_sym = (cat_a == 'metals') or any(m in s_a_resolved.upper() for m in ['XAU', 'XAG', 'GOLD', 'SILVER'])
+                        c_digits = int(asset_prof.get("digits", 2 if asset_prof.get("is_high_point") else 5))
+                        marker_tol = 17.0 if asset_prof.get("category") == "indices" else (2.0 if asset_prof.get("is_high_point") else 0.005)
                         for _, crow in slice_m5.iterrows():
                             t_val = crow['time']
                             t_str = t_val.strftime("%H:%M") if hasattr(t_val, 'strftime') else str(t_val)
-                            o_val = float(round(crow['open'], 2 if is_metals_sym else 5))
-                            h_val = float(round(crow['high'], 2 if is_metals_sym else 5))
-                            l_val = float(round(crow['low'], 2 if is_metals_sym else 5))
-                            c_val = float(round(crow['close'], 2 if is_metals_sym else 5))
+                            o_val = float(round(crow['open'], c_digits))
+                            h_val = float(round(crow['high'], c_digits))
+                            l_val = float(round(crow['low'], c_digits))
+                            c_val = float(round(crow['close'], c_digits))
                             candle_records.append({
                                 "time": t_str,
                                 "open": o_val,
@@ -2807,12 +2898,12 @@ def main():
                         if candle_records and sweep_p_val > 0:
                             tgt_k = "low" if "BULLISH" in m15_b else "high"
                             best_sw = min(candle_records, key=lambda c: abs(c[tgt_k] - sweep_p_val))
-                            if abs(best_sw[tgt_k] - sweep_p_val) < (2.0 if is_metals_sym else 0.005):
+                            if abs(best_sw[tgt_k] - sweep_p_val) < marker_tol:
                                 best_sw["isSweep"] = True
                         if candle_records and choch_p_val > 0:
                             tgt_k = "high" if "BULLISH" in m15_b else "low"
                             best_ch = min(candle_records, key=lambda c: abs(c[tgt_k] - choch_p_val))
-                            if abs(best_ch[tgt_k] - choch_p_val) < (2.0 if is_metals_sym else 0.005):
+                            if abs(best_ch[tgt_k] - choch_p_val) < marker_tol:
                                 best_ch["isChoch"] = True
 
                     zone_dict["candles"] = candle_records
@@ -2891,10 +2982,27 @@ def main():
                         cand_cat_b = get_symbol_category(s_b_resolved)
                         if (cand_cat_a == "crypto" or is_spread_valid(s_a_resolved)):
                             cand_candle_time = str(df_m5.iloc[-2]['time']) if (df_m5 is not None and not df_m5.empty) else str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+                            smc_quality_val = 50.0
+                            try:
+                                if "Quality:" in str(smc_reason):
+                                    smc_quality_val = float(str(smc_reason).split("Quality:", 1)[1].split("|")[0].strip())
+                            except Exception:
+                                smc_quality_val = 50.0
+                            cand_sl_d = float(smc_sl_dist or 0.0)
+                            cand_rrr = (abs(float(smc_tp) - float(p_a)) / cand_sl_d) if (smc_tp and cand_sl_d > 0) else 2.0
+                            cand_composite = round(
+                                (0.55 * smc_quality_val)
+                                + (0.25 * float(win_rate or 50.0))
+                                + (20.0 * min(1.5, max(0.0, (cand_rrr - 1.85) / 1.15))),
+                                2,
+                            )
                             candidate_signals.append({
                                 "pair": (s_a, s_b),
                                 "action": action,
                                 "win_rate": win_rate,
+                                "smc_quality": smc_quality_val,
+                                "target_rrr": round(cand_rrr, 2),
+                                "composite_score": cand_composite,
                                 "z_score": z,
                                 "z_velocity": z_velocity,
                                 "beta": beta,
@@ -2985,6 +3093,21 @@ def main():
                     logger.info("Skipping trade execution: All candidate pairs have active symbols open or failed Beta boundary limits.")
                     best_sig = None
                 else:
+                    qualifying_candidates.sort(
+                        key=lambda c: (
+                            float(c.get("composite_score", 0.0)),
+                            float(c.get("smc_quality", 0.0)),
+                            float(c.get("target_rrr", 0.0)),
+                            float(c.get("win_rate", 0.0)),
+                        ),
+                        reverse=True,
+                    )
+                    if len(qualifying_candidates) > 1:
+                        rank_summary = " | ".join(
+                            f"#{idx+1} {c['pair'][0]} (Score {c.get('composite_score', 0):.1f}, Qual {c.get('smc_quality', 50):.1f}, WR {c.get('win_rate', 50):.1f}%, {c.get('target_rrr', 2.0):.2f}R)"
+                            for idx, c in enumerate(qualifying_candidates)
+                        )
+                        logger.info(f"🏆 [HIGHEST PROBABILITY RANKING (Single-Trade Lock)] {rank_summary}")
                     best_sig = qualifying_candidates[0]
                 
                 if best_sig is not None:
@@ -3072,7 +3195,7 @@ def main():
                             tp_dist = 2.0 * sl_dist
                             tp2_val = entry_a + tp_dist if is_long else entry_a - tp_dist
 
-                        info_pip_a = mt5.symbol_info(S_A)
+                        info_pip_a = mt5.symbol_info(S_A_resolved)
                         pt_a = info_pip_a.point if info_pip_a else 0.0001
                         pip_sz_a = (pt_a * 10.0) if (info_pip_a and info_pip_a.digits in (3, 5)) else pt_a
 
@@ -3080,14 +3203,14 @@ def main():
                         tp1_val = entry_a + (tp_dist * 0.5) if is_long else entry_a - (tp_dist * 0.5)
                         tp3_val = entry_a + (tp_dist * 1.5) if is_long else entry_a - (tp_dist * 1.5)
 
-                        if best_cat_a == "metals" or "XAU" in S_A.upper() or "XAG" in S_A.upper():
-                            lots_a = get_blue_guardian_lots(S_A, best_cat_a, sl_dist_price=sl_dist)
+                        if best_cat_a in ("metals", "indices") or "XAU" in S_A.upper() or "XAG" in S_A.upper():
+                            lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
                         elif DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
                             disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                             mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                             lots_a = DEFAULT_LOTS * mult
                         else:
-                            lots_a = get_blue_guardian_lots(S_A, best_cat_a, sl_dist_price=sl_dist)
+                            lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
                             
                         actual_lots_a = lots_a
                         
@@ -3183,12 +3306,16 @@ def main():
                             qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
                             # SINGLE-ASSET DIRECT ORDER EXECUTION (1 Ticket, Zero Hedge Drag)
-                            trade_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
-                            entry_p = best_sig["tick_a"].ask if is_long else best_sig["tick_a"].bid
-                            sl_val = sl_a
-                            tp_val = tp2_val
-                            
-                            res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
+                            pre_cnt_buy, _, pre_syms_buy = get_active_pairs_and_symbols()
+                            if pre_cnt_buy >= MAX_CONCURRENT_TRADES or len(pre_syms_buy) > 0:
+                                logger.warning(f"🛡️ [PRE-ORDER SINGLE TRADE LOCK] Aborting BUY on {S_A_resolved} — MT5 already has active trade/order ({pre_syms_buy}).")
+                                res_order = None
+                            else:
+                                trade_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
+                                entry_p = best_sig["tick_a"].ask if is_long else best_sig["tick_a"].bid
+                                sl_val = sl_a
+                                tp_val = tp2_val
+                                res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
                             if res_order and is_retcode_success(res_order):
                                 log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, utc_now_naive(), "JS_SMC_STRUCTURE", signal_id)
                                 try:
@@ -3251,12 +3378,16 @@ def main():
                             qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                             
                             # SINGLE-ASSET DIRECT ORDER EXECUTION FOR SELL (1 Ticket, Zero Hedge Drag)
-                            trade_type = mt5.ORDER_TYPE_SELL
-                            entry_p = best_sig["tick_a"].bid
-                            sl_val = sl_a
-                            tp_val = tp2_val
-                            
-                            res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
+                            pre_cnt_sell, _, pre_syms_sell = get_active_pairs_and_symbols()
+                            if pre_cnt_sell >= MAX_CONCURRENT_TRADES or len(pre_syms_sell) > 0:
+                                logger.warning(f"🛡️ [PRE-ORDER SINGLE TRADE LOCK] Aborting SELL on {S_A_resolved} — MT5 already has active trade/order ({pre_syms_sell}).")
+                                res_order = None
+                            else:
+                                trade_type = mt5.ORDER_TYPE_SELL
+                                entry_p = best_sig["tick_a"].bid
+                                sl_val = sl_a
+                                tp_val = tp2_val
+                                res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
                             if res_order and is_retcode_success(res_order):
                                 log_trade_entry(res_order.order, S_A_resolved, "SELL", actual_lots_a, res_order.price, utc_now_naive(), "JS_SMC_STRUCTURE", signal_id)
                                 try:

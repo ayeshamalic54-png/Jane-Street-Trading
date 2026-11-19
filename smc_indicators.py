@@ -52,7 +52,182 @@ def get_swing_points(df, n_left=3, n_right=3, min_amplitude=0.0):
     return swing_highs, swing_lows
 
 
-def detect_market_structure(df):
+def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
+    """
+    Return symbol/price-calibrated SMC structural thresholds.
+    Preserves XAUUSD (Gold) and Forex/JPY byte-for-byte while scaling US30 and NAS100
+    cleanly (approx 8.5x Gold points with 105pt / 85pt SL caps) based on empirical M5/M15 volatility.
+    """
+    sym_str = ""
+    if symbol is not None:
+        sym_str = str(symbol).upper()
+    elif df is not None:
+        try:
+            attrs = getattr(df, "attrs", {}) or {}
+            if attrs.get("symbol"):
+                sym_str = str(attrs.get("symbol")).upper()
+            elif hasattr(df, "columns") and "symbol" in df.columns and len(df) > 0:
+                sym_str = str(df["symbol"].iloc[-1]).upper()
+        except Exception:
+            sym_str = ""
+
+    cat_str = str(category or "").lower()
+    if not cat_str and df is not None:
+        try:
+            cat_str = str((getattr(df, "attrs", {}) or {}).get("category", "")).lower()
+        except Exception:
+            cat_str = ""
+
+    px = 0.0
+    if ref_price is not None:
+        try:
+            px = float(ref_price)
+        except Exception:
+            px = 0.0
+    elif df is not None and len(df) > 0:
+        try:
+            px = float(df["close"].iloc[-1])
+        except Exception:
+            px = 0.0
+
+    is_us30 = any(k in sym_str for k in ("US30", "DJ30", "WS30", "DOW"))
+    is_nas100 = any(k in sym_str for k in ("NAS100", "USTEC", "US100", "NDX", "NQ="))
+    if not is_us30 and not is_nas100 and cat_str == "indices":
+        is_us30 = px >= 35000
+        is_nas100 = not is_us30
+    if not is_us30 and not is_nas100 and not any(k in sym_str for k in ("XAU", "GOLD", "XAG", "SILVER")):
+        if px >= 30000:
+            is_us30 = True
+        elif px >= 12000:
+            is_nas100 = True
+
+    if is_us30:
+        return {
+            "key": "us30",
+            "category": "indices",
+            "is_high_point": True,
+            "digits": 2,
+            "m15_min_amp": 25.50,
+            "m15_target_min_amp": 21.25,
+            "m5_min_amp": 10.60,
+            "min_structural_depth": 12.75,
+            "min_penetration": 0.85,
+            "reclaim_max_dip": 12.75,
+            "min_fvg_gap": 3.40,
+            "max_dist": 153.00,
+            "min_ob_disp": 6.80,
+            "mit_tol": 1.70,
+            "wick_buf": 6.50,
+            "close_tol": 2.15,
+            "min_pen_gap": 6.80,
+            "sweep_margin": 4.25,
+            "max_chase_dist": 17.00,
+            "max_sl_cap": 105.00,
+            "target_min_move": 12.75,
+            "ob_buf": 9.35,
+            "min_dist": 0.10,
+            "fallback_sl_dist": 21.25,
+            "sweep_tol": 4.25,
+            "be_buffer": 2.15,
+        }
+
+    if is_nas100:
+        return {
+            "key": "nas100",
+            "category": "indices",
+            "is_high_point": True,
+            "digits": 2,
+            "m15_min_amp": 25.50,
+            "m15_target_min_amp": 21.25,
+            "m5_min_amp": 10.60,
+            "min_structural_depth": 12.75,
+            "min_penetration": 0.85,
+            "reclaim_max_dip": 12.75,
+            "min_fvg_gap": 3.40,
+            "max_dist": 153.00,
+            "min_ob_disp": 6.80,
+            "mit_tol": 1.70,
+            "wick_buf": 6.50,
+            "close_tol": 2.15,
+            "min_pen_gap": 6.80,
+            "sweep_margin": 4.25,
+            "max_chase_dist": 17.00,
+            "max_sl_cap": 85.00,
+            "target_min_move": 12.75,
+            "ob_buf": 9.35,
+            "min_dist": 0.10,
+            "fallback_sl_dist": 21.25,
+            "sweep_tol": 4.25,
+            "be_buffer": 2.15,
+        }
+
+    is_metals = (
+        cat_str == "metals"
+        or any(k in sym_str for k in ("XAU", "GOLD", "XAG", "SILVER"))
+        or px > 500
+    )
+    if is_metals:
+        return {
+            "key": "gold",
+            "category": "metals",
+            "is_high_point": True,
+            "digits": 2,
+            "m15_min_amp": 3.00,
+            "m15_target_min_amp": 2.50,
+            "m5_min_amp": 1.25,
+            "min_structural_depth": 1.50,
+            "min_penetration": 0.10,
+            "reclaim_max_dip": 1.50,
+            "min_fvg_gap": 0.40,
+            "max_dist": 18.00,
+            "min_ob_disp": 0.80,
+            "mit_tol": 0.20,
+            "wick_buf": 0.75,
+            "close_tol": 0.25,
+            "min_pen_gap": 0.80,
+            "sweep_margin": 0.50,
+            "max_chase_dist": 2.00,
+            "max_sl_cap": 10.00,
+            "target_min_move": 1.50,
+            "ob_buf": 1.10,
+            "min_dist": 0.01,
+            "fallback_sl_dist": 2.50,
+            "sweep_tol": 0.50,
+            "be_buffer": 0.25,
+        }
+
+    is_mid_fx = px > 20
+    return {
+        "key": "forex",
+        "category": "forex",
+        "is_high_point": False,
+        "digits": 5,
+        "m15_min_amp": 0.0020,
+        "m15_target_min_amp": 0.0012,
+        "m5_min_amp": 0.00015,
+        "min_structural_depth": 0.0010,
+        "min_penetration": 0.00003,
+        "reclaim_max_dip": 0.0008,
+        "min_fvg_gap": 0.04 if is_mid_fx else 0.00015,
+        "max_dist": 2.00 if is_mid_fx else 0.0080,
+        "min_ob_disp": 0.12 if is_mid_fx else 0.0004,
+        "mit_tol": 0.03 if is_mid_fx else 0.00010,
+        "wick_buf": 0.00040,
+        "close_tol": 0.00015,
+        "min_pen_gap": 0.00040,
+        "sweep_margin": 0.00020,
+        "max_chase_dist": 0.00100,
+        "max_sl_cap": 0.0050,
+        "target_min_move": 0.0005,
+        "ob_buf": 0.00035,
+        "min_dist": 0.00010,
+        "fallback_sl_dist": 0.0015,
+        "sweep_tol": 0.00030,
+        "be_buffer": 0.00005,
+    }
+
+
+def detect_market_structure(df, symbol=None, category=None):
     """
     Institutional M15 Market Structure Bias with Structural Trend Memory:
     - BULLISH: Higher Highs & Higher Lows (HH & HL), or continuing uptrend until HL breaks.
@@ -62,13 +237,8 @@ def detect_market_structure(df):
     if df is None or len(df) < 5:
         return 'NEUTRAL'
 
-    is_metals = False
-    if 'symbol' in df.columns and any(m in str(df['symbol'].iloc[0]).upper() for m in ['XAU', 'GOLD', 'XAG', 'SILVER']):
-        is_metals = True
-    elif len(df) > 0 and float(df['close'].iloc[-1]) > 500:
-        is_metals = True
-
-    min_amp = 3.00 if is_metals else 0.0020
+    profile = get_smc_asset_profile(df, symbol=symbol, category=category)
+    min_amp = profile["m15_min_amp"]
     swing_highs, swing_lows = get_swing_points(df, n_left=3, n_right=3, min_amplitude=min_amp)
     if len(swing_highs) < 2 or len(swing_lows) < 2:
         swing_highs, swing_lows = get_swing_points(df, n_left=2, n_right=2, min_amplitude=min_amp * 0.65)
@@ -130,7 +300,7 @@ def detect_market_structure(df):
     return 'NEUTRAL'
 
 
-def detect_liquidity_sweep(df_m5):
+def detect_liquidity_sweep(df_m5, symbol=None, category=None):
     """
     Step 2: M5 Liquidity Sweep (Stop Loss Hunt) Detection.
     Captures genuine 1-candle wick sweeps AND 2-candle reclaim sweeps beyond confirmed M5 Swing Highs/Lows
@@ -143,13 +313,8 @@ def detect_liquidity_sweep(df_m5):
     if df_m5 is None or len(df_m5) < 10:
         return (False, 0.0, 0.0, -1), (False, 0.0, 0.0, -1)
 
-    is_metals = False
-    if 'symbol' in df_m5.columns and any(m in str(df_m5['symbol'].iloc[0]).upper() for m in ['XAU', 'GOLD', 'XAG', 'SILVER']):
-        is_metals = True
-    elif len(df_m5) > 0 and float(df_m5['close'].iloc[-1]) > 500:
-        is_metals = True
-
-    min_amp = 1.25 if is_metals else 0.00015
+    profile = get_smc_asset_profile(df_m5, symbol=symbol, category=category)
+    min_amp = profile["m5_min_amp"]
     swing_highs, swing_lows = get_swing_points(df_m5, n_left=3, n_right=3, min_amplitude=min_amp)
     if len(swing_highs) < 2 or len(swing_lows) < 2:
         swing_highs, swing_lows = get_swing_points(df_m5, n_left=2, n_right=2, min_amplitude=min_amp)
@@ -166,9 +331,9 @@ def detect_liquidity_sweep(df_m5):
     sell_sweep = (False, 0.0, 0.0, -1)
     buy_sweep = (False, 0.0, 0.0, -1)
 
-    min_structural_depth = 1.50 if is_metals else 0.0010
-    min_penetration = 0.10 if is_metals else 0.00003
-    reclaim_max_dip = 1.50 if is_metals else 0.0008
+    min_structural_depth = profile["min_structural_depth"]
+    min_penetration = profile["min_penetration"]
+    reclaim_max_dip = profile["reclaim_max_dip"]
 
     # Evaluate up to newest bars over an 18-candle (90-min) institutional session window
     lookback_start = max(0, n - 18)
@@ -342,10 +507,10 @@ def detect_order_blocks(df, min_disp=0.80, max_dist=18.0):
     return active_bull_obs[-2:], active_bear_obs[-2:], breaker_bull_obs[-2:], breaker_bear_obs[-2:]
 
 
-def detect_smc_zones(df, min_idx=0, sweep_low=None, sweep_high=None):
+def detect_smc_zones(df, min_idx=0, sweep_low=None, sweep_high=None, symbol=None, category=None):
     """
     Step 4: Fair Value Gaps (3-Candle FVG), Order Blocks (OB), and Breaker Blocks.
-    Uses balanced institutional M5 displacement thresholds ($0.40 on Gold, 1.8 pips on Forex)
+    Uses balanced institutional M5 displacement thresholds scaled per asset profile (Gold, US30, NAS100, Forex)
     so legitimate M5 scalping FVGs are captured accurately without losing precision.
     """
     if df is None or len(df) < 5:
@@ -362,21 +527,25 @@ def detect_smc_zones(df, min_idx=0, sweep_low=None, sweep_high=None):
     n = len(df)
     last_price = closes[-1]
 
-    if last_price > 1000:
-        min_gap = 0.40       # Gold / BTC: balanced institutional M5 imbalance threshold
-        max_dist = 18.00
-        min_ob_disp = 0.80
-        mit_tol = 0.20
+    profile = get_smc_asset_profile(df, symbol=symbol, category=category, ref_price=last_price)
+    if profile["key"] in ("us30", "nas100", "gold"):
+        min_gap = profile["min_fvg_gap"]
+        max_dist = profile["max_dist"]
+        min_ob_disp = profile["min_ob_disp"]
+        mit_tol = profile["mit_tol"]
+        sweep_margin = profile["sweep_margin"]
     elif last_price > 20:
-        min_gap = 0.04       # Silver / Platinum
+        min_gap = 0.04       # Silver / Platinum / JPY
         max_dist = 2.00
         min_ob_disp = 0.06
         mit_tol = 0.02
+        sweep_margin = 0.50
     else:
         min_gap = 0.00018    # Forex (1.8 pips)
         max_dist = 0.0080
         min_ob_disp = 0.00025
         mit_tol = 0.00010
+        sweep_margin = 0.50
 
     raw_bull_fvgs = []
     raw_bear_fvgs = []
@@ -386,10 +555,10 @@ def detect_smc_zones(df, min_idx=0, sweep_low=None, sweep_high=None):
         gap_up = lows[i] - highs[i - 2]
         gap_down = lows[i - 2] - highs[i]
         if gap_up >= min_gap:
-            if sweep_low is None or highs[i - 2] >= (sweep_low - 0.50):
+            if sweep_low is None or highs[i - 2] >= (sweep_low - sweep_margin):
                 raw_bull_fvgs.append((highs[i - 2], lows[i], i))
         elif gap_down >= min_gap:
-            if sweep_high is None or lows[i - 2] <= (sweep_high + 0.50):
+            if sweep_high is None or lows[i - 2] <= (sweep_high + sweep_margin):
                 raw_bear_fvgs.append((highs[i], lows[i - 2], i))
 
     active_bull = []
@@ -459,14 +628,17 @@ def is_price_in_zones(price, zones):
     return False
 
 
-def check_fvg_retest(closed_open, closed_high, closed_low, closed_close, fvg_zones, is_bullish=True, max_wick_buf=0.75, prev_row=None, closed_idx=None):
+def check_fvg_retest(closed_open, closed_high, closed_low, closed_close, fvg_zones, is_bullish=True, max_wick_buf=0.75, prev_row=None, closed_idx=None, close_tol=None, min_pen_gap=None):
     """
     Step 5: Institutional Closed-Candle FVG Retest Verification.
     Ensures ONLY candles strictly AFTER FVG creation (candle_idx > fvg_creation_idx)
     can qualify as a pullback/retest, preventing false triggers on the displacement bar itself.
     fvg_zones can contain (low_b, high_b) or (low_b, high_b, creation_idx) tuples.
     """
-    close_tol = 0.25 if max_wick_buf >= 0.1 else 0.00015
+    if close_tol is None:
+        close_tol = 0.25 if max_wick_buf >= 0.1 else 0.00015
+    if min_pen_gap is None:
+        min_pen_gap = 0.80 if max_wick_buf >= 0.1 else 0.00040
 
     prev_low = float(prev_row['low']) if prev_row is not None else None
     prev_high = float(prev_row['high']) if prev_row is not None else None
@@ -487,7 +659,7 @@ def check_fvg_retest(closed_open, closed_high, closed_low, closed_close, fvg_zon
 
         # Avoid shallow outer-lip touches on wide FVGs: require >=35% pullback into zone equilibrium
         gap = max(0.0, high_b - low_b)
-        pen_depth = (0.35 * gap) if ((max_wick_buf >= 0.1 and gap >= 0.80) or (max_wick_buf < 0.1 and gap >= 0.00040)) else 0.0
+        pen_depth = (0.35 * gap) if gap >= min_pen_gap else 0.0
 
         if is_bullish:
             entry_ceil = high_b - pen_depth

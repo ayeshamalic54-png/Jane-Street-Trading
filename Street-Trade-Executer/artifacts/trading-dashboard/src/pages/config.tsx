@@ -61,7 +61,7 @@ const PAIR_CATEGORIES: Record<Category, { label: string; pairs: string[] }> = {
   indices: {
     label: "Indices",
     pairs: [
-      "US30/US500", "US30/NAS100", "US500/NAS100",
+      "US30/NAS100", "NAS100/US30",
     ],
   },
   stocks: {
@@ -352,7 +352,7 @@ export default function Config() {
                   ) : (
                     <div className="space-y-3">
                       <p className="text-xs text-muted-foreground leading-relaxed">
-                        Enter any two MT5 symbols. Must be different. Use exact broker symbol names (e.g. EURUSD, BTCUSD, XAUUSD, US500, AAPL).
+                        Enter any two MT5 symbols. Must be different. Use exact broker symbol names (e.g. XAUUSD, US30, NAS100, EURUSD).
                       </p>
                       <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
                         <div className="flex-1 min-w-0">
@@ -757,9 +757,9 @@ export default function Config() {
                         <FormItem>
                           <div className="flex items-center justify-between gap-4">
                             <div className="min-w-0 flex-1 space-y-0.5">
-                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Indices (US30 / NAS100 / US500)</FormLabel>
+                              <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">Indices (US30 / NAS100)</FormLabel>
                               <FormDescription className="text-xs leading-relaxed">
-                                Enable trading stock index CFDs (e.g. US30, NAS100, US500).
+                                Enable trading top US index CFDs (US30 & NAS100).
                               </FormDescription>
                             </div>
                             <FormControl>

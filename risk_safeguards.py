@@ -401,7 +401,7 @@ def get_pip_size(symbol: str) -> float:
     if any(x in s for x in ["XRP", "ADA", "DOGE", "MATIC"]):
         return 0.0001
     # Handle Indices & Stocks
-    if any(x in s for x in ["US500", "US30", "NAS100", "GER30", "UK100", "SPX", "DJI", "NDX"]):
+    if any(x in s for x in ["US500", "US30", "NAS100", "USTEC", "US100", "DJ30", "WS30", "DOW", "GER30", "UK100", "SPX", "DJI", "NDX"]):
         return 1.0
     if any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"]):
         return 0.1
@@ -437,8 +437,12 @@ def is_spread_valid(symbol):
         max_spread = 80.0
     elif any(x in s for x in ["AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN"]):
         max_spread = 30.0
-    elif any(x in s for x in ["US500", "US30", "NAS100", "GER30", "UK100", "SPX", "DJI", "NDX", "USTEC"]):
-        max_spread = 35.0
+    elif any(x in s for x in ["US30", "DJ30", "WS30", "DOW", "DJI"]):
+        max_spread = 15.0  # Institutional US30 spread guard (15 pts max)
+    elif any(x in s for x in ["NAS100", "USTEC", "US100", "NDX", "NQ"]):
+        max_spread = 10.0  # Institutional NAS100 spread guard (10 pts max)
+    elif any(x in s for x in ["US500", "GER30", "UK100", "SPX"]):
+        max_spread = 12.0
         
     if spread_pips > max_spread:
         logger.warning(f"Spread for {symbol} is too wide: {spread_pips:.1f} pips (Max: {max_spread:.1f} pips)")
@@ -457,7 +461,7 @@ MAX_CONCURRENT_TRADES = 1
 def get_active_pairs_and_symbols():
     """
     Returns (active_pairs_count, active_pairs_set, active_symbols_set).
-    Strictly enforces single trade concurrency limit across all MT5 open positions.
+    Strictly enforces single trade concurrency limit across all MT5 open positions & pending orders.
     """
     active_pairs = set()
     active_symbols = set()
@@ -467,7 +471,7 @@ def get_active_pairs_and_symbols():
         import MetaTrader5 as mt5
         positions = mt5.positions_get()
         if positions:
-            raw_positions_count = len(positions)
+            raw_positions_count += len(positions)
             for pos in positions:
                 pos_sym = pos.symbol.upper().split('.')[0]
                 active_symbols.add(pos_sym)
@@ -479,7 +483,15 @@ def get_active_pairs_and_symbols():
                         if len(p1) >= 5 and len(p2) >= 5:
                             active_pairs.add(f"{p1}/{p2}")
 
-        # If MT5 has ANY active open position, active_pairs_count MUST be at least 1!
+        orders = mt5.orders_get()
+        if orders:
+            raw_positions_count += len(orders)
+            for ord_obj in orders:
+                ord_sym = str(getattr(ord_obj, 'symbol', '')).upper().split('.')[0]
+                if ord_sym:
+                    active_symbols.add(ord_sym)
+
+        # If MT5 has ANY active open position or pending order, active_pairs_count MUST be at least 1!
         pairs_count = len(active_pairs) if active_pairs else (1 if raw_positions_count > 0 else 0)
     except Exception as e:
         logger.error(f"Error fetching active pairs and symbols: {e}")

@@ -9,6 +9,7 @@ from smc_indicators import (
     detect_smc_zones,
     check_fvg_retest,
     get_swing_points,
+    get_smc_asset_profile,
 )
 
 logger = logging.getLogger("SMC_Strategy_Engine")
@@ -19,13 +20,16 @@ def _compute_m15_opposing_target(
     df_m15: pd.DataFrame,
     entry_p: float,
     sl_d: float,
-    is_metals: bool,
+    is_metals: bool = True,
+    profile: dict = None,
 ):
     """
     Computes the nearest opposing M15 structural liquidity target (Swing High/Low + Opposing OB/Breaker)
-    with institutional front-run buffer ($1.10 Gold / 3.5 pips Forex) so TP fills ahead of wick bounces.
+    with institutional front-run buffer ($1.10 Gold / 9.35 pts Indices / 3.5 pips Forex) so TP fills ahead of wick bounces.
     """
-    min_amp = 2.50 if is_metals else 0.0012
+    if profile is None:
+        profile = get_smc_asset_profile(df_m15, symbol="XAUUSD" if is_metals else None)
+    min_amp = profile["m15_target_min_amp"]
     sh_3, sl_3 = get_swing_points(df_m15, n_left=3, n_right=3)
     sh_2, sl_2 = get_swing_points(df_m15, n_left=2, n_right=2, min_amplitude=min_amp)
     if (is_buy and not sh_2) or (not is_buy and not sl_2):
@@ -35,11 +39,16 @@ def _compute_m15_opposing_target(
         if not is_buy and not sl_2:
             sl_2 = fb_sl_2
 
-    all_zones = detect_smc_zones(df_m15, min_idx=0)
-    min_move = 1.50 if is_metals else 0.0005
-    ob_buf = 1.10 if is_metals else 0.00035
+    all_zones = detect_smc_zones(
+        df_m15,
+        min_idx=0,
+        symbol=profile.get("key") if profile.get("key") in ("us30", "nas100") else None,
+        category=profile.get("category"),
+    )
+    min_move = profile["target_min_move"]
+    ob_buf = profile["ob_buf"]
     min_rrr = 1.85
-    digits = 2 if is_metals else 5
+    digits = profile["digits"]
 
     if is_buy:
         opp_obs = all_zones.get('bearish_ob', []) + all_zones.get('bearish_breaker', [])
@@ -69,6 +78,41 @@ def _compute_m15_opposing_target(
     return round(entry_p - 2.20 * sl_d, digits), 2.20
 
 
+def compute_smc_signal_quality(
+    target_rrr: float,
+    sl_dist: float,
+    max_sl_cap: float,
+    rejection_wick_ratio: float,
+    body_close_dir_ok: bool,
+    fvg_gap: float,
+    min_fvg_gap: float,
+    candles_since_choch: int,
+) -> float:
+    """
+    Compute deterministic 0..100 setup quality score used to pick the highest-probability
+    setup when multiple assets (e.g. XAUUSD, US30, NAS100) trigger signals simultaneously.
+    """
+    score = 0.0
+    # 1. Risk-to-Reward edge (1.85R .. 3.00R -> up to 35 pts)
+    rrr_norm = max(0.0, min(1.0, (float(target_rrr) - 1.85) / 1.15))
+    score += 18.0 + 17.0 * rrr_norm
+    # 2. Structural tightness (cleaner tighter SL relative to asset cap -> up to 20 pts)
+    if max_sl_cap > 0 and sl_dist > 0:
+        sl_ratio = max(0.0, min(1.0, 1.0 - (sl_dist / (max_sl_cap * 1.15))))
+        score += 8.0 + 12.0 * sl_ratio
+    # 3. Rejection candle conviction (pinbar wick + directional close -> up to 22 pts)
+    wick_score = max(0.0, min(1.0, float(rejection_wick_ratio) / 0.65))
+    score += 14.0 * wick_score + (8.0 if body_close_dir_ok else 0.0)
+    # 4. Displacement FVG strength (clean institutional imbalance -> up to 13 pts)
+    if min_fvg_gap > 0:
+        gap_ratio = max(0.0, min(1.0, (float(fvg_gap) / min_fvg_gap - 1.0) / 2.0))
+        score += 6.0 + 7.0 * gap_ratio
+    # 5. Timing freshness (fresher CHoCH-to-retest trigger -> up to 10 pts)
+    fresh = max(0.0, min(1.0, 1.0 - (max(0, int(candles_since_choch)) / 18.0)))
+    score += 10.0 * fresh
+    return round(max(0.0, min(100.0, score)), 2)
+
+
 def evaluate_smc_strategy_signal(
     df_m15: pd.DataFrame,
     df_m5: pd.DataFrame = None,
@@ -78,6 +122,7 @@ def evaluate_smc_strategy_signal(
     obi_enabled: bool = False,
     live_price: float = None,
     is_already_closed: bool = False,
+    symbol: str = None,
 ):
     """
     Pure Rule-Based SMC / ICT 9-Condition Strict Strategy Engine:
@@ -116,15 +161,29 @@ def evaluate_smc_strategy_signal(
     closed_low = float(closed_row['low'])
     closed_high = float(closed_row['high'])
 
-    is_metals = (category == "metals" or "XAU" in str(df_m15.get('symbol', '')) or float(closed_close) > 500)
+    profile = get_smc_asset_profile(df_m15, symbol=symbol, category=category, ref_price=closed_close)
+    is_metals = (profile["category"] == "metals")
+    is_high_pt = profile["is_high_point"]
+    wick_buf = profile["wick_buf"]
+    min_dist = profile["min_dist"]
+    max_chase_dist = profile["max_chase_dist"]
+    max_sl_cap = profile["max_sl_cap"]
+    close_tol = profile["close_tol"]
+    min_pen_gap = profile["min_pen_gap"]
+    fallback_sl_dist = profile["fallback_sl_dist"]
+    digits = profile["digits"]
+    buf_lbl = f"${wick_buf:.2f}" if is_metals else (f"{wick_buf:.2f}pts" if is_high_pt else f"{wick_buf:.4f}")
+    cap_lbl = f"${max_sl_cap:.2f}" if is_metals else (f"{max_sl_cap:.1f}pts" if is_high_pt else f"{max_sl_cap:.4f}")
+    sl_prefix = "$" if is_metals else ("" if is_high_pt else "")
+    sl_suffix = "" if is_metals else ("pts" if is_high_pt else "")
 
     # S1: M15 Market Structure Bias
-    structure = detect_market_structure(df_m15)
+    structure = detect_market_structure(df_m15, symbol=symbol, category=category)
     is_m15_bullish = (structure == 'BULLISH')
     is_m15_bearish = (structure == 'BEARISH')
 
     # S2: M5 Liquidity Sweep (SL Hunt)
-    sell_sweep, buy_sweep = detect_liquidity_sweep(eval_df)
+    sell_sweep, buy_sweep = detect_liquidity_sweep(eval_df, symbol=symbol, category=category)
     has_sell_sweep, sweep_low_price, sl_swing_val, sell_sweep_idx = sell_sweep
     has_buy_sweep, sweep_high_price, sh_swing_val, buy_sweep_idx = buy_sweep
 
@@ -133,25 +192,27 @@ def evaluate_smc_strategy_signal(
     has_bear_choch, bear_choch_lvl, bear_choch_idx = detect_choch_bos(eval_df, buy_sweep_idx, is_bullish=False) if has_buy_sweep else (False, 0.0, -1)
 
     # S4: Displacement Leg 3-Candle FVG
-    zones_bull = detect_smc_zones(eval_df, min_idx=sell_sweep_idx, sweep_low=sweep_low_price) if has_bull_choch else {'bullish_fvg': []}
-    zones_bear = detect_smc_zones(eval_df, min_idx=buy_sweep_idx, sweep_high=sweep_high_price) if has_bear_choch else {'bearish_fvg': []}
+    zones_bull = detect_smc_zones(eval_df, min_idx=sell_sweep_idx, sweep_low=sweep_low_price, symbol=symbol, category=category) if has_bull_choch else {'bullish_fvg': []}
+    zones_bear = detect_smc_zones(eval_df, min_idx=buy_sweep_idx, sweep_high=sweep_high_price, symbol=symbol, category=category) if has_bear_choch else {'bearish_fvg': []}
 
     # S5: Confirmed Closed-Candle FVG Retest (Strictly on post-creation closed bars; zero live-tick bypass)
-    wick_buf = 0.75 if is_metals else 0.00040
     bull_fvg_list = zones_bull.get('bullish_fvg_meta') or zones_bull.get('bullish_fvg', [])
     bear_fvg_list = zones_bear.get('bearish_fvg_meta') or zones_bear.get('bearish_fvg', [])
     in_bull_fvg, matched_bull_fvg = check_fvg_retest(
         closed_open, closed_high, closed_low, closed_close,
-        bull_fvg_list, is_bullish=True, max_wick_buf=wick_buf, prev_row=prev_closed_row, closed_idx=closed_idx
+        bull_fvg_list, is_bullish=True, max_wick_buf=wick_buf, prev_row=prev_closed_row, closed_idx=closed_idx,
+        close_tol=close_tol, min_pen_gap=min_pen_gap
     )
     in_bear_fvg, matched_bear_fvg = check_fvg_retest(
         closed_open, closed_high, closed_low, closed_close,
-        bear_fvg_list, is_bullish=False, max_wick_buf=wick_buf, prev_row=prev_closed_row, closed_idx=closed_idx
+        bear_fvg_list, is_bullish=False, max_wick_buf=wick_buf, prev_row=prev_closed_row, closed_idx=closed_idx,
+        close_tol=close_tol, min_pen_gap=min_pen_gap
     )
 
     # S6 & S7: Confirmed Closed Rejection Candle (True Wick Calculation — Never Count Opposite Body as Wick!)
+    range_floor = 0.01 if is_high_pt else 0.0001
     bull_lower_wick = min(closed_open, closed_close) - closed_low
-    bull_candle_range = max(0.01 if is_metals else 0.0001, closed_high - closed_low)
+    bull_candle_range = max(range_floor, closed_high - closed_low)
     bull_is_green = closed_close > closed_open
     bull_is_pinbar = (bull_lower_wick / bull_candle_range >= 0.45) and ((closed_open - closed_close) <= 0.25 * bull_candle_range)
     p5_buy_rejection = (
@@ -162,7 +223,7 @@ def evaluate_smc_strategy_signal(
     )
 
     bear_upper_wick = closed_high - max(closed_open, closed_close)
-    bear_candle_range = max(0.01 if is_metals else 0.0001, closed_high - closed_low)
+    bear_candle_range = max(range_floor, closed_high - closed_low)
     bear_is_red = closed_close < closed_open
     bear_is_pinbar = (bear_upper_wick / bear_candle_range >= 0.45) and ((closed_close - closed_open) <= 0.25 * bear_candle_range)
     p5_sell_rejection = (
@@ -174,6 +235,8 @@ def evaluate_smc_strategy_signal(
 
     # Freshness & Structure Invalidation Guard (18 M5 bars = 90 mins window)
     n_candles = len(eval_df)
+    candles_since_bear_choch = 0
+    candles_since_bull_choch = 0
     if has_bear_choch:
         candles_since_bear_choch = (n_candles - 1) - bear_choch_idx
         if (candles_since_bear_choch > 18 and not in_bear_fvg) or (closed_close > sweep_high_price):
@@ -195,37 +258,43 @@ def evaluate_smc_strategy_signal(
     custom_step8_s = None
     custom_step9_s = None
     scan_tp = 0.0
-    front_run_lbl = "$1.10" if is_metals else "3.5p"
+    front_run_lbl = "$1.10" if is_metals else (f"{profile['ob_buf']:.2f}pts" if is_high_pt else "3.5p")
     min_target_rrr = 1.85
 
     # ── 1. BUY SIGNAL EVALUATION (ALL 9 CONDITIONS STRICT) ──
     if is_m15_bullish and has_sell_sweep and has_bull_choch and (len(zones_bull['bullish_fvg']) > 0) and in_bull_fvg and p5_buy_rejection:
-        buf = 0.75 if is_metals else 0.00040
-        min_dist = 0.01 if is_metals else 0.00010
-        sl_price = sweep_low_price - buf
+        sl_price = round(sweep_low_price - wick_buf, digits)
         sl_dist = max(min_dist, price - sl_price)
 
         fvg_low, fvg_high = matched_bull_fvg
-        max_chase_dist = 2.00 if is_metals else 0.00100
         is_chasing = price > (fvg_high + max_chase_dist)
-        max_sl_cap = 10.00 if is_metals else 0.0050
 
-        tp_price, target_rrr = _compute_m15_opposing_target(True, df_m15, price, sl_dist, is_metals)
+        tp_price, target_rrr = _compute_m15_opposing_target(True, df_m15, price, sl_dist, is_metals, profile=profile)
         scan_tp = tp_price
 
         is_sl_ok = (sl_dist <= max_sl_cap and not is_chasing) or bypass_filters
         is_target_ok = (target_rrr >= min_target_rrr) or bypass_filters
 
         if is_sl_ok and is_target_ok:
+            q_score = compute_smc_signal_quality(
+                target_rrr=target_rrr,
+                sl_dist=sl_dist,
+                max_sl_cap=max_sl_cap,
+                rejection_wick_ratio=(bull_lower_wick / bull_candle_range),
+                body_close_dir_ok=bull_is_green,
+                fvg_gap=(fvg_high - fvg_low),
+                min_fvg_gap=profile["min_fvg_gap"],
+                candles_since_choch=candles_since_bull_choch,
+            )
             reason = (
                 f"🟢 STRICT SMC PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) "
-                f"+ CHoCH ({bull_choch_lvl:.2f}) + Closed Rejection | SL: {sl_price:.2f} (0.75 buf) "
-                f"| M15 Target TP: {tp_price:.2f} ({target_rrr:.2f}R)"
+                f"+ CHoCH ({bull_choch_lvl:.2f}) + Closed Rejection | SL: {sl_price:.2f} ({wick_buf:.2f} buf) "
+                f"| M15 Target TP: {tp_price:.2f} ({target_rrr:.2f}R) | Quality: {q_score:.1f}"
             )
             logger.info("================================================================================")
             logger.info("🟢 [STRICT 9-CONDITION SMC BUY SIGNAL EXECUTED] 🚀")
-            logger.info(f"🟢 S8 (Structural SL): Sweep Low ({sweep_low_price:.2f}) - 0.75 = {sl_price:.2f} (Dist: ${sl_dist:.2f} <= ${max_sl_cap:.2f} Cap)")
-            logger.info(f"🟢 S9 (M15 Liquidity TP): Executing {target_rrr:.2f}R TP @ {tp_price:.2f}")
+            logger.info(f"🟢 S8 (Structural SL): Sweep Low ({sweep_low_price:.2f}) - {wick_buf:.2f} = {sl_price:.2f} (Dist: {sl_prefix}{sl_dist:.2f}{sl_suffix} <= {cap_lbl} Cap)")
+            logger.info(f"🟢 S9 (M15 Liquidity TP): Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Quality: {q_score:.1f}/100)")
             logger.info("================================================================================")
             return "BUY", tp_price, sl_price, sl_dist, reason
         else:
@@ -233,10 +302,10 @@ def evaluate_smc_strategy_signal(
                 custom_step8_s = (
                     f"FAIL 🔴 (Late Chasing {price:.2f} > FVG {fvg_high:.2f})"
                     if is_chasing
-                    else f"FAIL 🔴 (SL ${sl_dist:.2f} > ${max_sl_cap:.2f} Cap)"
+                    else f"FAIL 🔴 (SL {sl_prefix}{sl_dist:.2f}{sl_suffix} > {cap_lbl} Cap)"
                 )
             else:
-                custom_step8_s = f"PASS 🟢 (0.75 Buf - ${sl_dist:.2f} SL)"
+                custom_step8_s = f"PASS 🟢 ({wick_buf:.2f} Buf - {sl_prefix}{sl_dist:.2f}{sl_suffix} SL)"
 
             if not is_target_ok:
                 custom_step9_s = f"FAIL 🔴 (M15 Target {target_rrr:.2f}R < {min_target_rrr:.2f}R)"
@@ -245,32 +314,38 @@ def evaluate_smc_strategy_signal(
 
     # ── 2. SELL SIGNAL EVALUATION (ALL 9 CONDITIONS STRICT) ──
     if is_m15_bearish and has_buy_sweep and has_bear_choch and (len(zones_bear['bearish_fvg']) > 0) and in_bear_fvg and p5_sell_rejection:
-        buf = 0.75 if is_metals else 0.00040
-        min_dist = 0.01 if is_metals else 0.00010
-        sl_price = sweep_high_price + buf
+        sl_price = round(sweep_high_price + wick_buf, digits)
         sl_dist = max(min_dist, sl_price - price)
 
         fvg_low, fvg_high = matched_bear_fvg
-        max_chase_dist = 2.00 if is_metals else 0.00100
         is_chasing = price < (fvg_low - max_chase_dist)
-        max_sl_cap = 10.00 if is_metals else 0.0050
 
-        tp_price, target_rrr = _compute_m15_opposing_target(False, df_m15, price, sl_dist, is_metals)
+        tp_price, target_rrr = _compute_m15_opposing_target(False, df_m15, price, sl_dist, is_metals, profile=profile)
         scan_tp = tp_price
 
         is_sl_ok = (sl_dist <= max_sl_cap and not is_chasing) or bypass_filters
         is_target_ok = (target_rrr >= min_target_rrr) or bypass_filters
 
         if is_sl_ok and is_target_ok:
+            q_score = compute_smc_signal_quality(
+                target_rrr=target_rrr,
+                sl_dist=sl_dist,
+                max_sl_cap=max_sl_cap,
+                rejection_wick_ratio=(bear_upper_wick / bear_candle_range),
+                body_close_dir_ok=bear_is_red,
+                fvg_gap=(fvg_high - fvg_low),
+                min_fvg_gap=profile["min_fvg_gap"],
+                candles_since_choch=candles_since_bear_choch,
+            )
             reason = (
                 f"🔴 STRICT SMC PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) "
-                f"+ CHoCH ({bear_choch_lvl:.2f}) + Closed Rejection | SL: {sl_price:.2f} (0.75 buf) "
-                f"| M15 Target TP: {tp_price:.2f} ({target_rrr:.2f}R)"
+                f"+ CHoCH ({bear_choch_lvl:.2f}) + Closed Rejection | SL: {sl_price:.2f} ({wick_buf:.2f} buf) "
+                f"| M15 Target TP: {tp_price:.2f} ({target_rrr:.2f}R) | Quality: {q_score:.1f}"
             )
             logger.info("================================================================================")
             logger.info("🔴 [STRICT 9-CONDITION SMC SELL SIGNAL EXECUTED] 🚀")
-            logger.info(f"🔴 S8 (Structural SL): Sweep High ({sweep_high_price:.2f}) + 0.75 = {sl_price:.2f} (Dist: ${sl_dist:.2f} <= ${max_sl_cap:.2f} Cap)")
-            logger.info(f"🔴 S9 (M15 Liquidity TP): Executing {target_rrr:.2f}R TP @ {tp_price:.2f}")
+            logger.info(f"🔴 S8 (Structural SL): Sweep High ({sweep_high_price:.2f}) + {wick_buf:.2f} = {sl_price:.2f} (Dist: {sl_prefix}{sl_dist:.2f}{sl_suffix} <= {cap_lbl} Cap)")
+            logger.info(f"🔴 S9 (M15 Liquidity TP): Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Quality: {q_score:.1f}/100)")
             logger.info("================================================================================")
             return "SELL", tp_price, sl_price, sl_dist, reason
         else:
@@ -278,10 +353,10 @@ def evaluate_smc_strategy_signal(
                 custom_step8_s = (
                     f"FAIL 🔴 (Late Chasing {price:.2f} < FVG {fvg_low:.2f})"
                     if is_chasing
-                    else f"FAIL 🔴 (SL ${sl_dist:.2f} > ${max_sl_cap:.2f} Cap)"
+                    else f"FAIL 🔴 (SL {sl_prefix}{sl_dist:.2f}{sl_suffix} > {cap_lbl} Cap)"
                 )
             else:
-                custom_step8_s = f"PASS 🟢 (0.75 Buf - ${sl_dist:.2f} SL)"
+                custom_step8_s = f"PASS 🟢 ({wick_buf:.2f} Buf - {sl_prefix}{sl_dist:.2f}{sl_suffix} SL)"
 
             if not is_target_ok:
                 custom_step9_s = f"FAIL 🔴 (M15 Target {target_rrr:.2f}R < {min_target_rrr:.2f}R)"
@@ -314,27 +389,25 @@ def evaluate_smc_strategy_signal(
         step6_s = "WAITING ⚪ (M15 Neutral)"
         step7_s = "WAITING ⚪ (M15 Neutral)"
 
-    # S8: Structural SL Placement ($0.75 Buf)
+    # S8: Structural SL Placement
     if custom_step8_s is not None:
         step8_s = custom_step8_s
     else:
-        step8_s = "PASS 🟢 (0.75 Buf - $10.00 Cap)" if is_metals else "PASS 🟢 (0.0004 Buf - Cap)"
+        step8_s = f"PASS 🟢 ({buf_lbl} Buf - {cap_lbl} Cap)"
 
-    # S9: M15 Opposing Liquidity Target (>= 1.85R with $1.10 Gold Front-Run)
+    # S9: M15 Opposing Liquidity Target (>= 1.85R with Front-Run)
     if custom_step9_s is not None:
         step9_s = custom_step9_s
     else:
         try:
-            buf = 0.75 if is_metals else 0.00040
-            min_dist = 0.01 if is_metals else 0.00010
             if is_m15_bullish:
-                sl_p_check = (sweep_low_price - buf) if has_sell_sweep else (price - (2.5 if is_metals else 0.0015))
+                sl_p_check = (sweep_low_price - wick_buf) if has_sell_sweep else (price - fallback_sl_dist)
                 sl_d_check = max(min_dist, price - sl_p_check)
-                scan_tp, scan_rrr = _compute_m15_opposing_target(True, df_m15, price, sl_d_check, is_metals)
+                scan_tp, scan_rrr = _compute_m15_opposing_target(True, df_m15, price, sl_d_check, is_metals, profile=profile)
             elif is_m15_bearish:
-                sl_p_check = (sweep_high_price + buf) if has_buy_sweep else (price + (2.5 if is_metals else 0.0015))
+                sl_p_check = (sweep_high_price + wick_buf) if has_buy_sweep else (price + fallback_sl_dist)
                 sl_d_check = max(min_dist, sl_p_check - price)
-                scan_tp, scan_rrr = _compute_m15_opposing_target(False, df_m15, price, sl_d_check, is_metals)
+                scan_tp, scan_rrr = _compute_m15_opposing_target(False, df_m15, price, sl_d_check, is_metals, profile=profile)
             else:
                 scan_rrr = 2.00
                 scan_tp = 0.0

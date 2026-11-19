@@ -52,8 +52,8 @@ function TradingViewEmbedded({ symbol }: { symbol: string }) {
     if (s === "NVDA") return "NASDAQ:NVDA";
     if (s === "META") return "NASDAQ:META";
     if (s === "US500" || s === "SPX") return "SP:SPX";
-    if (s === "NAS100" || s === "NDX") return "NASDAQ:NDX";
-    if (s === "US30" || s === "DJI") return "BLACKBULL:US30";
+    if (["NAS100", "USTEC", "US100", "NDX", "NQ100"].includes(s)) return "OANDA:NAS100USD";
+    if (["US30", "DJ30", "WS30", "DOW30", "DJI"].includes(s)) return "OANDA:US30USD";
     return `FX:${s}`;
   };
 
@@ -163,11 +163,19 @@ export function SmcChartOverlay({
 
   const isMobile = containerWidth < 640;
 
+  const symUp = symbol.toUpperCase();
   const isMetals =
-    symbol.toUpperCase().includes("XAU") ||
-    symbol.toUpperCase().includes("XAG") ||
-    symbol.toUpperCase().includes("GOLD");
-  const defaultBuf = isMetals ? 0.75 : 0.0004;
+    symUp.includes("XAU") ||
+    symUp.includes("XAG") ||
+    symUp.includes("GOLD");
+  const isUs30 = ["US30", "DJ30", "WS30", "DOW", "DJI"].some((k) => symUp.includes(k));
+  const isNas100 = ["NAS100", "USTEC", "US100", "NDX", "NQ100"].some((k) => symUp.includes(k));
+  const isIndices = isUs30 || isNas100;
+  const defaultBuf = isIndices ? 6.50 : isMetals ? 0.75 : 0.0004;
+  const defaultMaxSlCap = isUs30 ? 105.0 : isNas100 ? 85.0 : isMetals ? 10.0 : 0.0050;
+  const bufBadgeStr = isIndices ? "6.50pt" : isMetals ? "$0.75" : "4p";
+  const capBadgeStr = isUs30 ? "105pt" : isNas100 ? "85pt" : isMetals ? "$10.00" : "50p";
+  const pricePrefix = isIndices ? "" : "$";
 
   // Extract SMC parameters safely
   const sweepPrice = Number(telemetry?.sweep_price ?? telemetry?.sweepPrice ?? 0);
@@ -250,23 +258,23 @@ export function SmcChartOverlay({
     return livePrice;
   }, [hasActivePosition, activePosition, livePrice]);
 
-  // Strict SL: anchored to sweep with exact $0.75 buffer (or institutional baseline ~$7.50 distance / $52.50 USD risk on 0.07 lots)
+  // Strict SL: anchored to sweep with exact asset buffer ($0.75 Gold / 6.50pt Indices)
   const effectiveSlPrice = useMemo(() => {
     if (hasActivePosition && activePosition && (Number(activePosition.sl) > 0 || Number(activePosition.slPrice) > 0)) {
       return Number(activePosition.sl || activePosition.slPrice);
     }
-    const minSweepDist = isMetals ? 3.0 : 0.0010;
+    const minSweepDist = isIndices ? 25.5 : isMetals ? 3.0 : 0.0010;
     if (sweepPrice > 0 && Math.abs(effectiveEntryPrice - sweepPrice) >= minSweepDist) {
       return isBearishSetup
         ? Number((sweepPrice + defaultBuf).toFixed(2))
         : Number((sweepPrice - defaultBuf).toFixed(2));
     }
     // Baseline institutional SMC structural risk:
-    const defaultSlDist = isMetals ? 7.50 : 0.0020;
+    const defaultSlDist = isIndices ? 64.0 : isMetals ? 7.50 : 0.0020;
     return isBearishSetup
       ? Number((effectiveEntryPrice + defaultSlDist).toFixed(2))
       : Number((effectiveEntryPrice - defaultSlDist).toFixed(2));
-  }, [hasActivePosition, activePosition, sweepPrice, isBearishSetup, defaultBuf, effectiveEntryPrice, isMetals]);
+  }, [hasActivePosition, activePosition, sweepPrice, isBearishSetup, defaultBuf, effectiveEntryPrice, isMetals, isIndices]);
 
   // Strict TP: dynamically prioritize opposing liquidity target from engine/telemetry, or calculated opposing target
   const effectiveTpPrice = useMemo(() => {
@@ -292,7 +300,7 @@ export function SmcChartOverlay({
       return Number(telTp.toFixed(2));
     }
     // Structural dealing range fallback: Target Swing Low (Bearish) or Swing High (Bullish) front-run by buffer
-    const frontRunBuf = isMetals ? 0.75 : 0.0003;
+    const frontRunBuf = isIndices ? 9.35 : isMetals ? 0.75 : 0.0003;
     let swLo = 0, swHi = 0;
     try {
       const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
@@ -310,11 +318,11 @@ export function SmcChartOverlay({
     if (isBullishSetup && swHi > 0 && swHi > effectiveEntryPrice) {
       return Number((swHi - frontRunBuf).toFixed(2));
     }
-    const slDist = Math.max(isMetals ? 2.5 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
+    const slDist = Math.max(isIndices ? 21.25 : isMetals ? 2.5 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
     return isBearishSetup
       ? Number((effectiveEntryPrice - 1.8 * slDist).toFixed(2))
       : Number((effectiveEntryPrice + 1.8 * slDist).toFixed(2));
-  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isBullishSetup, isMetals, telemetry]);
+  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isBullishSetup, isMetals, isIndices, telemetry]);
 
   const effectiveRrr = useMemo(() => {
     const slDist = Math.abs(effectiveEntryPrice - effectiveSlPrice);
@@ -408,7 +416,7 @@ export function SmcChartOverlay({
             bestIdx = idx;
           }
         });
-        if (bestIdx >= 0 && bestDiff < (isMetals ? 2.5 : 0.005)) {
+        if (bestIdx >= 0 && bestDiff < (isIndices ? 17.0 : isMetals ? 2.5 : 0.005)) {
           mapped[bestIdx].isSweep = true;
         }
       }
@@ -424,7 +432,7 @@ export function SmcChartOverlay({
             bestIdx = idx;
           }
         });
-        if (bestIdx >= 0 && bestDiff < (isMetals ? 2.5 : 0.005)) {
+        if (bestIdx >= 0 && bestDiff < (isIndices ? 17.0 : isMetals ? 2.5 : 0.005)) {
           mapped[bestIdx].isChoch = true;
         }
       }
@@ -433,7 +441,7 @@ export function SmcChartOverlay({
     } catch {
       return null;
     }
-  }, [telemetry, livePrice, zoomLevel, isMobile, s2Pass, s3Pass, sweepPrice, chochPrice, isBullishSetup, isMetals]);
+  }, [telemetry, livePrice, zoomLevel, isMobile, s2Pass, s3Pass, sweepPrice, chochPrice, isBullishSetup, isMetals, isIndices]);
 
   // Construct Realistic M5 Candlesticks Graphically Representing the SMC Sequence (Real MT5 + Schematic Fallback)
   const candles = useMemo<Candle[]>(() => {
@@ -443,7 +451,7 @@ export function SmcChartOverlay({
     }
 
     const bars: Candle[] = [];
-    const step = isMetals ? 0.65 : 0.0003;
+    const step = isIndices ? 5.5 : isMetals ? 0.65 : 0.0003;
     const now = Date.now();
     const count = isMobile
       ? Math.max(8, Math.min(36, Math.round(18 / zoomLevel)))
@@ -544,10 +552,10 @@ export function SmcChartOverlay({
       if (k === sweepIdx) {
         // Accentuate the liquidity sweep wick
         if (isBullishSetup) {
-          lowP = swP - (isMetals ? 0.35 : 0.0002);
+          lowP = swP - (isIndices ? 3.0 : isMetals ? 0.35 : 0.0002);
           highP = Math.max(openP, closeP) + step * 0.2;
         } else {
-          highP = swP + (isMetals ? 0.35 : 0.0002);
+          highP = swP + (isIndices ? 3.0 : isMetals ? 0.35 : 0.0002);
           lowP = Math.min(openP, closeP) - step * 0.2;
         }
       } else if (k === liveIdx) {
@@ -610,8 +618,8 @@ export function SmcChartOverlay({
       high: number;
       label: string;
     }> = [];
-    const maxDist = isMetals ? 18.0 : 0.0080;
-    const dupTol = isMetals ? 0.35 : 0.0003;
+    const maxDist = isIndices ? 153.0 : isMetals ? 18.0 : 0.0080;
+    const dupTol = isIndices ? 3.0 : isMetals ? 0.35 : 0.0003;
     const seenRanges: string[] = [];
 
     const getCategory = (typeStr: string, labelStr: string) => {
@@ -694,7 +702,7 @@ export function SmcChartOverlay({
               const l = Number(item[0]);
               const h = Number(item[1]);
               const avg = (l + h) / 2;
-              if (Math.abs(avg - livePrice) <= (isMetals ? 15.0 : 0.0080) && h > l) {
+              if (Math.abs(avg - livePrice) <= (isIndices ? 153.0 : isMetals ? 15.0 : 0.0080) && h > l) {
                 return { low: l, high: h, label: "BOT DETECTED FVG" };
               }
             }
@@ -712,8 +720,8 @@ export function SmcChartOverlay({
     }
 
     // 3. Fallback: Structural displacement FVG on the SMC Diagram
-    const swP = sweepPrice > 0 ? sweepPrice : (isBullishSetup ? livePrice - (isMetals ? 5.5 : 0.003) : livePrice + (isMetals ? 5.5 : 0.003));
-    const chP = chochPrice > 0 ? chochPrice : (isBullishSetup ? swP + (isMetals ? 3.8 : 0.002) : swP - (isMetals ? 3.8 : 0.002));
+    const swP = sweepPrice > 0 ? sweepPrice : (isBullishSetup ? livePrice - (isIndices ? 46.75 : isMetals ? 5.5 : 0.003) : livePrice + (isIndices ? 46.75 : isMetals ? 5.5 : 0.003));
+    const chP = chochPrice > 0 ? chochPrice : (isBullishSetup ? swP + (isIndices ? 32.3 : isMetals ? 3.8 : 0.002) : swP - (isIndices ? 32.3 : isMetals ? 3.8 : 0.002));
     const low = isBullishSetup ? Number((swP + (chP - swP) * 0.35).toFixed(2)) : Number((chP + (swP - chP) * 0.35).toFixed(2));
     const high = isBullishSetup ? Number((swP + (chP - swP) * 0.65).toFixed(2)) : Number((chP + (swP - chP) * 0.65).toFixed(2));
     if (high > low) {
@@ -721,7 +729,7 @@ export function SmcChartOverlay({
     }
 
     return null;
-  }, [telemetry, parsedActiveZones, livePrice, sweepPrice, chochPrice, isMetals, isBullishSetup, s4Pass]);
+  }, [telemetry, parsedActiveZones, livePrice, sweepPrice, chochPrice, isMetals, isIndices, isBullishSetup, s4Pass]);
 
   // Institutional Swing Structure Levels (Buy-Side & Sell-Side Liquidity + CHoCH)
   const swingStructure = useMemo(() => {
@@ -772,11 +780,11 @@ export function SmcChartOverlay({
   const candleMin = Math.min(...rawCandleLows, livePrice);
   const candleMax = Math.max(...rawCandleHighs, livePrice);
   const candleSpan = candleMax - candleMin || 1;
-  const vertPad = Math.max(isMetals ? 0.90 : 0.0005, candleSpan * 0.16);
+  const vertPad = Math.max(isIndices ? 7.5 : isMetals ? 0.90 : 0.0005, candleSpan * 0.16);
 
   const minPrice = useMemo(() => {
     let min = candleMin - vertPad;
-    const pad = isMetals ? 0.80 : 0.0004;
+    const pad = isIndices ? 6.8 : isMetals ? 0.80 : 0.0004;
     if (showSlLevel && effectiveSlPrice > 0 && candleMin - effectiveSlPrice <= candleSpan * 1.5) {
       min = Math.min(min, effectiveSlPrice - pad);
     }
@@ -790,11 +798,11 @@ export function SmcChartOverlay({
       min = Math.min(min, fvgBounds.low - pad);
     }
     return Number(min.toFixed(2));
-  }, [candleMin, vertPad, candleSpan, showSlLevel, effectiveSlPrice, showTpLevel, effectiveTpPrice, swingStructure.swingLow, fvgBounds, isMetals]);
+  }, [candleMin, vertPad, candleSpan, showSlLevel, effectiveSlPrice, showTpLevel, effectiveTpPrice, swingStructure.swingLow, fvgBounds, isMetals, isIndices]);
 
   const maxPrice = useMemo(() => {
     let max = candleMax + vertPad;
-    const pad = isMetals ? 0.80 : 0.0004;
+    const pad = isIndices ? 6.8 : isMetals ? 0.80 : 0.0004;
     if (showTpLevel && effectiveTpPrice > 0 && effectiveTpPrice - candleMax <= candleSpan * 1.5) {
       max = Math.max(max, effectiveTpPrice + pad);
     }
@@ -808,7 +816,7 @@ export function SmcChartOverlay({
       max = Math.max(max, fvgBounds.high + pad);
     }
     return Number(max.toFixed(2));
-  }, [candleMax, vertPad, candleSpan, showTpLevel, effectiveTpPrice, showSlLevel, effectiveSlPrice, swingStructure.swingHigh, fvgBounds, isMetals]);
+  }, [candleMax, vertPad, candleSpan, showTpLevel, effectiveTpPrice, showSlLevel, effectiveSlPrice, swingStructure.swingHigh, fvgBounds, isMetals, isIndices]);
 
   const priceRange = maxPrice - minPrice || 1;
 
@@ -836,7 +844,7 @@ export function SmcChartOverlay({
     }> = [];
 
     // Find fractal swing peaks & valleys
-    const minAmp = isMetals ? 2.50 : 0.0018;
+    const minAmp = isIndices ? 21.25 : isMetals ? 2.50 : 0.0018;
 
     // Find institutional structural swing peaks & valleys (2-bar window + min depth filter)
     for (let i = 2; i < candles.length - 2; i++) {
@@ -1551,9 +1559,9 @@ export function SmcChartOverlay({
             </div>
             <p className="text-xs text-zinc-300 mt-0.5">
               {isTradeActive
-                ? `Running ${tradeDirection} on ${symbol} | Lot: ${isMetals ? "0.07" : "0.51"} | SL: $${slPrice.toFixed(2)} ${
-                    Math.abs(slPrice - entryPrice) < 0.20 ? "(Breakeven 🛡️)" : `($${defaultBuf} Buf)`
-                  } | TP: $${tpPrice.toFixed(2)} (Opposing Liquidity Target) ${
+                ? `Running ${tradeDirection} on ${symbol} | Lot: ${Number(activePosition?.volume || activePosition?.lots || (isMetals ? 0.07 : isIndices ? 0.70 : 0.51)).toFixed(2)} | SL: ${pricePrefix}${slPrice.toFixed(2)} ${
+                    Math.abs(slPrice - entryPrice) < (isIndices ? 2.5 : 0.20) ? "(Breakeven 🛡️)" : `(${bufBadgeStr} Buf)`
+                  } | TP: ${pricePrefix}${tpPrice.toFixed(2)} (Opposing Liquidity Target) ${
                     hasActivePosition && activePosition.profit !== undefined
                       ? `| Float P&L: $${Number(activePosition.profit).toFixed(2)}`
                       : ""
@@ -1589,18 +1597,18 @@ export function SmcChartOverlay({
           )}
 
           <div className="px-3 py-1 rounded bg-zinc-900 border border-zinc-700 text-white font-bold shadow-sm" title="Exact MT5 Broker Midpoint (Bid+Ask)/2">
-            MT5 Broker: <span className="text-emerald-400 font-black">${livePrice.toFixed(2)}</span>
+            MT5 Broker: <span className="text-emerald-400 font-black">{pricePrefix}{livePrice.toFixed(2)}</span>
           </div>
 
           {sweepPrice > 0 && (
             <div className="px-3 py-1 rounded bg-cyan-950 border border-cyan-500 text-cyan-300 font-bold shadow-sm">
-              Sweep: ${sweepPrice.toFixed(2)}
+              Sweep: {pricePrefix}{sweepPrice.toFixed(2)}
             </div>
           )}
 
           {chochPrice > 0 && (
             <div className="px-3 py-1 rounded bg-amber-950 border border-amber-500 text-amber-300 font-bold shadow-sm">
-              CHoCH: ${chochPrice.toFixed(2)}
+              CHoCH: {pricePrefix}{chochPrice.toFixed(2)}
             </div>
           )}
 
@@ -1614,11 +1622,11 @@ export function SmcChartOverlay({
                 : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
               {isTradeActive
-                ? Math.abs(slPrice - entryPrice) < 0.20
-                  ? `🛡️ BREAKEVEN SL: $${slPrice.toFixed(2)} (Risk-Free)`
-                  : `🔴 ACTIVE SL: $${slPrice.toFixed(2)} (${isMetals ? "~$52 Risk" : ""})`
+                ? Math.abs(slPrice - entryPrice) < (isIndices ? 2.5 : 0.20)
+                  ? `🛡️ BREAKEVEN SL: ${pricePrefix}${slPrice.toFixed(2)} (Risk-Free)`
+                  : `🔴 ACTIVE SL: ${pricePrefix}${slPrice.toFixed(2)} (${(isMetals || isIndices) ? "~$52 Risk" : ""})`
                 : s2Pass
-                ? `🔒 SL (0.75 Buf): $${slPrice.toFixed(2)} (${isMetals ? "~$52 Risk" : ""})`
+                ? `🔒 SL (${bufBadgeStr} Buf): ${pricePrefix}${slPrice.toFixed(2)} (${(isMetals || isIndices) ? "~$52 Risk" : ""})`
                 : "⏳ SL: Locks at Sweep (Step 2)"}
             </div>
             <div className={cn(
@@ -1872,7 +1880,7 @@ export function SmcChartOverlay({
                 </div>
               </div>
 
-              {/* S8: SL Placement ($0.75 Buf) */}
+              {/* S8: SL Placement (Asset Calibrated Buf) */}
               <div className={cn(
                 "min-h-[46px] px-1 py-1.5 rounded-lg border-2 flex flex-col items-center justify-center text-center transition-all",
                 s8Pass
@@ -1881,7 +1889,7 @@ export function SmcChartOverlay({
                   ? "bg-amber-950/70 border-amber-400 text-amber-200 animate-pulse"
                   : "bg-slate-900 border-slate-600 text-slate-200"
               )}>
-                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">8. SL $0.75</div>
+                <div className="text-[10px] leading-none text-slate-300 uppercase font-bold tracking-tight whitespace-nowrap">8. SL {bufBadgeStr}</div>
                 <div className="text-[11px] leading-tight font-black whitespace-nowrap mt-1">
                   {s8Pass ? "LOCK 🟢" : s8Status.includes("FAIL") ? "FAIL 🔴" : "WAIT ⚪"}
                 </div>
@@ -2273,7 +2281,7 @@ export function SmcChartOverlay({
                               fontFamily="monospace"
                               fontWeight="900"
                             >
-                              🛡️ SL ANCHOR (SWEEP + $0.75)
+                              🛡️ SL ANCHOR (SWEEP + {bufBadgeStr})
                             </text>
                           </>
                         )}
@@ -2963,14 +2971,14 @@ export function SmcChartOverlay({
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold flex items-center gap-1.5 text-white">
                 {s8Pass ? <Shield className="w-4 h-4 text-rose-400" /> : <Clock className="w-4 h-4 text-zinc-500" />}
-                S8: SL Placement ($0.75 Buf)
+                S8: SL Placement ({bufBadgeStr} Buf)
               </span>
               <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0.2 font-bold", s8Pass ? "bg-rose-500/20 text-rose-300 border-rose-400" : "bg-zinc-800 text-zinc-400 border-zinc-700")}>
-                {s8Pass ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 ($${defaultBuf} Buf)`) : "PENDING ⚪"}
+                {s8Pass ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 (${bufBadgeStr} Buf)`) : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
-              {s8Pass ? `Anchored $${defaultBuf} beyond Sweep wick ($${slPrice.toFixed(2)}) with $7.50 max risk cap.` : `Will lock $${defaultBuf} behind Sweep extreme (max $7.50 cap).`}
+              {s8Pass ? `Anchored ${bufBadgeStr} beyond Sweep wick (${pricePrefix}${slPrice.toFixed(2)}) within ${capBadgeStr} (${defaultMaxSlCap.toFixed(isMetals || isIndices ? 1 : 4)}) cap.` : `Will lock ${bufBadgeStr} behind Sweep extreme (max ${capBadgeStr} cap, ~$52 risk).`}
             </p>
           </div>
 

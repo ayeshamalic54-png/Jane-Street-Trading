@@ -673,7 +673,8 @@ def purge_disabled_category_zones(forex_enabled=True, metals_enabled=True, indic
                 WHERE symbol NOT LIKE '%XAU%' AND symbol NOT LIKE '%XAG%' AND symbol NOT LIKE '%XPT%' AND symbol NOT LIKE '%XPD%'
                   AND symbol NOT LIKE '%AAPL%' AND symbol NOT LIKE '%MSFT%' AND symbol NOT LIKE '%GOOGL%' AND symbol NOT LIKE '%TSLA%'
                   AND symbol NOT LIKE '%NVDA%' AND symbol NOT LIKE '%AMD%' AND symbol NOT LIKE '%META%' AND symbol NOT LIKE '%AMZN%'
-                  AND symbol NOT LIKE '%US500%' AND symbol NOT LIKE '%US30%' AND symbol NOT LIKE '%NAS100%' AND symbol NOT LIKE '%GER30%'
+                  AND symbol NOT LIKE '%US500%' AND symbol NOT LIKE '%US30%' AND symbol NOT LIKE '%DJ30%' AND symbol NOT LIKE '%WS30%'
+                  AND symbol NOT LIKE '%NAS100%' AND symbol NOT LIKE '%US100%' AND symbol NOT LIKE '%NDX%' AND symbol NOT LIKE '%GER30%'
                   AND symbol NOT LIKE '%UK100%' AND symbol NOT LIKE '%USTEC%'
             """)
             cur.execute("""
@@ -681,7 +682,8 @@ def purge_disabled_category_zones(forex_enabled=True, metals_enabled=True, indic
                 WHERE symbol_pair NOT LIKE '%XAU%' AND symbol_pair NOT LIKE '%XAG%' AND symbol_pair NOT LIKE '%XPT%' AND symbol_pair NOT LIKE '%XPD%'
                   AND symbol_pair NOT LIKE '%AAPL%' AND symbol_pair NOT LIKE '%MSFT%' AND symbol_pair NOT LIKE '%GOOGL%' AND symbol_pair NOT LIKE '%TSLA%'
                   AND symbol_pair NOT LIKE '%NVDA%' AND symbol_pair NOT LIKE '%AMD%' AND symbol_pair NOT LIKE '%META%' AND symbol_pair NOT LIKE '%AMZN%'
-                  AND symbol_pair NOT LIKE '%US500%' AND symbol_pair NOT LIKE '%US30%' AND symbol_pair NOT LIKE '%NAS100%' AND symbol_pair NOT LIKE '%GER30%'
+                  AND symbol_pair NOT LIKE '%US500%' AND symbol_pair NOT LIKE '%US30%' AND symbol_pair NOT LIKE '%DJ30%' AND symbol_pair NOT LIKE '%WS30%'
+                  AND symbol_pair NOT LIKE '%NAS100%' AND symbol_pair NOT LIKE '%US100%' AND symbol_pair NOT LIKE '%NDX%' AND symbol_pair NOT LIKE '%GER30%'
                   AND symbol_pair NOT LIKE '%UK100%' AND symbol_pair NOT LIKE '%USTEC%'
             """)
             cur.execute("""
@@ -689,7 +691,8 @@ def purge_disabled_category_zones(forex_enabled=True, metals_enabled=True, indic
                 WHERE symbol_pair NOT LIKE '%XAU%' AND symbol_pair NOT LIKE '%XAG%' AND symbol_pair NOT LIKE '%XPT%' AND symbol_pair NOT LIKE '%XPD%'
                   AND symbol_pair NOT LIKE '%AAPL%' AND symbol_pair NOT LIKE '%MSFT%' AND symbol_pair NOT LIKE '%GOOGL%' AND symbol_pair NOT LIKE '%TSLA%'
                   AND symbol_pair NOT LIKE '%NVDA%' AND symbol_pair NOT LIKE '%AMD%' AND symbol_pair NOT LIKE '%META%' AND symbol_pair NOT LIKE '%AMZN%'
-                  AND symbol_pair NOT LIKE '%US500%' AND symbol_pair NOT LIKE '%US30%' AND symbol_pair NOT LIKE '%NAS100%' AND symbol_pair NOT LIKE '%GER30%'
+                  AND symbol_pair NOT LIKE '%US500%' AND symbol_pair NOT LIKE '%US30%' AND symbol_pair NOT LIKE '%DJ30%' AND symbol_pair NOT LIKE '%WS30%'
+                  AND symbol_pair NOT LIKE '%NAS100%' AND symbol_pair NOT LIKE '%US100%' AND symbol_pair NOT LIKE '%NDX%' AND symbol_pair NOT LIKE '%GER30%'
                   AND symbol_pair NOT LIKE '%UK100%' AND symbol_pair NOT LIKE '%USTEC%'
             """)
 
@@ -699,9 +702,14 @@ def purge_disabled_category_zones(forex_enabled=True, metals_enabled=True, indic
             cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair LIKE '%XAU%' OR symbol_pair LIKE '%XAG%' OR symbol_pair LIKE '%XPT%' OR symbol_pair LIKE '%XPD%'")
 
         if not indices_enabled:
-            cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%US30%' OR symbol LIKE '%NAS100%' OR symbol LIKE '%US500%' OR symbol LIKE '%GER30%' OR symbol LIKE '%UK100%' OR symbol LIKE '%USTEC%'")
-            cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%US30%' OR symbol_pair LIKE '%NAS100%' OR symbol_pair LIKE '%US500%' OR symbol_pair LIKE '%GER30%' OR symbol_pair LIKE '%UK100%' OR symbol_pair LIKE '%USTEC%'")
-            cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair LIKE '%US30%' OR symbol_pair LIKE '%NAS100%' OR symbol_pair LIKE '%US500%' OR symbol_pair LIKE '%GER30%' OR symbol_pair LIKE '%UK100%' OR symbol_pair LIKE '%USTEC%'")
+            cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%US30%' OR symbol LIKE '%DJ30%' OR symbol LIKE '%WS30%' OR symbol LIKE '%NAS100%' OR symbol LIKE '%US100%' OR symbol LIKE '%NDX%' OR symbol LIKE '%US500%' OR symbol LIKE '%GER30%' OR symbol LIKE '%UK100%' OR symbol LIKE '%USTEC%'")
+            cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%US30%' OR symbol_pair LIKE '%DJ30%' OR symbol_pair LIKE '%WS30%' OR symbol_pair LIKE '%NAS100%' OR symbol_pair LIKE '%US100%' OR symbol_pair LIKE '%NDX%' OR symbol_pair LIKE '%US500%' OR symbol_pair LIKE '%GER30%' OR symbol_pair LIKE '%UK100%' OR symbol_pair LIKE '%USTEC%'")
+            cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair LIKE '%US30%' OR symbol_pair LIKE '%DJ30%' OR symbol_pair LIKE '%WS30%' OR symbol_pair LIKE '%NAS100%' OR symbol_pair LIKE '%US100%' OR symbol_pair LIKE '%NDX%' OR symbol_pair LIKE '%US500%' OR symbol_pair LIKE '%GER30%' OR symbol_pair LIKE '%UK100%' OR symbol_pair LIKE '%USTEC%'")
+
+        # Keep indices strictly limited to US30 and NAS100 (purge retired US500/SPX entries)
+        cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%US500%' OR symbol LIKE '%SPX%'")
+        cur.execute("DELETE FROM scanned_assets WHERE symbol_pair LIKE '%US500%' OR symbol_pair LIKE '%SPX%'")
+        cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair LIKE '%US500%' OR symbol_pair LIKE '%SPX%'")
 
         if not stocks_enabled:
             cur.execute("DELETE FROM fvg_zones WHERE symbol LIKE '%AAPL%' OR symbol LIKE '%MSFT%' OR symbol LIKE '%GOOGL%' OR symbol LIKE '%TSLA%' OR symbol LIKE '%NVDA%' OR symbol LIKE '%AMD%' OR symbol LIKE '%META%' OR symbol LIKE '%AMZN%'")
