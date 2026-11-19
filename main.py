@@ -26,7 +26,7 @@ from video_strategy_engine import calculate_zscore_and_ema, evaluate_video_strat
 from smc_strategy_engine import evaluate_smc_strategy_signal
 
 
-from execution_bot import execute_three_part_trade, execute_three_part_hedge_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl, mt5_epoch_to_utc_naive, apply_pure_breakeven_guard
+from execution_bot import execute_three_part_trade, execute_three_part_hedge_trade, close_all_positions, modify_sl_for_trade, check_closed_trades, MAGIC_NUMBER, send_order, close_position_by_ticket, is_retcode_success, modify_position_sl, mt5_epoch_to_utc_naive, apply_pure_breakeven_guard, estimate_sl_loss_usd
 
 
 from smc_indicators import detect_smc_zones, is_price_in_zones, get_smc_asset_profile
@@ -644,16 +644,26 @@ LEVERAGE_FACTORS = {
     "crypto": 0.01
 }
 
-def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.0) -> float:
+def get_blue_guardian_lots(
+    symbol: str,
+    category: str,
+    sl_dist_price: float = 0.0,
+    order_type=None,
+    entry_price: float = 0.0,
+    sl_price: float = 0.0,
+    max_risk_usd: float = 52.0,
+) -> float:
     """
     Smart $52 Max-Risk Institutional Prop Firm Lot Sizing Engine:
     - Gold (XAUUSD): Base 0.07 lots when SL <= $7.42; auto-scales to 0.06 ($7.43-$8.66)
       and 0.05 ($8.67-$10.00) so per-trade SL loss NEVER exceeds $52.00 USD.
     - Indices (US30, NAS100): Dynamic exact $52.00 risk sizing using live MT5 symbol
-      trade_tick_value / trade_tick_size (scaled to volume_step & <= 80% free margin).
+      trade_tick_value/trade_tick_value_loss/trade_tick_size AND order_calc_profit
+      (never rounds up to volume_min if min_vol would breach max_risk_usd -> returns 0.0).
     - Forex: Fixed 0.51 Lots.
     """
     import math
+    risk_budget = float(max_risk_usd or 52.0)
     sym_upper = symbol.upper()
     is_gold = ("XAU" in sym_upper) or ("GOLD" in sym_upper)
     is_silver = ("XAG" in sym_upper) or ("SILVER" in sym_upper)
@@ -661,7 +671,7 @@ def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.
         max_lot = 0.07
         if sl_dist_price and sl_dist_price > 0:
             contract_sz = 5000.0 if is_silver else 100.0
-            safe_lot = math.floor((52.0 / (float(sl_dist_price) * contract_sz)) * 100.0 + 1e-9) / 100.0
+            safe_lot = math.floor((risk_budget / (float(sl_dist_price) * contract_sz)) * 100.0 + 1e-9) / 100.0
             return round(max(0.01, min(max_lot, safe_lot)), 2)
         return max_lot
 
@@ -681,53 +691,220 @@ def get_blue_guardian_lots(symbol: str, category: str, sl_dist_price: float = 0.
         except Exception:
             info = None
 
-        vol_min = float(getattr(info, "volume_min", 0.01) or 0.01) if info else 0.01
-        vol_max = float(getattr(info, "volume_max", 25.0) or 25.0) if info else 25.0
-        vol_step = float(getattr(info, "volume_step", 0.01) or 0.01) if info else 0.01
+        if info is None:
+            logger.error(f"🛑 [MAX RISK GUARD] No MT5 symbol_info for index {symbol}; returning 0.0 lots to protect account.")
+            return 0.0
+
+        vol_min = float(getattr(info, "volume_min", 0.01) or 0.01)
+        vol_max = float(getattr(info, "volume_max", 25.0) or 25.0)
+        vol_step = float(getattr(info, "volume_step", 0.01) or 0.01)
         if vol_step <= 0:
             vol_step = 0.01
         step_str = f"{vol_step:.8f}".rstrip("0")
         step_dec = len(step_str.split(".")[1]) if "." in step_str else 0
 
-        tick_val = float(getattr(info, "trade_tick_value", 0.0) or 0.0) if info else 0.0
-        tick_sz = float(getattr(info, "trade_tick_size", 0.0) or 0.0) if info else 0.0
-        if tick_val > 0 and tick_sz > 0:
-            usd_per_pt_1lot = tick_val / tick_sz
-        else:
-            contract_sz = float(getattr(info, "trade_contract_size", 1.0) or 1.0) if info else 1.0
-            usd_per_pt_1lot = max(0.01, contract_sz)
+        eff_sl_dist = float(sl_dist_price or 0.0)
+        if eff_sl_dist <= 0 and float(entry_price or 0.0) > 0 and float(sl_price or 0.0) > 0:
+            eff_sl_dist = abs(float(entry_price) - float(sl_price))
+        if eff_sl_dist <= 0:
+            eff_sl_dist = 50.0
 
+        tick_val = max(
+            float(getattr(info, "trade_tick_value", 0.0) or 0.0),
+            float(getattr(info, "trade_tick_value_loss", 0.0) or 0.0),
+        )
+        tick_sz = float(getattr(info, "trade_tick_size", 0.0) or 0.0)
+        usd_rates = []
+        if tick_val > 0 and tick_sz > 0:
+            usd_rates.append(tick_val / tick_sz)
+
+        mt5_ot = order_type if order_type is not None else getattr(mt5, "ORDER_TYPE_BUY", 0)
+        if float(entry_price or 0.0) > 0 and float(sl_price or 0.0) > 0 and hasattr(mt5, "order_calc_profit"):
+            try:
+                pnl_1lot = mt5.order_calc_profit(mt5_ot, resolved_sym, 1.0, float(entry_price), float(sl_price))
+                if pnl_1lot is not None and float(pnl_1lot) < 0:
+                    usd_rates.append(abs(float(pnl_1lot)) / eff_sl_dist)
+            except Exception:
+                pass
+
+        if not usd_rates:
+            logger.error(f"🛑 [MAX RISK GUARD] Zero tick_value & order_calc_profit for index {resolved_sym}; refusing blind contract fallback.")
+            return 0.0
+
+        usd_per_pt_1lot = max(usd_rates)
         max_idx_lot = min(vol_max, 5.0)
-        if sl_dist_price and sl_dist_price > 0 and usd_per_pt_1lot > 0:
-            raw_lot = 52.0 / (float(sl_dist_price) * usd_per_pt_1lot)
-        else:
-            raw_lot = 52.0 / (50.0 * usd_per_pt_1lot)
+        raw_lot = risk_budget / (eff_sl_dist * usd_per_pt_1lot)
 
         steps = math.floor((raw_lot / vol_step) + 1e-9)
-        safe_lot = round(max(vol_min, min(max_idx_lot, steps * vol_step)), step_dec)
+        safe_lot = round(min(max_idx_lot, steps * vol_step), step_dec)
+
+        # NEVER round UP to vol_min if vol_min itself exceeds the $52 max risk cap
+        if safe_lot < vol_min or steps <= 0:
+            min_loss = vol_min * eff_sl_dist * usd_per_pt_1lot
+            if min_loss <= risk_budget + 1e-6:
+                safe_lot = round(vol_min, step_dec)
+            else:
+                logger.warning(f"🛑 [MAX ${risk_budget:.0f} RISK GUARD] {resolved_sym} SL={eff_sl_dist:.2f}pt (${usd_per_pt_1lot:.4f}/pt): even broker min_vol={vol_min} risks ${min_loss:.2f} > ${risk_budget:.2f}. Trade ABORTED.")
+                return 0.0
+
+        # Authoritative step-down verify against both formula and order_calc_profit
+        while safe_lot >= vol_min:
+            est_loss = safe_lot * eff_sl_dist * usd_per_pt_1lot
+            if float(entry_price or 0.0) > 0 and float(sl_price or 0.0) > 0 and hasattr(mt5, "order_calc_profit"):
+                try:
+                    calc_lot_pnl = mt5.order_calc_profit(mt5_ot, resolved_sym, safe_lot, float(entry_price), float(sl_price))
+                    if calc_lot_pnl is not None and float(calc_lot_pnl) < 0:
+                        est_loss = max(est_loss, abs(float(calc_lot_pnl)))
+                except Exception:
+                    pass
+            if est_loss <= risk_budget + 1e-6:
+                break
+            next_lot = round(safe_lot - vol_step, step_dec)
+            if next_lot >= safe_lot:
+                break
+            safe_lot = next_lot
+
+        if safe_lot < vol_min:
+            logger.warning(f"🛑 [MAX ${risk_budget:.0f} RISK GUARD] {resolved_sym} stepped below min_vol={vol_min}. Trade ABORTED.")
+            return 0.0
 
         # Free margin safety cap (never exceed 80% of available free margin)
         try:
-            acc = mt5.account_info() if info else None
-            tick_now = mt5.symbol_info_tick(resolved_sym) if info else None
+            acc = mt5.account_info()
+            tick_now = mt5.symbol_info_tick(resolved_sym)
             if acc and tick_now and acc.margin_free > 0:
                 ref_px = float(tick_now.ask or tick_now.bid or 0.0)
                 if ref_px > 0:
                     max_safe_margin = acc.margin_free * 0.80
-                    while safe_lot > vol_min:
+                    while safe_lot >= vol_min:
                         req_m = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, resolved_sym, safe_lot, ref_px)
                         if req_m is None or req_m <= max_safe_margin:
                             break
-                        next_lot = round(max(vol_min, safe_lot - vol_step), step_dec)
+                        next_lot = round(safe_lot - vol_step, step_dec)
                         if next_lot >= safe_lot:
                             break
                         safe_lot = next_lot
+                    if safe_lot < vol_min:
+                        logger.warning(f"🛑 [MARGIN GUARD] {resolved_sym} insufficient free margin for min_vol={vol_min}. Trade ABORTED.")
+                        return 0.0
         except Exception:
             pass
 
         return safe_lot
 
     return 0.51
+
+
+def execute_mt5_smc_order(
+    symbol_resolved: str,
+    symbol_b_resolved: str,
+    category_a: str,
+    is_long: bool,
+    sl_val: float,
+    tp_val: float,
+    tp1_val: float,
+    tp3_val: float,
+    fallback_tick,
+    best_sig: dict,
+    signal_id,
+    max_risk_usd: float = 52.0,
+):
+    """
+    Single unified BUY/SELL MT5 execution gate enforcing:
+    1. Live fresh-tick SL side & max SL cap sanity check.
+    2. Exact $52.00 max risk lot calculation (NEVER forces lot up to broker volume_min).
+    3. Single-trade lock verification right before order_send.
+    4. Execution + retcode 10014 protection via send_order(..., max_risk_usd=max_risk_usd).
+    """
+    pre_cnt, _, pre_syms = get_active_pairs_and_symbols()
+    side_str = "BUY" if is_long else "SELL"
+    if pre_cnt >= MAX_CONCURRENT_TRADES or len(pre_syms) > 0:
+        logger.warning(f"🛡️ [PRE-ORDER SINGLE TRADE LOCK] Aborting {side_str} on {symbol_resolved} — MT5 already has active trade/order ({pre_syms}).")
+        return None
+
+    tick_now = mt5.symbol_info_tick(symbol_resolved) or fallback_tick
+    if tick_now is None:
+        logger.error(f"🛑 [EXECUTION ABORTED] No live MT5 tick for {symbol_resolved}.")
+        return None
+
+    exec_entry = float(tick_now.ask if is_long else tick_now.bid)
+    if exec_entry <= 0:
+        logger.error(f"🛑 [EXECUTION ABORTED] Invalid live price {exec_entry} for {symbol_resolved}.")
+        return None
+
+    exec_sl_dist = (exec_entry - float(sl_val)) if is_long else (float(sl_val) - exec_entry)
+    if exec_sl_dist <= 0:
+        logger.error(f"🛑 [MAX RISK GUARD] Aborted {side_str} on {symbol_resolved}: price {exec_entry} already crossed SL {sl_val}.")
+        return None
+
+    asset_prof = get_smc_asset_profile(symbol=symbol_resolved, category=category_a, ref_price=exec_entry)
+    max_cap_allowed = float(asset_prof["max_sl_cap"]) * 1.15
+    if category_a in ("metals", "indices") and exec_sl_dist > max_cap_allowed:
+        logger.error(f"🛑 [MAX SL CAP GUARD] Aborted {side_str} on {symbol_resolved}: live SL dist {exec_sl_dist:.2f} > cap {max_cap_allowed:.2f}.")
+        return None
+
+    exec_tp_dist = (float(tp_val) - exec_entry) if is_long else (exec_entry - float(tp_val))
+    if exec_tp_dist <= 0 or (exec_tp_dist / exec_sl_dist) < 1.40:
+        logger.error(f"🛑 [R:R GUARD] Aborted {side_str} on {symbol_resolved}: slipped R:R {(exec_tp_dist / exec_sl_dist) if exec_sl_dist > 0 else 0:.2f} < 1.40.")
+        return None
+
+    trade_type = getattr(mt5, "ORDER_TYPE_BUY", 0) if is_long else getattr(mt5, "ORDER_TYPE_SELL", 1)
+    lots_a = get_blue_guardian_lots(
+        symbol_resolved,
+        category_a,
+        sl_dist_price=exec_sl_dist,
+        order_type=trade_type,
+        entry_price=exec_entry,
+        sl_price=sl_val,
+        max_risk_usd=max_risk_usd,
+    )
+    info_a = mt5.symbol_info(symbol_resolved)
+    min_vol_a = float(getattr(info_a, "volume_min", 0.01) or 0.01) if info_a else 0.01
+    if lots_a <= 0 or lots_a < min_vol_a:
+        logger.error(f"🛑 [MAX ${max_risk_usd:.0f} RISK GUARD] Aborted {side_str} on {symbol_resolved}: safe lots={lots_a} < broker min_vol={min_vol_a} at SL dist={exec_sl_dist:.2f}.")
+        return None
+
+    est_loss = estimate_sl_loss_usd(symbol_resolved, trade_type, lots_a, exec_entry, sl_val, info=info_a)
+    if category_a in ("metals", "indices"):
+        if est_loss is None or est_loss > float(max_risk_usd) + 1e-6:
+            logger.error(f"🛑 [MAX ${max_risk_usd:.0f} RISK GUARD] Aborted {side_str} on {symbol_resolved}: estimated SL loss ({est_loss}) exceeds ${max_risk_usd:.2f}!")
+            return None
+
+    res_order = send_order(
+        symbol_resolved, trade_type, exec_entry, lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE",
+        max_risk_usd=(max_risk_usd if category_a in ("metals", "indices") else None),
+    )
+    if res_order and is_retcode_success(res_order):
+        filled_vol = float(getattr(res_order, "volume", 0.0) or lots_a)
+        filled_px = float(getattr(res_order, "price", 0.0) or exec_entry)
+        verified_risk = estimate_sl_loss_usd(symbol_resolved, trade_type, filled_vol, filled_px, sl_val, info=info_a)
+        log_trade_entry(res_order.order, symbol_resolved, side_str, filled_vol, filled_px, utc_now_naive(), "JS_SMC_STRUCTURE", signal_id)
+        try:
+            send_discord_signal_notification(
+                action=side_str,
+                symbol_a=symbol_resolved,
+                symbol_b=symbol_b_resolved,
+                z_score=best_sig["z_score"],
+                entry_a=filled_px,
+                sl_a=sl_val,
+                tp1=tp1_val,
+                tp2=tp_val,
+                tp3=tp3_val,
+                lots_a=filled_vol,
+                entry_b=0.0,
+                sl_b=0.0,
+                lots_b=0.0,
+                side_b="NONE"
+            )
+        except Exception as ex_open_notify:
+            logger.error(f"Error sending Discord OPEN notification: {ex_open_notify}")
+        dot_emoji = "🟢" if is_long else "🔴"
+        risk_lbl = f"${verified_risk:.2f}" if verified_risk is not None else "N/A"
+        logger.info("================================================================================")
+        logger.info("🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
+        logger.info(f"{dot_emoji} Symbol: {symbol_resolved} | Action: {side_str} | Lots: {filled_vol:.2f} | Price: {filled_px:.5f} | SL: {sl_val:.5f} (Dist: {exec_sl_dist:.2f}, Risk: {risk_lbl} <= ${max_risk_usd:.2f}) | TP: {tp_val:.5f} | Ticket #{res_order.order}")
+        logger.info("================================================================================")
+    return res_order
 
 
 
@@ -3216,17 +3393,10 @@ def main():
                         entry_a = best_sig["tick_a"].ask if is_long else best_sig["tick_a"].bid
                         entry_b = best_sig["tick_b"].bid if is_long else best_sig["tick_b"].ask
 
-                        # Keep structural SL strictly anchored beyond sweep wick + buffer (never pull inside wick on tick slip)
+                        # Keep structural SL strictly anchored beyond sweep wick + buffer (never invent a fake SL if crossed)
                         if best_sig.get("smc_sl") is not None and float(best_sig["smc_sl"]) > 0:
-                            raw_smc_sl = float(best_sig["smc_sl"])
-                            if is_long and raw_smc_sl < entry_a:
-                                sl_a = raw_smc_sl
-                                sl_dist = entry_a - sl_a
-                            elif (not is_long) and raw_smc_sl > entry_a:
-                                sl_a = raw_smc_sl
-                                sl_dist = sl_a - entry_a
-                            else:
-                                sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
+                            sl_a = float(best_sig["smc_sl"])
+                            sl_dist = (entry_a - sl_a) if is_long else (sl_a - entry_a)
                         else:
                             sl_a = entry_a - sl_dist if is_long else entry_a + sl_dist
 
@@ -3246,16 +3416,20 @@ def main():
                         tp1_val = entry_a + (tp_dist * 0.5) if is_long else entry_a - (tp_dist * 0.5)
                         tp3_val = entry_a + (tp_dist * 1.5) if is_long else entry_a - (tp_dist * 1.5)
 
+                        mt5_dir_type = getattr(mt5, "ORDER_TYPE_BUY", 0) if is_long else getattr(mt5, "ORDER_TYPE_SELL", 1)
                         if best_cat_a in ("metals", "indices") or "XAU" in S_A.upper() or "XAG" in S_A.upper():
-                            lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
+                            lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist, order_type=mt5_dir_type, entry_price=entry_a, sl_price=sl_a, max_risk_usd=52.0)
                         elif DEFAULT_LOTS > 0.05 and DEFAULT_LOTS != 0.01:
                             disable_guard = os.getenv("DISABLE_MARGIN_GUARD", "False").lower() in ("true", "1", "yes")
                             mult = 1.0 if disable_guard else LEVERAGE_FACTORS.get(best_cat_a, 1.0)
                             lots_a = DEFAULT_LOTS * mult
                         else:
-                            lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
+                            lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist, order_type=mt5_dir_type, entry_price=entry_a, sl_price=sl_a, max_risk_usd=52.0)
                             
                         actual_lots_a = lots_a
+                        if (best_cat_a in ("metals", "indices") or "XAU" in S_A.upper() or "XAG" in S_A.upper()) and (sl_dist <= 0 or actual_lots_a <= 0):
+                            logger.warning(f"🛑 [MAX $52 RISK GUARD] Skipping {S_A_resolved} ({best_action}) — SL dist={sl_dist:.2f} invalid or broker min_vol exceeds $52.00 cap.")
+                            continue
                         
                         lots_b = get_hedge_quantity(S_A, S_B, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
                         
@@ -3340,50 +3514,20 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, utc_now_naive(), "JS_HEDGE", signal_id)
                         else:
-                            actual_lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
-                            info_a_check = mt5.symbol_info(S_A_resolved)
-                            min_vol_a = info_a_check.volume_min if info_a_check else 0.01
-                            if actual_lots_a < min_vol_a:
-                                actual_lots_a = min_vol_a
-                            
-                            qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
-                            
-                            # SINGLE-ASSET DIRECT ORDER EXECUTION (1 Ticket, Zero Hedge Drag)
-                            pre_cnt_buy, _, pre_syms_buy = get_active_pairs_and_symbols()
-                            if pre_cnt_buy >= MAX_CONCURRENT_TRADES or len(pre_syms_buy) > 0:
-                                logger.warning(f"🛡️ [PRE-ORDER SINGLE TRADE LOCK] Aborting BUY on {S_A_resolved} — MT5 already has active trade/order ({pre_syms_buy}).")
-                                res_order = None
-                            else:
-                                trade_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
-                                entry_p = best_sig["tick_a"].ask if is_long else best_sig["tick_a"].bid
-                                sl_val = sl_a
-                                tp_val = tp2_val
-                                res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
-                            if res_order and is_retcode_success(res_order):
-                                log_trade_entry(res_order.order, S_A_resolved, "BUY" if is_long else "SELL", actual_lots_a, res_order.price, utc_now_naive(), "JS_SMC_STRUCTURE", signal_id)
-                                try:
-                                    send_discord_signal_notification(
-                                        action="BUY",
-                                        symbol_a=S_A_resolved,
-                                        symbol_b=S_B_resolved,
-                                        z_score=best_sig["z_score"],
-                                        entry_a=res_order.price,
-                                        sl_a=sl_val,
-                                        tp1=tp1_val,
-                                        tp2=tp_val,
-                                        tp3=tp3_val,
-                                        lots_a=actual_lots_a,
-                                        entry_b=0.0,
-                                        sl_b=0.0,
-                                        lots_b=0.0,
-                                        side_b="NONE"
-                                    )
-                                except Exception as ex_open_notify:
-                                    logger.error(f"Error sending Discord OPEN notification: {ex_open_notify}")
-                                logger.info("================================================================================")
-                                logger.info(f"🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
-                                logger.info(f"🟢 Symbol: {S_A_resolved} | Action: {'BUY' if is_long else 'SELL'} | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
-                                logger.info("================================================================================")
+                            execute_mt5_smc_order(
+                                symbol_resolved=S_A_resolved,
+                                symbol_b_resolved=S_B_resolved,
+                                category_a=best_cat_a,
+                                is_long=True,
+                                sl_val=sl_a,
+                                tp_val=tp2_val,
+                                tp1_val=tp1_val,
+                                tp3_val=tp3_val,
+                                fallback_tick=best_sig["tick_a"],
+                                best_sig=best_sig,
+                                signal_id=signal_id,
+                                max_risk_usd=52.0,
+                            )
 
                     else:
                         if best_cat_a == "crypto":
@@ -3412,50 +3556,20 @@ def main():
                                     if res_hedge and res_hedge.retcode == mt5.TRADE_RETCODE_DONE:
                                         log_trade_entry(res_hedge.order, S_B, side_b, qty_b, res_hedge.price, utc_now_naive(), "JS_HEDGE", signal_id)
                         else:
-                            actual_lots_a = get_blue_guardian_lots(S_A_resolved, best_cat_a, sl_dist_price=sl_dist)
-                            info_a_check = mt5.symbol_info(S_A_resolved)
-                            min_vol_a = info_a_check.volume_min if info_a_check else 0.01
-                            if actual_lots_a < min_vol_a:
-                                actual_lots_a = min_vol_a
-                            
-                            qty_b = get_hedge_quantity(S_A_resolved, S_B_resolved, actual_lots_a, best_sig["beta"], best_cat_a, best_cat_b)
-                            
-                            # SINGLE-ASSET DIRECT ORDER EXECUTION FOR SELL (1 Ticket, Zero Hedge Drag)
-                            pre_cnt_sell, _, pre_syms_sell = get_active_pairs_and_symbols()
-                            if pre_cnt_sell >= MAX_CONCURRENT_TRADES or len(pre_syms_sell) > 0:
-                                logger.warning(f"🛡️ [PRE-ORDER SINGLE TRADE LOCK] Aborting SELL on {S_A_resolved} — MT5 already has active trade/order ({pre_syms_sell}).")
-                                res_order = None
-                            else:
-                                trade_type = mt5.ORDER_TYPE_SELL
-                                entry_p = best_sig["tick_a"].bid
-                                sl_val = sl_a
-                                tp_val = tp2_val
-                                res_order = send_order(S_A_resolved, trade_type, entry_p, actual_lots_a, sl_val, tp_val, "JS_SMC_STRUCTURE")
-                            if res_order and is_retcode_success(res_order):
-                                log_trade_entry(res_order.order, S_A_resolved, "SELL", actual_lots_a, res_order.price, utc_now_naive(), "JS_SMC_STRUCTURE", signal_id)
-                                try:
-                                    send_discord_signal_notification(
-                                        action="SELL",
-                                        symbol_a=S_A_resolved,
-                                        symbol_b=S_B_resolved,
-                                        z_score=best_sig["z_score"],
-                                        entry_a=res_order.price,
-                                        sl_a=sl_val,
-                                        tp1=tp1_val,
-                                        tp2=tp_val,
-                                        tp3=tp3_val,
-                                        lots_a=actual_lots_a,
-                                        entry_b=0.0,
-                                        sl_b=0.0,
-                                        lots_b=0.0,
-                                        side_b="NONE"
-                                    )
-                                except Exception as ex_open_notify_sell:
-                                    logger.error(f"Error sending Discord OPEN notification for SELL: {ex_open_notify_sell}")
-                                logger.info("================================================================================")
-                                logger.info(f"🎉 [ALL REQUIREMENTS FILLED — ORDER EXECUTED!] 🚀")
-                                logger.info(f"🔴 Symbol: {S_A_resolved} | Action: SELL | Lots: {actual_lots_a:.2f} | Price: {res_order.price:.5f} | SL: {sl_val:.5f} | TP: {tp_val:.5f} | Ticket #{res_order.order}")
-                                logger.info("================================================================================")
+                            execute_mt5_smc_order(
+                                symbol_resolved=S_A_resolved,
+                                symbol_b_resolved=S_B_resolved,
+                                category_a=best_cat_a,
+                                is_long=False,
+                                sl_val=sl_a,
+                                tp_val=tp2_val,
+                                tp1_val=tp1_val,
+                                tp3_val=tp3_val,
+                                fallback_tick=best_sig["tick_a"],
+                                best_sig=best_sig,
+                                signal_id=signal_id,
+                                max_risk_usd=52.0,
+                            )
                     invalidate_trades_cache()
 
             # ── PURE RISK-FREE BREAKEVEN PROTECTION (+$50.00 USD TRIGGER — NO TRAILING STOP, NO STAGNATION) ──

@@ -81,8 +81,56 @@ def is_retcode_success(res):
         return True
     return False
 
-def send_order(symbol, order_type, price, volume, sl, tp, comment):
-    """Submits order to MT5. Automatically handles FOK vs IOC vs RETURN filling modes and live price updates."""
+def estimate_sl_loss_usd(symbol, order_type, volume, entry_price, sl_price, info=None):
+    """
+    Returns conservative worst-case USD loss if position (volume) hits sl_price from entry_price.
+    Checks MT5 order_calc_profit alongside trade_tick_value / trade_tick_value_loss.
+    """
+    try:
+        vol = float(volume or 0.0)
+        ep = float(entry_price or 0.0)
+        sp = float(sl_price or 0.0)
+        if vol <= 0 or ep <= 0 or sp <= 0:
+            return 0.0
+        dist = abs(ep - sp)
+        if dist <= 0:
+            return 0.0
+
+        sym_u = str(symbol or "").upper()
+        info_obj = info or (mt5.symbol_info(symbol) if mt5 else None)
+        losses = []
+
+        if info_obj is not None:
+            t_sz = float(getattr(info_obj, "trade_tick_size", 0.0) or 0.0)
+            t_val = max(
+                float(getattr(info_obj, "trade_tick_value", 0.0) or 0.0),
+                float(getattr(info_obj, "trade_tick_value_loss", 0.0) or 0.0),
+            )
+            if t_sz > 0 and t_val > 0:
+                losses.append(vol * dist * (t_val / t_sz))
+            elif "XAU" in sym_u or "GOLD" in sym_u:
+                losses.append(vol * dist * 100.0)
+            elif "XAG" in sym_u or "SILVER" in sym_u:
+                losses.append(vol * dist * 5000.0)
+
+        if hasattr(mt5, "order_calc_profit"):
+            try:
+                calc_pnl = mt5.order_calc_profit(order_type, symbol, vol, ep, sp)
+                if calc_pnl is not None and float(calc_pnl) < 0:
+                    losses.append(abs(float(calc_pnl)))
+            except Exception:
+                pass
+
+        if not losses:
+            is_idx = any(k in sym_u for k in ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"))
+            return None if is_idx else 0.0
+        return max(losses)
+    except Exception:
+        return None
+
+
+def send_order(symbol, order_type, price, volume, sl, tp, comment, max_risk_usd=None):
+    """Submits order to MT5. Enforces optional max_risk_usd cap on fresh tick & retcode 10014 retries."""
     # Ensure symbol is active and selected in MT5 Market Watch
     mt5.symbol_select(symbol, True)
     
@@ -139,6 +187,34 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             if fresh_p > 0:
                 request["price"] = round(float(fresh_p), digits) if digits is not None else fresh_p
 
+        if max_risk_usd is not None and float(max_risk_usd) > 0 and sl and float(sl) > 0:
+            chk_p = float(request["price"])
+            chk_sl = float(sl)
+            if (order_type == mt5.ORDER_TYPE_BUY and chk_sl >= chk_p) or (order_type == mt5.ORDER_TYPE_SELL and chk_sl <= chk_p):
+                logger.error(f"🛑 [MAX RISK GUARD] Aborted {symbol}: SL {chk_sl} already crossed live entry {chk_p} before send.")
+                return None
+            curr_vol = float(request["volume"])
+            vol_step = float(getattr(info, "volume_step", 0.01) or 0.01) if info else 0.01
+            vol_min = float(getattr(info, "volume_min", 0.01) or 0.01) if info else 0.01
+            step_s = f"{vol_step:.8f}".rstrip("0")
+            step_dec = len(step_s.split(".")[1]) if "." in step_s else 0
+            while curr_vol >= vol_min:
+                est_loss = estimate_sl_loss_usd(symbol, order_type, curr_vol, chk_p, chk_sl, info=info)
+                if est_loss is None:
+                    logger.error(f"🛑 [MAX RISK GUARD] Aborted {symbol}: broker returned no tick_value or order_calc_profit.")
+                    return None
+                if est_loss <= float(max_risk_usd) + 1e-6:
+                    break
+                next_vol = round(curr_vol - vol_step, step_dec)
+                if next_vol >= curr_vol:
+                    break
+                curr_vol = next_vol
+            final_loss = estimate_sl_loss_usd(symbol, order_type, curr_vol, chk_p, chk_sl, info=info)
+            if curr_vol < vol_min or final_loss is None or final_loss > float(max_risk_usd) + 1e-6:
+                logger.error(f"🛑 [MAX RISK GUARD] Aborted {symbol}: even min_vol={vol_min} risks > ${float(max_risk_usd):.2f} at entry {chk_p}, SL {chk_sl}.")
+                return None
+            request["volume"] = curr_vol
+
         request["type_filling"] = mode
         result = mt5.order_send(request)
         
@@ -150,11 +226,16 @@ def send_order(symbol, order_type, price, volume, sl, tp, comment):
             logger.info(f"Order filled successfully using mode {mode} (retcode={result.retcode}, comment='{result.comment}')")
             return result
             
-        # Check if volume is invalid and auto-correct to broker volume_min
+        # Check if volume is invalid; NEVER bump up to volume_min if it violates max_risk_usd
         if result.retcode == 10014:
             info = mt5.symbol_info(symbol)
             if info:
-                corrected_vol = info.volume_min
+                corrected_vol = float(info.volume_min)
+                if max_risk_usd is not None and float(max_risk_usd) > 0 and sl and float(sl) > 0:
+                    min_loss = estimate_sl_loss_usd(symbol, order_type, corrected_vol, request["price"], sl, info=info)
+                    if min_loss is None or min_loss > float(max_risk_usd) + 1e-6:
+                        logger.error(f"🛑 [MAX RISK GUARD] Aborted retcode 10014 retry for {symbol}: broker volume_min={corrected_vol} risks {min_loss} > ${float(max_risk_usd):.2f} cap!")
+                        return None
                 logger.warning(f"[VOLUME HEAL] Retrying order for {symbol} with broker min volume: {corrected_vol}")
                 request["volume"] = corrected_vol
                 res_retry = mt5.order_send(request)
