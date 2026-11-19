@@ -248,17 +248,19 @@ def resolve_broker_symbol(symbol):
                     _RESOLVED_CACHE[sym_upper] = cand
                     return cand
 
-        # 4. Fast targeted query by group prefix (never dumps all 50,000 symbols)
-        prefix = sym_upper[:3]
-        group_syms = mt5.symbols_get(group=f"*{prefix}*")
-        if group_syms:
+        # 4. Targeted group search across ALL aliases (covers #USTEC, US100.cash, DJ30.pro, etc.)
+        search_terms = list(dict.fromkeys([sym_upper[:3]] + candidates))
+        for term in search_terms:
+            group_syms = mt5.symbols_get(group=f"*{term}*")
+            if not group_syms:
+                continue
             for s in group_syms:
                 if s.trade_mode != mt5.SYMBOL_TRADE_MODE_DISABLED:
-                    if sym_upper in s.name.upper() or s.name.upper().startswith(sym_upper) or any(a in s.name.upper() for a in candidates):
+                    s_name_u = s.name.upper()
+                    if sym_upper in s_name_u or s_name_u.startswith(sym_upper) or any(a in s_name_u for a in candidates):
                         _RESOLVED_CACHE[sym_upper] = s.name
                         return s.name
     except Exception as e:
         logger.debug(f"Symbol resolution exception for {symbol}: {e}")
 
-    _RESOLVED_CACHE[sym_upper] = symbol
     return symbol

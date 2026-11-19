@@ -587,8 +587,8 @@ def is_market_open(symbol: str) -> bool:
             return False
             
         import time
-        # If last tick is older than 5 minutes (300 seconds), market for this asset is closed!
-        if (time.time() - tick.time) > 300:
+        # Allow slightly wider 600s tick staleness window so quiet CFD sessions aren't skipped falsely
+        if (time.time() - tick.time) > 600:
             return False
             
         return True
@@ -2672,14 +2672,15 @@ def main():
                 # Resolve broker aliases for MT5 symbols and ensure Market Watch subscription before checking market open
                 s_a_resolved = resolve_broker_symbol(s_a) if cat_a != "crypto" else s_a
                 s_b_resolved = resolve_broker_symbol(s_b) if cat_b != "crypto" else s_b
-                if cat_a != "crypto":
-                    check_and_subscribe_symbol(s_a_resolved)
+                sub_a_ok = check_and_subscribe_symbol(s_a_resolved) if cat_a != "crypto" else True
                 if cat_b != "crypto":
                     check_and_subscribe_symbol(s_b_resolved)
 
                 # ── MARKET CLOSED GUARD ──
-                # Prevents scanning or generating signals for closed stocks/indices outside market hours
-                if not is_market_open(s_a_resolved) or not is_market_open(s_b_resolved):
+                # Check Leg A (traded Pure SMC instrument); log throttled diagnostic if skipped so VPS never stays silent
+                if not sub_a_ok or not is_market_open(s_a_resolved):
+                    if win_rate_loop_counter % 30 == 0:
+                        logger.info(f"⏸️ [SCAN SKIPPED] {pk} ({s_a_resolved}) | Market closed, stale tick, or broker symbol unavailable")
                     continue
 
                 # Fetch ticks
@@ -2692,7 +2693,6 @@ def main():
                         tick_a_scan = get_binance_live_tick(s_a_resolved)
                         bids_a_scan, asks_a_scan = get_binance_market_book(s_a_resolved)
                     else:
-                        check_and_subscribe_symbol(s_a_resolved)
                         tick_a_scan = mt5.symbol_info_tick(s_a_resolved)
                         bids_a_scan, asks_a_scan = get_market_book(s_a_resolved)
 
@@ -2700,14 +2700,19 @@ def main():
                         tick_b_scan = get_binance_live_tick(s_b_resolved)
                         bids_b_scan, asks_b_scan = get_binance_market_book(s_b_resolved)
                     else:
-                        check_and_subscribe_symbol(s_b_resolved)
                         tick_b_scan = mt5.symbol_info_tick(s_b_resolved)
                         bids_b_scan, asks_b_scan = get_market_book(s_b_resolved)
-                except Exception:
+                except Exception as ex_tick:
+                    if win_rate_loop_counter % 30 == 0:
+                        logger.warning(f"⚠️ [TICK FETCH ERROR] {pk} ({s_a_resolved}): {ex_tick}")
                     continue
 
-                if tick_a_scan is None or tick_b_scan is None:
+                if tick_a_scan is None:
+                    if win_rate_loop_counter % 30 == 0:
+                        logger.info(f"⏸️ [NO LIVE TICK] {pk} ({s_a_resolved}) | Waiting for MT5 live tick")
                     continue
+                if tick_b_scan is None:
+                    tick_b_scan = tick_a_scan
 
                 p_a = (tick_a_scan.bid + tick_a_scan.ask) / 2.0
                 p_b = (tick_b_scan.bid + tick_b_scan.ask) / 2.0
