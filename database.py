@@ -726,6 +726,52 @@ def purge_disabled_category_zones(forex_enabled=True, metals_enabled=True, indic
         if conn:
             conn.close()
 
+def purge_all_broker_telemetry():
+    """Clears cross-broker zones, scanner telemetry, and SMC sequence tables on MT5 account/server switch."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM fvg_zones")
+        cur.execute("DELETE FROM scanned_assets")
+        cur.execute("DELETE FROM smc_telemetry")
+        conn.commit()
+        cur.close()
+        print("🧹 [BROKER CACHE PURGE] Cleared stale fvg_zones, scanned_assets, and smc_telemetry across account switch.")
+    except Exception as e:
+        print(f"Error purging broker telemetry: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+def purge_symbol_telemetry(symbol: str, symbol_pair: str = None):
+    """Deletes stale zones/telemetry for an instrument not offered on the active broker account."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        if symbol:
+            from data_ingestion import SYMBOL_ALIASES
+            sym_u = symbol.strip().upper()
+            alias_list = SYMBOL_ALIASES.get(sym_u, [sym_u])
+            for alias_tok in alias_list:
+                sym_like = f"%{alias_tok}%"
+                cur.execute("DELETE FROM fvg_zones WHERE UPPER(symbol) = %s OR UPPER(symbol) LIKE %s", (alias_tok, sym_like))
+        if symbol_pair:
+            cur.execute("DELETE FROM scanned_assets WHERE symbol_pair = %s", (symbol_pair,))
+            cur.execute("DELETE FROM smc_telemetry WHERE symbol_pair = %s", (symbol_pair,))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        print(f"Error purging symbol telemetry for {symbol}/{symbol_pair}: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
 def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action, entry_price=None, sl=None, tp=None):
     """Logs a generated mathematical signal with exact entry, sl, and tp. Returns the signal ID."""
     query = """

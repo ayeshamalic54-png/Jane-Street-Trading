@@ -2146,6 +2146,7 @@ def main():
     SMC_ZONES_CACHE = {}
     smc_counter_cache = {}
     aamd_normal_cache = {}
+    _purged_missing_pairs = set()
 
     active_login_id = None
     try:
@@ -2261,7 +2262,15 @@ def main():
             
             if login_changed:
                 logger.info(f"🔄 [GENUINE ACCOUNT SWITCH DETECTED] Connected new MT5 Login #{current_login} (Previous DB Login #{db_login}). Restoring/syncing account session.")
-                from database import reset_database_metrics_for_new_account
+                from database import reset_database_metrics_for_new_account, purge_all_broker_telemetry
+                import data_ingestion
+                data_ingestion._RESOLVED_CACHE.clear()
+                data_ingestion._SUBSCRIBED_SYMBOLS.clear()
+                SMC_ZONES_CACHE.clear()
+                smc_counter_cache.clear()
+                KF_CACHE.clear()
+                _purged_missing_pairs.clear()
+                purge_all_broker_telemetry()
                 restored_acc = reset_database_metrics_for_new_account(current_login, acc_info.equity) or {}
                 
                 # Restore saved daily start equity (never zero out an account's daily/overall stats on switch)
@@ -2689,20 +2698,28 @@ def main():
                 # Resolve broker aliases for MT5 symbols and ensure Market Watch subscription before checking market open
                 s_a_resolved = resolve_broker_symbol(s_a) if cat_a != "crypto" else s_a
                 s_b_resolved = resolve_broker_symbol(s_b) if cat_b != "crypto" else s_b
-                sub_a_ok = check_and_subscribe_symbol(s_a_resolved) if cat_a != "crypto" else True
+                sub_a_ok = check_and_subscribe_symbol(s_a_resolved, expected_symbol=s_a) if cat_a != "crypto" else True
                 if cat_b != "crypto":
-                    check_and_subscribe_symbol(s_b_resolved)
+                    check_and_subscribe_symbol(s_b_resolved, expected_symbol=s_b)
 
-                # ── MARKET CLOSED GUARD ──
-                # Check Leg A (traded Pure SMC instrument); log diagnostic immediately on startup & every 10 loops if skipped
+                # ── MARKET CLOSED / UNSUPPORTED BROKER SYMBOL GUARD ──
+                # Check Leg A (traded Pure SMC instrument); purge stale zones if broker omits symbol and log clearly
                 if not sub_a_ok or not is_market_open(s_a_resolved):
+                    if not sub_a_ok and pk not in _purged_missing_pairs:
+                        from database import purge_symbol_telemetry
+                        SMC_ZONES_CACHE.pop(s_a_resolved, None)
+                        SMC_ZONES_CACHE.pop(s_a, None)
+                        purge_symbol_telemetry(s_a, pk)
+                        _purged_missing_pairs.add(pk)
                     if win_rate_loop_counter <= 3 or win_rate_loop_counter % 10 == 0:
                         info_dbg = mt5.symbol_info(s_a_resolved)
                         tm_dbg = getattr(info_dbg, "trade_mode", None) if info_dbg else "NONE"
                         tick_dbg = mt5.symbol_info_tick(s_a_resolved)
                         tt_dbg = getattr(tick_dbg, "time", None) if tick_dbg else "NONE"
-                        logger.info(f"⏸️ [SCAN SKIPPED] {pk} (resolved={s_a_resolved} sub={sub_a_ok} trade_mode={tm_dbg} tick_t={tt_dbg})")
+                        tag_skip = "BROKER MISSING SYMBOL" if not sub_a_ok else "SCAN SKIPPED"
+                        logger.info(f"⏸️ [{tag_skip}] {pk} (resolved={s_a_resolved} sub={sub_a_ok} trade_mode={tm_dbg} tick_t={tt_dbg})")
                     continue
+                _purged_missing_pairs.discard(pk)
 
                 # Fetch ticks
                 tick_a_scan, tick_b_scan = None, None

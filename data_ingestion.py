@@ -3,6 +3,7 @@ import pandas as pd
 import logging
 import sys
 import os
+import re
 import time
 
 logger = logging.getLogger("SMC_Forex_Bot")
@@ -61,30 +62,55 @@ def initialize_mt5():
 
 _SUBSCRIBED_SYMBOLS = set()
 
-def check_and_subscribe_symbol(symbol):
-    """Ensures that the symbol is visible in the Market Watch and subscribes to its order book once."""
+def check_and_subscribe_symbol(symbol, expected_symbol=None):
+    """Ensures that the symbol is valid, offered by the broker, visible in Market Watch, and subscribed."""
     global _SUBSCRIBED_SYMBOLS
-    if symbol in _SUBSCRIBED_SYMBOLS:
+    canonical = (expected_symbol or symbol or "").strip()
+    cache_key = (canonical.upper(), (symbol or "").strip().upper())
+    if cache_key in _SUBSCRIBED_SYMBOLS:
         return True
-        
-    resolved = resolve_broker_symbol(symbol)
-    selected = mt5.symbol_select(resolved, True)
-    if not selected:
-        selected = mt5.symbol_select(symbol, True)
-        
-    if not selected:
-        logger.info(f"Symbol {symbol} (or broker alias) is not offered by your broker account. Skipping scan for this symbol.")
+
+    resolved = resolve_broker_symbol(canonical or symbol)
+    target_sym = resolved
+    info_r = mt5.symbol_info(target_sym)
+    if info_r is None and target_sym != symbol:
+        info_r = mt5.symbol_info(symbol)
+        if info_r is not None:
+            target_sym = symbol
+
+    if info_r is None or not _is_valid_broker_symbol(canonical or symbol, info_r, target_sym):
+        logger.info(f"Symbol {canonical or symbol} (resolved={target_sym}) is not a valid offered instrument on this broker account. Skipping scan.")
         return False
-        
+
+    if getattr(info_r, "trade_mode", 4) == getattr(mt5, "SYMBOL_TRADE_MODE_DISABLED", 0):
+        logger.info(f"Symbol {target_sym} is trade-disabled (trade_mode=0) on this broker account. Skipping scan.")
+        return False
+
+    selected = mt5.symbol_select(target_sym, True)
+    if not selected and target_sym != symbol:
+        selected = mt5.symbol_select(symbol, True)
+        if selected:
+            target_sym = symbol
+
+    if not selected:
+        logger.info(f"Symbol {canonical or symbol} (or broker alias) is not offered by your broker account. Skipping scan for this symbol.")
+        return False
+
+    # Re-verify minimum price sanity after Market Watch selection guarantees live tick/rates access
+    if not _passes_price_sanity(canonical or symbol, info_r, target_sym):
+        _RESOLVED_CACHE.pop(canonical.upper(), None)
+        _RESOLVED_CACHE.pop((target_sym or "").upper(), None)
+        return False
+
     # Subscribe to L2 depth of market book
-    book_sub = mt5.market_book_add(resolved)
-    _SUBSCRIBED_SYMBOLS.add(symbol)
-    _SUBSCRIBED_SYMBOLS.add(resolved)
+    book_sub = mt5.market_book_add(target_sym)
+    _SUBSCRIBED_SYMBOLS.add(cache_key)
+    _SUBSCRIBED_SYMBOLS.add((target_sym.upper(), target_sym.upper()))
     if book_sub:
-        logger.info(f"Subscribed to Order Book updates for {resolved}")
+        logger.info(f"Subscribed to Order Book updates for {target_sym}")
     else:
-        logger.info(f"Market Watch active for {resolved} (Level-1 Bid/Ask ticks active; L2 DOM depth not required).")
-        
+        logger.info(f"Market Watch active for {target_sym} (Level-1 Bid/Ask ticks active; L2 DOM depth not required).")
+
     return True
 
 
@@ -121,24 +147,30 @@ def get_rates_df(symbol, timeframe, count=200):
 
         time.sleep(0.2 * (attempt + 1))
 
-    # Fast targeted fallback without dumping full symbol database
+    # Fast targeted fallback without dumping full symbol database (only validated aliases)
     if rates is None or len(rates) == 0:
         try:
-            target_base = symbol.upper().replace("USD", "").replace("EUR", "")
-            if len(target_base) >= 3:
-                group_syms = mt5.symbols_get(group=f"*{target_base}*")
-                if group_syms:
-                    for s_info in group_syms:
-                        if s_info.trade_mode == mt5.SYMBOL_TRADE_MODE_DISABLED:
-                            continue
-                        s_name = s_info.name
-                        mt5.symbol_select(s_name, True)
-                        r_try = mt5.copy_rates_from_pos(s_name, timeframe, 0, count)
-                        if r_try is not None and len(r_try) > 0:
-                            rates = r_try
-                            logger.info(f"Resolved alternative tradeable symbol {s_name} for {symbol} candles.")
-                            _RESOLVED_CACHE[symbol.strip().upper()] = s_name
-                            break
+            sym_upper = symbol.strip().upper()
+            alias_terms = SYMBOL_ALIASES.get(sym_upper, [sym_upper])
+            for term in alias_terms:
+                group_syms = mt5.symbols_get(group=f"*{term}*")
+                if not group_syms:
+                    continue
+                for s_info in group_syms:
+                    if getattr(s_info, "trade_mode", 4) == getattr(mt5, "SYMBOL_TRADE_MODE_DISABLED", 0):
+                        continue
+                    s_name = s_info.name
+                    if not _is_valid_broker_symbol(sym_upper, s_info, s_name):
+                        continue
+                    mt5.symbol_select(s_name, True)
+                    r_try = mt5.copy_rates_from_pos(s_name, timeframe, 0, count)
+                    if r_try is not None and len(r_try) > 0 and _passes_price_sanity(sym_upper, s_info, s_name, rates_sample=r_try):
+                        rates = r_try
+                        logger.info(f"Resolved alternative tradeable symbol {s_name} for {symbol} candles.")
+                        _RESOLVED_CACHE[sym_upper] = s_name
+                        break
+                if rates is not None and len(rates) > 0:
+                    break
         except Exception:
             pass
 
@@ -202,8 +234,8 @@ def shutdown_mt5(symbol=None):
     logger.info("MT5 connection closed.")
 
 SYMBOL_ALIASES = {
-    "NAS100": ["NAS100", "USTEC", "US100", "NQ100", "NDX100", "NASDAQ", "NDX"],
-    "US30": ["US30", "DJ30", "WS30", "USIND30", "DOW30", "DJI"],
+    "NAS100": ["NAS100", "USTEC", "US100", "NQ100", "NDX100", "NASDAQ", "USA100", "TECH100", "NDX"],
+    "US30": ["US30", "DJ30", "WS30", "USIND30", "DOW30", "USA30", "WALLST30", "DJI"],
     "US500": ["US500", "SPX500", "SP500", "USA500"],
     "GER30": ["GER30", "GER40", "DAX30", "DAX40", "DE30", "DE40"],
     "UK100": ["UK100", "FTSE100", "GB100"],
@@ -211,18 +243,122 @@ SYMBOL_ALIASES = {
     "XAGUSD": ["XAGUSD", "SILVER"],
 }
 
+_MIN_ASSET_PRICES = {
+    "US30": 15000.0,
+    "NAS100": 8000.0,
+    "US500": 2500.0,
+    "GER30": 8000.0,
+    "UK100": 4000.0,
+    "XAUUSD": 1000.0,
+    "XAGUSD": 10.0,
+}
+
+_NON_CFD_PATH_KEYWORDS = (
+    "stock", "equit", "etf", "bond", "treasury", "share", "fund", "crypto", "coin"
+)
+
 _RESOLVED_CACHE = {}
 COMMON_SUFFIXES = ["", ".m", ".pro", ".raw", ".cash", "+", "c", ".a", ".ecn", ".i", "m", "_i", "-", ".s"]
 
+def _extract_canonical_tokens(cand_sym: str):
+    """Extracts normalized token variants for strict boundary-safe broker alias matching."""
+    raw = (cand_sym or "").strip()
+    if not raw:
+        return set()
+    # Strip leading broker markers (#, ., $, [)
+    clean_raw = re.sub(r'^[^A-Za-z0-9]+', '', raw)
+    # Split on separator punctuation to isolate core symbol (e.g. "US30.cash" -> "US30", "USTEC_i" -> "USTEC")
+    head_raw = re.split(r'[._\-\+\s\[\]]+', clean_raw)[0] if clean_raw else ""
+    head_u = head_raw.upper()
+    tokens = set()
+    if head_u:
+        tokens.add(head_u)
+    # Allow lowercase single-letter micro/ecn broker suffixes like US30m, XAUUSDc, NAS100r
+    if len(head_raw) > 3 and head_raw[-1] in ("m", "c", "r", "i", "e", "p", "f", "s"):
+        tokens.add(head_raw[:-1].upper())
+    # Allow explicit two/three-letter known suffixes glued without dot (e.g., US30PRO, USTECRAW)
+    for glued in ("PRO", "RAW", "ECN", "CASH", "STD", "MICRO", "MINI", "CFD"):
+        if head_u.endswith(glued) and len(head_u) > len(glued) + 2:
+            tokens.add(head_u[:-len(glued)])
+    return tokens
+
+def _is_valid_broker_symbol(requested_sym: str, info_obj, cand_sym: str) -> bool:
+    """
+    Validates that a candidate MT5 symbol matches the requested canonical instrument without
+    false substring/ETF/stock matches (e.g. rejects BNDX bond ETF for NAS100/NDX or $22 stock for US30).
+    """
+    if not cand_sym:
+        return False
+    sym_upper = (requested_sym or "").strip().upper()
+    candidates = set(SYMBOL_ALIASES.get(sym_upper, [sym_upper]))
+    cand_tokens = _extract_canonical_tokens(cand_sym)
+    if not (cand_tokens & candidates):
+        return False
+
+    if info_obj is not None and sym_upper in _MIN_ASSET_PRICES:
+        sym_path = (getattr(info_obj, "path", "") or "").lower()
+        if sym_path and any(kw in sym_path for kw in _NON_CFD_PATH_KEYWORDS):
+            logger.warning(f"🛑 [SYMBOL GUARD] Rejected non-CFD symbol {cand_sym} (path='{sym_path}') for {sym_upper}")
+            return False
+
+    return True
+
+def _passes_price_sanity(requested_sym: str, info_obj, cand_sym: str, rates_sample=None) -> bool:
+    """Rejects candidate symbols whose live tick / M5 bar price falls below index/metal sanity bounds."""
+    sym_upper = (requested_sym or "").strip().upper()
+    min_price = _MIN_ASSET_PRICES.get(sym_upper, 0.0)
+    if min_price <= 0.0:
+        return True
+
+    price_chk = 0.0
+    try:
+        tick = mt5.symbol_info_tick(cand_sym)
+        if tick is not None:
+            price_chk = float(getattr(tick, "bid", 0.0) or getattr(tick, "last", 0.0) or getattr(tick, "ask", 0.0) or 0.0)
+    except Exception:
+        tick = None
+
+    if price_chk <= 0.0 and info_obj is not None:
+        try:
+            price_chk = float(getattr(info_obj, "bid", 0.0) or getattr(info_obj, "last", 0.0) or 0.0)
+        except Exception:
+            price_chk = 0.0
+
+    if price_chk <= 0.0 and rates_sample is not None and len(rates_sample) > 0:
+        try:
+            last_bar = rates_sample[-1]
+            price_chk = float(last_bar["close"] if isinstance(last_bar, dict) or hasattr(last_bar, "dtype") else getattr(last_bar, "close", 0.0))
+        except Exception:
+            price_chk = 0.0
+
+    if price_chk <= 0.0 and hasattr(mt5, "copy_rates_from_pos"):
+        try:
+            r1 = mt5.copy_rates_from_pos(cand_sym, mt5.TIMEFRAME_M5, 0, 1)
+            if r1 is not None and len(r1) > 0:
+                last_bar = r1[-1]
+                price_chk = float(last_bar["close"] if isinstance(last_bar, dict) or hasattr(last_bar, "dtype") else getattr(last_bar, "close", 0.0))
+        except Exception:
+            pass
+
+    if price_chk > 0.0 and price_chk < min_price:
+        logger.warning(f"🛑 [SYMBOL SANITY REJECT] {cand_sym} price {price_chk:.2f} < min {min_price:.2f} for {sym_upper}; refusing stock/ETF mis-mapping.")
+        return False
+
+    return True
+
 def resolve_broker_symbol(symbol):
-    """Resolves broker-specific symbol names (e.g. XAUUSD -> XAUUSD.m, NAS100 -> USTEC) with zero IPC lag using direct symbol_info and memory caching."""
+    """Resolves broker-specific symbol names (e.g. XAUUSD -> XAUUSD.m, NAS100 -> USTEC) with strict boundary + price sanity checks."""
     global _RESOLVED_CACHE
     if not symbol:
         return symbol
     
     sym_upper = symbol.strip().upper()
     if sym_upper in _RESOLVED_CACHE:
-        return _RESOLVED_CACHE[sym_upper]
+        cached = _RESOLVED_CACHE[sym_upper]
+        info_cached = mt5.symbol_info(cached)
+        if info_cached is not None and _is_valid_broker_symbol(sym_upper, info_cached, cached) and _passes_price_sanity(sym_upper, info_cached, cached):
+            return cached
+        _RESOLVED_CACHE.pop(sym_upper, None)
 
     disabled_fallback = None
     try:
@@ -230,8 +366,17 @@ def resolve_broker_symbol(symbol):
             info_c = mt5.symbol_info(cand_sym)
             if info_c is None:
                 return False, False
+            if not _is_valid_broker_symbol(sym_upper, info_c, cand_sym):
+                return False, False
             if getattr(info_c, "trade_mode", 4) == getattr(mt5, "SYMBOL_TRADE_MODE_DISABLED", 0):
                 return True, False
+            if sym_upper in _MIN_ASSET_PRICES and hasattr(mt5, "symbol_select"):
+                try:
+                    mt5.symbol_select(cand_sym, True)
+                except Exception:
+                    pass
+            if not _passes_price_sanity(sym_upper, info_c, cand_sym):
+                return False, False
             return True, True
 
         # 1. Direct match on exact symbol (only cache immediately if tradeable)
@@ -263,18 +408,24 @@ def resolve_broker_symbol(symbol):
                         return cand
                     disabled_fallback = disabled_fallback or cand
 
-        # 4. Targeted group search across ALL aliases (covers #USTEC, US100.cash, DJ30.pro, etc.)
-        search_terms = list(dict.fromkeys([sym_upper[:3]] + candidates))
-        for term in search_terms:
+        # 4. Targeted group search across explicit aliases ONLY (strict boundary match prevents BNDX / stock matches)
+        for term in candidates:
             group_syms = mt5.symbols_get(group=f"*{term}*")
             if not group_syms:
                 continue
             for s in group_syms:
-                if s.trade_mode != getattr(mt5, "SYMBOL_TRADE_MODE_DISABLED", 0):
-                    s_name_u = s.name.upper()
-                    if sym_upper in s_name_u or s_name_u.startswith(sym_upper) or any(a in s_name_u for a in candidates):
-                        _RESOLVED_CACHE[sym_upper] = s.name
-                        return s.name
+                if getattr(s, "trade_mode", 4) != getattr(mt5, "SYMBOL_TRADE_MODE_DISABLED", 0):
+                    if not _is_valid_broker_symbol(sym_upper, s, s.name):
+                        continue
+                    try:
+                        if hasattr(mt5, "symbol_select"):
+                            mt5.symbol_select(s.name, True)
+                    except Exception:
+                        pass
+                    if not _passes_price_sanity(sym_upper, s, s.name):
+                        continue
+                    _RESOLVED_CACHE[sym_upper] = s.name
+                    return s.name
     except Exception as e:
         logger.debug(f"Symbol resolution exception for {symbol}: {e}")
 

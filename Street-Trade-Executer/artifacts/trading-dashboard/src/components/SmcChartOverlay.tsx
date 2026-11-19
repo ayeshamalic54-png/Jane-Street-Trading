@@ -1261,7 +1261,7 @@ export function SmcChartOverlay({
       borderStroke: "#94a3b8",
       textColor: "#000000",
       fontSize: isMobile ? "9" : "10.5",
-      label: `LIVE $${livePrice.toFixed(2)}`,
+      label: `LIVE ${pricePrefix}${livePrice.toFixed(2)}`,
       priority: 100,
     });
 
@@ -1276,7 +1276,7 @@ export function SmcChartOverlay({
         borderStroke: "#38bdf8",
         textColor: "#ffffff",
         fontSize: isMobile ? "8.5" : "10",
-        label: isMobile ? `ENT $${effectiveEntryPrice.toFixed(2)}` : `🔵 ENTRY $${effectiveEntryPrice.toFixed(2)}`,
+        label: isMobile ? `ENT ${pricePrefix}${effectiveEntryPrice.toFixed(2)}` : `🔵 ENTRY ${pricePrefix}${effectiveEntryPrice.toFixed(2)}`,
         priority: 92,
       });
     }
@@ -1292,7 +1292,7 @@ export function SmcChartOverlay({
         borderStroke: s3Pass ? "#fde68a" : "#d97706",
         textColor: "#ffffff",
         fontSize: isMobile ? "8.5" : "10",
-        label: isMobile ? `CHOCH $${swingStructure.chochLvl.toFixed(2)}` : `CHOCH $${swingStructure.chochLvl.toFixed(2)}`,
+        label: isMobile ? `CHOCH ${pricePrefix}${swingStructure.chochLvl.toFixed(2)}` : `CHOCH ${pricePrefix}${swingStructure.chochLvl.toFixed(2)}`,
         priority: 95,
       });
     }
@@ -1309,12 +1309,12 @@ export function SmcChartOverlay({
         textColor: "#ffffff",
         fontSize: isMobile ? "8.5" : "10",
         label: isMobile
-          ? `SL $${effectiveSlPrice.toFixed(2)}`
+          ? `SL ${pricePrefix}${effectiveSlPrice.toFixed(2)}`
           : isTradeActive
-          ? Math.abs(effectiveSlPrice - effectiveEntryPrice) < 0.20
-            ? `BE $${effectiveSlPrice.toFixed(2)}`
-            : `SL $${effectiveSlPrice.toFixed(2)}`
-          : `SL $${effectiveSlPrice.toFixed(2)}`,
+          ? Math.abs(effectiveSlPrice - effectiveEntryPrice) < (isIndices ? 2.5 : 0.20)
+            ? `BE ${pricePrefix}${effectiveSlPrice.toFixed(2)}`
+            : `SL ${pricePrefix}${effectiveSlPrice.toFixed(2)}`
+          : `SL ${pricePrefix}${effectiveSlPrice.toFixed(2)}`,
         priority: 88,
       });
     }
@@ -1330,7 +1330,7 @@ export function SmcChartOverlay({
         borderStroke: isTradeActive ? "#6ee7b7" : "#059669",
         textColor: "#ffffff",
         fontSize: isMobile ? "8.5" : "10",
-        label: isMobile ? `TP $${effectiveTpPrice.toFixed(2)}` : `TP $${effectiveTpPrice.toFixed(2)}`,
+        label: isMobile ? `TP ${pricePrefix}${effectiveTpPrice.toFixed(2)}` : `TP ${pricePrefix}${effectiveTpPrice.toFixed(2)}`,
         priority: 86,
       });
     }
@@ -1350,7 +1350,7 @@ export function SmcChartOverlay({
           borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
           textColor: "#ffffff",
           fontSize: isMobile ? "8.5" : "9.5",
-          label: isSwept ? `SWEPT $${swingStructure.swingHigh.toFixed(2)}` : `SW HI $${swingStructure.swingHigh.toFixed(2)}`,
+          label: isSwept ? `SWEPT ${pricePrefix}${swingStructure.swingHigh.toFixed(2)}` : `SW HI ${pricePrefix}${swingStructure.swingHigh.toFixed(2)}`,
           priority: 50,
         });
       }
@@ -1371,7 +1371,7 @@ export function SmcChartOverlay({
           borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
           textColor: "#ffffff",
           fontSize: isMobile ? "8.5" : "9.5",
-          label: isSwept ? `SWEPT $${swingStructure.swingLow.toFixed(2)}` : `SW LO $${swingStructure.swingLow.toFixed(2)}`,
+          label: isSwept ? `SWEPT ${pricePrefix}${swingStructure.swingLow.toFixed(2)}` : `SW LO ${pricePrefix}${swingStructure.swingLow.toFixed(2)}`,
           priority: 50,
         });
       }
@@ -1538,7 +1538,7 @@ export function SmcChartOverlay({
             <div className="flex items-center gap-2">
               <span className="font-mono text-sm font-black uppercase tracking-wider text-white">
                 {isTradeActive
-                  ? `⚡ TRADE ACTIVE: ${tradeDirection} EXECUTED @ $${entryPrice.toFixed(2)}`
+                  ? `⚡ TRADE ACTIVE: ${tradeDirection} EXECUTED @ ${pricePrefix}${entryPrice.toFixed(2)}`
                   : s1Pass
                   ? `🔍 SETUP SCANNING — ${passedCount} OF 9 CONDITIONS VERIFIED`
                   : "⚪ ORDER FLOW MONITORING — NO ACTIVE TRADE"}
@@ -1638,9 +1638,9 @@ export function SmcChartOverlay({
                 : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
               {isTradeActive
-                ? `🟢 ACTIVE TP: $${tpPrice.toFixed(2)} (${effectiveRrr}R Target)`
+                ? `🟢 ACTIVE TP: ${pricePrefix}${tpPrice.toFixed(2)} (${effectiveRrr}R Target)`
                 : s4Pass
-                ? `🎯 TARGET: $${tpPrice.toFixed(2)} (${effectiveRrr}R Opposing Liquidity)`
+                ? `🎯 TARGET: ${pricePrefix}${tpPrice.toFixed(2)} (${effectiveRrr}R Opposing Liquidity)`
                 : "⏳ TP: Locks at FVG (Step 4)"}
             </div>
           </div>
@@ -1995,7 +1995,7 @@ export function SmcChartOverlay({
                     fontFamily="monospace"
                     fontWeight="700"
                   >
-                    ${tick.price.toFixed(2)}
+                    {pricePrefix}{tick.price.toFixed(2)}
                   </text>
                 </g>
               ))}
@@ -2687,7 +2687,7 @@ export function SmcChartOverlay({
                       fontFamily="monospace"
                       fontWeight="900"
                     >
-                      ${cursorPrice.toFixed(2)}
+                      {pricePrefix}{cursorPrice.toFixed(2)}
                     </text>
                   </g>
                 )}
@@ -2704,19 +2704,19 @@ export function SmcChartOverlay({
                   <span>
                     O:{" "}
                     <strong className={hoveredCandle.isBullish ? "text-emerald-400" : "text-rose-400"}>
-                      ${hoveredCandle.open.toFixed(2)}
+                      {pricePrefix}{hoveredCandle.open.toFixed(2)}
                     </strong>
                   </span>
                   <span>
-                    H: <strong className="text-white">${hoveredCandle.high.toFixed(2)}</strong>
+                    H: <strong className="text-white">{pricePrefix}{hoveredCandle.high.toFixed(2)}</strong>
                   </span>
                   <span>
-                    L: <strong className="text-white">${hoveredCandle.low.toFixed(2)}</strong>
+                    L: <strong className="text-white">{pricePrefix}{hoveredCandle.low.toFixed(2)}</strong>
                   </span>
                   <span>
                     C:{" "}
                     <strong className={hoveredCandle.isBullish ? "text-emerald-400" : "text-rose-400"}>
-                      ${hoveredCandle.close.toFixed(2)}
+                      {pricePrefix}{hoveredCandle.close.toFixed(2)}
                     </strong>
                   </span>
                 </div>
@@ -2811,7 +2811,7 @@ export function SmcChartOverlay({
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s2Pass
-                ? `Absorbed retail stops at $${sweepPrice.toFixed(2)} via wick rejection.`
+                ? `Absorbed retail stops at ${pricePrefix}${sweepPrice.toFixed(2)} via wick rejection.`
                 : "Waiting for candle wick to sweep previous M5 swing high/low."}
             </p>
           </div>
@@ -2848,7 +2848,7 @@ export function SmcChartOverlay({
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s3Pass
-                ? `Confirmed trend change by closing past $${chochPrice.toFixed(2)}.`
+                ? `Confirmed trend change by closing past ${pricePrefix}${chochPrice.toFixed(2)}.`
                 : "Waiting for candle body close beyond the minor pivot point."}
             </p>
           </div>
@@ -3004,7 +3004,7 @@ export function SmcChartOverlay({
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s9Pass
-                ? (effectiveTpPrice > 0 ? `M15 liquidity TP placed at $${effectiveTpPrice.toFixed(2)} (min 1.85R).` : "Verified >= 1.85R path to M15 opposing liquidity.")
+                ? (effectiveTpPrice > 0 ? `M15 liquidity TP placed at ${pricePrefix}${effectiveTpPrice.toFixed(2)} (min 1.85R).` : "Verified >= 1.85R path to M15 opposing liquidity.")
                 : (s9Status.includes("FAIL") ? s9Status : "Requires >= 1.85R space to M15 structural liquidity pool.")}
             </p>
           </div>
