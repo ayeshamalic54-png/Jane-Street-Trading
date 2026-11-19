@@ -31,18 +31,18 @@ SESSION2_ENABLED = True
 SESSION2_START_HOUR = 18.0  # 06:00 PM PKT (NY Overlap Open)
 SESSION2_END_HOUR = 22.0    # 10:00 PM PKT (NY Overlap Close)
 
-# Smart Risk-Capped Lot Sizing & Pure Risk-Free Breakeven Protection (NO Trailing Stop)
+# Smart Risk-Capped Lot Sizing & Pure Risk-Free Breakeven Protection (NO Trailing Stop, NO Stagnation)
 MAX_METALS_RISK_USD = 52.0           # Hard max USD risk per Metals trade ($10 SL -> 0.05 lot = $50; <=$7.42 SL -> 0.07 lot)
 BREAKEVEN_GUARD_ENABLED = True
-BREAKEVEN_TRIGGER_PROFIT_USD = 35.0  # Base BE floor (+$35 on 0.05 lot, +$42 on 0.06 lot, +$50 on 0.07 lot -> ~$7.00 Gold move)
+BREAKEVEN_TRIGGER_PROFIT_USD = 50.0  # Flat +$50.00 USD BE trigger (~1:1R on $50-$52 risk — avoids early $35-$37 pullback cuts)
 BREAKEVEN_GOLD_BUFFER = 0.25         # $0.25 Gold buffer past Entry (covers spread/commission)
 BREAKEVEN_FX_BUFFER = 0.00020        # 2.0 pips Forex buffer past Entry
 
-# Scalping Stagnation Breakeven (No forced close timeout so structural TP is never cut early)
-STAGNATION_GUARD_ENABLED = True
-STAGNATION_BE_MINUTES = 60           # Shift SL to Breakeven if trade open >= 60 mins and floating > +$5.00 USD
+# Stagnation Guard (COMPLETELY DISABLED — time never cuts trade or shifts SL to Breakeven)
+STAGNATION_GUARD_ENABLED = False
+STAGNATION_BE_MINUTES = 0
 STAGNATION_FORCE_CLOSE_ENABLED = False
-MAX_SCALP_HOLDING_MINUTES = 90
+MAX_SCALP_HOLDING_MINUTES = 0
 
 def is_session_time_allowed(
     start_hour=12.0,

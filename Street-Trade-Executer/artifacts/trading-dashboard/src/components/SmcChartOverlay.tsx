@@ -1311,7 +1311,7 @@ export function SmcChartOverlay({
         label: isMobile
           ? `SL ${pricePrefix}${effectiveSlPrice.toFixed(2)}`
           : isTradeActive
-          ? Math.abs(effectiveSlPrice - effectiveEntryPrice) < (isIndices ? 2.5 : 0.20)
+          ? Math.abs(effectiveSlPrice - effectiveEntryPrice) < (isIndices ? 2.5 : 0.40)
             ? `BE ${pricePrefix}${effectiveSlPrice.toFixed(2)}`
             : `SL ${pricePrefix}${effectiveSlPrice.toFixed(2)}`
           : `SL ${pricePrefix}${effectiveSlPrice.toFixed(2)}`,
@@ -1560,7 +1560,7 @@ export function SmcChartOverlay({
             <p className="text-xs text-zinc-300 mt-0.5">
               {isTradeActive
                 ? `Running ${tradeDirection} on ${symbol} | Lot: ${Number(activePosition?.volume || activePosition?.lots || (isMetals ? 0.07 : isIndices ? 0.70 : 0.51)).toFixed(2)} | SL: ${pricePrefix}${slPrice.toFixed(2)} ${
-                    Math.abs(slPrice - entryPrice) < (isIndices ? 2.5 : 0.20) ? "(Breakeven 🛡️)" : `(${bufBadgeStr} Buf)`
+                    Math.abs(slPrice - entryPrice) < (isIndices ? 2.5 : 0.40) ? "(Breakeven 🛡️)" : `(${bufBadgeStr} Buf)`
                   } | TP: ${pricePrefix}${tpPrice.toFixed(2)} (Opposing Liquidity Target) ${
                     hasActivePosition && activePosition.profit !== undefined
                       ? `| Float P&L: $${Number(activePosition.profit).toFixed(2)}`
@@ -1622,7 +1622,7 @@ export function SmcChartOverlay({
                 : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
               {isTradeActive
-                ? Math.abs(slPrice - entryPrice) < (isIndices ? 2.5 : 0.20)
+                ? Math.abs(slPrice - entryPrice) < (isIndices ? 2.5 : 0.40)
                   ? `🛡️ BREAKEVEN SL: ${pricePrefix}${slPrice.toFixed(2)} (Risk-Free)`
                   : `🔴 ACTIVE SL: ${pricePrefix}${slPrice.toFixed(2)} (${(isMetals || isIndices) ? "~$52 Risk" : ""})`
                 : s2Pass

@@ -2308,7 +2308,7 @@ def main():
                     TP_PIPS = new_tp
                     if db_config_counter == 0:
                         logger.info(f"🚀 [PURE SMC PIPELINE CONFIG] Condition 8 SL (0.75 buf) | Condition 9 Target (Opposing Structural Target) | Engine: Pure SMC/ICT Active 🟢")
-                        logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Multi-Tier Equity Trailing: ENABLED 🟢 (Tier 1: +$62.00 Net Profit Lock | Tier 2: +$80.00 Net Profit Lock | Full TP Target: +$91.00 USD) | Friday Close Guard: ENABLED 🌅")
+                        logger.info(f"🛡️ [ACTIVE GUARDS] Single Trade Lock: ENABLED 🛡️ (Max 1 Trade at a time) | News Guard: ENABLED 📰 | Pure Breakeven: ENABLED 🛡️ (+$50.00 Trigger) | Trailing Stop: DISABLED 🔴 | Stagnation Guard: DISABLED 🔴 | Friday Close Guard: ENABLED 🌅")
 
 
 
@@ -3458,7 +3458,7 @@ def main():
                                 logger.info("================================================================================")
                     invalidate_trades_cache()
 
-            # ── PURE RISK-FREE BREAKEVEN PROTECTION (+$35.00 USD OR 60m STAGNATION — NO TRAILING STOP) ──
+            # ── PURE RISK-FREE BREAKEVEN PROTECTION (+$50.00 USD TRIGGER — NO TRAILING STOP, NO STAGNATION) ──
             be_locked_active = False
             if len(active_js_positions) > 0:
                 try:

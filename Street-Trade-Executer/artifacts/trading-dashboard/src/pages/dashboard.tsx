@@ -1146,64 +1146,38 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        {/* Equity Trailing Stop Guard Card */}
+        {/* Pure Risk-Free Breakeven Guard Card (Trailing Stop & Stagnation Disabled) */}
         {(() => {
-          const isTrailActiveText = systemStatus && (systemStatus.includes("Trail Active") || systemStatus.includes("TRAILING"));
-          const peakP = Math.max(floatingProfit, (dashboard as any)?.peak_floating_profit ?? (dashboard as any)?.peakPnL ?? 0);
-          const isTier4 = peakP >= 185.0 || (isTrailActiveText && systemStatus.includes("Tier 4"));
-          const isTier3 = peakP >= 142.0 || (isTrailActiveText && systemStatus.includes("Tier 3"));
-          const isTier2 = peakP >= 99.0 || (isTrailActiveText && systemStatus.includes("Tier 2"));
-          const isTier1 = peakP >= 67.0 || floatingProfit >= 67.0 || (isTrailActiveText && systemStatus.includes("Tier 1"));
+          const isBeLocked = Boolean(systemStatus && systemStatus.includes("Breakeven Active"));
           return (
             <Card className={cn(
               "bg-zinc-900 border transition-all rounded-md p-4",
-              isTier4 || isTier3 || isTier2
+              isBeLocked
                 ? "border-emerald-500/60 bg-emerald-950/20 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.15)]"
-                : isTier1
-                ? "border-blue-500/60 bg-blue-950/20 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
                 : "border-zinc-800 bg-zinc-900/80 text-zinc-100"
             )}>
-
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
                 <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
                   <span className="text-xl shrink-0">🛡️</span>
                   <div className="min-w-0">
-                    <div className="font-bold text-sm text-zinc-100">Multi-Tier Equity Profit Lock Guard (Option B - Balanced Buffer)</div>
-                    <div className="text-xs text-zinc-400">Tier 1 (+$67 Peak locks +$53.00) | Tier 2 (+$99 Peak locks +$80.00) | Tier 3 (+$142 Peak locks +$120.00) | Tier 4 (+$185+ Peak locks +$155.00)</div>
+                    <div className="font-bold text-sm text-zinc-100">Pure Risk-Free Breakeven Guard (+$50.00 USD Trigger)</div>
+                    <div className="text-xs text-zinc-400">Trailing Stop: DISABLED 🔴 | Stagnation Guard: DISABLED 🔴 | SL moves ONCE to Entry buffer only at +$50.00+</div>
                   </div>
                 </div>
                 <span className={cn(
                   "self-start sm:self-auto shrink-0 px-2.5 py-1 rounded text-xs font-bold border whitespace-normal sm:whitespace-nowrap",
-                  isTier4 || isTier3
-                    ? "bg-emerald-500/30 text-emerald-300 border-emerald-500 animate-pulse shadow-[0_0_12px_rgba(52,211,153,0.4)]"
-                    : isTier2
-                    ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse"
-                    : isTier1
-                    ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
-                    : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                  isBeLocked
+                    ? "bg-emerald-500/30 text-emerald-300 border-emerald-500 shadow-[0_0_12px_rgba(52,211,153,0.3)]"
+                    : "bg-zinc-800 text-zinc-300 border-zinc-700"
                 )}>
-                  {isTier4
-                    ? "🟢 TIER 4 MEGA RUNNER TRAILING ACTIVE (+$155.00 LOCK)"
-                    : isTier3
-                    ? "🟢 TIER 3 RUNNER TRAILING ACTIVE (+$120.00 LOCK)"
-                    : isTier2
-                    ? "🟢 TIER 2 BALANCED TRAILING ACTIVE (+$80.00 LOCK)"
-                    : isTier1
-                    ? "🔵 TIER 1 BASELINE TRAILING ACTIVE (+$53.00 LOCK)"
-                    : "⚪ TRAILING STOP INACTIVE"}
+                  {isBeLocked ? "🛡️ BREAKEVEN LOCKED RISK-FREE" : "🟢 ARMED AT +$50.00 (TRAILING OFF)"}
                 </span>
               </div>
               <div className="mt-3 p-2.5 rounded bg-zinc-950/60 border border-zinc-800 text-xs text-zinc-300">
-                {isTier4 ? (
-                  <span>🛡️ <strong>TIER 4 MEGA RUNNER LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 185.0).toFixed(2)}</strong> | Locked Floor: <strong>+$155.00</strong> — Trailing stop active locking +$155.00 USD cash profit!</span>
-                ) : isTier3 ? (
-                  <span>🛡️ <strong>TIER 3 ADVANCED PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 142.0).toFixed(2)}</strong> | Locked Floor: <strong>+$120.00</strong> — Trailing stop active locking +$120.00 USD cash profit!</span>
-                ) : isTier2 ? (
-                  <span>🛡️ <strong>TIER 2 BALANCED PROFIT LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 99.0).toFixed(2)}</strong> | Locked Floor: <strong>+$80.00</strong> — Trailing stop active locking +$80.00 USD cash profit!</span>
-                ) : isTier1 ? (
-                  <span>🛡️ <strong>TIER 1 BASELINE LOCK ACTIVE:</strong> Peak Profit: <strong>+${Math.max(floatingProfit, 67.0).toFixed(2)}</strong> | Safety Floor: <strong>+$53.00</strong> — Trailing stop active! If profit drops to +$53.00 USD, bot auto-closes instantly!</span>
+                {isBeLocked ? (
+                  <span>🛡️ <strong>BREAKEVEN ACTIVE:</strong> SL shifted ONCE past Entry (+$0.25 Gold / +2.15pt Indices). Trailing Stop & Stagnation OFF — TP runs untouched.</span>
                 ) : (
-                  <span>⚪ <strong>Option B Active:</strong> Tier 1 (+$67 Peak locks +$53) | Tier 2 (+$99 Peak locks +$80) | Tier 3 (+$142 Peak locks +$120) | Tier 4 (+$185 Peak locks +$155) (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
+                  <span>🛡️ <strong>Pure Breakeven Policy:</strong> No early $35 cuts and no 60m stagnation shifts — SL stays untouched until floating hits <strong>+$50.00 USD</strong> (Current Floating: {floatingProfit >= 0 ? "+" : ""}${floatingProfit.toFixed(2)})</span>
                 )}
               </div>
             </Card>

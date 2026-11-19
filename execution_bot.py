@@ -453,9 +453,9 @@ def modify_position_sl(ticket, symbol, new_sl):
 
 def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_floating_profit=0.0, modify_fn=None):
     """
-    Pure Risk-Free Breakeven Protection (NO trailing stop beyond Entry):
-    1. When position or basket profit hits BREAKEVEN_TRIGGER_PROFIT_USD (+$35.00), shifts SL ONCE to Entry +/- fee buffer.
-    2. When open >= STAGNATION_BE_MINUTES (60 mins) and floating >= +$5.00, shifts SL ONCE to Entry +/- fee buffer.
+    Pure Risk-Free Breakeven Protection (NO Trailing Stop, NO Stagnation Guard):
+    1. When position or basket profit hits BREAKEVEN_TRIGGER_PROFIT_USD (+$50.00), shifts SL ONCE to Entry +/- fee buffer.
+    2. Time-based Stagnation Breakeven is disabled (time never prematurely shifts SL or closes trades).
     Never chases price or eats structural TP; leaves user's tighter manual SL untouched.
     Returns True if any position currently sits risk-free at/past Breakeven SL.
     """
@@ -464,11 +464,11 @@ def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_float
 
     import risk_safeguards
     is_be_enabled = getattr(risk_safeguards, "BREAKEVEN_GUARD_ENABLED", True)
-    be_trigger_usd = float(getattr(risk_safeguards, "BREAKEVEN_TRIGGER_PROFIT_USD", 35.0))
+    be_trigger_usd = float(getattr(risk_safeguards, "BREAKEVEN_TRIGGER_PROFIT_USD", 50.0))
     gold_buf = float(getattr(risk_safeguards, "BREAKEVEN_GOLD_BUFFER", 0.25))
     fx_buf = float(getattr(risk_safeguards, "BREAKEVEN_FX_BUFFER", 0.00020))
-    is_stag_enabled = getattr(risk_safeguards, "STAGNATION_GUARD_ENABLED", True)
-    stag_mins = float(getattr(risk_safeguards, "STAGNATION_BE_MINUTES", 60.0))
+    is_stag_enabled = bool(getattr(risk_safeguards, "STAGNATION_GUARD_ENABLED", False))
+    stag_mins = float(getattr(risk_safeguards, "STAGNATION_BE_MINUTES", 0.0))
 
     sl_modifier = modify_fn or modify_position_sl
     now_utc = utc_now_naive()
@@ -504,18 +504,8 @@ def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_float
         pos_type = int(getattr(p, "type", 0))
         is_buy = (pos_type == getattr(mt5, "ORDER_TYPE_BUY", 0))
 
-        # Scale BE threshold across Gold & Indices (~$50 trigger on $52 risk moves SL to BE cleanly without early chop)
-        if is_metals:
-            if pos_vol >= 0.065:
-                eff_be_trigger = max(be_trigger_usd, 50.0)
-            elif pos_vol >= 0.055:
-                eff_be_trigger = max(be_trigger_usd, 42.0)
-            else:
-                eff_be_trigger = be_trigger_usd
-        elif is_indices:
-            eff_be_trigger = max(be_trigger_usd, 50.0)
-        else:
-            eff_be_trigger = be_trigger_usd
+        # Unified +$50.00 USD BE threshold across Gold & Indices (avoids early $35-$37 pullback cuts on 0.05/0.06 lots)
+        eff_be_trigger = max(be_trigger_usd, 50.0) if (is_metals or is_indices) else be_trigger_usd
 
         if is_buy:
             target_sl = round(entry_p + be_buf, digits)
@@ -534,19 +524,20 @@ def apply_pure_breakeven_guard(active_positions, floating_profit=0.0, peak_float
             or peak_floating_profit >= eff_be_trigger
         )
 
-        elapsed_min = 0.0
-        pos_time = getattr(p, "time", None)
-        if pos_time:
-            open_utc = mt5_epoch_to_utc_naive(pos_time, sym)
-            elapsed_min = max(0.0, (now_utc - open_utc).total_seconds() / 60.0)
-
-        stag_hit = is_stag_enabled and elapsed_min >= stag_mins and pos_profit >= 5.0
+        stag_hit = False
+        if is_stag_enabled and stag_mins > 0:
+            elapsed_min = 0.0
+            pos_time = getattr(p, "time", None)
+            if pos_time:
+                open_utc = mt5_epoch_to_utc_naive(pos_time, sym)
+                elapsed_min = max(0.0, (now_utc - open_utc).total_seconds() / 60.0)
+            stag_hit = elapsed_min >= stag_mins and pos_profit >= 5.0
 
         if profit_hit or stag_hit:
             reason = (
                 f"Profit ${pos_profit:.2f} (Peak ${peak_floating_profit:.2f}) >= ${eff_be_trigger:.2f}"
                 if profit_hit
-                else f"60m+ Stagnation ({elapsed_min:.1f}m, Profit +${pos_profit:.2f})"
+                else f"Stagnation ({pos_profit:.2f})"
             )
             if sl_modifier(p.ticket, sym, target_sl):
                 any_be_active = True

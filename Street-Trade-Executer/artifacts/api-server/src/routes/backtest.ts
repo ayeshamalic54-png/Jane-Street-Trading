@@ -127,7 +127,7 @@ router.post("/backtest", async (req, res) => {
       breakevenEnabled,
       smartRiskCapEnabled,
       riskCapUsd: 52.0,
-      beTriggerUsd: 35.0,
+      beTriggerUsd: 50.0,
     });
 
     res.json({

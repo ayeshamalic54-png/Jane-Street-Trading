@@ -348,10 +348,10 @@ export default function Backtest() {
               <div className="min-w-0 flex-1 space-y-0.5">
                 <div className="text-xs font-semibold flex items-center gap-1.5 text-zinc-100">
                   <ShieldCheck className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-                  <span>Adaptive Breakeven ($7+ Move)</span>
+                  <span>Pure Breakeven (+$50 Trigger)</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  Locks Entry+$0.25 at +$50 (0.07), +$42 (0.06), +$35 (0.05) — avoids early pullback cuts
+                  Locks Entry+$0.25 (Gold) / 2.15pt (Indices) only after +$50.00 USD (No Stagnation, No Trailing)
                 </p>
               </div>
               <Switch

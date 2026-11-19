@@ -834,10 +834,7 @@ function computeSafeTradeLot(
 }
 
 function computeAdaptiveBeTrigger(lotUsed: number, spec: SymbolSpec, baseBeTriggerUsd: number): number {
-  if (spec.category === "indices") return Math.max(baseBeTriggerUsd, 50.0);
-  if (spec.category !== "metals") return baseBeTriggerUsd;
-  if (lotUsed >= 0.065) return Math.max(baseBeTriggerUsd, 50.0);
-  if (lotUsed >= 0.055) return Math.max(baseBeTriggerUsd, 42.0);
+  if (spec.category === "indices" || spec.category === "metals") return Math.max(baseBeTriggerUsd, 50.0);
   return baseBeTriggerUsd;
 }
 
@@ -855,7 +852,7 @@ export function runSmcBacktest(params: SmcBacktestParams) {
     breakevenEnabled,
     smartRiskCapEnabled = true,
     riskCapUsd = 52.0,
-    beTriggerUsd = 35.0,
+    beTriggerUsd = 50.0,
   } = params;
 
   const factor = Math.pow(10, spec.digits);
