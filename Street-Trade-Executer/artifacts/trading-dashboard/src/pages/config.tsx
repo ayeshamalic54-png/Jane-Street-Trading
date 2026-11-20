@@ -29,6 +29,7 @@ const configSchema = z.object({
   forexEnabled: z.boolean().optional().default(true),
   indicesEnabled: z.boolean().optional().default(true),
   stocksEnabled: z.boolean().optional().default(true),
+  m1LtfEnabled: z.boolean().optional().default(true),
   riskLimitsEnabled: z.boolean().optional().default(true),
   knifeProtectionEnabled: z.boolean().optional().default(true),
   obiEnabled: z.boolean().optional().default(true),
@@ -203,6 +204,7 @@ export default function Config() {
       forexEnabled: true,
       indicesEnabled: true,
       stocksEnabled: true,
+      m1LtfEnabled: true,
       riskLimitsEnabled: true,
       knifeProtectionEnabled: true,
       obiEnabled: true,
@@ -225,6 +227,7 @@ export default function Config() {
           forexEnabled: config.forexEnabled,
           indicesEnabled: config.indicesEnabled,
           stocksEnabled: (config as any).stocksEnabled ?? true,
+          m1LtfEnabled: Boolean((config as any).m1LtfEnabled ?? (config as any).m1_ltf_enabled ?? true),
           riskLimitsEnabled: config.riskLimitsEnabled,
           knifeProtectionEnabled: (config as any).knifeProtectionEnabled ?? true,
           obiEnabled: (config as any).obiEnabled ?? true,
@@ -548,6 +551,43 @@ export default function Config() {
                                 <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground">SMC / FVG Confluence</FormLabel>
                                 <FormDescription className="text-xs leading-relaxed">
                                   Require FVG/OB zone before entry. Disable if trades aren't firing.
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <Switch className="shrink-0" checked={field.value} onCheckedChange={field.onChange} />
+                              </FormControl>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* M1 LTF Execution Refinement Toggle */}
+                      <FormField
+                        control={form.control}
+                        name="m1LtfEnabled"
+                        render={({ field }) => (
+                          <FormItem className="rounded-lg border border-cyan-500/30 bg-cyan-950/15 p-3">
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="min-w-0 flex-1 space-y-1">
+                                <FormLabel className="text-xs uppercase tracking-wider text-cyan-300 font-bold flex items-center gap-2">
+                                  <span>M1 LTF Execution Refinement (US30 / NAS100)</span>
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "text-[10px] px-1.5 py-0 font-mono",
+                                      field.value
+                                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                        : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                                    )}
+                                  >
+                                    {field.value ? "ON (6-Cond M1)" : "OFF (7-Cond M5)"}
+                                  </Badge>
+                                </FormLabel>
+                                <FormDescription className="text-xs leading-relaxed">
+                                  {field.value
+                                    ? "Enabled: US30 & NAS100 execute 6-Condition M15 Bias -> M5 Sweep -> M1 Execution (min 38pt SL). Gold & Forex stay on M15 -> M5."
+                                    : "Disabled: ALL instruments run strictly 7-Condition M15 -> M5 execution (no M1 refinement entries)."}
                                 </FormDescription>
                               </div>
                               <FormControl>

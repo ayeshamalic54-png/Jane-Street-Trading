@@ -7,6 +7,11 @@ export interface SmcTelemetryPayload {
   choch_price: number;
   fvg_status: string;
   fvg_bounds_json: string;
+  candles: any[];
+  candles_m1: any[];
+  m1_active: boolean;
+  execution_mode: string;
+  conditions_count: number;
   rejection_status: string;
   action: string;
   updated_at: string;
@@ -40,11 +45,13 @@ export function extractSmcMetrics(telRow: any): {
   opposingTp: number;
   targetRrr: number;
   stepsPassed: number;
+  conditionsCount: number;
+  m1Active: boolean;
   lastCandlePrice: number;
   biasTag: string;
 } {
   if (!telRow) {
-    return { opposingTp: 0, targetRrr: 0, stepsPassed: 0, lastCandlePrice: 0, biasTag: "NEUTRAL" };
+    return { opposingTp: 0, targetRrr: 0, stepsPassed: 0, conditionsCount: 7, m1Active: false, lastCandlePrice: 0, biasTag: "NEUTRAL" };
   }
   const m15Bias = String(telRow.m15Bias ?? telRow.m15_bias ?? "NEUTRAL").toUpperCase();
   const sweepSt = String(telRow.sweepStatus ?? telRow.sweep_status ?? "FAIL");
@@ -70,12 +77,18 @@ export function extractSmcMetrics(telRow: any): {
   const s8 = (typeof s8St === "string" && (s8St.includes("PASS") || s8St.includes("🟢"))) || (s2 && isSig);
   const s9 = (typeof s9St === "string" && (s9St.includes("PASS") || s9St.includes("🟢"))) || (s7 && isSig);
 
-  const stepsPassed = [s1, s2, s3, s4, s5, s6, s7, s8, s9].filter(Boolean).length;
-
   const parsed = parseJsonSafe(telRow.fvgBoundsJson ?? telRow.fvg_bounds_json);
+  const executionMode = String(parsed?.execution_mode ?? (parsed?.m1_active ? "M1_LTF" : "M5_STRICT"));
+  const m1Active = Boolean(parsed?.m1_active || executionMode === "M1_LTF");
+  const isClosedRej = s5 || s6 || s7;
+  const stepsPassed = m1Active
+    ? [s1, s2, s3, s4, isClosedRej, s8 && s9].filter(Boolean).length
+    : [s1, s2, s3, s4, isClosedRej, s8, s9].filter(Boolean).length;
   const opposingTp = Number(parsed?.opposing_tp ?? parsed?.tp_price ?? 0) || 0;
   const candles = Array.isArray(parsed?.candles) ? parsed.candles : [];
-  const lastCandlePrice = candles.length > 0 ? Number(candles[candles.length - 1]?.close ?? 0) || 0 : 0;
+  const m1Candles = Array.isArray(parsed?.candles_m1) ? parsed.candles_m1 : [];
+  const activeCandles = m1Active && m1Candles.length > 0 ? m1Candles : candles;
+  const lastCandlePrice = activeCandles.length > 0 ? Number(activeCandles[activeCandles.length - 1]?.close ?? 0) || 0 : 0;
 
   let targetRrr = 0;
   const rrrMatch = s9St.match(/(\d+(?:\.\d+)?)R/i);
@@ -89,12 +102,17 @@ export function extractSmcMetrics(telRow: any): {
   else if (isBull) biasTag = "BULL_BIAS";
   else if (isBear) biasTag = "BEAR_BIAS";
 
-  return { opposingTp, targetRrr, stepsPassed, lastCandlePrice, biasTag };
+  const conditionsCount = Number(parsed?.conditions_count ?? (m1Active ? 6 : 7));
+  return { opposingTp, targetRrr, stepsPassed, conditionsCount, m1Active, lastCandlePrice, biasTag };
 }
 
 export function formatSmcTelemetryPayload(telRow: any): SmcTelemetryPayload | null {
   if (!telRow) return null;
   const m = extractSmcMetrics(telRow);
+  const parsed = parseJsonSafe(telRow.fvgBoundsJson ?? telRow.fvg_bounds_json);
+  const m1Active = Boolean(parsed?.m1_active || parsed?.execution_mode === "M1_LTF");
+  const executionMode = String(parsed?.execution_mode ?? (m1Active ? "M1_LTF" : "M5_STRICT"));
+  const conditionsCount = Number(parsed?.conditions_count ?? (m1Active ? 6 : 7));
   return {
     symbol_pair: telRow.symbolPair,
     m15_bias: telRow.m15Bias || "NEUTRAL ⚪",
@@ -104,6 +122,11 @@ export function formatSmcTelemetryPayload(telRow: any): SmcTelemetryPayload | nu
     choch_price: Number(telRow.chochPrice ?? 0),
     fvg_status: telRow.fvgStatus || "FAIL ⚪",
     fvg_bounds_json: telRow.fvgBoundsJson || "[]",
+    candles: Array.isArray(parsed?.candles) ? parsed.candles : [],
+    candles_m1: Array.isArray(parsed?.candles_m1) ? parsed.candles_m1 : [],
+    m1_active: m1Active,
+    execution_mode: executionMode,
+    conditions_count: conditionsCount,
     rejection_status: telRow.rejectionStatus || "FAIL ⚪",
     action: telRow.action || "NONE",
     updated_at: telRow.updatedAt ? new Date(telRow.updatedAt).toISOString() : "",
@@ -162,6 +185,8 @@ export function buildEnrichedScannedAssets(
       opposingTp: m.opposingTp,
       targetRrr: m.targetRrr,
       stepsPassed: m.stepsPassed,
+      conditionsCount: m.conditionsCount,
+      m1Active: m.m1Active,
       m15Bias: m.biasTag,
       telemetryUpdatedAt: tel?.updatedAt ? new Date(tel.updatedAt).toISOString() : null,
     });
@@ -185,6 +210,8 @@ export function buildEnrichedScannedAssets(
       opposingTp: m.opposingTp,
       targetRrr: m.targetRrr,
       stepsPassed: m.stepsPassed,
+      conditionsCount: m.conditionsCount,
+      m1Active: m.m1Active,
       m15Bias: m.biasTag,
       telemetryUpdatedAt: t.updatedAt ? new Date(t.updatedAt).toISOString() : null,
     });

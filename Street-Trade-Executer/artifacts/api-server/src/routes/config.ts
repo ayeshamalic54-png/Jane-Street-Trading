@@ -42,6 +42,7 @@ router.get("/config", async (req, res) => {
       forexEnabled: state?.forexEnabled ?? true,
       indicesEnabled: state?.indicesEnabled ?? true,
       stocksEnabled: state?.stocksEnabled ?? true,
+      m1LtfEnabled: Boolean((state as any)?.m1LtfEnabled ?? (state as any)?.m1_ltf_enabled ?? true),
       riskLimitsEnabled: state?.riskLimitsEnabled ?? true,
       knifeProtectionEnabled: state?.knifeProtectionEnabled ?? true,
       obiEnabled: state?.obiEnabled ?? true,
@@ -71,6 +72,8 @@ router.post("/config", async (req, res) => {
     const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, riskLimitsEnabled, defaultLots, maxDailyTrades, initialBalance, knifeProtectionEnabled, obiEnabled, volatilityFilterEnabled } = (parsed.success ? parsed.data : bodyObj) as any;
     const indicesEnabled = bodyObj.indicesEnabled !== undefined ? Boolean(bodyObj.indicesEnabled) : (state?.indicesEnabled ?? true);
     const stocksEnabled = bodyObj.stocksEnabled !== undefined ? Boolean(bodyObj.stocksEnabled) : ((state as any)?.stocks_enabled ?? true);
+    const m1LtfRaw = bodyObj.m1LtfEnabled !== undefined ? bodyObj.m1LtfEnabled : bodyObj.m1_ltf_enabled;
+    const m1LtfExec = m1LtfRaw !== undefined ? Boolean(m1LtfRaw) : Boolean((state as any)?.m1LtfEnabled ?? (state as any)?.m1_ltf_enabled ?? true);
 
     const haltLimit = bodyObj.haltDrawdownLimit !== undefined ? Number(bodyObj.haltDrawdownLimit) : (bodyObj.halt_drawdown_limit !== undefined ? Number(bodyObj.halt_drawdown_limit) : Number(state?.haltDrawdownLimit ?? (state as any)?.halt_drawdown_limit ?? 0.83));
     const maxLimit = bodyObj.maxDrawdownLimit !== undefined ? Number(bodyObj.maxDrawdownLimit) : (bodyObj.max_drawdown_limit !== undefined ? Number(bodyObj.max_drawdown_limit) : Number(state?.maxDrawdownLimit ?? (state as any)?.max_drawdown_limit ?? 3.30));
@@ -110,8 +113,8 @@ router.post("/config", async (req, res) => {
     const initBalVal = initialBalance !== undefined ? Number(initialBalance) : Number(state?.initialBalance ?? 100000);
 
     await db.execute(
-      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit, session_guard_enabled, session_start_hour, session_end_hour, session2_enabled, session2_start_hour, session2_end_hour)
-          SELECT 1, ${pairToSave}, ${slVal.toString()}, ${tpVal.toString()}, ${zEntry.toString()}, ${smcVal}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxTradesVal}, 'BOT OFFLINE', NOW(), ${initBalVal.toString()}, ${initBalVal.toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}, ${sess2Enabled}, ${sess2Start}, ${sess2End}
+      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, m1_ltf_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit, session_guard_enabled, session_start_hour, session_end_hour, session2_enabled, session2_start_hour, session2_end_hour)
+          SELECT 1, ${pairToSave}, ${slVal.toString()}, ${tpVal.toString()}, ${zEntry.toString()}, ${smcVal}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${m1LtfExec}, ${riskLimits}, ${defLots.toString()}, ${maxTradesVal}, 'BOT OFFLINE', NOW(), ${initBalVal.toString()}, ${initBalVal.toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}, ${sess2Enabled}, ${sess2Start}, ${sess2End}
           WHERE NOT EXISTS (SELECT 1 FROM bot_state)`
     );
 
@@ -128,6 +131,7 @@ router.post("/config", async (req, res) => {
               forex_enabled = ${forexExec},
               indices_enabled = ${indicesExec},
               stocks_enabled  = ${stocksExec},
+              m1_ltf_enabled  = ${m1LtfExec},
               risk_limits_enabled = ${riskLimits},
               knife_protection_enabled = ${knifeExec},
               obi_enabled = ${obiExec},
@@ -168,6 +172,7 @@ router.post("/config", async (req, res) => {
       forexEnabled: updated?.forexEnabled ?? forexExec,
       indicesEnabled: updated?.indicesEnabled ?? indicesExec,
       stocksEnabled: updated?.stocksEnabled ?? stocksExec,
+      m1LtfEnabled: Boolean((updated as any)?.m1LtfEnabled ?? (updated as any)?.m1_ltf_enabled ?? m1LtfExec),
       riskLimitsEnabled: updated?.riskLimitsEnabled ?? riskLimits,
       knifeProtectionEnabled: updated?.knifeProtectionEnabled ?? knifeExec,
       obiEnabled: updated?.obiEnabled ?? obiExec,

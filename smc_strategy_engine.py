@@ -309,6 +309,8 @@ def _evaluate_m1_ltf_refinement(
         "choch_lvl": choch_lvl,
         "s4": f"{dir_pass} (M1 FVG)" if m1_fvgs else "WAITING ⚪ (Awaiting M1 FVG)",
         "fvg_zone": m1_fvgs[-1] if m1_fvgs else None,
+        "m1_fvg_zones": [[float(f[0]), float(f[1])] for f in m1_fvgs[-3:]],
+        "is_bull": is_bull,
         "sl_price": sl_p_m1,
     }
     if not m1_fvgs:
@@ -401,12 +403,12 @@ def _evaluate_m1_ltf_refinement(
             f"| M15 Target TP: {tp_price:.2f} ({target_rrr:.2f}R) | Quality: {q_score:.1f}"
         )
         logger.info("================================================================================")
-        logger.info(f"{icon} [STRICT 9-CONDITION SMC M1-LTF REFINED {side} SIGNAL EXECUTED] 🚀")
+        logger.info(f"{icon} [6-CONDITION M1-LTF REFINED {side} SIGNAL EXECUTED] 🚀")
         logger.info(
-            f"{icon} S8 (Structural SL): M1/M5 Sweep ({true_extreme:.2f}) {op_sign} {wick_buf:.2f} = {sl_p_m1:.2f} "
+            f"{icon} C6 SL: M1/M5 Sweep ({true_extreme:.2f}) {op_sign} {wick_buf:.2f} = {sl_p_m1:.2f} "
             f"(Dist: {sl_dist:.2f}pts Tight M1 SL <= {cap_lbl} Cap)"
         )
-        logger.info(f"{icon} S9 (M15 Liquidity TP): Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Quality: {q_score:.1f}/100)")
+        logger.info(f"{icon} C6 TP: Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Quality: {q_score:.1f}/100)")
         logger.info("================================================================================")
         return (side, tp_price, sl_p_m1, sl_dist, reason), info
 
@@ -579,10 +581,10 @@ def _evaluate_m5_directional_entry(
             f"| M15 Target TP: {tp_price:.2f} ({target_rrr:.2f}R) | Quality: {q_score:.1f}"
         )
         logger.info("================================================================================")
-        logger.info(f"{icon} [STRICT 9-CONDITION SMC {side} SIGNAL EXECUTED] 🚀")
+        logger.info(f"{icon} [7-CONDITION M5-SMC {side} SIGNAL EXECUTED] 🚀")
         sl_desc = "FVG-Refined SL" if is_fvg_refined_sl else f"Sweep {ext_lbl} ({sweep_extreme:.2f}) {op_sign} {wick_buf:.2f}"
-        logger.info(f"{icon} S8 (Structural SL): {sl_desc} = {sl_price:.2f} (Dist: {sl_prefix}{sl_dist:.2f}{sl_suffix} <= {cap_lbl} Cap)")
-        logger.info(f"{icon} S9 (M15 Liquidity TP): Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Quality: {q_score:.1f}/100)")
+        logger.info(f"{icon} C6 (Structural SL): {sl_desc} = {sl_price:.2f} (Dist: {sl_prefix}{sl_dist:.2f}{sl_suffix} <= {cap_lbl} Cap)")
+        logger.info(f"{icon} C7 (M15 Liquidity TP): Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Quality: {q_score:.1f}/100)")
         logger.info("================================================================================")
         return (side, tp_price, sl_price, sl_dist, reason), None, None, sl_price, tp_price
 
@@ -621,19 +623,14 @@ def evaluate_smc_strategy_signal(
     symbol: str = None,
     df_m1: pd.DataFrame = None,
     used_m5_sweeps: set = None,
+    m1_ltf_override: bool = None,
 ):
     """
-    Pure Rule-Based SMC / ICT 9-Condition Strict Strategy Engine:
-
-    1. Step 1 (S1) — M15 Market Structure Bias (HH+HL = Bullish | LH+LL = Bearish)
-    2. Step 2 (S2) — M5 Liquidity Sweep / SL Hunt (Wick beyond swing level, reclaim inside)
-    3. Step 3 (S3) — M5 CHoCH / BOS (Candle close beyond prior swing structure AFTER sweep)
-    4. Step 4 (S4) — 3-Candle Displacement FVG Creation (Formed during sweep-to-CHoCH leg)
-    5. Step 5 (S5) — Confirmed Closed Candle Retests THAT Displacement FVG
-    6. Step 6 (S6) — FVG Retest Rejection Candle (Pinbar / Directional defense close)
-    7. Step 7 (S7) — Confirmation Close (Strictly after rejection candle iloc[-2] closes)
-    8. Step 8 (S8) — Structural SL behind Sweep Wick ($0.75 Gold buffer / $10.00 max cap)
-    9. Step 9 (S9) — M15 Opposing Liquidity Target (>= 1.85R, $1.10 Gold front-run, no micro-scalps)
+    Adaptive Pro MTF SMC Strategy Engine:
+    - Indices (US30 / NAS100) when M1 LTF Toggle is ON -> Streamlined 6-Condition M1 LTF Pipeline:
+      C1 M15 Bias -> C2 M5 Sweep -> C3 M1 CHoCH -> C4 M1 FVG -> C5 Closed M1 Rejection -> C6 Tight SL (38pt+) & M15 Target (>=1.85R).
+    - Metals / Forex / M1-Toggle-OFF -> Streamlined 7-Condition M5 SMC Pipeline:
+      C1 M15 Bias -> C2 M5 Sweep -> C3 M5 CHoCH -> C4 M5 FVG -> C5 Closed Rejection -> C6 SL Guard -> C7 M15 Target (>=1.85R).
     """
     if df_m15 is None or len(df_m15) < 15 or 'close' not in df_m15.columns:
         return "NONE", None, None, 0.0, "Insufficient candle data for SMC"
@@ -798,8 +795,9 @@ def evaluate_smc_strategy_signal(
             return sig_out
 
     # ── 2B. INDICES M1 LTF EXECUTION REFINEMENT (M15 Bias -> M5 Sweep -> M1 CHoCH + FVG + Closed Rejection) ──
+    m1_ltf_active = bool(profile.get("m1_ltf_enabled")) if m1_ltf_override is None else bool(profile.get("m1_ltf_enabled") and m1_ltf_override)
     m1_info = {}
-    if profile.get("m1_ltf_enabled") and df_m1 is not None and len(df_m1) >= 25:
+    if m1_ltf_active and df_m1 is not None and len(df_m1) >= 25:
         if is_m15_bullish and has_sell_sweep:
             m1_sig, m1_info = _evaluate_m1_ltf_refinement(
                 True, df_m15, eval_df, df_m1, sell_sweep_idx, sweep_low_price,
@@ -936,10 +934,27 @@ def evaluate_smc_strategy_signal(
 
     tp_str = f" | OpposingTp: {scan_tp:.{digits}f}" if scan_tp > 0 else ""
     sl_str = f" | SlPrice: {active_sl_p:.{digits}f}" if active_sl_p > 0 else ""
-    scan_msg = (
-        f"Scanning Strict 9-Condition SMC | S1(M15): {step1_s} | S2(Sweep): {step2_s} "
-        f"| S3(CHoCH): {step3_s} | S4(Displacement FVG): {step4_s} | S5(Retest): {step5_s} "
-        f"| S6(Rejection): {step6_s} | S7(Closed): {step7_s} | S8(SL Buf): {step8_s} "
-        f"| S9(Target): {step9_s} | SweepPrice: {actual_sweep_p:.{digits}f} | ChochPrice: {actual_choch_p:.{digits}f}{tp_str}{sl_str}"
-    )
+
+    if ("PASS" in step7_s or "🟢" in step7_s or "🔴" in step7_s):
+        c5_closed_reject = step7_s if "M1" in step7_s else step6_s
+    elif ("FAIL" in step6_s) or ("PASS" in step5_s or "🟢" in step5_s or "🔴" in step5_s):
+        c5_closed_reject = step6_s
+    else:
+        c5_closed_reject = step5_s
+
+    if m1_ltf_active:
+        c6_sl_tp = f"{step8_s} ; {step9_s}"
+        scan_msg = (
+            f"Scanning 6-Condition M1 LTF | C1(M15 Bias): {step1_s} | C2(M5 Sweep): {step2_s} "
+            f"| C3(M1 CHoCH): {step3_s} | C4(M1 FVG): {step4_s} | C5(M1 Reject): {c5_closed_reject} "
+            f"| C6(SL & Target): {c6_sl_tp} | Mode: M1_LTF | SweepPrice: {actual_sweep_p:.{digits}f} "
+            f"| ChochPrice: {actual_choch_p:.{digits}f}{tp_str}{sl_str}"
+        )
+    else:
+        scan_msg = (
+            f"Scanning 7-Condition M5 SMC | C1(M15 Bias): {step1_s} | C2(M5 Sweep): {step2_s} "
+            f"| C3(M5 CHoCH): {step3_s} | C4(M5 FVG): {step4_s} | C5(Closed Reject): {c5_closed_reject} "
+            f"| C6(SL Guard): {step8_s} | C7(M15 Target): {step9_s} | Mode: M5_STRICT | SweepPrice: {actual_sweep_p:.{digits}f} "
+            f"| ChochPrice: {actual_choch_p:.{digits}f}{tp_str}{sl_str}"
+        )
     return "NONE", None, None, 0.0, scan_msg

@@ -12,6 +12,7 @@ export async function ensureSessionGuardColumns() {
     ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
     ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
     ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_end_hour DOUBLE PRECISION DEFAULT 22.0;
+    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS m1_ltf_enabled BOOLEAN DEFAULT TRUE;
   `);
   columnsEnsured = true;
 }

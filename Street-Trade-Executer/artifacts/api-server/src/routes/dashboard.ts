@@ -52,33 +52,9 @@ router.get("/smc_telemetry", async (req, res) => {
       row = fallbackRows[0];
     }
 
-    if (row) {
-      let parsedBounds: any = {};
-      try {
-        if (row.fvgBoundsJson) {
-          parsedBounds = typeof row.fvgBoundsJson === "string" ? JSON.parse(row.fvgBoundsJson) : row.fvgBoundsJson;
-        }
-      } catch {}
-
-      return res.json({
-        symbol_pair: row.symbolPair,
-        m15_bias: row.m15Bias || "NEUTRAL ⚪",
-        sweep_status: row.sweepStatus || "FAIL ⚪",
-        sweep_price: Number(row.sweepPrice ?? 0),
-        choch_status: row.chochStatus || "FAIL ⚪",
-        choch_price: Number(row.chochPrice ?? 0),
-        fvg_status: row.fvgStatus || "FAIL ⚪",
-        fvg_bounds_json: row.fvgBoundsJson || "[]",
-        candles: Array.isArray(parsedBounds?.candles) ? parsedBounds.candles : [],
-        rejection_status: row.rejectionStatus || "FAIL ⚪",
-        action: row.action || "NONE",
-        updated_at: row.updatedAt ? new Date(row.updatedAt).toISOString() : "",
-        retest_status: row.retestStatus || row.fvgStatus || "FAIL ⚪",
-        s6_status: row.s6Status || row.rejectionStatus || "FAIL ⚪",
-        s7_status: row.s7Status || "FAIL ⚪",
-        s8_status: row.s8Status || "PASS 🟢 ($0.75 Fixed)",
-        s9_status: row.s9Status || "PASS 🟢 (2.0R Target Space)",
-      });
+    const payload = formatSmcTelemetryPayload(row);
+    if (payload) {
+      return res.json(payload);
     }
 
     return res.json({
@@ -90,14 +66,19 @@ router.get("/smc_telemetry", async (req, res) => {
       choch_price: 0,
       fvg_status: "FAIL ⚪",
       fvg_bounds_json: "[]",
+      candles: [],
+      candles_m1: [],
+      m1_active: false,
+      execution_mode: "M5_STRICT",
+      conditions_count: 7,
       rejection_status: "FAIL ⚪",
       action: "NONE",
       updated_at: "",
       retest_status: "FAIL ⚪",
       s6_status: "FAIL ⚪",
       s7_status: "FAIL ⚪",
-      s8_status: "PASS 🟢 ($0.75 Fixed)",
-      s9_status: "PASS 🟢 (2.0R Target Space)",
+      s8_status: "PASS 🟢 (Structural Cap)",
+      s9_status: "PASS 🟢 (>=1.85R Target)",
     });
   } catch (err) {
     req.log?.error?.({ err }, "Failed to get SMC telemetry data");
@@ -240,6 +221,7 @@ router.get("/dashboard", async (req, res) => {
       forexEnabled: botState?.forexEnabled ?? true,
       indicesEnabled: botState?.indicesEnabled ?? true,
       stocksEnabled: botState?.stocksEnabled ?? true,
+      m1LtfEnabled: Boolean((botState as any)?.m1LtfEnabled ?? (botState as any)?.m1_ltf_enabled ?? true),
       halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? (botState as any)?.halt_drawdown_limit ?? 0.83),
       max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? (botState as any)?.max_drawdown_limit ?? 3.30),
       ...extractSessionGuardFields(botState),

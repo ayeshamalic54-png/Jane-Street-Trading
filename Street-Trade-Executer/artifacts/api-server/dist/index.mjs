@@ -44489,6 +44489,7 @@ async function ensureSessionGuardColumns() {
     ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
     ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
     ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_end_hour DOUBLE PRECISION DEFAULT 22.0;
+    ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS m1_ltf_enabled BOOLEAN DEFAULT TRUE;
   `);
   columnsEnsured = true;
 }
@@ -44531,7 +44532,7 @@ function parseJsonSafe(raw) {
 }
 function extractSmcMetrics(telRow) {
   if (!telRow) {
-    return { opposingTp: 0, targetRrr: 0, stepsPassed: 0, lastCandlePrice: 0, biasTag: "NEUTRAL" };
+    return { opposingTp: 0, targetRrr: 0, stepsPassed: 0, conditionsCount: 7, m1Active: false, lastCandlePrice: 0, biasTag: "NEUTRAL" };
   }
   const m15Bias = String(telRow.m15Bias ?? telRow.m15_bias ?? "NEUTRAL").toUpperCase();
   const sweepSt = String(telRow.sweepStatus ?? telRow.sweep_status ?? "FAIL");
@@ -44555,11 +44556,16 @@ function extractSmcMetrics(telRow) {
   const isSig = (act === "BUY" || act === "SELL") && s7;
   const s8 = typeof s8St === "string" && (s8St.includes("PASS") || s8St.includes("\u{1F7E2}")) || s2 && isSig;
   const s9 = typeof s9St === "string" && (s9St.includes("PASS") || s9St.includes("\u{1F7E2}")) || s7 && isSig;
-  const stepsPassed = [s1, s2, s3, s4, s5, s6, s7, s8, s9].filter(Boolean).length;
   const parsed = parseJsonSafe(telRow.fvgBoundsJson ?? telRow.fvg_bounds_json);
+  const executionMode = String(parsed?.execution_mode ?? (parsed?.m1_active ? "M1_LTF" : "M5_STRICT"));
+  const m1Active = Boolean(parsed?.m1_active || executionMode === "M1_LTF");
+  const isClosedRej = s5 || s6 || s7;
+  const stepsPassed = m1Active ? [s1, s2, s3, s4, isClosedRej, s8 && s9].filter(Boolean).length : [s1, s2, s3, s4, isClosedRej, s8, s9].filter(Boolean).length;
   const opposingTp = Number(parsed?.opposing_tp ?? parsed?.tp_price ?? 0) || 0;
   const candles = Array.isArray(parsed?.candles) ? parsed.candles : [];
-  const lastCandlePrice = candles.length > 0 ? Number(candles[candles.length - 1]?.close ?? 0) || 0 : 0;
+  const m1Candles = Array.isArray(parsed?.candles_m1) ? parsed.candles_m1 : [];
+  const activeCandles = m1Active && m1Candles.length > 0 ? m1Candles : candles;
+  const lastCandlePrice = activeCandles.length > 0 ? Number(activeCandles[activeCandles.length - 1]?.close ?? 0) || 0 : 0;
   let targetRrr = 0;
   const rrrMatch = s9St.match(/(\d+(?:\.\d+)?)R/i);
   if (rrrMatch) {
@@ -44570,11 +44576,16 @@ function extractSmcMetrics(telRow) {
   else if (act === "SELL" || act === "SELL_SPREAD") biasTag = "SELL";
   else if (isBull) biasTag = "BULL_BIAS";
   else if (isBear) biasTag = "BEAR_BIAS";
-  return { opposingTp, targetRrr, stepsPassed, lastCandlePrice, biasTag };
+  const conditionsCount = Number(parsed?.conditions_count ?? (m1Active ? 6 : 7));
+  return { opposingTp, targetRrr, stepsPassed, conditionsCount, m1Active, lastCandlePrice, biasTag };
 }
 function formatSmcTelemetryPayload(telRow) {
   if (!telRow) return null;
   const m = extractSmcMetrics(telRow);
+  const parsed = parseJsonSafe(telRow.fvgBoundsJson ?? telRow.fvg_bounds_json);
+  const m1Active = Boolean(parsed?.m1_active || parsed?.execution_mode === "M1_LTF");
+  const executionMode = String(parsed?.execution_mode ?? (m1Active ? "M1_LTF" : "M5_STRICT"));
+  const conditionsCount = Number(parsed?.conditions_count ?? (m1Active ? 6 : 7));
   return {
     symbol_pair: telRow.symbolPair,
     m15_bias: telRow.m15Bias || "NEUTRAL \u26AA",
@@ -44584,6 +44595,11 @@ function formatSmcTelemetryPayload(telRow) {
     choch_price: Number(telRow.chochPrice ?? 0),
     fvg_status: telRow.fvgStatus || "FAIL \u26AA",
     fvg_bounds_json: telRow.fvgBoundsJson || "[]",
+    candles: Array.isArray(parsed?.candles) ? parsed.candles : [],
+    candles_m1: Array.isArray(parsed?.candles_m1) ? parsed.candles_m1 : [],
+    m1_active: m1Active,
+    execution_mode: executionMode,
+    conditions_count: conditionsCount,
     rejection_status: telRow.rejectionStatus || "FAIL \u26AA",
     action: telRow.action || "NONE",
     updated_at: telRow.updatedAt ? new Date(telRow.updatedAt).toISOString() : "",
@@ -44633,6 +44649,8 @@ function buildEnrichedScannedAssets(scannedRows, telemetryRows, isSymbolEnabled)
       opposingTp: m.opposingTp,
       targetRrr: m.targetRrr,
       stepsPassed: m.stepsPassed,
+      conditionsCount: m.conditionsCount,
+      m1Active: m.m1Active,
       m15Bias: m.biasTag,
       telemetryUpdatedAt: tel?.updatedAt ? new Date(tel.updatedAt).toISOString() : null
     });
@@ -44655,6 +44673,8 @@ function buildEnrichedScannedAssets(scannedRows, telemetryRows, isSymbolEnabled)
       opposingTp: m.opposingTp,
       targetRrr: m.targetRrr,
       stepsPassed: m.stepsPassed,
+      conditionsCount: m.conditionsCount,
+      m1Active: m.m1Active,
       m15Bias: m.biasTag,
       telemetryUpdatedAt: t.updatedAt ? new Date(t.updatedAt).toISOString() : null
     });
@@ -44686,33 +44706,9 @@ router.get("/smc_telemetry", async (req, res) => {
       const fallbackRows = await db.select().from(smcTelemetryTable).orderBy(desc(smcTelemetryTable.updatedAt)).limit(1);
       row = fallbackRows[0];
     }
-    if (row) {
-      let parsedBounds = {};
-      try {
-        if (row.fvgBoundsJson) {
-          parsedBounds = typeof row.fvgBoundsJson === "string" ? JSON.parse(row.fvgBoundsJson) : row.fvgBoundsJson;
-        }
-      } catch {
-      }
-      return res.json({
-        symbol_pair: row.symbolPair,
-        m15_bias: row.m15Bias || "NEUTRAL \u26AA",
-        sweep_status: row.sweepStatus || "FAIL \u26AA",
-        sweep_price: Number(row.sweepPrice ?? 0),
-        choch_status: row.chochStatus || "FAIL \u26AA",
-        choch_price: Number(row.chochPrice ?? 0),
-        fvg_status: row.fvgStatus || "FAIL \u26AA",
-        fvg_bounds_json: row.fvgBoundsJson || "[]",
-        candles: Array.isArray(parsedBounds?.candles) ? parsedBounds.candles : [],
-        rejection_status: row.rejectionStatus || "FAIL \u26AA",
-        action: row.action || "NONE",
-        updated_at: row.updatedAt ? new Date(row.updatedAt).toISOString() : "",
-        retest_status: row.retestStatus || row.fvgStatus || "FAIL \u26AA",
-        s6_status: row.s6Status || row.rejectionStatus || "FAIL \u26AA",
-        s7_status: row.s7Status || "FAIL \u26AA",
-        s8_status: row.s8Status || "PASS \u{1F7E2} ($0.75 Fixed)",
-        s9_status: row.s9Status || "PASS \u{1F7E2} (2.0R Target Space)"
-      });
+    const payload = formatSmcTelemetryPayload(row);
+    if (payload) {
+      return res.json(payload);
     }
     return res.json({
       symbol_pair: pair,
@@ -44723,14 +44719,19 @@ router.get("/smc_telemetry", async (req, res) => {
       choch_price: 0,
       fvg_status: "FAIL \u26AA",
       fvg_bounds_json: "[]",
+      candles: [],
+      candles_m1: [],
+      m1_active: false,
+      execution_mode: "M5_STRICT",
+      conditions_count: 7,
       rejection_status: "FAIL \u26AA",
       action: "NONE",
       updated_at: "",
       retest_status: "FAIL \u26AA",
       s6_status: "FAIL \u26AA",
       s7_status: "FAIL \u26AA",
-      s8_status: "PASS \u{1F7E2} ($0.75 Fixed)",
-      s9_status: "PASS \u{1F7E2} (2.0R Target Space)"
+      s8_status: "PASS \u{1F7E2} (Structural Cap)",
+      s9_status: "PASS \u{1F7E2} (>=1.85R Target)"
     });
   } catch (err) {
     req.log?.error?.({ err }, "Failed to get SMC telemetry data");
@@ -44857,6 +44858,7 @@ router.get("/dashboard", async (req, res) => {
       forexEnabled: botState?.forexEnabled ?? true,
       indicesEnabled: botState?.indicesEnabled ?? true,
       stocksEnabled: botState?.stocksEnabled ?? true,
+      m1LtfEnabled: Boolean(botState?.m1LtfEnabled ?? botState?.m1_ltf_enabled ?? true),
       halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? botState?.halt_drawdown_limit ?? 0.83),
       max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? botState?.max_drawdown_limit ?? 3.3),
       ...extractSessionGuardFields(botState),
@@ -49167,6 +49169,7 @@ async function buildDashboardPayload() {
     forexEnabled: botState?.forexEnabled ?? true,
     indicesEnabled: botState?.indicesEnabled ?? true,
     stocksEnabled: botState?.stocksEnabled ?? true,
+    m1LtfEnabled: Boolean(botState?.m1LtfEnabled ?? botState?.m1_ltf_enabled ?? true),
     halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? botState?.halt_drawdown_limit ?? 0.83),
     max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? botState?.max_drawdown_limit ?? 3.3),
     ...extractSessionGuardFields(botState),
@@ -49233,6 +49236,7 @@ router2.get("/config", async (req, res) => {
       forexEnabled: state?.forexEnabled ?? true,
       indicesEnabled: state?.indicesEnabled ?? true,
       stocksEnabled: state?.stocksEnabled ?? true,
+      m1LtfEnabled: Boolean(state?.m1LtfEnabled ?? state?.m1_ltf_enabled ?? true),
       riskLimitsEnabled: state?.riskLimitsEnabled ?? true,
       knifeProtectionEnabled: state?.knifeProtectionEnabled ?? true,
       obiEnabled: state?.obiEnabled ?? true,
@@ -49259,6 +49263,8 @@ router2.post("/config", async (req, res) => {
     const { activePair, slPips, tpPips, zEntryThreshold, smcEnabled, autoExecute, cryptoEnabled, metalsEnabled, forexEnabled, riskLimitsEnabled, defaultLots, maxDailyTrades, initialBalance, knifeProtectionEnabled, obiEnabled, volatilityFilterEnabled } = parsed.success ? parsed.data : bodyObj;
     const indicesEnabled = bodyObj.indicesEnabled !== void 0 ? Boolean(bodyObj.indicesEnabled) : state?.indicesEnabled ?? true;
     const stocksEnabled = bodyObj.stocksEnabled !== void 0 ? Boolean(bodyObj.stocksEnabled) : state?.stocks_enabled ?? true;
+    const m1LtfRaw = bodyObj.m1LtfEnabled !== void 0 ? bodyObj.m1LtfEnabled : bodyObj.m1_ltf_enabled;
+    const m1LtfExec = m1LtfRaw !== void 0 ? Boolean(m1LtfRaw) : Boolean(state?.m1LtfEnabled ?? state?.m1_ltf_enabled ?? true);
     const haltLimit = bodyObj.haltDrawdownLimit !== void 0 ? Number(bodyObj.haltDrawdownLimit) : bodyObj.halt_drawdown_limit !== void 0 ? Number(bodyObj.halt_drawdown_limit) : Number(state?.haltDrawdownLimit ?? state?.halt_drawdown_limit ?? 0.83);
     const maxLimit = bodyObj.maxDrawdownLimit !== void 0 ? Number(bodyObj.maxDrawdownLimit) : bodyObj.max_drawdown_limit !== void 0 ? Number(bodyObj.max_drawdown_limit) : Number(state?.maxDrawdownLimit ?? state?.max_drawdown_limit ?? 3.3);
     const sessEnabled = bodyObj.sessionGuardEnabled !== void 0 ? Boolean(bodyObj.sessionGuardEnabled) : bodyObj.session_guard_enabled !== void 0 ? Boolean(bodyObj.session_guard_enabled) : curSess.sessionGuardEnabled;
@@ -49293,8 +49299,8 @@ router2.post("/config", async (req, res) => {
     const maxTradesVal = maxDailyTrades !== void 0 ? Number(maxDailyTrades) : Number(state?.maxTrades ?? 3);
     const initBalVal = initialBalance !== void 0 ? Number(initialBalance) : Number(state?.initialBalance ?? 1e5);
     await db.execute(
-      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit, session_guard_enabled, session_start_hour, session_end_hour, session2_enabled, session2_start_hour, session2_end_hour)
-          SELECT 1, ${pairToSave}, ${slVal.toString()}, ${tpVal.toString()}, ${zEntry.toString()}, ${smcVal}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${riskLimits}, ${defLots.toString()}, ${maxTradesVal}, 'BOT OFFLINE', NOW(), ${initBalVal.toString()}, ${initBalVal.toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}, ${sess2Enabled}, ${sess2Start}, ${sess2End}
+      sql`INSERT INTO bot_state (id, active_pair, sl_pips, tp_pips, z_entry_threshold, smc_enabled, auto_execute, crypto_enabled, metals_enabled, forex_enabled, indices_enabled, stocks_enabled, m1_ltf_enabled, risk_limits_enabled, default_lots, max_trades, system_status, updated_at, initial_balance, max_equity_peak, knife_protection_enabled, obi_enabled, volatility_filter_enabled, halt_drawdown_limit, max_drawdown_limit, session_guard_enabled, session_start_hour, session_end_hour, session2_enabled, session2_start_hour, session2_end_hour)
+          SELECT 1, ${pairToSave}, ${slVal.toString()}, ${tpVal.toString()}, ${zEntry.toString()}, ${smcVal}, ${autoExec}, ${cryptoExec}, ${metalsExec}, ${forexExec}, ${indicesExec}, ${stocksExec}, ${m1LtfExec}, ${riskLimits}, ${defLots.toString()}, ${maxTradesVal}, 'BOT OFFLINE', NOW(), ${initBalVal.toString()}, ${initBalVal.toString()}, ${knifeExec}, ${obiExec}, ${volExec}, ${haltLimit.toString()}, ${maxLimit.toString()}, ${sessEnabled}, ${sessStart}, ${sessEnd}, ${sess2Enabled}, ${sess2Start}, ${sess2End}
           WHERE NOT EXISTS (SELECT 1 FROM bot_state)`
     );
     await db.execute(
@@ -49310,6 +49316,7 @@ router2.post("/config", async (req, res) => {
               forex_enabled = ${forexExec},
               indices_enabled = ${indicesExec},
               stocks_enabled  = ${stocksExec},
+              m1_ltf_enabled  = ${m1LtfExec},
               risk_limits_enabled = ${riskLimits},
               knife_protection_enabled = ${knifeExec},
               obi_enabled = ${obiExec},
@@ -49348,6 +49355,7 @@ router2.post("/config", async (req, res) => {
       forexEnabled: updated?.forexEnabled ?? forexExec,
       indicesEnabled: updated?.indicesEnabled ?? indicesExec,
       stocksEnabled: updated?.stocksEnabled ?? stocksExec,
+      m1LtfEnabled: Boolean(updated?.m1LtfEnabled ?? updated?.m1_ltf_enabled ?? m1LtfExec),
       riskLimitsEnabled: updated?.riskLimitsEnabled ?? riskLimits,
       knifeProtectionEnabled: updated?.knifeProtectionEnabled ?? knifeExec,
       obiEnabled: updated?.obiEnabled ?? obiExec,
@@ -51500,11 +51508,12 @@ router9.post("/backtest", async (req, res) => {
     const sessionFilterEnabled = req.body?.sessionFilterEnabled !== void 0 ? Boolean(req.body.sessionFilterEnabled) : true;
     const breakevenEnabled = req.body?.breakevenEnabled !== void 0 ? Boolean(req.body.breakevenEnabled) : true;
     const smartRiskCapEnabled = req.body?.smartRiskCapEnabled !== void 0 ? Boolean(req.body.smartRiskCapEnabled) : true;
+    const m1LtfEnabled = req.body?.m1LtfEnabled !== void 0 ? Boolean(req.body.m1LtfEnabled) : true;
     const range = lookbackDays <= 5 ? "5d" : "1mo";
     const [m5Bars, m15Bars, m1Bars] = await Promise.all([
       fetchYahooOhlc(spec.yahooTicker, "5m", range),
       fetchYahooOhlc(spec.yahooTicker, "15m", "1mo"),
-      spec.category === "indices" ? fetchYahooOhlc(spec.yahooTicker, "1m", "7d").catch(() => []) : Promise.resolve([])
+      spec.category === "indices" && m1LtfEnabled ? fetchYahooOhlc(spec.yahooTicker, "1m", "7d").catch(() => []) : Promise.resolve([])
     ]);
     if (m5Bars.length < 100 || m15Bars.length < 30) {
       res.status(400).json({ error: `Insufficient historical OHLC candles for ${spec.symbol}` });
@@ -51539,6 +51548,7 @@ router9.post("/backtest", async (req, res) => {
       sessionFilterEnabled,
       breakevenEnabled,
       smartRiskCapEnabled,
+      m1LtfEnabled,
       barsScannedM5: m5Bars.length,
       barsScannedM15: m15Bars.length,
       barsScannedM1: m1Bars.length
@@ -51893,6 +51903,7 @@ async function initDb() {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
     `ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS metrics_reset_at TIMESTAMP DEFAULT NULL`,
+    `ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS m1_ltf_enabled BOOLEAN DEFAULT TRUE`,
     `ALTER TABLE trades ADD COLUMN IF NOT EXISTS mt5_login BIGINT DEFAULT NULL`
   ];
   const client = await pool.connect();

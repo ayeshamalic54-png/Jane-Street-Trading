@@ -171,6 +171,7 @@ async function buildDashboardPayload() {
     forexEnabled: botState?.forexEnabled ?? true,
     indicesEnabled: botState?.indicesEnabled ?? true,
     stocksEnabled: botState?.stocksEnabled ?? true,
+    m1LtfEnabled: Boolean((botState as any)?.m1LtfEnabled ?? (botState as any)?.m1_ltf_enabled ?? true),
     halt_drawdown_limit: Number(botState?.haltDrawdownLimit ?? (botState as any)?.halt_drawdown_limit ?? 0.83),
     max_drawdown_limit: Number(botState?.maxDrawdownLimit ?? (botState as any)?.max_drawdown_limit ?? 3.30),
     ...extractSessionGuardFields(botState),

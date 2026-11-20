@@ -901,7 +901,11 @@ export default function Dashboard() {
               )}
             </span>
             <span className="text-[10px] text-zinc-500 font-mono hidden sm:inline">
-              {isBotActive ? "Scanning M5/M15 market structure & executing orders" : "No orders will be placed. Bot is paused safely."}
+              {isBotActive
+                ? ((dashboard as any)?.m1LtfEnabled ?? true)
+                  ? "Scanning M15/M5 + M1 LTF Indices structure & executing orders"
+                  : "Scanning M15/M5 market structure (M1 LTF OFF) & executing orders"
+                : "No orders will be placed. Bot is paused safely."}
             </span>
           </div>
         </div>
@@ -1347,10 +1351,32 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="bg-card border-border border-t-2 border-t-emerald-500 shadow-[0_4px_24px_rgba(16,185,129,0.06)]">
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs text-emerald-400 uppercase tracking-wider font-mono flex flex-wrap items-center justify-between gap-2">
-                <span>Pure SMC / ICT 9-Condition Live Telemetry Engine</span>
-                <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/40 text-[10px] shrink-0">🟢 9-CONDITION SMC ENGINE ACTIVE</Badge>
-              </CardTitle>
+              {(() => {
+                const symHdr = (selectedChartSymbol || "").toUpperCase();
+                const isIdxHdr = ["US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "USTEC", "US100", "NDX", "NQ100"].some((k) => symHdr.includes(k));
+                const m1LtfOnHdr = Boolean((dashboard as any)?.m1LtfEnabled ?? true);
+                const telHdr = activeSmcTel as any;
+                const isM1Hdr = m1LtfOnHdr && (isIdxHdr || Boolean(telHdr?.m1_active || telHdr?.execution_mode === "M1_LTF"));
+                return (
+                  <CardTitle className="text-xs text-emerald-400 uppercase tracking-wider font-mono flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      {isM1Hdr
+                        ? "Pure SMC / ICT 6-Condition M1 Telemetry Engine"
+                        : "Pure SMC / ICT 7-Condition M5 Telemetry Engine"}
+                    </span>
+                    <Badge
+                      className={cn(
+                        "text-[10px] shrink-0",
+                        isM1Hdr
+                          ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                          : "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
+                      )}
+                    >
+                      {isM1Hdr ? "⚡ 6-COND M1 LTF ENGINE" : "🟢 7-COND M5 SMC ENGINE"}
+                    </Badge>
+                  </CardTitle>
+                );
+              })()}
             </CardHeader>
             <CardContent className="space-y-3">
               {(() => {
@@ -1380,10 +1406,15 @@ export default function Dashboard() {
                 const s5Valid = s4Valid && isPassText(retestText);
                 const s6Valid = s5Valid && isPassText(s6Text);
                 const s7Valid = s6Valid && isPassText(s7Text);
+                const closedRejectPass = s7Valid;
+                const closedRejectFail = s4Valid && !closedRejectPass && (isFailText(retestText) || isFailText(s6Text) || isFailText(s7Text));
+
                 const s8Failed = isFailText(s8Text);
                 const s8Valid = !s8Failed && (isPassText(s8Text) || s2Valid);
                 const s9Failed = isFailText(s9Text);
-                const s9Valid = !s9Failed && (isPassText(s9Text) || (s7Valid && hasActivePosition));
+                const s9Valid = !s9Failed && (isPassText(s9Text) || (closedRejectPass && hasActivePosition));
+                const slTpFail = s8Failed || s9Failed;
+                const slTpPass = !slTpFail && s8Valid && (isPassText(s9Text) || (closedRejectPass && hasActivePosition));
 
                 const getBoxClass = (isValid: boolean, isCurrent: boolean, isBearOrFail = false) => {
                   if (isBearOrFail) {
@@ -1410,6 +1441,8 @@ export default function Dashboard() {
                 const isNasSel = ["NAS100", "USTEC", "US100", "NDX", "NQ100"].some((k) => symU.includes(k));
                 const isIdxSel = isUs30Sel || isNasSel;
                 const isMetalSel = ["XAU", "GOLD", "XAG", "SILVER"].some((k) => symU.includes(k));
+                const m1LtfOn = Boolean((dashboard as any)?.m1LtfEnabled ?? true);
+                const isM1CardMode = m1LtfOn && (isIdxSel || Boolean(tel?.m1_active || tel?.execution_mode === "M1_LTF"));
                 const pricePrefixSel = isIdxSel ? "" : "$";
                 const s8BufTxt = isIdxSel ? "6.50pt" : isMetalSel ? "$0.75" : "4p";
                 const s8CapTxt = isUs30Sel ? "105pt" : isNasSel ? "85pt" : isMetalSel ? "$10.00" : "50p";
@@ -1417,9 +1450,9 @@ export default function Dashboard() {
 
                 return (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono">
-                    {/* Step 1: M15 Bias */}
+                    {/* C1: M15 Bias */}
                     <div className={getBoxClass(s1Valid && isM15Bull, !s1Valid, s1Valid && isM15Bear)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 1: M15 Bias</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">C1: M15 Bias</div>
                       <div className={cn("text-xs truncate", getTextColor(s1Valid && isM15Bull, !s1Valid, s1Valid && isM15Bear))}>
                         {s1Valid ? (isM15Bull ? "BULLISH 🟢" : "BEARISH 🔴") : "NEUTRAL ⚪"}
                       </div>
@@ -1428,9 +1461,9 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Step 2: Sweep */}
+                    {/* C2: M5 Sweep */}
                     <div className={getBoxClass(s2Valid, s1Valid && !s2Valid)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 2: Sweep</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">C2: M5 Sweep</div>
                       <div className={cn("text-xs truncate", getTextColor(s2Valid, s1Valid && !s2Valid))}>
                         {s2Valid ? "PASS 🟢 (Wick Sweep)" : s1Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
@@ -1439,84 +1472,113 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Step 3: M5/M1 CHoCH */}
+                    {/* C3: CHoCH Break */}
                     <div className={getBoxClass(s3Valid, s2Valid && !s3Valid)}>
                       <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">
-                        {isIdxSel || String(chochText).includes("M1") ? "Step 3: M5/M1 CHoCH" : "Step 3: M5 CHoCH"}
+                        {isM1CardMode ? "C3: M1 LTF CHoCH" : "C3: M5 CHoCH"}
                       </div>
                       <div title={chochText} className={cn("text-xs truncate", getTextColor(s3Valid, s2Valid && !s3Valid))}>
                         {s3Valid ? (chochText || "PASS 🟢 (Break)") : s2Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s3Valid ? `CHoCH: ${pricePrefixSel}${Number(tel?.choch_price ?? 0).toFixed(2)}` : "Awaiting Fresh CHoCH"}
+                        {s3Valid ? `CHoCH: ${pricePrefixSel}${Number(tel?.choch_price ?? 0).toFixed(2)}` : `Awaiting ${isM1CardMode ? "M1" : "M5"} CHoCH`}
                       </div>
                     </div>
 
-                    {/* Step 4: Post-CHoCH FVG */}
+                    {/* C4: Displacement FVG */}
                     <div className={getBoxClass(s4Valid, s3Valid && !s4Valid)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 4: Post-CHoCH FVG</div>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">
+                        {isM1CardMode ? "C4: M1 FVG" : "C4: M5 FVG"}
+                      </div>
                       <div title={fvgText} className={cn("text-xs truncate", getTextColor(s4Valid, s3Valid && !s4Valid))}>
                         {s4Valid ? (fvgText || "PASS 🟢 (Created)") : s3Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s4Valid ? (String(fvgText).includes("M1") ? "M1 LTF FVG Ready" : "Displacement FVG Ready") : "Awaiting Displacement FVG"}
+                        {s4Valid ? (String(fvgText).includes("M1") || isM1CardMode ? "M1 LTF FVG Ready" : "M5 FVG Ready") : `Awaiting ${isM1CardMode ? "M1" : "M5"} FVG`}
                       </div>
                     </div>
 
-                    {/* Step 5: FVG Retest */}
-                    <div className={getBoxClass(s5Valid, s4Valid && !s5Valid)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 5: FVG Retest</div>
-                      <div title={retestText} className={cn("text-xs truncate", getTextColor(s5Valid, s4Valid && !s5Valid))}>
-                        {s5Valid ? (retestText || "PASS 🟢 (Retested)") : s4Valid ? "AWAITING RETEST ⏳" : "WAITING ⚪"}
+                    {/* C5: Unified Closed FVG Retest + Rejection + Close */}
+                    <div className={getBoxClass(closedRejectPass, s4Valid && !closedRejectPass && !closedRejectFail, closedRejectFail)}>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">
+                        {isM1CardMode ? "C5: Closed M1 Rej" : "C5: Closed M5 Rej"}
                       </div>
-                      <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s5Valid ? "Price Tapped FVG Zone" : "Waiting Pullback to FVG"}
+                      <div
+                        title={s7Text || s6Text || retestText}
+                        className={cn("text-xs truncate", getTextColor(closedRejectPass, s4Valid && !closedRejectPass && !closedRejectFail, closedRejectFail))}
+                      >
+                        {closedRejectPass
+                          ? (s7Text && isPassText(s7Text) ? s7Text : "PASS 🟢 (Closed Rej)")
+                          : closedRejectFail
+                          ? (isFailText(s7Text) ? s7Text : isFailText(s6Text) ? s6Text : retestText)
+                          : s6Valid
+                          ? "WAIT CLOSE ⏳"
+                          : s5Valid
+                          ? "REJECTING ⏳"
+                          : s4Valid
+                          ? "AWAIT FVG TAP ⏳"
+                          : "WAITING ⚪"}
                       </div>
-                    </div>
-
-                    {/* Step 6: FVG Rejection */}
-                    <div className={getBoxClass(s6Valid, s5Valid && !s6Valid && !isFailText(s6Text), s5Valid && isFailText(s6Text))}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 6: FVG Rejection</div>
-                      <div title={s6Text} className={cn("text-xs truncate", getTextColor(s6Valid, s5Valid && !s6Valid && !isFailText(s6Text), s5Valid && isFailText(s6Text)))}>
-                        {s6Valid ? (s6Text || "PASS 🟢 (Rejected)") : s5Valid && isFailText(s6Text) ? s6Text : s5Valid ? "CONFIRMING ⏳" : "WAITING ⚪"}
-                      </div>
-                      <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s6Text}>
-                        {s6Valid ? "Rejection Confirmed" : s5Valid ? (s6Text || "Checking Rejection Wick") : "Awaiting FVG Retest"}
-                      </div>
-                    </div>
-
-                    {/* Step 7: Candle Close */}
-                    <div className={getBoxClass(s7Valid, s6Valid && !s7Valid && !isFailText(s7Text), s6Valid && isFailText(s7Text))}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 7: Candle Close</div>
-                      <div title={s7Text} className={cn("text-xs truncate", getTextColor(s7Valid, s6Valid && !s7Valid && !isFailText(s7Text), s6Valid && isFailText(s7Text)))}>
-                        {s7Valid ? (s7Text || "PASS 🟢 (Closed)") : s6Valid && isFailText(s7Text) ? s7Text : s6Valid ? "AWAITING CLOSE ⏳" : "WAITING ⚪"}
-                      </div>
-                      <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s7Text}>
-                        {s7Valid ? (String(s7Text).includes("M1") ? "M1 Candle Closed Beyond FVG" : "M5 Candle Closed Beyond FVG") : s6Valid ? (s7Text || "Waiting Bar Close") : "Awaiting Candle Close"}
-                      </div>
-                    </div>
-
-                    {/* Step 8: SL Buffer */}
-                    <div className={getBoxClass(s8Valid, false, s8Failed)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 8: SL Buffer</div>
-                      <div title={s8Text} className={cn("text-xs truncate", getTextColor(s8Valid, false, s8Failed))}>
-                        {s8Failed ? (s8Text || "FAIL 🔴 (SL Cap)") : s8Valid ? (isPassText(s8Text) ? s8Text : `PASS 🟢 (${s8BufTxt} Buf)`) : "WAITING SWEEP ⚪"}
-                      </div>
-                      <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s8Text}>
-                        {s8Failed ? `Exceeds ${s8CapTxt} Max SL Cap` : s8Valid ? (String(s8Text).includes("FVG-Refined") ? `FVG-Defense Refined (${s8CapTxt} Cap)` : String(s8Text).includes("M1") ? `Tight M1 LTF SL (${s8CapTxt} Cap)` : `Sweep ± ${s8BufTxt} (${s8CapTxt} Cap)`) : "Locks on Sweep (Step 2)"}
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s7Text || s6Text}>
+                        {closedRejectPass
+                          ? `${isM1CardMode || String(s7Text).includes("M1") ? "M1" : "M5"} Closed Rejection Confirmed`
+                          : closedRejectFail
+                          ? (s7Text || s6Text || "Rejection Failed")
+                          : s4Valid
+                          ? `Retest + Reject + ${isM1CardMode ? "M1" : "M5"} Close`
+                          : "Awaiting Displacement FVG"}
                       </div>
                     </div>
 
-                    {/* Step 9: Opposing Target */}
-                    <div className={getBoxClass(s9Valid, false, s9Failed)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 9: Opposing Target</div>
-                      <div title={s9Text} className={cn("text-xs truncate", getTextColor(s9Valid, false, s9Failed))}>
-                        {s9Failed ? (s9Text || "FAIL 🔴 (<1.85R)") : s9Valid ? (isPassText(s9Text) ? s9Text : "PASS 🟢 (M15 Target)") : (s9Text || "WAITING ⚪")}
+                    {isM1CardMode ? (
+                      /* C6 (M1 Mode): Unified SL Guard (38pt+ Floor / Cap) + M15 Opposing Target (>=1.85R) */
+                      <div className={getBoxClass(slTpPass, closedRejectPass && !slTpPass && !slTpFail, slTpFail)}>
+                        <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">C6: SL Guard &amp; M15 TP</div>
+                        <div
+                          title={`${s8Text} | ${s9Text}`}
+                          className={cn("text-xs truncate", getTextColor(slTpPass, closedRejectPass && !slTpPass && !slTpFail, slTpFail))}
+                        >
+                          {slTpFail
+                            ? (s8Failed ? (s8Text || "FAIL 🔴 (SL Cap)") : (s9Text || "FAIL 🔴 (<1.85R)"))
+                            : slTpPass
+                            ? "LOCKED 🟢 (>=1.85R)"
+                            : s8Valid
+                            ? "SL OK ⏳ (Check TP)"
+                            : "WAITING ⚪"}
+                        </div>
+                        <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={`${s8Text} ${s9Text}`}>
+                          {slTpFail
+                            ? (s8Failed ? `Exceeds ${s8CapTxt} / 38pt Floor` : "Below 1.85R Min R:R")
+                            : slTpPass
+                            ? `38pt+ M1 SL (${s8CapTxt}) · M15 TP`
+                            : `38pt Min SL · ${s8CapTxt} Cap · >=1.85R`}
+                        </div>
                       </div>
-                      <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s9Text}>
-                        {s9Failed ? "Below 1.85R Min R:R" : s9Valid ? `M15 Opposing Liq (${s9BufTxt})` : "Min 1.85R M15 Structural TP"}
-                      </div>
-                    </div>
+                    ) : (
+                      <>
+                        {/* C6 (M5 Mode): SL Buffer */}
+                        <div className={getBoxClass(s8Valid, false, s8Failed)}>
+                          <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">C6: SL Buffer</div>
+                          <div title={s8Text} className={cn("text-xs truncate", getTextColor(s8Valid, false, s8Failed))}>
+                            {s8Failed ? (s8Text || "FAIL 🔴 (SL Cap)") : s8Valid ? (isPassText(s8Text) ? s8Text : `PASS 🟢 (${s8BufTxt} Buf)`) : "WAITING SWEEP ⚪"}
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s8Text}>
+                            {s8Failed ? `Exceeds ${s8CapTxt} Max SL Cap` : s8Valid ? (String(s8Text).includes("FVG-Refined") ? `FVG-Defense Refined (${s8CapTxt} Cap)` : `Sweep ± ${s8BufTxt} (${s8CapTxt} Cap)`) : "Locks on M5 Sweep (C2)"}
+                          </div>
+                        </div>
+
+                        {/* C7 (M5 Mode): Opposing Target */}
+                        <div className={getBoxClass(s9Valid, false, s9Failed)}>
+                          <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">C7: Opposing Target</div>
+                          <div title={s9Text} className={cn("text-xs truncate", getTextColor(s9Valid, false, s9Failed))}>
+                            {s9Failed ? (s9Text || "FAIL 🔴 (<1.85R)") : s9Valid ? (isPassText(s9Text) ? s9Text : "PASS 🟢 (M15 Target)") : (s9Text || "WAITING ⚪")}
+                          </div>
+                          <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s9Text}>
+                            {s9Failed ? "Below 1.85R Min R:R" : s9Valid ? `M15 Opposing Liq (${s9BufTxt})` : "Min 1.85R M15 Structural TP"}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 );
               })()}
@@ -1624,6 +1686,7 @@ export default function Dashboard() {
                 currentPrice={Number(matchingAsset?.priceA || activeSmcTel?.sweep_price || 0)}
                 activePosition={matchingPosition}
                 activeZones={selectedAssetZones}
+                m1LtfEnabled={Boolean((dashboard as any)?.m1LtfEnabled ?? true)}
               />
               
               {/* Signals Timeline for selected symbol */}
@@ -1748,7 +1811,9 @@ export default function Dashboard() {
             <div>
               <CardTitle className="text-xs text-muted-foreground uppercase tracking-wider font-mono">Multi-Asset Pure SMC Live Scanner</CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Click any asset row to load its M5 candles, FVG, iFVG, OB, Breaker, SL, TP &amp; S1–S9 Pipeline
+                {((dashboard as any)?.m1LtfEnabled ?? true)
+                  ? "Click any asset row to load its M1/M5 candles, FVG, Sweep, CHoCH, SL, TP & C1–C6/C7 Pipeline"
+                  : "Click any asset row to load its M5 candles, FVG, Sweep, CHoCH, SL, TP & C1–C7 Pipeline"}
               </p>
             </div>
             <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/20 font-mono text-[10px] rounded-sm">
@@ -1783,7 +1848,9 @@ export default function Dashboard() {
                       const pPrefix = isMetalOrFx ? "$" : "";
                       const markPx = Number(asset?.priceA || 0);
                       const tpPx = Number(asset?.opposingTp || 0);
-                      const stepsPassed = Number(asset?.stepsPassed ?? 0);
+                      const m1LtfOnRow = Boolean((dashboard as any)?.m1LtfEnabled ?? true);
+                      const totalSteps = Number(asset?.conditionsCount ?? ((m1LtfOnRow && (!isMetalOrFx || asset?.m1Active)) ? 6 : 7));
+                      const stepsPassed = Math.min(totalSteps, Number(asset?.stepsPassed ?? 0));
                       const targetRrr = Number(asset?.targetRrr ?? 0);
                       const rawBias = String(asset?.m15Bias || "NEUTRAL").toUpperCase();
                       const rawAct = String(asset?.action || "NONE").toUpperCase();
@@ -1819,9 +1886,9 @@ export default function Dashboard() {
                           </TableCell>
                           <TableCell className={cn(
                             "font-mono text-xs text-right font-semibold",
-                            stepsPassed >= 5 ? "text-emerald-400" : stepsPassed >= 3 ? "text-amber-300" : "text-zinc-200"
+                            stepsPassed >= Math.max(4, totalSteps - 1) ? "text-emerald-400" : stepsPassed >= 3 ? "text-amber-300" : "text-zinc-200"
                           )}>
-                            {stepsPassed} / 9 Steps
+                            {stepsPassed} / {totalSteps} Steps
                           </TableCell>
                           <TableCell className="font-mono text-xs text-right text-sky-400 font-bold">
                             {targetRrr > 0 ? `${targetRrr.toFixed(2)}R` : "-"}

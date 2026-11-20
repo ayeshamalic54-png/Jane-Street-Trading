@@ -118,6 +118,7 @@ def load_config():
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
             ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_end_hour DOUBLE PRECISION DEFAULT 22.0;
+            ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS m1_ltf_enabled BOOLEAN DEFAULT TRUE;
         """)
         conn_mig.commit()
         cur_mig.close()
@@ -169,7 +170,8 @@ def fetch_db_config():
                knife_protection_enabled, obi_enabled, volatility_filter_enabled,
                stocks_enabled, halt_drawdown_limit, max_drawdown_limit,
                session_guard_enabled, session_start_hour, session_end_hour,
-               session2_enabled, session2_start_hour, session2_end_hour
+               session2_enabled, session2_start_hour, session2_end_hour,
+               m1_ltf_enabled
         FROM bot_state
         WHERE id = 1
     """
@@ -237,6 +239,7 @@ def fetch_db_config():
                 bool(row[22] if len(row) > 22 and row[22] is not None else True),
                 float(row[23]) if len(row) > 23 and row[23] is not None else 18.0,
                 float(row[24]) if len(row) > 24 and row[24] is not None else 22.0,
+                bool(row[25]) if len(row) > 25 and row[25] is not None else True,
             )
         else:
             cur.close()
@@ -251,6 +254,7 @@ def fetch_db_config():
                 ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_enabled BOOLEAN DEFAULT TRUE;
                 ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_start_hour DOUBLE PRECISION DEFAULT 18.0;
                 ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_end_hour DOUBLE PRECISION DEFAULT 22.0;
+                ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS m1_ltf_enabled BOOLEAN DEFAULT TRUE;
             """)
             conn_fix.commit()
             cur_fix.close()
@@ -268,6 +272,7 @@ def fetch_db_config():
 
 
 PREV_TOGGLE_STATE = {}
+M1_LTF_ENABLED = True
 
 def update_live_toggles_from_db():
     """
@@ -276,7 +281,7 @@ def update_live_toggles_from_db():
     Logs instant VPS console alerts whenever any toggle is switched.
     """
     global FOREX_ENABLED, METALS_ENABLED, INDICES_ENABLED, STOCKS_ENABLED, CRYPTO_ENABLED, AUTO_EXECUTE, RISK_LIMITS_ENABLED, Z_ENTRY_THRESHOLD, SL_PIPS, TP_PIPS
-    global KNIFE_PROTECTION_ENABLED, OBI_ENABLED, VOLATILITY_FILTER_ENABLED, PREV_TOGGLE_STATE, SMC_ENABLED
+    global KNIFE_PROTECTION_ENABLED, OBI_ENABLED, VOLATILITY_FILTER_ENABLED, PREV_TOGGLE_STATE, SMC_ENABLED, M1_LTF_ENABLED
     try:
         import risk_safeguards
         cfg = fetch_db_config()
@@ -303,6 +308,8 @@ def update_live_toggles_from_db():
                 risk_safeguards.SESSION2_ENABLED = bool(cfg[22])
                 risk_safeguards.SESSION2_START_HOUR = float(cfg[23])
                 risk_safeguards.SESSION2_END_HOUR = float(cfg[24])
+            if len(cfg) > 25:
+                M1_LTF_ENABLED = bool(cfg[25])
 
             _, curr_pkt_s, active_win_s = risk_safeguards.is_session_time_allowed(
                 risk_safeguards.SESSION_START_HOUR,
@@ -320,6 +327,7 @@ def update_live_toggles_from_db():
                 "forex": FOREX_ENABLED,
                 "metals": METALS_ENABLED,
                 "indices": INDICES_ENABLED,
+                "m1_ltf": M1_LTF_ENABLED,
                 "auto_exec": AUTO_EXECUTE,
                 "risk_limits": RISK_LIMITS_ENABLED,
                 "session_guard": bool(risk_safeguards.SESSION_GUARD_ENABLED),
@@ -342,6 +350,40 @@ def update_live_toggles_from_db():
             PREV_TOGGLE_STATE = curr_state.copy()
     except Exception as e:
         logger.warning(f"Error in update_live_toggles_from_db: {e}")
+
+
+def _build_chart_candle_records(df_src, tail_n: int, c_digits: int, marker_tol: float, m15_b: str, sweep_p_val: float, choch_p_val: float):
+    """Serialize OHLC bars for dashboard M1/M5 SVG chart overlay and tag nearest Sweep/CHoCH candles."""
+    records = []
+    if df_src is None or df_src.empty:
+        return records
+    for _, crow in df_src.tail(tail_n).iterrows():
+        t_val = crow["time"]
+        t_str = t_val.strftime("%H:%M") if hasattr(t_val, "strftime") else str(t_val)
+        o_val = float(round(crow["open"], c_digits))
+        h_val = float(round(crow["high"], c_digits))
+        l_val = float(round(crow["low"], c_digits))
+        c_val = float(round(crow["close"], c_digits))
+        records.append({
+            "time": t_str,
+            "open": o_val,
+            "high": h_val,
+            "low": l_val,
+            "close": c_val,
+            "isBullish": bool(c_val >= o_val),
+            "volume": int(crow.get("tick_volume", 100)) if "tick_volume" in crow else 100,
+        })
+    if records and sweep_p_val > 0:
+        tgt_k = "low" if "BULLISH" in m15_b else "high"
+        best_sw = min(records, key=lambda c: abs(c[tgt_k] - sweep_p_val))
+        if abs(best_sw[tgt_k] - sweep_p_val) < marker_tol:
+            best_sw["isSweep"] = True
+    if records and choch_p_val > 0:
+        tgt_k = "high" if "BULLISH" in m15_b else "low"
+        best_ch = min(records, key=lambda c: abs(c[tgt_k] - choch_p_val))
+        if abs(best_ch[tgt_k] - choch_p_val) < marker_tol:
+            best_ch["isChoch"] = True
+    return records
 
 
 def poll_manual_commands(tick_a, tick_b, sl_pips: float):
@@ -3028,8 +3070,9 @@ def main():
                     df_m5.attrs["category"] = cat_a
 
                 asset_prof = get_smc_asset_profile(df_a, symbol=s_a_resolved, category=cat_a, ref_price=p_a)
+                m1_ltf_now = bool(M1_LTF_ENABLED and asset_prof.get("m1_ltf_enabled") and cat_a != "crypto")
                 df_m1 = None
-                if asset_prof.get("m1_ltf_enabled") and cat_a != "crypto":
+                if m1_ltf_now:
                     df_m1 = get_rates_df(s_a_resolved, mt5.TIMEFRAME_M1, count=140)
                     if df_m1 is not None and not df_m1.empty:
                         df_m1.attrs["symbol"] = s_a_resolved
@@ -3040,8 +3083,7 @@ def main():
                     for _old_sw in list(sweep_set)[:len(sweep_set) - 60]:
                         sweep_set.discard(_old_sw)
 
-                # Pass live M1/M5/M15 data along with live broker tick price (p_a)
-                # Strategy engine evaluates confirmed closed candle and executes on live price (p_a)
+                # Pass live M1/M5/M15 data along with live broker tick price (p_a) and M1 LTF DB toggle
                 action = "NONE"
                 smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(
                     df_a,
@@ -3053,6 +3095,7 @@ def main():
                     symbol=s_a_resolved,
                     df_m1=df_m1,
                     used_m5_sweeps=sweep_set,
+                    m1_ltf_override=M1_LTF_ENABLED,
                 )
                 vid_reason = smc_reason
                 if smc_sig == "BUY":
@@ -3060,8 +3103,8 @@ def main():
                 elif smc_sig == "SELL":
                     action = "SELL_SPREAD"
 
-
-                logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: Opposing Structural Target 🟢")
+                scan_tag = "M1-LTF 6-COND" if m1_ltf_now else "M5-SMC 7-COND"
+                logger.info(f"📊 [{scan_tag}] {pk} | {vid_reason} | Target Plan: Opposing Structural Target 🟢")
                 try:
                     from database import update_smc_telemetry
                     import json
@@ -3081,43 +3124,67 @@ def main():
                     choch_p_val = 0.0
                     opposing_tp_val = 0.0
                     scan_sl_val = 0.0
+                    exec_mode_str = "M1_LTF" if m1_ltf_now else "M5_STRICT"
 
                     if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason or "ALL SMC STEPS PASSED" in vid_reason:
                         dyn_rrr = (abs(float(smc_tp) - float(p_a)) / max(asset_prof["min_dist"], abs(float(p_a) - float(smc_sl)))) if (smc_tp and smc_sl) else 2.0
+                        is_m1_sig = "M1 LTF" in vid_reason
+                        rej_lbl = "PASS 🟢 (M1 Closed Reject)" if is_m1_sig else ("PASS 🟢 (Bullish Rejection)" if "BUY" in vid_reason else "PASS 🔴 (Bearish Rejection)")
                         if "BUY" in vid_reason:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢", "PASS 🟢 (Displacement FVG)", "PASS 🟢 (FVG Retested)", "PASS 🟢 (Bullish Rejection)", "PASS 🟢 (Candle Closed)", f"PASS 🟢 ({s8_buf_lbl} Buf)", f"PASS 🟢 ({dyn_rrr:.2f}R M15 Target)"
+                                "BULLISH 🟢", "PASS 🟢", "PASS 🟢 (M1 LTF CHoCH)" if is_m1_sig else "PASS 🟢",
+                                "PASS 🟢 (M1 FVG)" if is_m1_sig else "PASS 🟢 (Displacement FVG)",
+                                rej_lbl, rej_lbl, rej_lbl,
+                                f"PASS 🟢 ({s8_buf_lbl} Buf)", f"PASS 🟢 ({dyn_rrr:.2f}R M15 Target)"
                             )
                         else:
                             m15_b, s2_st, s3_st, s4_st, s5_st, s6_st, s7_st, s8_st, s9_st = (
-                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴", "PASS 🔴 (Displacement FVG)", "PASS 🔴 (FVG Retested)", "PASS 🔴 (Bearish Rejection)", "PASS 🔴 (Candle Closed)", f"PASS 🟢 ({s8_buf_lbl} Buf)", f"PASS 🟢 ({dyn_rrr:.2f}R M15 Target)"
+                                "BEARISH 🔴", "PASS 🔴", "PASS 🔴 (M1 LTF CHoCH)" if is_m1_sig else "PASS 🔴",
+                                "PASS 🔴 (M1 FVG)" if is_m1_sig else "PASS 🔴 (Displacement FVG)",
+                                rej_lbl, rej_lbl, rej_lbl,
+                                f"PASS 🟢 ({s8_buf_lbl} Buf)", f"PASS 🟢 ({dyn_rrr:.2f}R M15 Target)"
                             )
                         if smc_sl is not None:
                             sweep_p_val = float(smc_sl) + (s8_buf_val if "BUY" in vid_reason else -s8_buf_val)
                         if smc_tp is not None:
                             opposing_tp_val = float(smc_tp)
-                    elif "S1(" in vid_reason or "Scanning Strict" in vid_reason or "Scanning Pure SMC" in vid_reason:
+                    elif "C1(" in vid_reason or "S1(" in vid_reason or "Scanning " in vid_reason:
                         parts = vid_reason.split("|")
                         for p in parts:
                             p_str = p.strip()
-                            if p_str.startswith("S1("):
+                            if p_str.startswith("C1(") or p_str.startswith("S1("):
                                 m15_b = p_str.split(":", 1)[1].strip()
-                            elif p_str.startswith("S2("):
+                            elif p_str.startswith("C2(") or p_str.startswith("S2("):
                                 s2_st = p_str.split(":", 1)[1].strip()
-                            elif p_str.startswith("S3("):
+                            elif p_str.startswith("C3(") or p_str.startswith("S3("):
                                 s3_st = p_str.split(":", 1)[1].strip()
-                            elif p_str.startswith("S4("):
+                            elif p_str.startswith("C4(") or p_str.startswith("S4("):
                                 s4_st = p_str.split(":", 1)[1].strip()
+                            elif p_str.startswith("C5("):
+                                val_c5 = p_str.split(":", 1)[1].strip()
+                                s5_st = val_c5
+                                s6_st = val_c5
+                                s7_st = val_c5
                             elif p_str.startswith("S5("):
                                 s5_st = p_str.split(":", 1)[1].strip()
                             elif p_str.startswith("S6("):
                                 s6_st = p_str.split(":", 1)[1].strip()
                             elif p_str.startswith("S7("):
                                 s7_st = p_str.split(":", 1)[1].strip()
-                            elif p_str.startswith("S8("):
+                            elif p_str.startswith("C6(SL & Target):"):
+                                combined_c6 = p_str.split(":", 1)[1].strip()
+                                if ";" in combined_c6:
+                                    c6_a, c6_b = combined_c6.split(";", 1)
+                                    s8_st = c6_a.strip()
+                                    s9_st = c6_b.strip()
+                                else:
+                                    s8_st = combined_c6
+                            elif p_str.startswith("C6(") or p_str.startswith("S8("):
                                 s8_st = p_str.split(":", 1)[1].strip()
-                            elif p_str.startswith("S9("):
+                            elif p_str.startswith("C7(") or p_str.startswith("S9("):
                                 s9_st = p_str.split(":", 1)[1].strip()
+                            elif p_str.startswith("Mode:"):
+                                exec_mode_str = p_str.split(":", 1)[1].strip()
                             elif p_str.startswith("SweepPrice:"):
                                 try:
                                     sweep_p_val = float(p_str.split(":", 1)[1].strip())
@@ -3140,39 +3207,13 @@ def main():
                                     pass
 
                     zone_dict = dict(SMC_ZONES_CACHE.get(s_a_resolved, {}))
-                    candle_records = []
-                    if df_m5 is not None and not df_m5.empty:
-                        slice_m5 = df_m5.tail(45)
-                        c_digits = int(asset_prof.get("digits", 2 if asset_prof.get("is_high_point") else 5))
-                        marker_tol = 17.0 if asset_prof.get("category") == "indices" else (2.0 if asset_prof.get("is_high_point") else 0.005)
-                        for _, crow in slice_m5.iterrows():
-                            t_val = crow['time']
-                            t_str = t_val.strftime("%H:%M") if hasattr(t_val, 'strftime') else str(t_val)
-                            o_val = float(round(crow['open'], c_digits))
-                            h_val = float(round(crow['high'], c_digits))
-                            l_val = float(round(crow['low'], c_digits))
-                            c_val = float(round(crow['close'], c_digits))
-                            candle_records.append({
-                                "time": t_str,
-                                "open": o_val,
-                                "high": h_val,
-                                "low": l_val,
-                                "close": c_val,
-                                "isBullish": bool(c_val >= o_val),
-                                "volume": int(crow.get('tick_volume', 100)) if 'tick_volume' in crow else 100
-                            })
-                        if candle_records and sweep_p_val > 0:
-                            tgt_k = "low" if "BULLISH" in m15_b else "high"
-                            best_sw = min(candle_records, key=lambda c: abs(c[tgt_k] - sweep_p_val))
-                            if abs(best_sw[tgt_k] - sweep_p_val) < marker_tol:
-                                best_sw["isSweep"] = True
-                        if candle_records and choch_p_val > 0:
-                            tgt_k = "high" if "BULLISH" in m15_b else "low"
-                            best_ch = min(candle_records, key=lambda c: abs(c[tgt_k] - choch_p_val))
-                            if abs(best_ch[tgt_k] - choch_p_val) < marker_tol:
-                                best_ch["isChoch"] = True
-
-                    zone_dict["candles"] = candle_records
+                    c_digits = int(asset_prof.get("digits", 2 if asset_prof.get("is_high_point") else 5))
+                    marker_tol = 17.0 if asset_prof.get("category") == "indices" else (2.0 if asset_prof.get("is_high_point") else 0.005)
+                    zone_dict["candles"] = _build_chart_candle_records(df_m5, 45, c_digits, marker_tol, m15_b, sweep_p_val, choch_p_val)
+                    zone_dict["candles_m1"] = _build_chart_candle_records(df_m1, 60, c_digits, marker_tol, m15_b, sweep_p_val, choch_p_val) if m1_ltf_now else []
+                    zone_dict["m1_active"] = bool(m1_ltf_now)
+                    zone_dict["execution_mode"] = exec_mode_str
+                    zone_dict["conditions_count"] = 6 if m1_ltf_now else 7
                     if opposing_tp_val > 0:
                         zone_dict["opposing_tp"] = opposing_tp_val
                         zone_dict["tp_price"] = opposing_tp_val

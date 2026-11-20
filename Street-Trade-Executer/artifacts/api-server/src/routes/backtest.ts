@@ -98,12 +98,13 @@ router.post("/backtest", async (req, res) => {
     const sessionFilterEnabled = req.body?.sessionFilterEnabled !== undefined ? Boolean(req.body.sessionFilterEnabled) : true;
     const breakevenEnabled = req.body?.breakevenEnabled !== undefined ? Boolean(req.body.breakevenEnabled) : true;
     const smartRiskCapEnabled = req.body?.smartRiskCapEnabled !== undefined ? Boolean(req.body.smartRiskCapEnabled) : true;
+    const m1LtfEnabled = req.body?.m1LtfEnabled !== undefined ? Boolean(req.body.m1LtfEnabled) : true;
 
     const range: "5d" | "1mo" = lookbackDays <= 5 ? "5d" : "1mo";
     const [m5Bars, m15Bars, m1Bars] = await Promise.all([
       fetchYahooOhlc(spec.yahooTicker, "5m", range),
       fetchYahooOhlc(spec.yahooTicker, "15m", "1mo"),
-      spec.category === "indices"
+      spec.category === "indices" && m1LtfEnabled
         ? fetchYahooOhlc(spec.yahooTicker, "1m", "7d").catch(() => [] as OhlcBar[])
         : Promise.resolve([] as OhlcBar[]),
     ]);
@@ -144,6 +145,7 @@ router.post("/backtest", async (req, res) => {
       sessionFilterEnabled,
       breakevenEnabled,
       smartRiskCapEnabled,
+      m1LtfEnabled,
       barsScannedM5: m5Bars.length,
       barsScannedM15: m15Bars.length,
       barsScannedM1: m1Bars.length,
