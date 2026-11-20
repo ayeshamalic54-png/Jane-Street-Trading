@@ -446,7 +446,7 @@ export default function Dashboard() {
     if (symbolMatchesAlias(polledPair, selectedChartSymbol)) {
       return smcTelemetry;
     }
-    return smcTelemetry || wsData?.smcTelemetry;
+    return null;
   }, [selectedChartSymbol, wsData?.smcTelemetry, wsData?.smcTelemetryAll, httpData, smcTelemetry]);
 
   useEffect(() => {
@@ -535,9 +535,6 @@ export default function Dashboard() {
   const matchingAsset =
     dashboard?.scannedAssets?.find((a: any) =>
       symbolMatchesAlias(a?.symbolPair || "", selectedChartSymbol)
-    ) ??
-    dashboard?.scannedAssets?.find(
-      (a: any) => (a?.symbolPair || "").startsWith(selectedChartSymbol) || (a?.symbolPair || "").endsWith(selectedChartSymbol)
     );
 
   const selectedAssetAction = matchingAsset?.action ?? "NONE";
@@ -1443,7 +1440,7 @@ export default function Dashboard() {
                 const isMetalSel = ["XAU", "GOLD", "XAG", "SILVER"].some((k) => symU.includes(k));
                 const m1LtfOn = Boolean((dashboard as any)?.m1LtfEnabled ?? true);
                 const isM1CardMode = m1LtfOn && (isIdxSel || Boolean(tel?.m1_active || tel?.execution_mode === "M1_LTF"));
-                const pricePrefixSel = isIdxSel ? "" : "$";
+                const pricePrefixSel = isMetalSel ? "$" : "";
                 const s8BufTxt = isIdxSel ? "6.50pt" : isMetalSel ? "$0.75" : "4p";
                 const s8CapTxt = isUs30Sel ? "105pt" : isNasSel ? "85pt" : isMetalSel ? "$10.00" : "50p";
                 const s9BufTxt = isIdxSel ? "-9.35pt" : isMetalSel ? "-$1.10" : "-3.5p";
@@ -1468,7 +1465,7 @@ export default function Dashboard() {
                         {s2Valid ? "PASS 🟢 (Wick Sweep)" : s1Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s2Valid ? `Sweep Price: ${pricePrefixSel}${Number(tel?.sweep_price ?? 0).toFixed(2)}` : "Awaiting Fresh Sweep"}
+                        {s2Valid ? `Sweep Price: ${pricePrefixSel}${formatAssetPrice(tel?.sweep_price ?? 0, selectedChartSymbol)}` : "Awaiting Fresh Sweep"}
                       </div>
                     </div>
 
@@ -1481,7 +1478,7 @@ export default function Dashboard() {
                         {s3Valid ? (chochText || "PASS 🟢 (Break)") : s2Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s3Valid ? `CHoCH: ${pricePrefixSel}${Number(tel?.choch_price ?? 0).toFixed(2)}` : `Awaiting ${isM1CardMode ? "M1" : "M5"} CHoCH`}
+                        {s3Valid ? `CHoCH: ${pricePrefixSel}${formatAssetPrice(tel?.choch_price ?? 0, selectedChartSymbol)}` : `Awaiting ${isM1CardMode ? "M1" : "M5"} CHoCH`}
                       </div>
                     </div>
 
@@ -1656,11 +1653,22 @@ export default function Dashboard() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
-                {[
-                  ...(dashboard?.metalsEnabled ?? true ? ["XAUUSD"] : []),
-                  ...(dashboard?.indicesEnabled ?? true ? ["US30", "NAS100"] : []),
-                  ...(dashboard?.forexEnabled ? ["EURUSD", "GBPUSD"] : []),
-                ].map((quickSym) => (
+                {Array.from(
+                  new Set([
+                    ...(dashboard?.metalsEnabled ?? true ? ["XAUUSD"] : []),
+                    ...(dashboard?.indicesEnabled ?? true ? ["US30", "NAS100"] : []),
+                    ...(dashboard?.forexEnabled
+                      ? [
+                          "EURUSD",
+                          "GBPUSD",
+                          "AUDUSD",
+                          ...((dashboard?.scannedAssets || [])
+                            .map((a: any) => String(a?.symbol || a?.symbolPair?.split("/")[0] || "").trim().toUpperCase())
+                            .filter((sym: string) => sym && !["XAU", "XAG", "US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "USTEC", "US100", "NDX", "BTC", "ETH", "SOL", "AAPL", "MSFT"].some((k) => sym.includes(k)))),
+                        ]
+                      : []),
+                  ])
+                ).map((quickSym) => (
                   <Button
                     key={quickSym}
                     type="button"
@@ -1844,12 +1852,13 @@ export default function Dashboard() {
                       const pairStr = String(asset?.symbolPair || "");
                       const legA = String(asset?.symbol || pairStr.split("/")[0] || pairStr);
                       const isRowSelected = symbolMatchesAlias(legA, selectedChartSymbol);
-                      const isMetalOrFx = !["US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "USTEC", "US100", "NDX"].some((k) => legA.toUpperCase().includes(k));
-                      const pPrefix = isMetalOrFx ? "$" : "";
+                      const isIdxRow = ["US30", "DJ30", "WS30", "DOW", "DJI", "NAS100", "USTEC", "US100", "NDX"].some((k) => legA.toUpperCase().includes(k));
+                      const isMetalRow = ["XAU", "GOLD", "XAG", "SILVER", "XPT", "XPD"].some((k) => legA.toUpperCase().includes(k));
+                      const pPrefix = isMetalRow ? "$" : "";
                       const markPx = Number(asset?.priceA || 0);
                       const tpPx = Number(asset?.opposingTp || 0);
                       const m1LtfOnRow = Boolean((dashboard as any)?.m1LtfEnabled ?? true);
-                      const totalSteps = Number(asset?.conditionsCount ?? ((m1LtfOnRow && (!isMetalOrFx || asset?.m1Active)) ? 6 : 7));
+                      const totalSteps = Number(asset?.conditionsCount ?? ((m1LtfOnRow && (isIdxRow || asset?.m1Active)) ? 6 : 7));
                       const stepsPassed = Math.min(totalSteps, Number(asset?.stepsPassed ?? 0));
                       const targetRrr = Number(asset?.targetRrr ?? 0);
                       const rawBias = String(asset?.m15Bias || "NEUTRAL").toUpperCase();

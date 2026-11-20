@@ -44,12 +44,32 @@ router.get("/smc_telemetry", async (req, res) => {
       row = broadRows[0];
     }
     if (!row) {
-      const fallbackRows = await db
-        .select()
-        .from(smcTelemetryTable)
-        .orderBy(desc(smcTelemetryTable.updatedAt))
-        .limit(1);
-      row = fallbackRows[0];
+      return res.json({
+        symbol_pair: pair,
+        m15_bias: "NEUTRAL ⚪",
+        sweep_status: "WAITING ⚪",
+        sweep_price: 0,
+        choch_status: "WAITING ⚪",
+        choch_price: 0,
+        fvg_status: "WAITING ⚪",
+        fvg_bounds_json: "{}",
+        candles: [],
+        candles_m1: [],
+        m1_active: false,
+        execution_mode: "M5_STRICT",
+        conditions_count: 7,
+        rejection_status: "WAITING ⚪",
+        action: "NONE",
+        updated_at: "",
+        retest_status: "WAITING ⚪",
+        s6_status: "WAITING ⚪",
+        s7_status: "WAITING ⚪",
+        s8_status: "PASS 🟢 (Structural Cap)",
+        s9_status: "WAITING ⚪ (Opposing Target)",
+        opposing_tp: 0,
+        target_rrr: 0,
+        steps_passed: 0,
+      });
     }
 
     const payload = formatSmcTelemetryPayload(row);

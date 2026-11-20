@@ -173,11 +173,16 @@ export function SmcChartOverlay({
   const isUs30 = ["US30", "DJ30", "WS30", "DOW", "DJI"].some((k) => symUp.includes(k));
   const isNas100 = ["NAS100", "USTEC", "US100", "NDX", "NQ100"].some((k) => symUp.includes(k));
   const isIndices = isUs30 || isNas100;
-  const defaultBuf = isIndices ? 6.50 : isMetals ? 0.75 : 0.0004;
-  const defaultMaxSlCap = isUs30 ? 105.0 : isNas100 ? 85.0 : isMetals ? 10.0 : 0.0050;
+  const isJpy = symUp.includes("JPY");
+  const isForex = !isIndices && !isMetals;
+  const priceDecimals = isForex ? (isJpy ? 3 : 5) : 2;
+  const roundPx = (val: number) => Number((Number(val) || 0).toFixed(priceDecimals));
+  const fmtPx = (val: number) => (Number(val) || 0).toFixed(priceDecimals);
+  const defaultBuf = isIndices ? 6.50 : isMetals ? 0.75 : (isJpy ? 0.040 : 0.00040);
+  const defaultMaxSlCap = isUs30 ? 105.0 : isNas100 ? 85.0 : isMetals ? 10.0 : (isJpy ? 0.50 : 0.0050);
   const bufBadgeStr = isIndices ? "6.50pt" : isMetals ? "$0.75" : "4p";
   const capBadgeStr = isUs30 ? "105pt" : isNas100 ? "85pt" : isMetals ? "$10.00" : "50p";
-  const pricePrefix = isIndices ? "" : "$";
+  const pricePrefix = isMetals ? "$" : "";
 
   // Extract SMC parameters safely
   const sweepPrice = Number(telemetry?.sweep_price ?? telemetry?.sweepPrice ?? 0);
@@ -263,12 +268,25 @@ export function SmcChartOverlay({
   const isBullishSetup = tradeDirection === "BUY" || isM15Bullish;
   const isBearishSetup = tradeDirection === "SELL" || isM15Bearish;
 
-  const livePrice =
-    currentPrice && currentPrice > 0
-      ? currentPrice
-      : sweepPrice > 0
-      ? sweepPrice
-      : 4138.99;
+  const livePrice = useMemo(() => {
+    if (currentPrice && currentPrice > 0) return currentPrice;
+    if (sweepPrice > 0) return sweepPrice;
+    const rawM5Arr = Array.isArray(telemetry?.candles) ? telemetry.candles : null;
+    if (rawM5Arr && rawM5Arr.length > 0) {
+      const lastC = Number(rawM5Arr[rawM5Arr.length - 1]?.close || 0);
+      if (lastC > 0) return lastC;
+    }
+    const rawM1Arr = Array.isArray(telemetry?.candles_m1) ? telemetry.candles_m1 : null;
+    if (rawM1Arr && rawM1Arr.length > 0) {
+      const lastC = Number(rawM1Arr[rawM1Arr.length - 1]?.close || 0);
+      if (lastC > 0) return lastC;
+    }
+    if (isJpy) return 155.000;
+    if (isForex) return 1.10000;
+    if (isUs30) return 44000.00;
+    if (isNas100) return 21000.00;
+    return 3500.00;
+  }, [currentPrice, sweepPrice, telemetry, isJpy, isForex, isUs30, isNas100]);
 
   // Reliable Projected / Active Entry Price
   const effectiveEntryPrice = useMemo(() => {
@@ -278,7 +296,7 @@ export function SmcChartOverlay({
     return livePrice;
   }, [hasActivePosition, activePosition, livePrice]);
 
-  // Strict SL: prioritize active position SL, then engine/telemetry sl_price (M1/FVG-Refined), then Sweep ± asset buffer ($0.75 Gold / 6.50pt Indices)
+  // Strict SL: prioritize active position SL, then engine/telemetry sl_price (M1/FVG-Refined), then Sweep ± asset buffer
   const effectiveSlPrice = useMemo(() => {
     if (hasActivePosition && activePosition && (Number(activePosition.sl) > 0 || Number(activePosition.slPrice) > 0)) {
       return Number(activePosition.sl || activePosition.slPrice);
@@ -293,21 +311,22 @@ export function SmcChartOverlay({
         } catch {}
       }
     }
-    if (telSl > 0 && Math.abs(effectiveEntryPrice - telSl) >= (isIndices ? 12.0 : isMetals ? 2.0 : 0.0005)) {
-      return Number(telSl.toFixed(isMetals || isIndices ? 2 : 5));
+    const minSlSpan = isIndices ? 12.0 : isMetals ? 2.0 : (isJpy ? 0.05 : 0.0005);
+    if (telSl > 0 && Math.abs(effectiveEntryPrice - telSl) >= minSlSpan) {
+      return roundPx(telSl);
     }
-    const minSweepDist = isIndices ? 15.0 : isMetals ? 3.0 : 0.0010;
+    const minSweepDist = isIndices ? 15.0 : isMetals ? 3.0 : (isJpy ? 0.10 : 0.0010);
     if (sweepPrice > 0 && Math.abs(effectiveEntryPrice - sweepPrice) >= minSweepDist) {
       return isBearishSetup
-        ? Number((sweepPrice + defaultBuf).toFixed(isMetals || isIndices ? 2 : 5))
-        : Number((sweepPrice - defaultBuf).toFixed(isMetals || isIndices ? 2 : 5));
+        ? roundPx(sweepPrice + defaultBuf)
+        : roundPx(sweepPrice - defaultBuf);
     }
     // Baseline institutional SMC structural risk:
-    const defaultSlDist = isIndices ? 58.0 : isMetals ? 7.50 : 0.0020;
+    const defaultSlDist = isIndices ? 58.0 : isMetals ? 7.50 : (isJpy ? 0.18 : 0.0018);
     return isBearishSetup
-      ? Number((effectiveEntryPrice + defaultSlDist).toFixed(isMetals || isIndices ? 2 : 5))
-      : Number((effectiveEntryPrice - defaultSlDist).toFixed(isMetals || isIndices ? 2 : 5));
-  }, [hasActivePosition, activePosition, telemetry, sweepPrice, isBearishSetup, defaultBuf, effectiveEntryPrice, isMetals, isIndices]);
+      ? roundPx(effectiveEntryPrice + defaultSlDist)
+      : roundPx(effectiveEntryPrice - defaultSlDist);
+  }, [hasActivePosition, activePosition, telemetry, sweepPrice, isBearishSetup, defaultBuf, effectiveEntryPrice, isMetals, isIndices, isJpy, priceDecimals]);
 
   // Strict TP: dynamically prioritize opposing liquidity target from engine/telemetry, or calculated opposing target
   const effectiveTpPrice = useMemo(() => {
@@ -330,10 +349,10 @@ export function SmcChartOverlay({
       }
     }
     if (telTp && telTp > 0) {
-      return Number(telTp.toFixed(2));
+      return roundPx(telTp);
     }
     // Structural dealing range fallback: Target Swing Low (Bearish) or Swing High (Bullish) front-run by buffer
-    const frontRunBuf = isIndices ? 9.35 : isMetals ? 0.75 : 0.0003;
+    const frontRunBuf = isIndices ? 9.35 : isMetals ? 0.75 : (isJpy ? 0.035 : 0.00035);
     let swLo = 0, swHi = 0;
     try {
       const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
@@ -346,16 +365,17 @@ export function SmcChartOverlay({
       }
     } catch {}
     if (isBearishSetup && swLo > 0 && swLo < effectiveEntryPrice) {
-      return Number((swLo + frontRunBuf).toFixed(2));
+      return roundPx(swLo + frontRunBuf);
     }
     if (isBullishSetup && swHi > 0 && swHi > effectiveEntryPrice) {
-      return Number((swHi - frontRunBuf).toFixed(2));
+      return roundPx(swHi - frontRunBuf);
     }
-    const slDist = Math.max(isIndices ? 21.25 : isMetals ? 2.5 : 0.0015, Math.abs(effectiveEntryPrice - effectiveSlPrice));
+    const minFallbackSl = isIndices ? 21.25 : isMetals ? 2.5 : (isJpy ? 0.12 : 0.0012);
+    const slDist = Math.max(minFallbackSl, Math.abs(effectiveEntryPrice - effectiveSlPrice));
     return isBearishSetup
-      ? Number((effectiveEntryPrice - 1.8 * slDist).toFixed(2))
-      : Number((effectiveEntryPrice + 1.8 * slDist).toFixed(2));
-  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isBullishSetup, isMetals, isIndices, telemetry]);
+      ? roundPx(effectiveEntryPrice - 1.85 * slDist)
+      : roundPx(effectiveEntryPrice + 1.85 * slDist);
+  }, [hasActivePosition, activePosition, effectiveEntryPrice, effectiveSlPrice, isBearishSetup, isBullishSetup, isMetals, isIndices, isJpy, priceDecimals, telemetry]);
 
   const effectiveRrr = useMemo(() => {
     const slDist = Math.abs(effectiveEntryPrice - effectiveSlPrice);
@@ -433,13 +453,19 @@ export function SmcChartOverlay({
 
       const sliced = rawList.slice(-maxCount);
 
+      // Guard against stale cross-asset candle scale mismatches (e.g., XAUUSD $3500 vs EURUSD 1.09)
+      const sampleClose = Number(rawList[rawList.length - 1]?.close || 0);
+      if (currentPrice && currentPrice > 0 && sampleClose > 0 && Math.abs(sampleClose - currentPrice) > Math.max(currentPrice * 0.25, 0.1)) {
+        return { realCandles: null, hasRealM1: false, hasRealM5: false };
+      }
+
       // Map to Candle objects
       const mapped: Candle[] = sliced.map((c, i) => {
         const isLast = i === sliced.length - 1;
         const openP = Number(c.open);
-        const closeP = isLast && livePrice > 0 ? livePrice : Number(c.close);
-        const highP = isLast && livePrice > 0 ? Math.max(Number(c.high), livePrice) : Number(c.high);
-        const lowP = isLast && livePrice > 0 ? Math.min(Number(c.low), livePrice) : Number(c.low);
+        const closeP = isLast && livePrice > 0 && Math.abs(livePrice - openP) < Math.max(openP * 0.15, 0.05) ? livePrice : Number(c.close);
+        const highP = isLast ? Math.max(Number(c.high), closeP) : Number(c.high);
+        const lowP = isLast ? Math.min(Number(c.low), closeP) : Number(c.low);
         return {
           time: c.time || "",
           open: openP,
@@ -455,6 +481,7 @@ export function SmcChartOverlay({
         };
       });
 
+      const markerTol = isIndices ? 17.0 : isMetals ? 2.5 : (isJpy ? 0.30 : 0.0030);
       // Identify milestone candles if not already tagged
       if (s2Pass && sweepPrice > 0 && !mapped.some((c) => c.isSweep)) {
         let bestIdx = -1;
@@ -467,7 +494,7 @@ export function SmcChartOverlay({
             bestIdx = idx;
           }
         });
-        if (bestIdx >= 0 && bestDiff < (isIndices ? 17.0 : isMetals ? 2.5 : 0.005)) {
+        if (bestIdx >= 0 && bestDiff < markerTol) {
           mapped[bestIdx].isSweep = true;
         }
       }
@@ -483,7 +510,7 @@ export function SmcChartOverlay({
             bestIdx = idx;
           }
         });
-        if (bestIdx >= 0 && bestDiff < (isIndices ? 17.0 : isMetals ? 2.5 : 0.005)) {
+        if (bestIdx >= 0 && bestDiff < markerTol) {
           mapped[bestIdx].isChoch = true;
         }
       }
@@ -492,9 +519,9 @@ export function SmcChartOverlay({
     } catch {
       return { realCandles: null, hasRealM1: false, hasRealM5: false };
     }
-  }, [telemetry, chartTimeframe, livePrice, zoomLevel, isMobile, s2Pass, s3Pass, sweepPrice, chochPrice, isBullishSetup, isMetals, isIndices]);
+  }, [telemetry, chartTimeframe, currentPrice, livePrice, zoomLevel, isMobile, s2Pass, s3Pass, sweepPrice, chochPrice, isBullishSetup, isMetals, isIndices, isJpy]);
 
-  // Construct Realistic M5 Candlesticks Graphically Representing the SMC Sequence (Real MT5 + Schematic Fallback)
+  // Construct Realistic M5/M1 Candlesticks Graphically Representing the SMC Sequence (Real MT5 + Schematic Fallback)
   const candles = useMemo<Candle[]>(() => {
     // If real MT5 candlesticks are available from bot telemetry, use them directly!
     if (realCandles && realCandles.length >= 8) {
@@ -502,7 +529,7 @@ export function SmcChartOverlay({
     }
 
     const bars: Candle[] = [];
-    const step = isIndices ? 5.5 : isMetals ? 0.65 : 0.0003;
+    const step = isIndices ? 5.5 : isMetals ? 0.65 : (isJpy ? 0.03 : 0.0003);
     const now = Date.now();
     const count = isMobile
       ? Math.max(8, Math.min(36, Math.round(18 / zoomLevel)))
@@ -513,15 +540,15 @@ export function SmcChartOverlay({
       sweepPrice > 0
         ? sweepPrice
         : isBullishSetup
-        ? Number((livePrice - step * 6.5).toFixed(2))
-        : Number((livePrice + step * 6.5).toFixed(2));
+        ? roundPx(livePrice - step * 6.5)
+        : roundPx(livePrice + step * 6.5);
 
     const chP =
       chochPrice > 0
         ? chochPrice
         : isBullishSetup
-        ? Number((swP + step * 4.0).toFixed(2))
-        : Number((swP - step * 4.0).toFixed(2));
+        ? roundPx(swP + step * 4.0)
+        : roundPx(swP - step * 4.0);
 
     // Milestone bar indices across the timeline (0 = oldest, count - 1 = live forming bar)
     const sweepIdx = Math.max(2, Math.floor(count * 0.35));
@@ -602,11 +629,12 @@ export function SmcChartOverlay({
 
       if (k === sweepIdx) {
         // Accentuate the liquidity sweep wick
+        const sweepDip = isIndices ? 3.0 : isMetals ? 0.35 : (isJpy ? 0.02 : 0.0002);
         if (isBullishSetup) {
-          lowP = swP - (isIndices ? 3.0 : isMetals ? 0.35 : 0.0002);
+          lowP = swP - sweepDip;
           highP = Math.max(openP, closeP) + step * 0.2;
         } else {
-          highP = swP + (isIndices ? 3.0 : isMetals ? 0.35 : 0.0002);
+          highP = swP + sweepDip;
           lowP = Math.min(openP, closeP) - step * 0.2;
         }
       } else if (k === liveIdx) {
@@ -624,10 +652,10 @@ export function SmcChartOverlay({
 
       bars.push({
         time: timeStr,
-        open: Number(openP.toFixed(2)),
-        high: Number(highP.toFixed(2)),
-        low: Number(lowP.toFixed(2)),
-        close: Number(closeP.toFixed(2)),
+        open: roundPx(openP),
+        high: roundPx(highP),
+        low: roundPx(lowP),
+        close: roundPx(closeP),
         isBullish: closeP >= openP,
         volume: 720,
         isSweep,
@@ -669,8 +697,8 @@ export function SmcChartOverlay({
       high: number;
       label: string;
     }> = [];
-    const maxDist = isIndices ? 153.0 : isMetals ? 18.0 : 0.0080;
-    const dupTol = isIndices ? 3.0 : isMetals ? 0.35 : 0.0003;
+    const maxDist = isIndices ? 153.0 : isMetals ? 18.0 : (isJpy ? 1.50 : 0.0150);
+    const dupTol = isIndices ? 3.0 : isMetals ? 0.35 : (isJpy ? 0.03 : 0.0003);
     const seenRanges: string[] = [];
 
     const getCategory = (typeStr: string, labelStr: string) => {
@@ -740,25 +768,25 @@ export function SmcChartOverlay({
   // FVG Bounds: When M1 LTF active check M1 candles first, then bot telemetry M5 zones; never fabricate fake FVG before CHoCH
   const fvgBounds = useMemo(() => {
     if (chartTimeframe === "M1" && showM1Mode && hasRealM1 && realCandles && realCandles.length >= 6) {
-      const m1GapMin = isIndices ? 2.2 : isMetals ? 0.25 : 0.0001;
+      const m1GapMin = isIndices ? 2.2 : isMetals ? 0.25 : (isJpy ? 0.015 : 0.00015);
       for (let i = realCandles.length - 1; i >= 2; i--) {
         if (isBullishSetup) {
           const lowB = realCandles[i - 2].high;
           const highB = realCandles[i].low;
-          if (highB - lowB >= m1GapMin && Math.abs((lowB + highB) / 2 - livePrice) <= (isIndices ? 120.0 : 12.0)) {
+          if (highB - lowB >= m1GapMin && Math.abs((lowB + highB) / 2 - livePrice) <= (isIndices ? 120.0 : isMetals ? 12.0 : (isJpy ? 0.80 : 0.0080))) {
             let mit = false;
             for (let j = i + 1; j < realCandles.length - 1; j++) {
-              if (realCandles[j].close < lowB - 1.0) { mit = true; break; }
+              if (realCandles[j].close < lowB - (isIndices ? 1.0 : isMetals ? 0.10 : (isJpy ? 0.01 : 0.0001))) { mit = true; break; }
             }
             if (!mit) return { low: lowB, high: highB, label: "M1 DISPLACEMENT FVG" };
           }
         } else {
           const highB = realCandles[i - 2].low;
           const lowB = realCandles[i].high;
-          if (highB - lowB >= m1GapMin && Math.abs((lowB + highB) / 2 - livePrice) <= (isIndices ? 120.0 : 12.0)) {
+          if (highB - lowB >= m1GapMin && Math.abs((lowB + highB) / 2 - livePrice) <= (isIndices ? 120.0 : isMetals ? 12.0 : (isJpy ? 0.80 : 0.0080))) {
             let mit = false;
             for (let j = i + 1; j < realCandles.length - 1; j++) {
-              if (realCandles[j].close > highB + 1.0) { mit = true; break; }
+              if (realCandles[j].close > highB + (isIndices ? 1.0 : isMetals ? 0.10 : (isJpy ? 0.01 : 0.0001))) { mit = true; break; }
             }
             if (!mit) return { low: lowB, high: highB, label: "M1 DISPLACEMENT FVG" };
           }
@@ -775,12 +803,13 @@ export function SmcChartOverlay({
           const list = isBullishSetup
             ? parsed.bullish_fvg || []
             : parsed.bearish_fvg || [];
+          const fvgProx = isIndices ? 153.0 : isMetals ? 15.0 : (isJpy ? 1.20 : 0.0120);
           for (const item of [...list].reverse()) {
             if (Array.isArray(item) && item.length >= 2) {
               const l = Number(item[0]);
               const h = Number(item[1]);
               const avg = (l + h) / 2;
-              if (Math.abs(avg - livePrice) <= (isIndices ? 153.0 : isMetals ? 15.0 : 0.0080) && h > l) {
+              if (Math.abs(avg - livePrice) <= fvgProx && h > l) {
                 return { low: l, high: h, label: chartTimeframe === "M1" ? "M5/M1 BOT FVG" : "BOT DETECTED FVG" };
               }
             }
@@ -799,15 +828,15 @@ export function SmcChartOverlay({
 
     // 3. Structural displacement fallback only after CHoCH + Sweep actually confirmed (never draw fake FVG while Sweep is pending)
     if (s4Pass && sweepPrice > 0 && chochPrice > 0) {
-      const low = isBullishSetup ? Number((sweepPrice + (chochPrice - sweepPrice) * 0.35).toFixed(2)) : Number((chochPrice + (sweepPrice - chochPrice) * 0.35).toFixed(2));
-      const high = isBullishSetup ? Number((sweepPrice + (chochPrice - sweepPrice) * 0.65).toFixed(2)) : Number((chochPrice + (sweepPrice - chochPrice) * 0.65).toFixed(2));
+      const low = isBullishSetup ? roundPx(sweepPrice + (chochPrice - sweepPrice) * 0.35) : roundPx(chochPrice + (sweepPrice - chochPrice) * 0.35);
+      const high = isBullishSetup ? roundPx(sweepPrice + (chochPrice - sweepPrice) * 0.65) : roundPx(chochPrice + (sweepPrice - chochPrice) * 0.65);
       if (high > low) {
         return { low: Math.min(low, high), high: Math.max(low, high), label: chartTimeframe === "M1" ? "M1 DISPLACEMENT FVG" : "C4 DISPLACEMENT FVG" };
       }
     }
 
     return null;
-  }, [telemetry, chartTimeframe, showM1Mode, hasRealM1, realCandles, parsedActiveZones, livePrice, sweepPrice, chochPrice, isMetals, isIndices, isBullishSetup, s4Pass]);
+  }, [telemetry, chartTimeframe, showM1Mode, hasRealM1, realCandles, parsedActiveZones, livePrice, sweepPrice, chochPrice, isMetals, isIndices, isJpy, priceDecimals, isBullishSetup, s4Pass]);
 
   // Institutional Swing Structure Levels (Buy-Side & Sell-Side Liquidity + Real Confirmed CHoCH Only)
   const swingStructure = useMemo(() => {
@@ -826,17 +855,17 @@ export function SmcChartOverlay({
     const chochLvl = chochPrice > 0 && s3Pass ? chochPrice : 0;
 
     return {
-      swingHigh: Number(swingHigh.toFixed(2)),
-      swingLow: Number(swingLow.toFixed(2)),
-      chochLvl: Number(chochLvl.toFixed(2)),
+      swingHigh: roundPx(swingHigh),
+      swingLow: roundPx(swingLow),
+      chochLvl: roundPx(chochLvl),
     };
-  }, [candles, sweepPrice, chochPrice, s3Pass, isBullishSetup, isBearishSetup]);
+  }, [candles, sweepPrice, chochPrice, s3Pass, isBullishSetup, isBearishSetup, priceDecimals]);
 
   // Dimensions & Price Mapping (Full-Height TradingView Candlestick Proportions)
   const svgWidth = Math.max(320, containerWidth);
   const svgHeight = isMobile ? 440 : 470;
   const chartLeft = isMobile ? 6 : 20;
-  const rightTagWidth = isMobile ? 104 : 148;
+  const rightTagWidth = isMobile ? 108 : 154;
   const chartRight = svgWidth - (rightTagWidth + 6);
   const chartTop = isMobile ? 16 : 25;
   const chartBottom = svgHeight - (isMobile ? 26 : 35);
@@ -847,17 +876,21 @@ export function SmcChartOverlay({
   const showTpLevel = isTradeActive || s4Pass;
   const showEntryLevel = isTradeActive || closedRejectPass;
 
-  // STRICT M5 SCALPING SCALING: Scale to VISIBLE CANDLESTICKS so candles are tall, bold, and dynamic!
+  // STRICT SCALPING SCALING: Scale cleanly to VISIBLE CANDLESTICKS across Metals, Indices & 5-decimal Forex/JPY!
   const rawCandleLows = useMemo(() => candles.map((c) => c.low), [candles]);
   const rawCandleHighs = useMemo(() => candles.map((c) => c.high), [candles]);
-  const candleMin = Math.min(...rawCandleLows, livePrice);
-  const candleMax = Math.max(...rawCandleHighs, livePrice);
-  const candleSpan = candleMax - candleMin || 1;
-  const vertPad = Math.max(isIndices ? 7.5 : isMetals ? 0.90 : 0.0005, candleSpan * 0.16);
+  const candleBaseLow = Math.min(...rawCandleLows);
+  const candleBaseHigh = Math.max(...rawCandleHighs);
+  const baseSpan = Math.max(candleBaseHigh - candleBaseLow, isIndices ? 5.0 : isMetals ? 0.5 : (isJpy ? 0.01 : 0.0001));
+  const useLiveInBounds = livePrice > 0 && Math.abs(livePrice - (candleBaseLow + candleBaseHigh) / 2) <= Math.max(baseSpan * 15, isIndices ? 300 : isMetals ? 35 : (isJpy ? 2.5 : 0.025));
+  const candleMin = useLiveInBounds ? Math.min(candleBaseLow, livePrice) : candleBaseLow;
+  const candleMax = useLiveInBounds ? Math.max(candleBaseHigh, livePrice) : candleBaseHigh;
+  const candleSpan = Math.max(candleMax - candleMin, isIndices ? 5.0 : isMetals ? 0.5 : (isJpy ? 0.01 : 0.0001));
+  const vertPad = Math.max(candleSpan * 0.16, isIndices ? 7.5 : isMetals ? 0.90 : (isJpy ? 0.008 : 0.00008));
 
   const minPrice = useMemo(() => {
     let min = candleMin - vertPad;
-    const pad = isIndices ? 6.8 : isMetals ? 0.80 : 0.0004;
+    const pad = Math.max(candleSpan * 0.10, isIndices ? 6.8 : isMetals ? 0.80 : (isJpy ? 0.006 : 0.00006));
     if (showSlLevel && effectiveSlPrice > 0 && candleMin - effectiveSlPrice <= candleSpan * 1.5) {
       min = Math.min(min, effectiveSlPrice - pad);
     }
@@ -870,12 +903,12 @@ export function SmcChartOverlay({
     if (fvgBounds && fvgBounds.low > 0 && candleMin - fvgBounds.low <= candleSpan * 1.2) {
       min = Math.min(min, fvgBounds.low - pad);
     }
-    return Number(min.toFixed(2));
-  }, [candleMin, vertPad, candleSpan, showSlLevel, effectiveSlPrice, showTpLevel, effectiveTpPrice, swingStructure.swingLow, fvgBounds, isMetals, isIndices]);
+    return roundPx(min);
+  }, [candleMin, vertPad, candleSpan, showSlLevel, effectiveSlPrice, showTpLevel, effectiveTpPrice, swingStructure.swingLow, fvgBounds, isMetals, isIndices, isJpy, priceDecimals]);
 
   const maxPrice = useMemo(() => {
     let max = candleMax + vertPad;
-    const pad = isIndices ? 6.8 : isMetals ? 0.80 : 0.0004;
+    const pad = Math.max(candleSpan * 0.10, isIndices ? 6.8 : isMetals ? 0.80 : (isJpy ? 0.006 : 0.00006));
     if (showTpLevel && effectiveTpPrice > 0 && effectiveTpPrice - candleMax <= candleSpan * 1.5) {
       max = Math.max(max, effectiveTpPrice + pad);
     }
@@ -888,10 +921,11 @@ export function SmcChartOverlay({
     if (fvgBounds && fvgBounds.high > 0 && fvgBounds.high - candleMax <= candleSpan * 1.2) {
       max = Math.max(max, fvgBounds.high + pad);
     }
-    return Number(max.toFixed(2));
-  }, [candleMax, vertPad, candleSpan, showTpLevel, effectiveTpPrice, showSlLevel, effectiveSlPrice, swingStructure.swingHigh, fvgBounds, isMetals, isIndices]);
+    return roundPx(max);
+  }, [candleMax, vertPad, candleSpan, showTpLevel, effectiveTpPrice, showSlLevel, effectiveSlPrice, swingStructure.swingHigh, fvgBounds, isMetals, isIndices, isJpy, priceDecimals]);
 
-  const priceRange = maxPrice - minPrice || 1;
+  const minRangeFloor = isIndices ? 1.0 : isMetals ? 0.10 : (isJpy ? 0.01 : 0.00010);
+  const priceRange = Math.max(maxPrice - minPrice, minRangeFloor);
 
   const getY = (priceVal: number) => {
     const clamped = Math.max(minPrice, Math.min(maxPrice, priceVal));
@@ -916,10 +950,10 @@ export function SmcChartOverlay({
       isHigh: boolean;
     }> = [];
 
-    // Find fractal swing peaks & valleys calibrated to active M1 vs M5 timeframe
+    // Find fractal swing peaks & valleys calibrated to active M1 vs M5 timeframe & asset scale
     const minAmp = chartTimeframe === "M1"
-      ? (isIndices ? 6.0 : isMetals ? 0.90 : 0.0005)
-      : (isIndices ? 21.25 : isMetals ? 2.50 : 0.0018);
+      ? (isIndices ? 6.0 : isMetals ? 0.90 : (isJpy ? 0.04 : 0.0003))
+      : (isIndices ? 21.25 : isMetals ? 2.50 : (isJpy ? 0.10 : 0.0009));
 
     // Find institutional structural swing peaks & valleys (2-bar window + min depth filter)
     for (let i = 2; i < candles.length - 2; i++) {
@@ -1166,7 +1200,7 @@ export function SmcChartOverlay({
         strokeWidth: s5Pass ? 2.5 : 1.5,
         glowFilter: s5Pass ? "url(#glowGreen)" : undefined,
         badgeTitle: s5Pass ? "S5 FVG" : s4Pass ? "S4 FVG" : "FVG",
-        badgeSub: `${fvgBounds.low.toFixed(2)}-${fvgBounds.high.toFixed(2)}`,
+        badgeSub: `${fmtPx(fvgBounds.low)}-${fmtPx(fvgBounds.high)}`,
         isPrimaryFvg: true,
       });
     }
@@ -1176,9 +1210,10 @@ export function SmcChartOverlay({
       const isOB = z.type.toUpperCase().includes("OB");
       const isBreaker = z.type.toUpperCase().includes("BREAKER");
       const isIFVG = z.type.toUpperCase().includes("IFVG") || z.name.toUpperCase().includes("IFVG");
+      const dupZoneTol = isIndices ? 0.5 : isMetals ? 0.05 : (isJpy ? 0.005 : 0.00005);
 
       // Exclude only duplicate FVG ranges already rendered by primary fvgBounds (never suppress OB/BREAKER/iFVG)
-      if (!isOB && !isBreaker && !isIFVG && fvgBounds && Math.abs(fvgBounds.low - z.low) < 0.05 && Math.abs(fvgBounds.high - z.high) < 0.05) {
+      if (!isOB && !isBreaker && !isIFVG && fvgBounds && Math.abs(fvgBounds.low - z.low) < dupZoneTol && Math.abs(fvgBounds.high - z.high) < dupZoneTol) {
         return;
       }
 
@@ -1256,7 +1291,7 @@ export function SmcChartOverlay({
         strokeDash,
         strokeWidth,
         badgeTitle: shortName,
-        badgeSub: `${z.low.toFixed(2)}-${z.high.toFixed(2)}`,
+        badgeSub: `${fmtPx(z.low)}-${fmtPx(z.high)}`,
         isPrimaryFvg: false,
       });
     });
@@ -1336,12 +1371,14 @@ export function SmcChartOverlay({
       borderStroke: "#94a3b8",
       textColor: "#000000",
       fontSize: isMobile ? "9" : "10.5",
-      label: `LIVE ${pricePrefix}${livePrice.toFixed(2)}`,
+      label: `LIVE ${pricePrefix}${fmtPx(livePrice)}`,
       priority: 100,
     });
 
+    const entrySepTol = isIndices ? 0.5 : isMetals ? 0.15 : (isJpy ? 0.015 : 0.00015);
+    const beCheckTol = isIndices ? 2.5 : isMetals ? 0.40 : (isJpy ? 0.04 : 0.0004);
     // 2. Active Entry Level (Only show if separate from LIVE)
-    if (showEntryLevel && effectiveEntryPrice > 0 && (isTradeActive || Math.abs(effectiveEntryPrice - livePrice) >= 0.15)) {
+    if (showEntryLevel && effectiveEntryPrice > 0 && (isTradeActive || Math.abs(effectiveEntryPrice - livePrice) >= entrySepTol)) {
       list.push({
         id: "entry",
         price: effectiveEntryPrice,
@@ -1351,7 +1388,7 @@ export function SmcChartOverlay({
         borderStroke: "#38bdf8",
         textColor: "#ffffff",
         fontSize: isMobile ? "8.5" : "10",
-        label: isMobile ? `ENT ${pricePrefix}${effectiveEntryPrice.toFixed(2)}` : `🔵 ENTRY ${pricePrefix}${effectiveEntryPrice.toFixed(2)}`,
+        label: isMobile ? `ENT ${pricePrefix}${fmtPx(effectiveEntryPrice)}` : `🔵 ENTRY ${pricePrefix}${fmtPx(effectiveEntryPrice)}`,
         priority: 92,
       });
     }
@@ -1367,7 +1404,7 @@ export function SmcChartOverlay({
         borderStroke: s3Pass ? "#fde68a" : "#d97706",
         textColor: "#ffffff",
         fontSize: isMobile ? "8.5" : "10",
-        label: isMobile ? `CHOCH ${pricePrefix}${swingStructure.chochLvl.toFixed(2)}` : `CHOCH ${pricePrefix}${swingStructure.chochLvl.toFixed(2)}`,
+        label: `CHOCH ${pricePrefix}${fmtPx(swingStructure.chochLvl)}`,
         priority: 95,
       });
     }
@@ -1384,12 +1421,12 @@ export function SmcChartOverlay({
         textColor: "#ffffff",
         fontSize: isMobile ? "8.5" : "10",
         label: isMobile
-          ? `SL ${pricePrefix}${effectiveSlPrice.toFixed(2)}`
+          ? `SL ${pricePrefix}${fmtPx(effectiveSlPrice)}`
           : isTradeActive
-          ? Math.abs(effectiveSlPrice - effectiveEntryPrice) < (isIndices ? 2.5 : 0.40)
-            ? `BE ${pricePrefix}${effectiveSlPrice.toFixed(2)}`
-            : `SL ${pricePrefix}${effectiveSlPrice.toFixed(2)}`
-          : `SL ${pricePrefix}${effectiveSlPrice.toFixed(2)}`,
+          ? Math.abs(effectiveSlPrice - effectiveEntryPrice) < beCheckTol
+            ? `BE ${pricePrefix}${fmtPx(effectiveSlPrice)}`
+            : `SL ${pricePrefix}${fmtPx(effectiveSlPrice)}`
+          : `SL ${pricePrefix}${fmtPx(effectiveSlPrice)}`,
         priority: 88,
       });
     }
@@ -1405,7 +1442,7 @@ export function SmcChartOverlay({
         borderStroke: isTradeActive ? "#6ee7b7" : "#059669",
         textColor: "#ffffff",
         fontSize: isMobile ? "8.5" : "10",
-        label: isMobile ? `TP ${pricePrefix}${effectiveTpPrice.toFixed(2)}` : `TP ${pricePrefix}${effectiveTpPrice.toFixed(2)}`,
+        label: `TP ${pricePrefix}${fmtPx(effectiveTpPrice)}`,
         priority: 86,
       });
     }
@@ -1425,7 +1462,7 @@ export function SmcChartOverlay({
           borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
           textColor: "#ffffff",
           fontSize: isMobile ? "8.5" : "9.5",
-          label: isSwept ? `SWEPT ${pricePrefix}${swingStructure.swingHigh.toFixed(2)}` : `SW HI ${pricePrefix}${swingStructure.swingHigh.toFixed(2)}`,
+          label: isSwept ? `SWEPT ${pricePrefix}${fmtPx(swingStructure.swingHigh)}` : `SW HI ${pricePrefix}${fmtPx(swingStructure.swingHigh)}`,
           priority: 50,
         });
       }
@@ -1446,7 +1483,7 @@ export function SmcChartOverlay({
           borderStroke: isSwept ? "#a5f3fc" : "#0891b2",
           textColor: "#ffffff",
           fontSize: isMobile ? "8.5" : "9.5",
-          label: isSwept ? `SWEPT ${pricePrefix}${swingStructure.swingLow.toFixed(2)}` : `SW LO ${pricePrefix}${swingStructure.swingLow.toFixed(2)}`,
+          label: isSwept ? `SWEPT ${pricePrefix}${fmtPx(swingStructure.swingLow)}` : `SW LO ${pricePrefix}${fmtPx(swingStructure.swingLow)}`,
           priority: 50,
         });
       }
@@ -1613,7 +1650,7 @@ export function SmcChartOverlay({
             <div className="flex items-center gap-2">
               <span className="font-mono text-sm font-black uppercase tracking-wider text-white">
                 {isTradeActive
-                  ? `⚡ TRADE ACTIVE: ${tradeDirection} EXECUTED @ ${pricePrefix}${entryPrice.toFixed(2)}`
+                  ? `⚡ TRADE ACTIVE: ${tradeDirection} EXECUTED @ ${pricePrefix}${fmtPx(entryPrice)}`
                   : s1Pass
                   ? `🔍 SETUP SCANNING — ${passedCount} OF ${totalSteps} (${showM1Mode ? "M1 LTF" : "M5"}) CONDITIONS VERIFIED`
                   : "⚪ ORDER FLOW MONITORING — NO ACTIVE TRADE"}
@@ -1634,9 +1671,9 @@ export function SmcChartOverlay({
             </div>
             <p className="text-xs text-zinc-300 mt-0.5">
               {isTradeActive
-                ? `Running ${tradeDirection} on ${symbol} | Lot: ${Number(activePosition?.volume || activePosition?.lots || (isMetals ? 0.07 : isIndices ? 0.70 : 0.51)).toFixed(2)} | SL: ${pricePrefix}${slPrice.toFixed(2)} ${
-                    Math.abs(slPrice - entryPrice) < (isIndices ? 2.5 : 0.40) ? "(Breakeven 🛡️)" : `(${bufBadgeStr} Buf)`
-                  } | TP: ${pricePrefix}${tpPrice.toFixed(2)} (Opposing Liquidity Target) ${
+                ? `Running ${tradeDirection} on ${symbol} | Lot: ${Number(activePosition?.volume || activePosition?.lots || (isMetals ? 0.07 : isIndices ? 0.70 : 0.51)).toFixed(2)} | SL: ${pricePrefix}${fmtPx(slPrice)} ${
+                    Math.abs(slPrice - entryPrice) < (isIndices ? 2.5 : isMetals ? 0.40 : (isJpy ? 0.04 : 0.0004)) ? "(Breakeven 🛡️)" : `(${bufBadgeStr} Buf)`
+                  } | TP: ${pricePrefix}${fmtPx(tpPrice)} (Opposing Liquidity Target) ${
                     hasActivePosition && activePosition.profit !== undefined
                       ? `| Float P&L: $${Number(activePosition.profit).toFixed(2)}`
                       : ""
@@ -1678,18 +1715,18 @@ export function SmcChartOverlay({
           )}
 
           <div className="px-3 py-1 rounded bg-zinc-900 border border-zinc-700 text-white font-bold shadow-sm" title="Exact MT5 Broker Midpoint (Bid+Ask)/2">
-            MT5 Broker: <span className="text-emerald-400 font-black">{pricePrefix}{livePrice.toFixed(2)}</span>
+            MT5 Broker: <span className="text-emerald-400 font-black">{pricePrefix}{fmtPx(livePrice)}</span>
           </div>
 
           {sweepPrice > 0 && (
             <div className="px-3 py-1 rounded bg-cyan-950 border border-cyan-500 text-cyan-300 font-bold shadow-sm">
-              Sweep: {pricePrefix}{sweepPrice.toFixed(2)}
+              Sweep: {pricePrefix}{fmtPx(sweepPrice)}
             </div>
           )}
 
           {chochPrice > 0 && (
             <div className="px-3 py-1 rounded bg-amber-950 border border-amber-500 text-amber-300 font-bold shadow-sm">
-              CHoCH: {pricePrefix}{chochPrice.toFixed(2)}
+              CHoCH: {pricePrefix}{fmtPx(chochPrice)}
             </div>
           )}
 
@@ -1703,12 +1740,12 @@ export function SmcChartOverlay({
                 : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
               {isTradeActive
-                ? Math.abs(slPrice - entryPrice) < (isIndices ? 2.5 : 0.40)
-                  ? `🛡️ BREAKEVEN SL: ${pricePrefix}${slPrice.toFixed(2)} (Risk-Free)`
-                  : `🔴 ACTIVE SL: ${pricePrefix}${slPrice.toFixed(2)} (${(isMetals || isIndices) ? "~$52 Risk" : ""})`
+                ? Math.abs(slPrice - entryPrice) < (isIndices ? 2.5 : isMetals ? 0.40 : (isJpy ? 0.04 : 0.0004))
+                  ? `🛡️ BREAKEVEN SL: ${pricePrefix}${fmtPx(slPrice)} (Risk-Free)`
+                  : `🔴 ACTIVE SL: ${pricePrefix}${fmtPx(slPrice)} (${(isMetals || isIndices) ? "~$52 Risk" : "Max $52"})`
                 : s2Pass
-                ? `🔒 SL (${bufBadgeStr} Buf): ${pricePrefix}${slPrice.toFixed(2)} (${(isMetals || isIndices) ? "~$52 Risk" : ""})`
-                : "⏳ SL: Locks at Sweep (Step 2)"}
+                ? `🔒 SL (${bufBadgeStr} Buf): ${pricePrefix}${fmtPx(slPrice)} (Max $52)`
+                : "⏳ SL: Locks at Sweep (C2)"}
             </div>
             <div className={cn(
               "px-3 py-1 rounded font-black shadow-sm text-xs font-mono transition-all",
@@ -1719,10 +1756,10 @@ export function SmcChartOverlay({
                 : "bg-zinc-900/60 border border-zinc-800 text-zinc-500"
             )}>
               {isTradeActive
-                ? `🟢 ACTIVE TP: ${pricePrefix}${tpPrice.toFixed(2)} (${effectiveRrr}R Target)`
+                ? `🟢 ACTIVE TP: ${pricePrefix}${fmtPx(tpPrice)} (${effectiveRrr}R Target)`
                 : s4Pass
-                ? `🎯 TARGET: ${pricePrefix}${tpPrice.toFixed(2)} (${effectiveRrr}R Opposing Liquidity)`
-                : "⏳ TP: Locks at FVG (Step 4)"}
+                ? `🎯 TARGET: ${pricePrefix}${fmtPx(tpPrice)} (${effectiveRrr}R Opposing Liquidity)`
+                : "⏳ TP: Locks at FVG (C4)"}
             </div>
           </div>
         </div>
@@ -2136,7 +2173,7 @@ export function SmcChartOverlay({
                     fontFamily="monospace"
                     fontWeight="700"
                   >
-                    {pricePrefix}{tick.price.toFixed(2)}
+                    {pricePrefix}{fmtPx(tick.price)}
                   </text>
                 </g>
               ))}
@@ -2148,8 +2185,9 @@ export function SmcChartOverlay({
                 const candleLowY = originCandle ? getY(originCandle.low) : zone.botY;
                 const candleCenterY = originCandle ? getY((originCandle.open + originCandle.close) / 2) : zone.topY;
 
-                // Viewport culling: do not render distant zones outside chart scale
-                if (zone.low > maxPrice + 2.5 || zone.high < minPrice - 2.5) {
+                // Viewport culling: scale cull pad to current instrument range so Forex zones aren't clipped or oversized
+                const zoneCullPad = Math.max(priceRange * 0.30, isIndices ? 10.0 : isMetals ? 2.5 : (isJpy ? 0.25 : 0.0025));
+                if (zone.low > maxPrice + zoneCullPad || zone.high < minPrice - zoneCullPad) {
                   return null;
                 }
 
@@ -2828,7 +2866,7 @@ export function SmcChartOverlay({
                       fontFamily="monospace"
                       fontWeight="900"
                     >
-                      {pricePrefix}{cursorPrice.toFixed(2)}
+                      {pricePrefix}{fmtPx(cursorPrice)}
                     </text>
                   </g>
                 )}
@@ -2845,19 +2883,19 @@ export function SmcChartOverlay({
                   <span>
                     O:{" "}
                     <strong className={hoveredCandle.isBullish ? "text-emerald-400" : "text-rose-400"}>
-                      {pricePrefix}{hoveredCandle.open.toFixed(2)}
+                      {pricePrefix}{fmtPx(hoveredCandle.open)}
                     </strong>
                   </span>
                   <span>
-                    H: <strong className="text-white">{pricePrefix}{hoveredCandle.high.toFixed(2)}</strong>
+                    H: <strong className="text-white">{pricePrefix}{fmtPx(hoveredCandle.high)}</strong>
                   </span>
                   <span>
-                    L: <strong className="text-white">{pricePrefix}{hoveredCandle.low.toFixed(2)}</strong>
+                    L: <strong className="text-white">{pricePrefix}{fmtPx(hoveredCandle.low)}</strong>
                   </span>
                   <span>
                     C:{" "}
                     <strong className={hoveredCandle.isBullish ? "text-emerald-400" : "text-rose-400"}>
-                      {pricePrefix}{hoveredCandle.close.toFixed(2)}
+                      {pricePrefix}{fmtPx(hoveredCandle.close)}
                     </strong>
                   </span>
                 </div>
@@ -2952,7 +2990,7 @@ export function SmcChartOverlay({
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s2Pass
-                ? `Absorbed retail stops at ${pricePrefix}${sweepPrice.toFixed(2)} via M5 wick rejection.`
+                ? `Absorbed retail stops at ${pricePrefix}${fmtPx(sweepPrice)} via M5 wick rejection.`
                 : "Waiting for candle wick to sweep previous M5 swing high/low."}
             </p>
           </div>
@@ -2989,7 +3027,7 @@ export function SmcChartOverlay({
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s3Pass
-                ? `Confirmed trend shift by closing past ${pricePrefix}${chochPrice.toFixed(2)}.`
+                ? `Confirmed trend shift by closing past ${pricePrefix}${fmtPx(chochPrice)}.`
                 : (showM1Mode ? "Waiting for M1 LTF candle close beyond minor pivot point." : "Waiting for M5 candle body close beyond minor pivot point.")}
             </p>
           </div>
@@ -3117,7 +3155,7 @@ export function SmcChartOverlay({
                 {slTpFail
                   ? (s8Fail ? s8Status : s9Status)
                   : slTpPass
-                  ? `Tight M1 SL (${pricePrefix}${slPrice.toFixed(2)}, 38pt+ floor / ${capBadgeStr} cap) + M15 TP ${effectiveTpPrice > 0 ? `${pricePrefix}${effectiveTpPrice.toFixed(2)} ` : ""}(>=1.85R, <=$52 risk).`
+                  ? `Tight M1 SL (${pricePrefix}${fmtPx(slPrice)}, 38pt+ floor / ${capBadgeStr} cap) + M15 TP ${effectiveTpPrice > 0 ? `${pricePrefix}${fmtPx(effectiveTpPrice)} ` : ""}(>=1.85R, <=$52 risk).`
                   : `Enforces 38pt min SL floor, ${capBadgeStr} cap, <=$52 risk & >=1.85R M15 Target.`}
               </p>
             </div>
@@ -3151,7 +3189,7 @@ export function SmcChartOverlay({
                   {s8Fail
                     ? s8Status
                     : s8Pass
-                    ? `${String(s8Status).includes("FVG-Refined") ? "FVG-Defense Refined SL" : `Sweep ± ${bufBadgeStr}`} (${pricePrefix}${slPrice.toFixed(2)}) within ${capBadgeStr} (${defaultMaxSlCap.toFixed(isMetals || isIndices ? 1 : 4)}) cap.`
+                    ? `${String(s8Status).includes("FVG-Refined") ? "FVG-Defense Refined SL" : `Sweep ± ${bufBadgeStr}`} (${pricePrefix}${fmtPx(slPrice)}) within ${capBadgeStr} (${defaultMaxSlCap.toFixed(isMetals || isIndices ? 1 : 4)}) cap.`
                     : `Will lock ${bufBadgeStr} behind Sweep extreme (max ${capBadgeStr} cap, <=$52 risk).`}
                 </p>
               </div>
@@ -3178,7 +3216,7 @@ export function SmcChartOverlay({
                 </div>
                 <p className="text-[11px] text-zinc-300 leading-snug">
                   {s9Pass
-                    ? (effectiveTpPrice > 0 ? `M15 liquidity TP placed at ${pricePrefix}${effectiveTpPrice.toFixed(2)} (min 1.85R).` : "Verified >= 1.85R path to M15 opposing liquidity.")
+                    ? (effectiveTpPrice > 0 ? `M15 liquidity TP placed at ${pricePrefix}${fmtPx(effectiveTpPrice)} (min 1.85R).` : "Verified >= 1.85R path to M15 opposing liquidity.")
                     : (s9Fail ? s9Status : "Requires >= 1.85R space to M15 structural liquidity pool.")}
                 </p>
               </div>
