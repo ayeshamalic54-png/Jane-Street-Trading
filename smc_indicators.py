@@ -123,6 +123,7 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
             "sweep_margin": 4.25,
             "max_chase_dist": 17.00,
             "max_sl_cap": 105.00,
+            "m5_min_sl_dist": 38.00,
             "target_min_move": 12.75,
             "ob_buf": 9.35,
             "min_dist": 0.10,
@@ -136,8 +137,10 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
             "m1_close_tol": 1.50,
             "m1_min_pen_gap": 4.50,
             "m1_max_chase_dist": 12.00,
-            "m1_min_sl_dist": 15.00,
+            "m1_min_sl_dist": 38.00,
             "m1_min_body_ratio": 0.25,
+            "protected_anchor_enabled": True,
+            "stale_close_check": False,
             "fvg_refined_sl_enabled": False,
             "refined_wick_buf": 9.50,
             "min_refined_sl_dist": 25.00,
@@ -165,6 +168,7 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
             "sweep_margin": 4.25,
             "max_chase_dist": 17.00,
             "max_sl_cap": 85.00,
+            "m5_min_sl_dist": 0.0,
             "target_min_move": 12.75,
             "ob_buf": 9.35,
             "min_dist": 0.10,
@@ -178,8 +182,10 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
             "m1_close_tol": 1.50,
             "m1_min_pen_gap": 4.50,
             "m1_max_chase_dist": 12.00,
-            "m1_min_sl_dist": 15.00,
+            "m1_min_sl_dist": 38.00,
             "m1_min_body_ratio": 0.25,
+            "protected_anchor_enabled": False,
+            "stale_close_check": True,
             "fvg_refined_sl_enabled": True,
             "fvg_refined_max_raw_mult": 2.50,
             "fvg_refined_min_body": 0.0,
@@ -189,9 +195,50 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
             "min_refined_sl_dist": 25.00,
         }
 
+    is_silver = (
+        any(k in sym_str for k in ("XAG", "SILVER"))
+        or (cat_str == "metals" and 5.0 < px <= 200.0)
+    )
+    if is_silver:
+        return {
+            "key": "silver",
+            "category": "metals",
+            "is_high_point": False,
+            "digits": 3,
+            "m15_min_amp": 0.25,
+            "m15_target_min_amp": 0.20,
+            "m5_min_amp": 0.08,
+            "min_structural_depth": 0.10,
+            "min_penetration": 0.01,
+            "reclaim_max_dip": 0.10,
+            "min_fvg_gap": 0.04,
+            "max_dist": 2.00,
+            "min_ob_disp": 0.06,
+            "mit_tol": 0.02,
+            "wick_buf": 0.06,
+            "close_tol": 0.02,
+            "min_pen_gap": 0.08,
+            "sweep_margin": 0.05,
+            "max_chase_dist": 0.15,
+            "max_sl_cap": 0.50,
+            "m5_min_sl_dist": 0.0,
+            "target_min_move": 0.12,
+            "ob_buf": 0.08,
+            "min_dist": 0.005,
+            "fallback_sl_dist": 0.20,
+            "sweep_tol": 0.05,
+            "be_buffer": 0.02,
+            "m1_ltf_enabled": False,
+            "protected_anchor_enabled": False,
+            "stale_close_check": False,
+            "fvg_refined_sl_enabled": False,
+            "refined_wick_buf": 0.08,
+            "min_refined_sl_dist": 0.15,
+        }
+
     is_metals = (
         cat_str == "metals"
-        or any(k in sym_str for k in ("XAU", "GOLD", "XAG", "SILVER"))
+        or any(k in sym_str for k in ("XAU", "GOLD"))
         or px > 500
     )
     if is_metals:
@@ -216,6 +263,7 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
             "sweep_margin": 0.50,
             "max_chase_dist": 2.00,
             "max_sl_cap": 10.00,
+            "m5_min_sl_dist": 0.0,
             "target_min_move": 1.50,
             "ob_buf": 1.10,
             "min_dist": 0.01,
@@ -223,47 +271,48 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
             "sweep_tol": 0.50,
             "be_buffer": 0.25,
             "m1_ltf_enabled": False,
-            "fvg_refined_sl_enabled": True,
-            "fvg_refined_max_raw_mult": 1.65,
-            "fvg_refined_min_body": 0.35,
-            "fvg_refined_max_choch_bars": 8,
-            "fvg_refined_min_gap_mult": 1.30,
+            "protected_anchor_enabled": True,
+            "stale_close_check": False,
+            "fvg_refined_sl_enabled": False,
             "refined_wick_buf": 1.10,
             "min_refined_sl_dist": 3.20,
         }
 
-    is_mid_fx = px > 20
+    is_mid_fx = ("JPY" in sym_str) or (px > 20)
     return {
-        "key": "forex",
+        "key": "forex_jpy" if is_mid_fx else "forex",
         "category": "forex",
         "is_high_point": False,
-        "digits": 5,
-        "m15_min_amp": 0.0020,
-        "m15_target_min_amp": 0.0012,
-        "m5_min_amp": 0.00015,
-        "min_structural_depth": 0.0010,
-        "min_penetration": 0.00003,
-        "reclaim_max_dip": 0.0008,
-        "min_fvg_gap": 0.04 if is_mid_fx else 0.00015,
-        "max_dist": 2.00 if is_mid_fx else 0.0080,
-        "min_ob_disp": 0.12 if is_mid_fx else 0.0004,
-        "mit_tol": 0.03 if is_mid_fx else 0.00010,
-        "wick_buf": 0.00040,
-        "close_tol": 0.00015,
-        "min_pen_gap": 0.00040,
-        "sweep_margin": 0.00020,
-        "max_chase_dist": 0.00100,
-        "max_sl_cap": 0.0050,
-        "target_min_move": 0.0005,
-        "ob_buf": 0.00035,
-        "min_dist": 0.00010,
-        "fallback_sl_dist": 0.0015,
-        "sweep_tol": 0.00030,
-        "be_buffer": 0.00005,
+        "digits": 3 if is_mid_fx else 5,
+        "m15_min_amp": 0.20 if is_mid_fx else 0.0020,
+        "m15_target_min_amp": 0.12 if is_mid_fx else 0.0012,
+        "m5_min_amp": 0.015 if is_mid_fx else 0.00015,
+        "min_structural_depth": 0.10 if is_mid_fx else 0.0010,
+        "min_penetration": 0.003 if is_mid_fx else 0.00003,
+        "reclaim_max_dip": 0.08 if is_mid_fx else 0.0008,
+        "min_fvg_gap": 0.018 if is_mid_fx else 0.00015,
+        "max_dist": 0.80 if is_mid_fx else 0.0080,
+        "min_ob_disp": 0.025 if is_mid_fx else 0.0004,
+        "mit_tol": 0.010 if is_mid_fx else 0.00010,
+        "wick_buf": 0.04 if is_mid_fx else 0.00040,
+        "close_tol": 0.015 if is_mid_fx else 0.00015,
+        "min_pen_gap": 0.04 if is_mid_fx else 0.00040,
+        "sweep_margin": 0.04 if is_mid_fx else 0.00020,
+        "max_chase_dist": 0.10 if is_mid_fx else 0.00100,
+        "max_sl_cap": 0.50 if is_mid_fx else 0.0050,
+        "m5_min_sl_dist": 0.12 if is_mid_fx else 0.0012,
+        "target_min_move": 0.05 if is_mid_fx else 0.0005,
+        "ob_buf": 0.035 if is_mid_fx else 0.00035,
+        "min_dist": 0.01 if is_mid_fx else 0.00010,
+        "fallback_sl_dist": 0.15 if is_mid_fx else 0.0015,
+        "sweep_tol": 0.03 if is_mid_fx else 0.00030,
+        "be_buffer": 0.02 if is_mid_fx else 0.00005,
         "m1_ltf_enabled": False,
+        "protected_anchor_enabled": False,
+        "stale_close_check": True,
         "fvg_refined_sl_enabled": False,
-        "refined_wick_buf": 0.00050,
-        "min_refined_sl_dist": 0.0012,
+        "refined_wick_buf": 0.05 if is_mid_fx else 0.00050,
+        "min_refined_sl_dist": 0.12 if is_mid_fx else 0.0012,
     }
 
 
@@ -340,11 +389,37 @@ def detect_market_structure(df, symbol=None, category=None):
     return 'NEUTRAL'
 
 
-def detect_liquidity_sweep(df_m5, symbol=None, category=None):
+def find_protected_sweep_extreme(df, sweep_idx, base_extreme, is_bullish=True, lookback=12):
+    """
+    Find the protected liquidity extreme across up to `lookback` M5 bars preceding and including `sweep_idx`.
+    Protects SL behind adjacent double-tap / swept range extremes instead of a single narrow candle tip.
+    """
+    ext = float(base_extreme)
+    if df is None or len(df) == 0 or sweep_idx < 0:
+        return ext
+    start_idx = max(0, int(sweep_idx) - int(lookback))
+    end_idx = min(len(df) - 1, int(sweep_idx))
+    if is_bullish:
+        lows = df['low'].values
+        for k in range(start_idx, end_idx + 1):
+            if float(lows[k]) < ext:
+                ext = float(lows[k])
+    else:
+        highs = df['high'].values
+        for k in range(start_idx, end_idx + 1):
+            if float(highs[k]) > ext:
+                ext = float(highs[k])
+    return ext
+
+
+def detect_liquidity_sweep(df_m5, symbol=None, category=None, stale_close_check=None):
     """
     Step 2: M5 Liquidity Sweep (Stop Loss Hunt) Detection.
     Captures genuine 1-candle wick sweeps AND 2-candle reclaim sweeps beyond confirmed M5 Swing Highs/Lows
     over an 18-candle (90 min) session window.
+
+    When `stale_close_check` is enabled (via profile or explicit flag), sweeps whose swing level was
+    already closed through by an intermediate bar prior to the sweep setup are rejected as stale.
 
     Returns:
     - (is_swept_sell_side, sweep_lowest_price, swing_level, sweep_idx)
@@ -354,6 +429,7 @@ def detect_liquidity_sweep(df_m5, symbol=None, category=None):
         return (False, 0.0, 0.0, -1), (False, 0.0, 0.0, -1)
 
     profile = get_smc_asset_profile(df_m5, symbol=symbol, category=category)
+    stale_close = bool(profile.get("stale_close_check", False)) if stale_close_check is None else bool(stale_close_check)
     min_amp = profile["m5_min_amp"]
     swing_highs, swing_lows = get_swing_points(df_m5, n_left=3, n_right=3, min_amplitude=min_amp)
     if len(swing_highs) < 2 or len(swing_lows) < 2:
@@ -398,11 +474,12 @@ def detect_liquidity_sweep(df_m5, symbol=None, category=None):
                 if is_one_bar_sweep or is_two_bar_reclaim:
                     sweep_low = float(min(lows[i], lows[i + 1])) if is_two_bar_reclaim else float(lows[i])
                     sweep_end_idx = (i + 1) if is_two_bar_reclaim else i
+                    stale_prior_close = stale_close and any(closes[k] < sl_val for k in range(sl_idx + 1, max(sl_idx + 1, i - 1)))
                     # Ensure adjacent prior candle didn't already dip lower than sweep_low (avoids late bounce mislabeling)
                     prior_lower = any(lows[k] < sweep_low for k in range(max(sl_idx + 1, i - 3), i))
                     # Check confirmed closed bars after reclaim so a single forming tick doesn't erase active setup
                     subsequent_break = any(closes[k] < sweep_low for k in range(sweep_end_idx + 1, max(sweep_end_idx + 1, n - 1)))
-                    if not prior_lower and not subsequent_break:
+                    if not stale_prior_close and not prior_lower and not subsequent_break:
                         sell_sweep = (True, sweep_low, float(sl_val), i)
                         break
         if sell_sweep[0]:
@@ -429,9 +506,10 @@ def detect_liquidity_sweep(df_m5, symbol=None, category=None):
                 if is_one_bar_sweep or is_two_bar_reclaim:
                     sweep_high = float(max(highs[i], highs[i + 1])) if is_two_bar_reclaim else float(highs[i])
                     sweep_end_idx = (i + 1) if is_two_bar_reclaim else i
+                    stale_prior_close = stale_close and any(closes[k] > sh_val for k in range(sh_idx + 1, max(sh_idx + 1, i - 1)))
                     prior_higher = any(highs[k] > sweep_high for k in range(max(sh_idx + 1, i - 3), i))
                     subsequent_break = any(closes[k] > sweep_high for k in range(sweep_end_idx + 1, max(sweep_end_idx + 1, n - 1)))
-                    if not prior_higher and not subsequent_break:
+                    if not stale_prior_close and not prior_higher and not subsequent_break:
                         buy_sweep = (True, sweep_high, float(sh_val), i)
                         break
         if buy_sweep[0]:

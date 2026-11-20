@@ -87,7 +87,8 @@ router.post("/backtest", async (req, res) => {
     const spec = resolveSymbolSpec(rawSymbol);
 
     const lookbackDays = Math.min(30, Math.max(3, Number(req.body?.lookbackDays ?? 14) || 14));
-    const lotSize = Math.min(10, Math.max(0.01, Number(req.body?.lotSize ?? 0.07) || 0.07));
+    const defaultLot = spec.category === "metals" ? 0.07 : spec.category === "indices" ? 5.0 : 0.51;
+    const lotSize = Math.min(10, Math.max(0.01, Number(req.body?.lotSize ?? defaultLot) || defaultLot));
     const initialBalance = Math.max(100, Number(req.body?.initialBalance ?? 10000) || 10000);
     const maxSlDist = Math.max(
       spec.digits <= 3 ? 0.05 : 0.0005,

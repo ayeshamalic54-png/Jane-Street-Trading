@@ -8,6 +8,7 @@ from smc_indicators import (
     detect_choch_bos,
     detect_smc_zones,
     check_fvg_retest,
+    find_protected_sweep_extreme,
     get_swing_points,
     get_smc_asset_profile,
 )
@@ -480,6 +481,134 @@ def _try_fvg_refined_sl_rescue(
     return None, raw_sl_dist, None
 
 
+def _evaluate_m5_directional_entry(
+    *,
+    is_bull: bool,
+    eval_df: pd.DataFrame,
+    df_m15: pd.DataFrame,
+    sweep_idx: int,
+    sweep_extreme: float,
+    choch_lvl: float,
+    candles_since_choch: int,
+    matched_fvg: tuple,
+    closed_open: float,
+    closed_close: float,
+    closed_low: float,
+    closed_high: float,
+    prev_closed_row,
+    candle_range: float,
+    wick_val: float,
+    is_dir_close: bool,
+    price: float,
+    profile: dict,
+    is_metals: bool,
+    bypass_filters: bool,
+    sweep_already_used: bool,
+    sweep_key: str,
+    used_m5_sweeps: set,
+    sl_prefix: str,
+    sl_suffix: str,
+    cap_lbl: str,
+    front_run_lbl: str,
+    min_target_rrr: float,
+):
+    """
+    Unified BUY/SELL M5 structural SL sizing, protected sweep anchor check, FVG SL rescue,
+    M15 target evaluation, and telemetry generation. Returns (signal_or_None, step8_s, step9_s, sl_price, scan_tp).
+    """
+    digits = int(profile["digits"])
+    wick_buf = float(profile["wick_buf"])
+    min_dist = float(profile["min_dist"])
+    max_sl_cap = float(profile["max_sl_cap"])
+    m5_min_sl = float(profile.get("m5_min_sl_dist", 0.0))
+    max_chase_dist = float(profile["max_chase_dist"])
+
+    sl_price = round(sweep_extreme - wick_buf, digits) if is_bull else round(sweep_extreme + wick_buf, digits)
+    sl_dist = max(min_dist, (price - sl_price) if is_bull else (sl_price - price))
+    sl_mode_lbl = f"{wick_buf:.2f} buf"
+    is_fvg_refined_sl = False
+
+    if profile.get("protected_anchor_enabled"):
+        prot_ext = find_protected_sweep_extreme(eval_df, sweep_idx, sweep_extreme, is_bullish=is_bull, lookback=12)
+        prot_sl = round(prot_ext - wick_buf, digits) if is_bull else round(prot_ext + wick_buf, digits)
+        prot_dist = max(min_dist, (price - prot_sl) if is_bull else (prot_sl - price))
+        if prot_dist > sl_dist and prot_dist <= max_sl_cap:
+            sl_price = prot_sl
+            sl_dist = prot_dist
+            sl_mode_lbl = f"Protected {wick_buf:.2f} buf"
+
+    fvg_low, fvg_high = matched_fvg
+    is_chasing = (price > (fvg_high + max_chase_dist)) if is_bull else (price < (fvg_low - max_chase_dist))
+
+    if not is_chasing and sl_dist > max_sl_cap:
+        res_sl, res_dist, res_lbl = _try_fvg_refined_sl_rescue(
+            is_bull=is_bull, price=price, raw_sl_dist=sl_dist, max_sl_cap=max_sl_cap, min_dist=min_dist, digits=digits,
+            matched_fvg=matched_fvg, closed_open=closed_open, closed_close=closed_close,
+            closed_low=closed_low, closed_high=closed_high, prev_closed_row=prev_closed_row,
+            candle_range=candle_range, is_dir_close=is_dir_close,
+            candles_since_choch=candles_since_choch, profile=profile,
+        )
+        if res_sl is not None:
+            sl_price, sl_dist, sl_mode_lbl = res_sl, res_dist, res_lbl
+            is_fvg_refined_sl = True
+
+    tp_price, target_rrr = _compute_m15_opposing_target(is_bull, df_m15, price, sl_dist, is_metals, profile=profile)
+    is_sl_ok = ((m5_min_sl <= sl_dist <= max_sl_cap) and not is_chasing) or bypass_filters
+    is_target_ok = (target_rrr >= min_target_rrr) or bypass_filters
+
+    if is_sl_ok and is_target_ok and not sweep_already_used:
+        _record_used_sweep(used_m5_sweeps, sweep_key)
+        q_score = compute_smc_signal_quality(
+            target_rrr=target_rrr,
+            sl_dist=sl_dist,
+            max_sl_cap=max_sl_cap,
+            rejection_wick_ratio=(wick_val / candle_range),
+            body_close_dir_ok=is_dir_close,
+            fvg_gap=(fvg_high - fvg_low),
+            min_fvg_gap=profile["min_fvg_gap"],
+            candles_since_choch=candles_since_choch,
+        )
+        side = "BUY" if is_bull else "SELL"
+        icon = "🟢" if is_bull else "🔴"
+        bias_word = "Bullish" if is_bull else "Bearish"
+        op_sign = "-" if is_bull else "+"
+        ext_lbl = "Low" if is_bull else "High"
+        reason = (
+            f"{icon} STRICT SMC PASSED! {side}: M15 {bias_word} + M5 Sweep ({sweep_extreme:.2f}) "
+            f"+ CHoCH ({choch_lvl:.2f}) + Closed Rejection | SL: {sl_price:.2f} ({sl_mode_lbl}) "
+            f"| M15 Target TP: {tp_price:.2f} ({target_rrr:.2f}R) | Quality: {q_score:.1f}"
+        )
+        logger.info("================================================================================")
+        logger.info(f"{icon} [STRICT 9-CONDITION SMC {side} SIGNAL EXECUTED] 🚀")
+        sl_desc = "FVG-Refined SL" if is_fvg_refined_sl else f"Sweep {ext_lbl} ({sweep_extreme:.2f}) {op_sign} {wick_buf:.2f}"
+        logger.info(f"{icon} S8 (Structural SL): {sl_desc} = {sl_price:.2f} (Dist: {sl_prefix}{sl_dist:.2f}{sl_suffix} <= {cap_lbl} Cap)")
+        logger.info(f"{icon} S9 (M15 Liquidity TP): Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Quality: {q_score:.1f}/100)")
+        logger.info("================================================================================")
+        return (side, tp_price, sl_price, sl_dist, reason), None, None, sl_price, tp_price
+
+    if sweep_already_used:
+        step8_s = "WAITING ⚪ (M5 Sweep Already Traded)"
+    elif not is_sl_ok:
+        if is_chasing:
+            cmp_sym, ref_b = (">", fvg_high) if is_bull else ("<", fvg_low)
+            step8_s = f"FAIL 🔴 (Late Chasing {price:.2f} {cmp_sym} FVG {ref_b:.2f})"
+        elif sl_dist < m5_min_sl:
+            step8_s = f"FAIL 🔴 (Noise SL {sl_prefix}{sl_dist:.2f}{sl_suffix} < Min {sl_prefix}{m5_min_sl:.2f}{sl_suffix})"
+        else:
+            step8_s = f"FAIL 🔴 (SL {sl_prefix}{sl_dist:.2f}{sl_suffix} > {cap_lbl} Cap)"
+    elif is_fvg_refined_sl:
+        step8_s = f"PASS 🟢 (FVG-Refined {sl_prefix}{sl_dist:.2f}{sl_suffix} <= {cap_lbl} Cap)"
+    else:
+        step8_s = f"PASS 🟢 ({wick_buf:.2f} Buf - {sl_prefix}{sl_dist:.2f}{sl_suffix} SL)"
+
+    step9_s = (
+        f"FAIL 🔴 (M15 Target {target_rrr:.2f}R < {min_target_rrr:.2f}R)"
+        if not is_target_ok
+        else f"PASS 🟢 ({target_rrr:.2f}R M15 Target - {front_run_lbl} Front-Run)"
+    )
+    return None, step8_s, step9_s, sl_price, tp_price
+
+
 def evaluate_smc_strategy_signal(
     df_m15: pd.DataFrame,
     df_m5: pd.DataFrame = None,
@@ -636,147 +765,37 @@ def evaluate_smc_strategy_signal(
     sell_sweep_used = bool(sell_sweep_key and used_m5_sweeps is not None and sell_sweep_key in used_m5_sweeps)
     buy_sweep_used = bool(buy_sweep_key and used_m5_sweeps is not None and buy_sweep_key in used_m5_sweeps)
 
-    # ── 1. BUY SIGNAL EVALUATION (ALL 9 CONDITIONS STRICT + S8 FVG-DEFENSE SL RESCUE) ──
+    # ── 1. BUY SIGNAL EVALUATION (UNIFIED STRICT SMC + PROTECTED ANCHOR + RESCUE) ──
     if is_m15_bullish and has_sell_sweep and has_bull_choch and (len(zones_bull['bullish_fvg']) > 0) and in_bull_fvg and p5_buy_rejection:
-        sl_price = round(sweep_low_price - wick_buf, digits)
-        sl_dist = max(min_dist, price - sl_price)
-        sl_mode_lbl = f"{wick_buf:.2f} buf"
-        is_fvg_refined_sl = False
+        sig_out, custom_step8_s, custom_step9_s, m5_candidate_sl, scan_tp = _evaluate_m5_directional_entry(
+            is_bull=True, eval_df=eval_df, df_m15=df_m15,
+            sweep_idx=sell_sweep_idx, sweep_extreme=sweep_low_price, choch_lvl=bull_choch_lvl,
+            candles_since_choch=candles_since_bull_choch, matched_fvg=matched_bull_fvg,
+            closed_open=closed_open, closed_close=closed_close, closed_low=closed_low, closed_high=closed_high,
+            prev_closed_row=prev_closed_row, candle_range=bull_candle_range, wick_val=bull_lower_wick,
+            is_dir_close=bull_is_green, price=price, profile=profile, is_metals=is_metals,
+            bypass_filters=bypass_filters, sweep_already_used=sell_sweep_used, sweep_key=sell_sweep_key,
+            used_m5_sweeps=used_m5_sweeps, sl_prefix=sl_prefix, sl_suffix=sl_suffix,
+            cap_lbl=cap_lbl, front_run_lbl=front_run_lbl, min_target_rrr=min_target_rrr,
+        )
+        if sig_out is not None:
+            return sig_out
 
-        fvg_low, fvg_high = matched_bull_fvg
-        is_chasing = price > (fvg_high + max_chase_dist)
-
-        if not is_chasing and sl_dist > max_sl_cap:
-            res_sl, res_dist, res_lbl = _try_fvg_refined_sl_rescue(
-                is_bull=True, price=price, raw_sl_dist=sl_dist, max_sl_cap=max_sl_cap, min_dist=min_dist, digits=digits,
-                matched_fvg=matched_bull_fvg, closed_open=closed_open, closed_close=closed_close,
-                closed_low=closed_low, closed_high=closed_high, prev_closed_row=prev_closed_row,
-                candle_range=bull_candle_range, is_dir_close=bull_is_green,
-                candles_since_choch=candles_since_bull_choch, profile=profile,
-            )
-            if res_sl is not None:
-                sl_price, sl_dist, sl_mode_lbl = res_sl, res_dist, res_lbl
-                is_fvg_refined_sl = True
-
-        m5_candidate_sl = sl_price
-        tp_price, target_rrr = _compute_m15_opposing_target(True, df_m15, price, sl_dist, is_metals, profile=profile)
-        scan_tp = tp_price
-
-        is_sl_ok = (sl_dist <= max_sl_cap and not is_chasing) or bypass_filters
-        is_target_ok = (target_rrr >= min_target_rrr) or bypass_filters
-
-        if is_sl_ok and is_target_ok and not sell_sweep_used:
-            _record_used_sweep(used_m5_sweeps, sell_sweep_key)
-            q_score = compute_smc_signal_quality(
-                target_rrr=target_rrr,
-                sl_dist=sl_dist,
-                max_sl_cap=max_sl_cap,
-                rejection_wick_ratio=(bull_lower_wick / bull_candle_range),
-                body_close_dir_ok=bull_is_green,
-                fvg_gap=(fvg_high - fvg_low),
-                min_fvg_gap=profile["min_fvg_gap"],
-                candles_since_choch=candles_since_bull_choch,
-            )
-            reason = (
-                f"🟢 STRICT SMC PASSED! BUY: M15 Bullish + M5 Sweep ({sweep_low_price:.2f}) "
-                f"+ CHoCH ({bull_choch_lvl:.2f}) + Closed Rejection | SL: {sl_price:.2f} ({sl_mode_lbl}) "
-                f"| M15 Target TP: {tp_price:.2f} ({target_rrr:.2f}R) | Quality: {q_score:.1f}"
-            )
-            logger.info("================================================================================")
-            logger.info("🟢 [STRICT 9-CONDITION SMC BUY SIGNAL EXECUTED] 🚀")
-            logger.info(f"🟢 S8 (Structural SL): {'FVG-Refined SL' if is_fvg_refined_sl else f'Sweep Low ({sweep_low_price:.2f}) - {wick_buf:.2f}'} = {sl_price:.2f} (Dist: {sl_prefix}{sl_dist:.2f}{sl_suffix} <= {cap_lbl} Cap)")
-            logger.info(f"🟢 S9 (M15 Liquidity TP): Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Quality: {q_score:.1f}/100)")
-            logger.info("================================================================================")
-            return "BUY", tp_price, sl_price, sl_dist, reason
-        else:
-            if sell_sweep_used:
-                custom_step8_s = "WAITING ⚪ (M5 Sweep Already Traded)"
-            elif not is_sl_ok:
-                custom_step8_s = (
-                    f"FAIL 🔴 (Late Chasing {price:.2f} > FVG {fvg_high:.2f})"
-                    if is_chasing
-                    else f"FAIL 🔴 (SL {sl_prefix}{sl_dist:.2f}{sl_suffix} > {cap_lbl} Cap)"
-                )
-            elif is_fvg_refined_sl:
-                custom_step8_s = f"PASS 🟢 (FVG-Refined {sl_prefix}{sl_dist:.2f}{sl_suffix} <= {cap_lbl} Cap)"
-            else:
-                custom_step8_s = f"PASS 🟢 ({wick_buf:.2f} Buf - {sl_prefix}{sl_dist:.2f}{sl_suffix} SL)"
-
-            if not is_target_ok:
-                custom_step9_s = f"FAIL 🔴 (M15 Target {target_rrr:.2f}R < {min_target_rrr:.2f}R)"
-            else:
-                custom_step9_s = f"PASS 🟢 ({target_rrr:.2f}R M15 Target - {front_run_lbl} Front-Run)"
-
-    # ── 2. SELL SIGNAL EVALUATION (ALL 9 CONDITIONS STRICT + S8 FVG-DEFENSE SL RESCUE) ──
+    # ── 2. SELL SIGNAL EVALUATION (UNIFIED STRICT SMC + PROTECTED ANCHOR + RESCUE) ──
     if is_m15_bearish and has_buy_sweep and has_bear_choch and (len(zones_bear['bearish_fvg']) > 0) and in_bear_fvg and p5_sell_rejection:
-        sl_price = round(sweep_high_price + wick_buf, digits)
-        sl_dist = max(min_dist, sl_price - price)
-        sl_mode_lbl = f"{wick_buf:.2f} buf"
-        is_fvg_refined_sl = False
-
-        fvg_low, fvg_high = matched_bear_fvg
-        is_chasing = price < (fvg_low - max_chase_dist)
-
-        if not is_chasing and sl_dist > max_sl_cap:
-            res_sl, res_dist, res_lbl = _try_fvg_refined_sl_rescue(
-                is_bull=False, price=price, raw_sl_dist=sl_dist, max_sl_cap=max_sl_cap, min_dist=min_dist, digits=digits,
-                matched_fvg=matched_bear_fvg, closed_open=closed_open, closed_close=closed_close,
-                closed_low=closed_low, closed_high=closed_high, prev_closed_row=prev_closed_row,
-                candle_range=bear_candle_range, is_dir_close=bear_is_red,
-                candles_since_choch=candles_since_bear_choch, profile=profile,
-            )
-            if res_sl is not None:
-                sl_price, sl_dist, sl_mode_lbl = res_sl, res_dist, res_lbl
-                is_fvg_refined_sl = True
-
-        m5_candidate_sl = sl_price
-        tp_price, target_rrr = _compute_m15_opposing_target(False, df_m15, price, sl_dist, is_metals, profile=profile)
-        scan_tp = tp_price
-
-        is_sl_ok = (sl_dist <= max_sl_cap and not is_chasing) or bypass_filters
-        is_target_ok = (target_rrr >= min_target_rrr) or bypass_filters
-
-        if is_sl_ok and is_target_ok and not buy_sweep_used:
-            _record_used_sweep(used_m5_sweeps, buy_sweep_key)
-            q_score = compute_smc_signal_quality(
-                target_rrr=target_rrr,
-                sl_dist=sl_dist,
-                max_sl_cap=max_sl_cap,
-                rejection_wick_ratio=(bear_upper_wick / bear_candle_range),
-                body_close_dir_ok=bear_is_red,
-                fvg_gap=(fvg_high - fvg_low),
-                min_fvg_gap=profile["min_fvg_gap"],
-                candles_since_choch=candles_since_bear_choch,
-            )
-            reason = (
-                f"🔴 STRICT SMC PASSED! SELL: M15 Bearish + M5 Sweep ({sweep_high_price:.2f}) "
-                f"+ CHoCH ({bear_choch_lvl:.2f}) + Closed Rejection | SL: {sl_price:.2f} ({sl_mode_lbl}) "
-                f"| M15 Target TP: {tp_price:.2f} ({target_rrr:.2f}R) | Quality: {q_score:.1f}"
-            )
-            logger.info("================================================================================")
-            logger.info("🔴 [STRICT 9-CONDITION SMC SELL SIGNAL EXECUTED] 🚀")
-            logger.info(f"🔴 S8 (Structural SL): {'FVG-Refined SL' if is_fvg_refined_sl else f'Sweep High ({sweep_high_price:.2f}) + {wick_buf:.2f}'} = {sl_price:.2f} (Dist: {sl_prefix}{sl_dist:.2f}{sl_suffix} <= {cap_lbl} Cap)")
-            logger.info(f"🔴 S9 (M15 Liquidity TP): Executing {target_rrr:.2f}R TP @ {tp_price:.2f} (Quality: {q_score:.1f}/100)")
-            logger.info("================================================================================")
-            return "SELL", tp_price, sl_price, sl_dist, reason
-        else:
-            if buy_sweep_used:
-                custom_step8_s = "WAITING ⚪ (M5 Sweep Already Traded)"
-            elif not is_sl_ok:
-                custom_step8_s = (
-                    f"FAIL 🔴 (Late Chasing {price:.2f} < FVG {fvg_low:.2f})"
-                    if is_chasing
-                    else f"FAIL 🔴 (SL {sl_prefix}{sl_dist:.2f}{sl_suffix} > {cap_lbl} Cap)"
-                )
-            elif is_fvg_refined_sl:
-                custom_step8_s = f"PASS 🟢 (FVG-Refined {sl_prefix}{sl_dist:.2f}{sl_suffix} <= {cap_lbl} Cap)"
-            else:
-                custom_step8_s = f"PASS 🟢 ({wick_buf:.2f} Buf - {sl_prefix}{sl_dist:.2f}{sl_suffix} SL)"
-
-            if not is_target_ok:
-                custom_step9_s = f"FAIL 🔴 (M15 Target {target_rrr:.2f}R < {min_target_rrr:.2f}R)"
-            else:
-                custom_step9_s = f"PASS 🟢 ({target_rrr:.2f}R M15 Target - {front_run_lbl} Front-Run)"
+        sig_out, custom_step8_s, custom_step9_s, m5_candidate_sl, scan_tp = _evaluate_m5_directional_entry(
+            is_bull=False, eval_df=eval_df, df_m15=df_m15,
+            sweep_idx=buy_sweep_idx, sweep_extreme=sweep_high_price, choch_lvl=bear_choch_lvl,
+            candles_since_choch=candles_since_bear_choch, matched_fvg=matched_bear_fvg,
+            closed_open=closed_open, closed_close=closed_close, closed_low=closed_low, closed_high=closed_high,
+            prev_closed_row=prev_closed_row, candle_range=bear_candle_range, wick_val=bear_upper_wick,
+            is_dir_close=bear_is_red, price=price, profile=profile, is_metals=is_metals,
+            bypass_filters=bypass_filters, sweep_already_used=buy_sweep_used, sweep_key=buy_sweep_key,
+            used_m5_sweeps=used_m5_sweeps, sl_prefix=sl_prefix, sl_suffix=sl_suffix,
+            cap_lbl=cap_lbl, front_run_lbl=front_run_lbl, min_target_rrr=min_target_rrr,
+        )
+        if sig_out is not None:
+            return sig_out
 
     # ── 2B. INDICES M1 LTF EXECUTION REFINEMENT (M15 Bias -> M5 Sweep -> M1 CHoCH + FVG + Closed Rejection) ──
     m1_info = {}

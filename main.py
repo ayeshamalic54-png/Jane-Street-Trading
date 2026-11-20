@@ -655,12 +655,11 @@ def get_blue_guardian_lots(
 ) -> float:
     """
     Smart $52 Max-Risk Institutional Prop Firm Lot Sizing Engine:
-    - Gold (XAUUSD): Base 0.07 lots when SL <= $7.42; auto-scales to 0.06 ($7.43-$8.66)
-      and 0.05 ($8.67-$10.00) so per-trade SL loss NEVER exceeds $52.00 USD.
-    - Indices (US30, NAS100): Dynamic exact $52.00 risk sizing using live MT5 symbol
-      trade_tick_value/trade_tick_value_loss/trade_tick_size AND order_calc_profit
+    - Gold / Silver: Base 0.07 lots max; auto-scales down dynamically so SL loss <= $52.00 USD.
+    - Indices (US30, NAS100): Exact <= $52.00 risk sizing using live MT5 tick_value & order_calc_profit
       (never rounds up to volume_min if min_vol would breach max_risk_usd -> returns 0.0).
-    - Forex: Fixed 0.51 Lots.
+    - Forex: Up to 0.51 lots max, auto-scaled down dynamically via live MT5 tick_value & order_calc_profit
+      (or standard 100k FX fallback offline) so per-trade SL loss NEVER exceeds $52.00 USD.
     """
     import math
     risk_budget = float(max_risk_usd or 52.0)
@@ -679,120 +678,134 @@ def get_blue_guardian_lots(
         category == "indices"
         or any(x in sym_upper for x in ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"))
     )
-    if is_idx:
-        resolved_sym = symbol
-        info = None
-        try:
-            if mt5.initialize():
-                info = mt5.symbol_info(symbol)
-                if info is None:
-                    resolved_sym = resolve_broker_symbol(symbol)
-                    info = mt5.symbol_info(resolved_sym)
-        except Exception:
-            info = None
 
-        if info is None:
+    resolved_sym = symbol
+    info = None
+    try:
+        if mt5.initialize():
+            info = mt5.symbol_info(symbol)
+            if info is None:
+                resolved_sym = resolve_broker_symbol(symbol)
+                info = mt5.symbol_info(resolved_sym)
+    except Exception:
+        info = None
+
+    eff_sl_dist = float(sl_dist_price or 0.0)
+    if eff_sl_dist <= 0 and float(entry_price or 0.0) > 0 and float(sl_price or 0.0) > 0:
+        eff_sl_dist = abs(float(entry_price) - float(sl_price))
+    if eff_sl_dist <= 0:
+        eff_sl_dist = 50.0 if is_idx else (0.20 if "JPY" in sym_upper else 0.0020)
+
+    if info is None:
+        if is_idx:
             logger.error(f"🛑 [MAX RISK GUARD] No MT5 symbol_info for index {symbol}; returning 0.0 lots to protect account.")
             return 0.0
+        # Standard 100,000-unit FX fallback when offline/unit-tested without MT5 terminal
+        ref_px = float(entry_price or sl_price or 0.0)
+        if "JPY" in sym_upper:
+            usd_per_unit = 100000.0 / (ref_px if ref_px > 20.0 else 155.0)
+        elif sym_upper.endswith("CAD") or sym_upper.endswith("CHF"):
+            usd_per_unit = 100000.0 / (ref_px if ref_px > 0.2 else 1.35)
+        else:
+            usd_per_unit = 100000.0
+        raw_fx = risk_budget / (eff_sl_dist * usd_per_unit)
+        safe_fx = math.floor(raw_fx * 100.0 + 1e-9) / 100.0
+        if safe_fx < 0.01:
+            return 0.0 if (0.01 * eff_sl_dist * usd_per_unit > risk_budget + 1e-6) else 0.01
+        return round(min(0.51, safe_fx), 2)
 
-        vol_min = float(getattr(info, "volume_min", 0.01) or 0.01)
-        vol_max = float(getattr(info, "volume_max", 25.0) or 25.0)
-        vol_step = float(getattr(info, "volume_step", 0.01) or 0.01)
-        if vol_step <= 0:
-            vol_step = 0.01
-        step_str = f"{vol_step:.8f}".rstrip("0")
-        step_dec = len(step_str.split(".")[1]) if "." in step_str else 0
+    vol_min = float(getattr(info, "volume_min", 0.01) or 0.01)
+    vol_max = float(getattr(info, "volume_max", 25.0) or 25.0)
+    vol_step = float(getattr(info, "volume_step", 0.01) or 0.01)
+    if vol_step <= 0:
+        vol_step = 0.01
+    step_str = f"{vol_step:.8f}".rstrip("0")
+    step_dec = len(step_str.split(".")[1]) if "." in step_str else 0
 
-        eff_sl_dist = float(sl_dist_price or 0.0)
-        if eff_sl_dist <= 0 and float(entry_price or 0.0) > 0 and float(sl_price or 0.0) > 0:
-            eff_sl_dist = abs(float(entry_price) - float(sl_price))
-        if eff_sl_dist <= 0:
-            eff_sl_dist = 50.0
+    tick_val = max(
+        float(getattr(info, "trade_tick_value", 0.0) or 0.0),
+        float(getattr(info, "trade_tick_value_loss", 0.0) or 0.0),
+    )
+    tick_sz = float(getattr(info, "trade_tick_size", 0.0) or 0.0)
+    usd_rates = []
+    if tick_val > 0 and tick_sz > 0:
+        usd_rates.append(tick_val / tick_sz)
 
-        tick_val = max(
-            float(getattr(info, "trade_tick_value", 0.0) or 0.0),
-            float(getattr(info, "trade_tick_value_loss", 0.0) or 0.0),
-        )
-        tick_sz = float(getattr(info, "trade_tick_size", 0.0) or 0.0)
-        usd_rates = []
-        if tick_val > 0 and tick_sz > 0:
-            usd_rates.append(tick_val / tick_sz)
-
-        mt5_ot = order_type if order_type is not None else getattr(mt5, "ORDER_TYPE_BUY", 0)
-        if float(entry_price or 0.0) > 0 and float(sl_price or 0.0) > 0 and hasattr(mt5, "order_calc_profit"):
-            try:
-                pnl_1lot = mt5.order_calc_profit(mt5_ot, resolved_sym, 1.0, float(entry_price), float(sl_price))
-                if pnl_1lot is not None and float(pnl_1lot) < 0:
-                    usd_rates.append(abs(float(pnl_1lot)) / eff_sl_dist)
-            except Exception:
-                pass
-
-        if not usd_rates:
-            logger.error(f"🛑 [MAX RISK GUARD] Zero tick_value & order_calc_profit for index {resolved_sym}; refusing blind contract fallback.")
-            return 0.0
-
-        usd_per_pt_1lot = max(usd_rates)
-        max_idx_lot = min(vol_max, 5.0)
-        raw_lot = risk_budget / (eff_sl_dist * usd_per_pt_1lot)
-
-        steps = math.floor((raw_lot / vol_step) + 1e-9)
-        safe_lot = round(min(max_idx_lot, steps * vol_step), step_dec)
-
-        # NEVER round UP to vol_min if vol_min itself exceeds the $52 max risk cap
-        if safe_lot < vol_min or steps <= 0:
-            min_loss = vol_min * eff_sl_dist * usd_per_pt_1lot
-            if min_loss <= risk_budget + 1e-6:
-                safe_lot = round(vol_min, step_dec)
-            else:
-                logger.warning(f"🛑 [MAX ${risk_budget:.0f} RISK GUARD] {resolved_sym} SL={eff_sl_dist:.2f}pt (${usd_per_pt_1lot:.4f}/pt): even broker min_vol={vol_min} risks ${min_loss:.2f} > ${risk_budget:.2f}. Trade ABORTED.")
-                return 0.0
-
-        # Authoritative step-down verify against both formula and order_calc_profit
-        while safe_lot >= vol_min:
-            est_loss = safe_lot * eff_sl_dist * usd_per_pt_1lot
-            if float(entry_price or 0.0) > 0 and float(sl_price or 0.0) > 0 and hasattr(mt5, "order_calc_profit"):
-                try:
-                    calc_lot_pnl = mt5.order_calc_profit(mt5_ot, resolved_sym, safe_lot, float(entry_price), float(sl_price))
-                    if calc_lot_pnl is not None and float(calc_lot_pnl) < 0:
-                        est_loss = max(est_loss, abs(float(calc_lot_pnl)))
-                except Exception:
-                    pass
-            if est_loss <= risk_budget + 1e-6:
-                break
-            next_lot = round(safe_lot - vol_step, step_dec)
-            if next_lot >= safe_lot:
-                break
-            safe_lot = next_lot
-
-        if safe_lot < vol_min:
-            logger.warning(f"🛑 [MAX ${risk_budget:.0f} RISK GUARD] {resolved_sym} stepped below min_vol={vol_min}. Trade ABORTED.")
-            return 0.0
-
-        # Free margin safety cap (never exceed 80% of available free margin)
+    mt5_ot = order_type if order_type is not None else getattr(mt5, "ORDER_TYPE_BUY", 0)
+    if float(entry_price or 0.0) > 0 and float(sl_price or 0.0) > 0 and hasattr(mt5, "order_calc_profit"):
         try:
-            acc = mt5.account_info()
-            tick_now = mt5.symbol_info_tick(resolved_sym)
-            if acc and tick_now and acc.margin_free > 0:
-                ref_px = float(tick_now.ask or tick_now.bid or 0.0)
-                if ref_px > 0:
-                    max_safe_margin = acc.margin_free * 0.80
-                    while safe_lot >= vol_min:
-                        req_m = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, resolved_sym, safe_lot, ref_px)
-                        if req_m is None or req_m <= max_safe_margin:
-                            break
-                        next_lot = round(safe_lot - vol_step, step_dec)
-                        if next_lot >= safe_lot:
-                            break
-                        safe_lot = next_lot
-                    if safe_lot < vol_min:
-                        logger.warning(f"🛑 [MARGIN GUARD] {resolved_sym} insufficient free margin for min_vol={vol_min}. Trade ABORTED.")
-                        return 0.0
+            pnl_1lot = mt5.order_calc_profit(mt5_ot, resolved_sym, 1.0, float(entry_price), float(sl_price))
+            if pnl_1lot is not None and float(pnl_1lot) < 0:
+                usd_rates.append(abs(float(pnl_1lot)) / eff_sl_dist)
         except Exception:
             pass
 
-        return safe_lot
+    if not usd_rates:
+        if is_idx:
+            logger.error(f"🛑 [MAX RISK GUARD] Zero tick_value & order_calc_profit for index {resolved_sym}; refusing blind contract fallback.")
+            return 0.0
+        return 0.01
 
-    return 0.51
+    usd_per_pt_1lot = max(usd_rates)
+    max_cat_lot = min(vol_max, 5.0 if is_idx else 0.51)
+    raw_lot = risk_budget / (eff_sl_dist * usd_per_pt_1lot)
+
+    steps = math.floor((raw_lot / vol_step) + 1e-9)
+    safe_lot = round(min(max_cat_lot, steps * vol_step), step_dec)
+
+    # NEVER round UP to vol_min if vol_min itself exceeds the $52 max risk cap
+    if safe_lot < vol_min or steps <= 0:
+        min_loss = vol_min * eff_sl_dist * usd_per_pt_1lot
+        if min_loss <= risk_budget + 1e-6:
+            safe_lot = round(vol_min, step_dec)
+        else:
+            logger.warning(f"🛑 [MAX ${risk_budget:.0f} RISK GUARD] {resolved_sym} SL={eff_sl_dist:.5f} (${usd_per_pt_1lot:.4f}/u): even broker min_vol={vol_min} risks ${min_loss:.2f} > ${risk_budget:.2f}. Trade ABORTED.")
+            return 0.0
+
+    # Authoritative step-down verify against both formula and order_calc_profit
+    while safe_lot >= vol_min:
+        est_loss = safe_lot * eff_sl_dist * usd_per_pt_1lot
+        if float(entry_price or 0.0) > 0 and float(sl_price or 0.0) > 0 and hasattr(mt5, "order_calc_profit"):
+            try:
+                calc_lot_pnl = mt5.order_calc_profit(mt5_ot, resolved_sym, safe_lot, float(entry_price), float(sl_price))
+                if calc_lot_pnl is not None and float(calc_lot_pnl) < 0:
+                    est_loss = max(est_loss, abs(float(calc_lot_pnl)))
+            except Exception:
+                pass
+        if est_loss <= risk_budget + 1e-6:
+            break
+        next_lot = round(safe_lot - vol_step, step_dec)
+        if next_lot >= safe_lot:
+            break
+        safe_lot = next_lot
+
+    if safe_lot < vol_min:
+        logger.warning(f"🛑 [MAX ${risk_budget:.0f} RISK GUARD] {resolved_sym} stepped below min_vol={vol_min}. Trade ABORTED.")
+        return 0.0
+
+    # Free margin safety cap (never exceed 80% of available free margin)
+    try:
+        acc = mt5.account_info()
+        tick_now = mt5.symbol_info_tick(resolved_sym)
+        if acc and tick_now and acc.margin_free > 0:
+            ref_px = float(tick_now.ask or tick_now.bid or 0.0)
+            if ref_px > 0:
+                max_safe_margin = acc.margin_free * 0.80
+                while safe_lot >= vol_min:
+                    req_m = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, resolved_sym, safe_lot, ref_px)
+                    if req_m is None or req_m <= max_safe_margin:
+                        break
+                    next_lot = round(safe_lot - vol_step, step_dec)
+                    if next_lot >= safe_lot:
+                        break
+                    safe_lot = next_lot
+                if safe_lot < vol_min:
+                    logger.warning(f"🛑 [MARGIN GUARD] {resolved_sym} insufficient free margin for min_vol={vol_min}. Trade ABORTED.")
+                    return 0.0
+    except Exception:
+        pass
+
+    return safe_lot
 
 
 def execute_mt5_smc_order(

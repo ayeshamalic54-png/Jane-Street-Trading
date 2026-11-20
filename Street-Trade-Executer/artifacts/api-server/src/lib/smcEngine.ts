@@ -23,6 +23,11 @@ export interface SymbolSpec {
   isQuoteCadOrChf: boolean;
   isEurGbp: boolean;
   defaultMaxSlDist: number;
+  m5MinSlDist: number;
+  m1MinSlDist: number;
+  protectedAnchorEnabled: boolean;
+  staleCloseCheck: boolean;
+  fvgRefinedSlEnabled: boolean;
   m15MinAmp: number;
   m15TargetMinAmp: number;
   m5MinAmp: number;
@@ -50,6 +55,11 @@ const FOREX_STANDARD_BASE = {
   isQuoteCadOrChf: false,
   isEurGbp: false,
   defaultMaxSlDist: 0.005, // 50 pips
+  m5MinSlDist: 0.0012, // 12 pips noise floor
+  m1MinSlDist: 0.0,
+  protectedAnchorEnabled: false,
+  staleCloseCheck: true,
+  fvgRefinedSlEnabled: false,
   m15MinAmp: 0.002,
   m15TargetMinAmp: 0.0012,
   m5MinAmp: 0.00015,
@@ -77,6 +87,11 @@ const FOREX_JPY_BASE = {
   isQuoteCadOrChf: false,
   isEurGbp: false,
   defaultMaxSlDist: 0.5, // 50 pips JPY
+  m5MinSlDist: 0.12, // 12 pips JPY noise floor
+  m1MinSlDist: 0.0,
+  protectedAnchorEnabled: false,
+  staleCloseCheck: true,
+  fvgRefinedSlEnabled: false,
   m15MinAmp: 0.2,
   m15TargetMinAmp: 0.12,
   m5MinAmp: 0.015,
@@ -108,6 +123,11 @@ export const SYMBOL_SPECS: Record<string, SymbolSpec> = {
     isQuoteCadOrChf: false,
     isEurGbp: false,
     defaultMaxSlDist: 10.0,
+    m5MinSlDist: 0.0,
+    m1MinSlDist: 0.0,
+    protectedAnchorEnabled: true,
+    staleCloseCheck: false,
+    fvgRefinedSlEnabled: false,
     m15MinAmp: 3.0,
     m15TargetMinAmp: 2.5,
     m5MinAmp: 1.25,
@@ -137,6 +157,11 @@ export const SYMBOL_SPECS: Record<string, SymbolSpec> = {
     isQuoteCadOrChf: false,
     isEurGbp: false,
     defaultMaxSlDist: 0.5,
+    m5MinSlDist: 0.0,
+    m1MinSlDist: 0.0,
+    protectedAnchorEnabled: false,
+    staleCloseCheck: false,
+    fvgRefinedSlEnabled: false,
     m15MinAmp: 0.25,
     m15TargetMinAmp: 0.2,
     m5MinAmp: 0.08,
@@ -166,6 +191,11 @@ export const SYMBOL_SPECS: Record<string, SymbolSpec> = {
     isQuoteCadOrChf: false,
     isEurGbp: false,
     defaultMaxSlDist: 105.0,
+    m5MinSlDist: 38.0,
+    m1MinSlDist: 38.0,
+    protectedAnchorEnabled: true,
+    staleCloseCheck: false,
+    fvgRefinedSlEnabled: false,
     m15MinAmp: 25.5,
     m15TargetMinAmp: 21.25,
     m5MinAmp: 10.6,
@@ -195,6 +225,11 @@ export const SYMBOL_SPECS: Record<string, SymbolSpec> = {
     isQuoteCadOrChf: false,
     isEurGbp: false,
     defaultMaxSlDist: 85.0,
+    m5MinSlDist: 0.0,
+    m1MinSlDist: 38.0,
+    protectedAnchorEnabled: false,
+    staleCloseCheck: true,
+    fvgRefinedSlEnabled: true,
     m15MinAmp: 25.5,
     m15TargetMinAmp: 21.25,
     m5MinAmp: 10.6,
@@ -244,14 +279,15 @@ const CRYPTO_KEYWORDS = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX
 export function resolveSymbolSpec(rawSymbol: string): SymbolSpec {
   const cleanedRaw = rawSymbol.trim().toUpperCase().split("/")[0].replace(/[^A-Z0-9]/g, "");
   const cleaned = SYMBOL_ALIAS_MAP[cleanedRaw] ?? cleanedRaw;
+  // Allow explicit terminal specs (e.g. USDCAD) BEFORE keyword scan so "USDC" inside "USDCAD" never false-triggers
+  const spec = cleaned ? SYMBOL_SPECS[cleaned] : undefined;
+  if (spec) {
+    return spec;
+  }
   if (!cleaned || CRYPTO_KEYWORDS.some((kw) => cleaned.includes(kw))) {
     throw new Error(`Crypto symbols (${rawSymbol}) are disabled in this terminal. Select Metals (XAUUSD, XAGUSD), Indices (US30, NAS100), or Forex (EURUSD, GBPUSD, USDJPY).`);
   }
-  const spec = SYMBOL_SPECS[cleaned];
-  if (!spec) {
-    throw new Error(`Unsupported symbol "${rawSymbol}". Allowed Metals, Indices & Forex: ${Object.keys(SYMBOL_SPECS).join(", ")}`);
-  }
-  return spec;
+  throw new Error(`Unsupported symbol "${rawSymbol}". Allowed Metals, Indices & Forex: ${Object.keys(SYMBOL_SPECS).join(", ")}`);
 }
 
 export function priceDeltaToUsd(deltaPrice: number, exitPrice: number, lotSize: number, spec: SymbolSpec): number {
@@ -435,6 +471,15 @@ function detectLiquiditySweep(
       if (oneBar || twoBar) {
         const sweepLow = twoBar ? Math.min(dfM5[i]!.low, dfM5[i + 1]!.low) : dfM5[i]!.low;
         const sweepEnd = twoBar ? i + 1 : i;
+        let stalePriorClose = false;
+        if (spec.staleCloseCheck) {
+          for (let k = slIdx + 1; k < Math.max(slIdx + 1, i - 1); k++) {
+            if (dfM5[k]!.close < slVal) {
+              stalePriorClose = true;
+              break;
+            }
+          }
+        }
         let priorLower = false;
         for (let k = Math.max(slIdx + 1, i - 3); k < i; k++) {
           if (dfM5[k]!.low < sweepLow) {
@@ -449,7 +494,7 @@ function detectLiquiditySweep(
             break;
           }
         }
-        if (!priorLower && !subsequentBreak) {
+        if (!stalePriorClose && !priorLower && !subsequentBreak) {
           sellSweep = { found: true, sweepExtreme: sweepLow, swingLevel: slVal, sweepIdx: i };
           break;
         }
@@ -479,6 +524,15 @@ function detectLiquiditySweep(
       if (oneBar || twoBar) {
         const sweepHigh = twoBar ? Math.max(dfM5[i]!.high, dfM5[i + 1]!.high) : dfM5[i]!.high;
         const sweepEnd = twoBar ? i + 1 : i;
+        let stalePriorClose = false;
+        if (spec.staleCloseCheck) {
+          for (let k = shIdx + 1; k < Math.max(shIdx + 1, i - 1); k++) {
+            if (dfM5[k]!.close > shVal) {
+              stalePriorClose = true;
+              break;
+            }
+          }
+        }
         let priorHigher = false;
         for (let k = Math.max(shIdx + 1, i - 3); k < i; k++) {
           if (dfM5[k]!.high > sweepHigh) {
@@ -493,7 +547,7 @@ function detectLiquiditySweep(
             break;
           }
         }
-        if (!priorHigher && !subsequentBreak) {
+        if (!stalePriorClose && !priorHigher && !subsequentBreak) {
           buySweep = { found: true, sweepExtreme: sweepHigh, swingLevel: shVal, sweepIdx: i };
           break;
         }
@@ -502,6 +556,21 @@ function detectLiquiditySweep(
   }
 
   return { sellSweep, buySweep };
+}
+
+function findProtectedSweepExtreme(
+  bars: OhlcBar[],
+  sweepIdx: number,
+  baseExtreme: number,
+  isBull: boolean,
+  lookback = 12
+): number {
+  let ext = baseExtreme;
+  const start = Math.max(0, sweepIdx - lookback);
+  for (let k = start; k <= sweepIdx && k < bars.length; k++) {
+    ext = isBull ? Math.min(ext, bars[k]!.low) : Math.max(ext, bars[k]!.high);
+  }
+  return ext;
 }
 
 function detectChochBos(
@@ -828,7 +897,7 @@ function computeSafeTradeLot(
   smartRiskCapEnabled: boolean,
   riskCapUsd: number
 ): number {
-  if (!smartRiskCapEnabled || slDist <= 0 || (spec.category !== "metals" && spec.category !== "indices")) {
+  if (!smartRiskCapEnabled || slDist <= 0) {
     return Number(maxBaseLot.toFixed(2));
   }
   const usdPerUnitLot1 = Math.abs(priceDeltaToUsd(1.0, entryPrice, 1.0, spec));
@@ -896,7 +965,7 @@ export function runSmcBacktest(params: SmcBacktestParams) {
     { time: new Date(Math.max(startTimeMs, m5Bars[0]!.time)).toISOString(), balance: initialBalance },
   ];
 
-  // S8 FVG-Defense Refined SL Rescue (NAS100 & XAUUSD Quality-B when Sweep SL > maxSlDist)
+  // S8 FVG-Defense Refined SL Rescue (enabled only on NAS100 where M5 FVG rescue adds verified edge)
   const tryFvgRefinedSlRescue = (
     isBull: boolean,
     entryPrice: number,
@@ -908,8 +977,7 @@ export function runSmcBacktest(params: SmcBacktestParams) {
     isDirClose: boolean,
     barsSinceChoch: number
   ): { slPrice: number; slDist: number } | null => {
-    if (rawSlDist <= maxSlDist) return null;
-    if (spec.symbol !== "NAS100" && spec.symbol !== "XAUUSD") return null;
+    if (!spec.fvgRefinedSlEnabled || rawSlDist <= maxSlDist) return null;
 
     const isNas = spec.symbol === "NAS100";
     const maxRawMult = isNas ? 2.5 : 1.65;
@@ -979,6 +1047,15 @@ export function runSmcBacktest(params: SmcBacktestParams) {
 
     let slPrice = rnd(isBull ? sw.sweepExtreme - spec.wickBuf : sw.sweepExtreme + spec.wickBuf);
     let slDist = isBull ? entryPrice - slPrice : slPrice - entryPrice;
+    if (spec.protectedAnchorEnabled) {
+      const protExt = findProtectedSweepExtreme(m5Slice, sw.sweepIdx, sw.sweepExtreme, isBull, 12);
+      const protSl = rnd(isBull ? protExt - spec.wickBuf : protExt + spec.wickBuf);
+      const protDist = isBull ? entryPrice - protSl : protSl - entryPrice;
+      if (protDist > slDist && protDist <= maxSlDist) {
+        slPrice = protSl;
+        slDist = protDist;
+      }
+    }
     if (slDist > maxSlDist) {
       const rescued = tryFvgRefinedSlRescue(
         isBull, entryPrice, slDist, matched, closedBar, prevBar, range, dirCloseOk, closedIdx - choch.idx
@@ -988,7 +1065,7 @@ export function runSmcBacktest(params: SmcBacktestParams) {
         slDist = rescued.slDist;
       }
     }
-    if (slDist <= 0 || slDist > maxSlDist) return null;
+    if (slDist < spec.m5MinSlDist || slDist <= 0 || slDist > maxSlDist) return null;
 
     const target = computeM15OpposingTarget(isBull, m15Slice, entryPrice, slDist, minRrr, spec);
     if (target.rrr < minRrr) return null;
@@ -1268,7 +1345,8 @@ export function runSmcBacktest(params: SmcBacktestParams) {
       const slPrice = rnd(isBull ? trueExtreme - spec.wickBuf : trueExtreme + spec.wickBuf);
       const slDist = isBull ? entryPrice - slPrice : slPrice - entryPrice;
       const notChasing = isBull ? entryPrice <= matched.high + m1MaxChase : entryPrice >= matched.low - m1MaxChase;
-      if (slDist < 15.0 || slDist > maxSlDist || !notChasing) continue;
+      const m1MinSl = spec.m1MinSlDist > 0 ? spec.m1MinSlDist : 15.0;
+      if (slDist < m1MinSl || slDist > maxSlDist || !notChasing) continue;
 
       const target = computeM15OpposingTarget(isBull, m15Slice, entryPrice, slDist, minRrr, spec);
       if (target.rrr < minRrr) continue;
