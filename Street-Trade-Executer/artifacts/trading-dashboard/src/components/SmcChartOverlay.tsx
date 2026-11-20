@@ -258,23 +258,36 @@ export function SmcChartOverlay({
     return livePrice;
   }, [hasActivePosition, activePosition, livePrice]);
 
-  // Strict SL: anchored to sweep with exact asset buffer ($0.75 Gold / 6.50pt Indices)
+  // Strict SL: prioritize active position SL, then engine/telemetry sl_price (M1/FVG-Refined), then Sweep ± asset buffer ($0.75 Gold / 6.50pt Indices)
   const effectiveSlPrice = useMemo(() => {
     if (hasActivePosition && activePosition && (Number(activePosition.sl) > 0 || Number(activePosition.slPrice) > 0)) {
       return Number(activePosition.sl || activePosition.slPrice);
     }
-    const minSweepDist = isIndices ? 25.5 : isMetals ? 3.0 : 0.0010;
+    let telSl = Number(telemetry?.sl_price ?? telemetry?.slPrice ?? 0);
+    if (!(telSl > 0)) {
+      const rawJson = telemetry?.fvg_bounds_json ?? telemetry?.fvgBoundsJson;
+      if (rawJson) {
+        try {
+          const parsed = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson;
+          if (parsed?.sl_price && Number(parsed.sl_price) > 0) telSl = Number(parsed.sl_price);
+        } catch {}
+      }
+    }
+    if (telSl > 0 && Math.abs(effectiveEntryPrice - telSl) >= (isIndices ? 12.0 : isMetals ? 2.0 : 0.0005)) {
+      return Number(telSl.toFixed(isMetals || isIndices ? 2 : 5));
+    }
+    const minSweepDist = isIndices ? 15.0 : isMetals ? 3.0 : 0.0010;
     if (sweepPrice > 0 && Math.abs(effectiveEntryPrice - sweepPrice) >= minSweepDist) {
       return isBearishSetup
-        ? Number((sweepPrice + defaultBuf).toFixed(2))
-        : Number((sweepPrice - defaultBuf).toFixed(2));
+        ? Number((sweepPrice + defaultBuf).toFixed(isMetals || isIndices ? 2 : 5))
+        : Number((sweepPrice - defaultBuf).toFixed(isMetals || isIndices ? 2 : 5));
     }
     // Baseline institutional SMC structural risk:
-    const defaultSlDist = isIndices ? 64.0 : isMetals ? 7.50 : 0.0020;
+    const defaultSlDist = isIndices ? 58.0 : isMetals ? 7.50 : 0.0020;
     return isBearishSetup
-      ? Number((effectiveEntryPrice + defaultSlDist).toFixed(2))
-      : Number((effectiveEntryPrice - defaultSlDist).toFixed(2));
-  }, [hasActivePosition, activePosition, sweepPrice, isBearishSetup, defaultBuf, effectiveEntryPrice, isMetals, isIndices]);
+      ? Number((effectiveEntryPrice + defaultSlDist).toFixed(isMetals || isIndices ? 2 : 5))
+      : Number((effectiveEntryPrice - defaultSlDist).toFixed(isMetals || isIndices ? 2 : 5));
+  }, [hasActivePosition, activePosition, telemetry, sweepPrice, isBearishSetup, defaultBuf, effectiveEntryPrice, isMetals, isIndices]);
 
   // Strict TP: dynamically prioritize opposing liquidity target from engine/telemetry, or calculated opposing target
   const effectiveTpPrice = useMemo(() => {
@@ -1571,18 +1584,22 @@ export function SmcChartOverlay({
                 : !s2Pass
                 ? "Step 1 PASS 🟢 — Step 2 PENDING ⚪: Waiting for M5 Liquidity Sweep wick"
                 : !s3Pass
-                ? "Step 1 & 2 PASS 🟢 — Step 3 PENDING ⚪: Waiting for M5 CHoCH candle close break"
+                ? (isIndices || String(chochStatus).includes("M1")
+                    ? "Step 1 & 2 PASS 🟢 — Step 3 PENDING ⚪: Waiting for M5 / M1 LTF CHoCH candle close break"
+                    : "Step 1 & 2 PASS 🟢 — Step 3 PENDING ⚪: Waiting for M5 CHoCH candle close break")
                 : !s4Pass
-                ? "Step 1-3 PASS 🟢 — Step 4 PENDING ⚪: Waiting for Displacement FVG Creation"
+                ? "Step 1-3 PASS 🟢 — Step 4 PENDING ⚪: Waiting for Displacement FVG Creation (M5 / M1 LTF)"
                 : !s5Pass
                 ? "Step 1-4 PASS 🟢 — Step 5 PENDING ⚪: Waiting for closed-candle FVG Retest"
                 : !s6Pass
                 ? "Step 1-5 PASS 🟢 — Step 6 PENDING ⚪: Waiting for FVG Rejection Candle"
                 : !s7Pass
                 ? "Step 1-6 PASS 🟢 — Step 7 PENDING ⚪: Waiting for Candle Close Confirmation"
+                : !s8Pass
+                ? `Step 1-7 PASS 🟢 — Step 8 PENDING/BLOCKED: ${s8Status || "Checking Tight SL Cap"}`
                 : !s9Pass
                 ? "Step 1-7 PASS 🟢 — Step 9 BLOCKED 🔴: Opposing M15 Liquidity Target < 1.85R"
-                : "Step 1-9 PASS 🟢 — All 9 Pure SMC Conditions Verified!"}
+                : "Step 1-9 PASS 🟢 — All 9 Pro MTF SMC Conditions Verified!"}
             </p>
           </div>
         </div>
@@ -1753,7 +1770,7 @@ export function SmcChartOverlay({
                     variant="outline"
                     className="text-[10px] px-2 py-0.5 font-bold bg-cyan-500/20 text-cyan-300 border-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.3)]"
                   >
-                    ⚡ REAL MT5 M5 FEED
+                    {isIndices ? "⚡ REAL MT5 M5 + M1 LTF FEED" : "⚡ REAL MT5 M5 FEED"}
                   </Badge>
                 ) : (
                   <Badge
@@ -2832,7 +2849,7 @@ export function SmcChartOverlay({
                 ) : (
                   <Clock className="w-4 h-4 text-zinc-500" />
                 )}
-                S3: M5 CHoCH Break
+                {(isIndices || String(chochStatus).includes("M1")) ? "S3: M5 / M1 LTF CHoCH Break" : "S3: M5 CHoCH Break"}
               </span>
               <Badge
                 variant="outline"
@@ -2849,7 +2866,7 @@ export function SmcChartOverlay({
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s3Pass
                 ? `Confirmed trend change by closing past ${pricePrefix}${chochPrice.toFixed(2)}.`
-                : "Waiting for candle body close beyond the minor pivot point."}
+                : (isIndices ? "Waiting for M5 or M1 LTF candle close beyond minor pivot point." : "Waiting for candle body close beyond the minor pivot point.")}
             </p>
           </div>
 
@@ -2885,7 +2902,7 @@ export function SmcChartOverlay({
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
               {s4Pass
-                ? "Imbalance gap formed by Sweep-to-CHoCH displacement leg."
+                ? `Imbalance gap formed by Sweep-to-CHoCH leg (${String(fvgStatus).includes("M1") ? "M1 LTF FVG" : "M5 FVG"}).`
                 : "Waiting for 3-candle displacement imbalance (Fair Value Gap)."}
             </p>
           </div>
@@ -2955,15 +2972,19 @@ export function SmcChartOverlay({
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
-              {s7Pass ? "M5 rejection bar closed cleanly; entry confirmed without chasing." : "Entry waits strictly for M5 rejection bar close."}
+              {s7Pass
+                ? `${String(s7Status).includes("M1") ? "M1 LTF" : "M5"} rejection bar closed cleanly; entry confirmed.`
+                : `Entry waits strictly for ${isIndices ? "M1 / M5" : "M5"} rejection bar close.`}
             </p>
           </div>
 
-          {/* Step 8: SL Placement ($0.75 Buf) */}
+          {/* Step 8: SL Placement */}
           <div
             className={cn(
               "p-3 rounded-lg border transition-all",
-              s8Pass
+              s8Status.includes("FAIL")
+                ? "bg-rose-950/30 border-rose-500/60 text-white"
+                : s8Pass
                 ? "bg-rose-950/40 border-rose-500/60 text-white"
                 : "bg-[#0d121f] border-zinc-800 text-zinc-400"
             )}
@@ -2973,12 +2994,20 @@ export function SmcChartOverlay({
                 {s8Pass ? <Shield className="w-4 h-4 text-rose-400" /> : <Clock className="w-4 h-4 text-zinc-500" />}
                 S8: SL Placement ({bufBadgeStr} Buf)
               </span>
-              <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0.2 font-bold", s8Pass ? "bg-rose-500/20 text-rose-300 border-rose-400" : "bg-zinc-800 text-zinc-400 border-zinc-700")}>
-                {s8Pass ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 (${bufBadgeStr} Buf)`) : "PENDING ⚪"}
+              <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0.2 font-bold", s8Status.includes("FAIL") ? "bg-rose-500/20 text-rose-300 border-rose-400" : s8Pass ? "bg-rose-500/20 text-rose-300 border-rose-400" : "bg-zinc-800 text-zinc-400 border-zinc-700")}>
+                {s8Status.includes("FAIL")
+                  ? s8Status
+                  : s8Pass
+                  ? (s8Status && isPassText(s8Status) ? s8Status : `PASS 🟢 (${bufBadgeStr} Buf)`)
+                  : "PENDING ⚪"}
               </Badge>
             </div>
             <p className="text-[11px] text-zinc-300 leading-snug">
-              {s8Pass ? `Anchored ${bufBadgeStr} beyond Sweep wick (${pricePrefix}${slPrice.toFixed(2)}) within ${capBadgeStr} (${defaultMaxSlCap.toFixed(isMetals || isIndices ? 1 : 4)}) cap.` : `Will lock ${bufBadgeStr} behind Sweep extreme (max ${capBadgeStr} cap, ~$52 risk).`}
+              {s8Status.includes("FAIL")
+                ? s8Status
+                : s8Pass
+                ? `${String(s8Status).includes("FVG-Refined") ? "FVG-Defense Refined SL" : String(s8Status).includes("M1") ? "Tight M1 LTF SL" : `Sweep ± ${bufBadgeStr}`} (${pricePrefix}${slPrice.toFixed(2)}) within ${capBadgeStr} (${defaultMaxSlCap.toFixed(isMetals || isIndices ? 1 : 4)}) cap.`
+                : `Will lock ${bufBadgeStr} behind Sweep / FVG extreme (max ${capBadgeStr} cap, <=$52 risk).`}
             </p>
           </div>
 

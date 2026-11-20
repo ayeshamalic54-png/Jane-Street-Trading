@@ -129,6 +129,18 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
             "fallback_sl_dist": 21.25,
             "sweep_tol": 4.25,
             "be_buffer": 2.15,
+            "m1_ltf_enabled": True,
+            "m1_min_amp": 5.00,
+            "m1_min_fvg_gap": 2.20,
+            "m1_mit_tol": 1.00,
+            "m1_close_tol": 1.50,
+            "m1_min_pen_gap": 4.50,
+            "m1_max_chase_dist": 12.00,
+            "m1_min_sl_dist": 15.00,
+            "m1_min_body_ratio": 0.25,
+            "fvg_refined_sl_enabled": False,
+            "refined_wick_buf": 9.50,
+            "min_refined_sl_dist": 25.00,
         }
 
     if is_nas100:
@@ -159,6 +171,22 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
             "fallback_sl_dist": 21.25,
             "sweep_tol": 4.25,
             "be_buffer": 2.15,
+            "m1_ltf_enabled": True,
+            "m1_min_amp": 5.00,
+            "m1_min_fvg_gap": 2.20,
+            "m1_mit_tol": 1.00,
+            "m1_close_tol": 1.50,
+            "m1_min_pen_gap": 4.50,
+            "m1_max_chase_dist": 12.00,
+            "m1_min_sl_dist": 15.00,
+            "m1_min_body_ratio": 0.25,
+            "fvg_refined_sl_enabled": True,
+            "fvg_refined_max_raw_mult": 2.50,
+            "fvg_refined_min_body": 0.0,
+            "fvg_refined_max_choch_bars": 18,
+            "fvg_refined_min_gap_mult": 1.00,
+            "refined_wick_buf": 9.50,
+            "min_refined_sl_dist": 25.00,
         }
 
     is_metals = (
@@ -194,6 +222,14 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
             "fallback_sl_dist": 2.50,
             "sweep_tol": 0.50,
             "be_buffer": 0.25,
+            "m1_ltf_enabled": False,
+            "fvg_refined_sl_enabled": True,
+            "fvg_refined_max_raw_mult": 1.65,
+            "fvg_refined_min_body": 0.35,
+            "fvg_refined_max_choch_bars": 8,
+            "fvg_refined_min_gap_mult": 1.30,
+            "refined_wick_buf": 1.10,
+            "min_refined_sl_dist": 3.20,
         }
 
     is_mid_fx = px > 20
@@ -224,6 +260,10 @@ def get_smc_asset_profile(df=None, symbol=None, category=None, ref_price=None):
         "fallback_sl_dist": 0.0015,
         "sweep_tol": 0.00030,
         "be_buffer": 0.00005,
+        "m1_ltf_enabled": False,
+        "fvg_refined_sl_enabled": False,
+        "refined_wick_buf": 0.00050,
+        "min_refined_sl_dist": 0.0012,
     }
 
 

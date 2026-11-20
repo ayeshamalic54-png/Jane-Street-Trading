@@ -2312,7 +2312,13 @@ def main():
 
     import risk_safeguards
     logger.info("Quantitative core pipeline active.")
-    logger.info(f"[ACTIVE SYSTEM CONFIG] Strategy: PURE SMC STRUCTURE | Condition 8 SL (0.75 buf) | Condition 9 Target (Opposing Structural Target) | Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% | Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}")
+    logger.info(
+        f"[ACTIVE SYSTEM CONFIG] Strategy: PRO MTF SMC (M15 Bias -> M5 Sweep -> M1 LTF Indices Refinement + S8 FVG-Defense SL) "
+        f"| Tight SL Caps: Gold $10.00 / US30 105pt / NAS100 85pt | Max Risk: <= $52.00 USD "
+        f"| BE: +$50.00 Pure Breakeven | S9 Target: M15 Opposing Liquidity (>=1.85R) "
+        f"| Halt Limit: {risk_safeguards.HALT_DAILY_DRAWDOWN_PCT:.2f}% | Max Limit: {risk_safeguards.MAX_DAILY_DRAWDOWN_PCT:.2f}% "
+        f"| Minimum Hold: {risk_safeguards.MINIMUM_HOLD_TIME_SECONDS}s | Metals Lots: {DEFAULT_LOT_SIZES.get('metals')} | Forex Lots: {DEFAULT_LOT_SIZES.get('forex')}"
+    )
 
 
 
@@ -2321,6 +2327,7 @@ def main():
     win_rate_loop_counter = 0
     loop_log_counter = 0
     SMC_ZONES_CACHE = {}
+    _USED_M5_SWEEP_KEYS = {}
     smc_counter_cache = {}
     aamd_normal_cache = {}
     _purged_missing_pairs = set()
@@ -3007,11 +3014,32 @@ def main():
                     df_m5.attrs["symbol"] = s_a_resolved
                     df_m5.attrs["category"] = cat_a
 
-                # Pass live M5 & M15 data along with live broker tick price (p_a)
-                # Strategy engine evaluates confirmed closed candle (iloc[-2]) and executes on live price (p_a)
+                asset_prof = get_smc_asset_profile(df_a, symbol=s_a_resolved, category=cat_a, ref_price=p_a)
+                df_m1 = None
+                if asset_prof.get("m1_ltf_enabled") and cat_a != "crypto":
+                    df_m1 = get_rates_df(s_a_resolved, mt5.TIMEFRAME_M1, count=140)
+                    if df_m1 is not None and not df_m1.empty:
+                        df_m1.attrs["symbol"] = s_a_resolved
+                        df_m1.attrs["category"] = cat_a
+
+                sweep_set = _USED_M5_SWEEP_KEYS.setdefault(s_a_resolved, set())
+                if len(sweep_set) > 60:
+                    for _old_sw in list(sweep_set)[:len(sweep_set) - 60]:
+                        sweep_set.discard(_old_sw)
+
+                # Pass live M1/M5/M15 data along with live broker tick price (p_a)
+                # Strategy engine evaluates confirmed closed candle and executes on live price (p_a)
                 action = "NONE"
                 smc_sig, smc_tp, smc_sl, smc_sl_dist, smc_reason = evaluate_smc_strategy_signal(
-                    df_a, df_m5, category=cat_a, net_obi=net_obi, obi_enabled=OBI_ENABLED, live_price=p_a, symbol=s_a_resolved
+                    df_a,
+                    df_m5,
+                    category=cat_a,
+                    net_obi=net_obi,
+                    obi_enabled=OBI_ENABLED,
+                    live_price=p_a,
+                    symbol=s_a_resolved,
+                    df_m1=df_m1,
+                    used_m5_sweeps=sweep_set,
                 )
                 vid_reason = smc_reason
                 if smc_sig == "BUY":
@@ -3021,7 +3049,6 @@ def main():
 
 
                 logger.info(f"📊 [PURE SMC STRUCTURE SCAN] {pk} | {vid_reason} | Target Plan: Opposing Structural Target 🟢")
-                asset_prof = get_smc_asset_profile(df_a, symbol=s_a_resolved, category=cat_a, ref_price=p_a)
                 try:
                     from database import update_smc_telemetry
                     import json
@@ -3040,6 +3067,7 @@ def main():
                     sweep_p_val = 0.0
                     choch_p_val = 0.0
                     opposing_tp_val = 0.0
+                    scan_sl_val = 0.0
 
                     if "STRICT SMC PASSED" in vid_reason or "ALL 9 SMC STEPS PASSED" in vid_reason or "ALL SMC STEPS PASSED" in vid_reason:
                         dyn_rrr = (abs(float(smc_tp) - float(p_a)) / max(asset_prof["min_dist"], abs(float(p_a) - float(smc_sl)))) if (smc_tp and smc_sl) else 2.0
@@ -3092,6 +3120,11 @@ def main():
                                     opposing_tp_val = float(p_str.split(":", 1)[1].strip())
                                 except Exception:
                                     pass
+                            elif p_str.startswith("SlPrice:"):
+                                try:
+                                    scan_sl_val = float(p_str.split(":", 1)[1].strip())
+                                except Exception:
+                                    pass
 
                     zone_dict = dict(SMC_ZONES_CACHE.get(s_a_resolved, {}))
                     candle_records = []
@@ -3134,6 +3167,8 @@ def main():
                         zone_dict["sweep_price"] = sweep_p_val
                     if smc_sl is not None:
                         zone_dict["sl_price"] = float(smc_sl)
+                    elif scan_sl_val > 0:
+                        zone_dict["sl_price"] = float(scan_sl_val)
                     fvg_json = json.dumps(zone_dict)
                     update_smc_telemetry(
                         pk, m15_b, s2_st, float(sweep_p_val), s3_st, float(choch_p_val), 

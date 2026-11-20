@@ -3,7 +3,7 @@ import { OhlcBar, SYMBOL_SPECS, resolveSymbolSpec, runSmcBacktest } from "../lib
 
 const router = Router();
 
-async function fetchYahooOhlc(ticker: string, interval: "5m" | "15m", range: "5d" | "1mo"): Promise<OhlcBar[]> {
+async function fetchYahooOhlc(ticker: string, interval: "1m" | "5m" | "15m", range: "5d" | "7d" | "1mo"): Promise<OhlcBar[]> {
   const hosts = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
   let lastError = "Unknown fetch error";
 
@@ -99,9 +99,12 @@ router.post("/backtest", async (req, res) => {
     const smartRiskCapEnabled = req.body?.smartRiskCapEnabled !== undefined ? Boolean(req.body.smartRiskCapEnabled) : true;
 
     const range: "5d" | "1mo" = lookbackDays <= 5 ? "5d" : "1mo";
-    const [m5Bars, m15Bars] = await Promise.all([
+    const [m5Bars, m15Bars, m1Bars] = await Promise.all([
       fetchYahooOhlc(spec.yahooTicker, "5m", range),
       fetchYahooOhlc(spec.yahooTicker, "15m", "1mo"),
+      spec.category === "indices"
+        ? fetchYahooOhlc(spec.yahooTicker, "1m", "7d").catch(() => [] as OhlcBar[])
+        : Promise.resolve([] as OhlcBar[]),
     ]);
 
     if (m5Bars.length < 100 || m15Bars.length < 30) {
@@ -118,6 +121,7 @@ router.post("/backtest", async (req, res) => {
       spec,
       m5Bars,
       m15Bars,
+      m1Bars,
       startTimeMs,
       initialBalance,
       lotSize,
@@ -141,6 +145,7 @@ router.post("/backtest", async (req, res) => {
       smartRiskCapEnabled,
       barsScannedM5: m5Bars.length,
       barsScannedM15: m15Bars.length,
+      barsScannedM1: m1Bars.length,
     });
   } catch (err) {
     req.log?.error?.({ err }, "Failed to run Pure SMC backtest");

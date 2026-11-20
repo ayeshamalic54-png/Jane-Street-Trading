@@ -1405,6 +1405,16 @@ export default function Dashboard() {
                   return "text-white font-bold";
                 };
 
+                const symU = (selectedChartSymbol || "").toUpperCase();
+                const isUs30Sel = ["US30", "DJ30", "WS30", "DOW", "DJI"].some((k) => symU.includes(k));
+                const isNasSel = ["NAS100", "USTEC", "US100", "NDX", "NQ100"].some((k) => symU.includes(k));
+                const isIdxSel = isUs30Sel || isNasSel;
+                const isMetalSel = ["XAU", "GOLD", "XAG", "SILVER"].some((k) => symU.includes(k));
+                const pricePrefixSel = isIdxSel ? "" : "$";
+                const s8BufTxt = isIdxSel ? "6.50pt" : isMetalSel ? "$0.75" : "4p";
+                const s8CapTxt = isUs30Sel ? "105pt" : isNasSel ? "85pt" : isMetalSel ? "$10.00" : "50p";
+                const s9BufTxt = isIdxSel ? "-9.35pt" : isMetalSel ? "-$1.10" : "-3.5p";
+
                 return (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono">
                     {/* Step 1: M15 Bias */}
@@ -1425,37 +1435,39 @@ export default function Dashboard() {
                         {s2Valid ? "PASS 🟢 (Wick Sweep)" : s1Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s2Valid ? `Sweep Price: $${Number(tel?.sweep_price ?? 0).toFixed(2)}` : "Awaiting Fresh Sweep"}
+                        {s2Valid ? `Sweep Price: ${pricePrefixSel}${Number(tel?.sweep_price ?? 0).toFixed(2)}` : "Awaiting Fresh Sweep"}
                       </div>
                     </div>
 
-                    {/* Step 3: M5 CHoCH */}
+                    {/* Step 3: M5/M1 CHoCH */}
                     <div className={getBoxClass(s3Valid, s2Valid && !s3Valid)}>
-                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 3: M5 CHoCH</div>
-                      <div className={cn("text-xs truncate", getTextColor(s3Valid, s2Valid && !s3Valid))}>
-                        {s3Valid ? "PASS 🟢 (Break)" : s2Valid ? "SCANNING ⏳" : "WAITING ⚪"}
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">
+                        {isIdxSel || String(chochText).includes("M1") ? "Step 3: M5/M1 CHoCH" : "Step 3: M5 CHoCH"}
+                      </div>
+                      <div title={chochText} className={cn("text-xs truncate", getTextColor(s3Valid, s2Valid && !s3Valid))}>
+                        {s3Valid ? (chochText || "PASS 🟢 (Break)") : s2Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s3Valid ? `CHoCH: $${Number(tel?.choch_price ?? 0).toFixed(2)}` : "Awaiting Fresh CHoCH"}
+                        {s3Valid ? `CHoCH: ${pricePrefixSel}${Number(tel?.choch_price ?? 0).toFixed(2)}` : "Awaiting Fresh CHoCH"}
                       </div>
                     </div>
 
                     {/* Step 4: Post-CHoCH FVG */}
                     <div className={getBoxClass(s4Valid, s3Valid && !s4Valid)}>
                       <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 4: Post-CHoCH FVG</div>
-                      <div className={cn("text-xs truncate", getTextColor(s4Valid, s3Valid && !s4Valid))}>
-                        {s4Valid ? "PASS 🟢 (Created)" : s3Valid ? "SCANNING ⏳" : "WAITING ⚪"}
+                      <div title={fvgText} className={cn("text-xs truncate", getTextColor(s4Valid, s3Valid && !s4Valid))}>
+                        {s4Valid ? (fvgText || "PASS 🟢 (Created)") : s3Valid ? "SCANNING ⏳" : "WAITING ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
-                        {s4Valid ? "Displacement FVG Ready" : "Awaiting Displacement FVG"}
+                        {s4Valid ? (String(fvgText).includes("M1") ? "M1 LTF FVG Ready" : "Displacement FVG Ready") : "Awaiting Displacement FVG"}
                       </div>
                     </div>
 
                     {/* Step 5: FVG Retest */}
                     <div className={getBoxClass(s5Valid, s4Valid && !s5Valid)}>
                       <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 5: FVG Retest</div>
-                      <div className={cn("text-xs truncate", getTextColor(s5Valid, s4Valid && !s5Valid))}>
-                        {s5Valid ? "PASS 🟢 (Retested)" : s4Valid ? "AWAITING RETEST ⏳" : "WAITING ⚪"}
+                      <div title={retestText} className={cn("text-xs truncate", getTextColor(s5Valid, s4Valid && !s5Valid))}>
+                        {s5Valid ? (retestText || "PASS 🟢 (Retested)") : s4Valid ? "AWAITING RETEST ⏳" : "WAITING ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5">
                         {s5Valid ? "Price Tapped FVG Zone" : "Waiting Pullback to FVG"}
@@ -1480,45 +1492,31 @@ export default function Dashboard() {
                         {s7Valid ? (s7Text || "PASS 🟢 (Closed)") : s6Valid && isFailText(s7Text) ? s7Text : s6Valid ? "AWAITING CLOSE ⏳" : "WAITING ⚪"}
                       </div>
                       <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s7Text}>
-                        {s7Valid ? "M5 Candle Closed Beyond FVG" : s6Valid ? (s7Text || "Waiting M5 Bar Close") : "Awaiting Candle Close"}
+                        {s7Valid ? (String(s7Text).includes("M1") ? "M1 Candle Closed Beyond FVG" : "M5 Candle Closed Beyond FVG") : s6Valid ? (s7Text || "Waiting Bar Close") : "Awaiting Candle Close"}
                       </div>
                     </div>
 
-                    {(() => {
-                      const symU = (selectedChartSymbol || "").toUpperCase();
-                      const isUs30Sel = ["US30", "DJ30", "WS30", "DOW", "DJI"].some((k) => symU.includes(k));
-                      const isNasSel = ["NAS100", "USTEC", "US100", "NDX", "NQ100"].some((k) => symU.includes(k));
-                      const isIdxSel = isUs30Sel || isNasSel;
-                      const isMetalSel = ["XAU", "GOLD", "XAG", "SILVER"].some((k) => symU.includes(k));
-                      const s8BufTxt = isIdxSel ? "6.50pt" : isMetalSel ? "$0.75" : "4p";
-                      const s8CapTxt = isUs30Sel ? "105pt" : isNasSel ? "85pt" : isMetalSel ? "$10.00" : "50p";
-                      const s9BufTxt = isIdxSel ? "-9.35pt" : isMetalSel ? "-$1.10" : "-3.5p";
-                      return (
-                        <>
-                          {/* Step 8: SL Buffer */}
-                          <div className={getBoxClass(s8Valid, false, s8Failed)}>
-                            <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 8: SL Buffer</div>
-                            <div title={s8Text} className={cn("text-xs truncate", getTextColor(s8Valid, false, s8Failed))}>
-                              {s8Failed ? (s8Text || "FAIL 🔴 (SL Cap)") : s8Valid ? (isPassText(s8Text) ? s8Text : `PASS 🟢 (${s8BufTxt} Buf)`) : "WAITING SWEEP ⚪"}
-                            </div>
-                            <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s8Text}>
-                              {s8Failed ? `Exceeds ${s8CapTxt} Max SL Cap` : s8Valid ? `Sweep ± ${s8BufTxt} (${s8CapTxt} Cap)` : "Locks on Sweep (Step 2)"}
-                            </div>
-                          </div>
+                    {/* Step 8: SL Buffer */}
+                    <div className={getBoxClass(s8Valid, false, s8Failed)}>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 8: SL Buffer</div>
+                      <div title={s8Text} className={cn("text-xs truncate", getTextColor(s8Valid, false, s8Failed))}>
+                        {s8Failed ? (s8Text || "FAIL 🔴 (SL Cap)") : s8Valid ? (isPassText(s8Text) ? s8Text : `PASS 🟢 (${s8BufTxt} Buf)`) : "WAITING SWEEP ⚪"}
+                      </div>
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s8Text}>
+                        {s8Failed ? `Exceeds ${s8CapTxt} Max SL Cap` : s8Valid ? (String(s8Text).includes("FVG-Refined") ? `FVG-Defense Refined (${s8CapTxt} Cap)` : String(s8Text).includes("M1") ? `Tight M1 LTF SL (${s8CapTxt} Cap)` : `Sweep ± ${s8BufTxt} (${s8CapTxt} Cap)`) : "Locks on Sweep (Step 2)"}
+                      </div>
+                    </div>
 
-                          {/* Step 9: Opposing Target */}
-                          <div className={getBoxClass(s9Valid, false, s9Failed)}>
-                            <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 9: Opposing Target</div>
-                            <div title={s9Text} className={cn("text-xs truncate", getTextColor(s9Valid, false, s9Failed))}>
-                              {s9Failed ? (s9Text || "FAIL 🔴 (<1.85R)") : s9Valid ? (isPassText(s9Text) ? s9Text : "PASS 🟢 (M15 Target)") : (s9Text || "WAITING ⚪")}
-                            </div>
-                            <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s9Text}>
-                              {s9Failed ? "Below 1.85R Min R:R" : s9Valid ? `M15 Opposing Liq (${s9BufTxt})` : "Min 1.85R M15 Structural TP"}
-                            </div>
-                          </div>
-                        </>
-                      );
-                    })()}
+                    {/* Step 9: Opposing Target */}
+                    <div className={getBoxClass(s9Valid, false, s9Failed)}>
+                      <div className="text-[10px] text-slate-300 uppercase font-semibold mb-1">Step 9: Opposing Target</div>
+                      <div title={s9Text} className={cn("text-xs truncate", getTextColor(s9Valid, false, s9Failed))}>
+                        {s9Failed ? (s9Text || "FAIL 🔴 (<1.85R)") : s9Valid ? (isPassText(s9Text) ? s9Text : "PASS 🟢 (M15 Target)") : (s9Text || "WAITING ⚪")}
+                      </div>
+                      <div className="text-[9px] text-slate-400 font-medium mt-0.5 truncate" title={s9Text}>
+                        {s9Failed ? "Below 1.85R Min R:R" : s9Valid ? `M15 Opposing Liq (${s9BufTxt})` : "Min 1.85R M15 Structural TP"}
+                      </div>
+                    </div>
                   </div>
                 );
               })()}

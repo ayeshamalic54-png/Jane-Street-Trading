@@ -505,36 +505,40 @@ function detectLiquiditySweep(
 }
 
 function detectChochBos(
-  dfM5: OhlcBar[],
+  dfBars: OhlcBar[],
   sweepIdx: number,
-  isBullish: boolean
+  isBullish: boolean,
+  minSwingAmp = 0
 ): { found: boolean; level: number; idx: number } {
-  if (sweepIdx < 0 || sweepIdx >= dfM5.length) return { found: false, level: 0, idx: -1 };
-  const { highs: sh, lows: sl } = getSwingPoints(dfM5, 2, 2, 0);
+  if (sweepIdx < 0 || sweepIdx >= dfBars.length) return { found: false, level: 0, idx: -1 };
+  let { highs: sh, lows: sl } = getSwingPoints(dfBars, 2, 2, minSwingAmp);
+  if ((isBullish && !sh.length) || (!isBullish && !sl.length)) {
+    ({ highs: sh, lows: sl } = getSwingPoints(dfBars, 2, 2, 0));
+  }
 
   if (isBullish) {
     const prior = sh.filter(([, idx]) => idx < sweepIdx);
     let chochLvl = prior.length ? prior[prior.length - 1]![0] : 0;
     if (!prior.length) {
       for (let k = Math.max(0, sweepIdx - 6); k < sweepIdx; k++) {
-        if (dfM5[k]!.high > chochLvl) chochLvl = dfM5[k]!.high;
+        if (dfBars[k]!.high > chochLvl) chochLvl = dfBars[k]!.high;
       }
     }
     if (chochLvl <= 0) return { found: false, level: 0, idx: -1 };
-    for (let j = sweepIdx + 1; j < dfM5.length; j++) {
-      if (dfM5[j]!.close > chochLvl) return { found: true, level: chochLvl, idx: j };
+    for (let j = sweepIdx + 1; j < dfBars.length; j++) {
+      if (dfBars[j]!.close > chochLvl) return { found: true, level: chochLvl, idx: j };
     }
   } else {
     const prior = sl.filter(([, idx]) => idx < sweepIdx);
     let chochLvl = prior.length ? prior[prior.length - 1]![0] : Infinity;
     if (!prior.length) {
       for (let k = Math.max(0, sweepIdx - 6); k < sweepIdx; k++) {
-        if (dfM5[k]!.low < chochLvl) chochLvl = dfM5[k]!.low;
+        if (dfBars[k]!.low < chochLvl) chochLvl = dfBars[k]!.low;
       }
     }
     if (!Number.isFinite(chochLvl)) return { found: false, level: 0, idx: -1 };
-    for (let j = sweepIdx + 1; j < dfM5.length; j++) {
-      if (dfM5[j]!.close < chochLvl) return { found: true, level: chochLvl, idx: j };
+    for (let j = sweepIdx + 1; j < dfBars.length; j++) {
+      if (dfBars[j]!.close < chochLvl) return { found: true, level: chochLvl, idx: j };
     }
   }
   return { found: false, level: 0, idx: -1 };
@@ -784,6 +788,7 @@ export interface SmcBacktestParams {
   spec: SymbolSpec;
   m5Bars: OhlcBar[];
   m15Bars: OhlcBar[];
+  m1Bars?: OhlcBar[];
   startTimeMs: number;
   initialBalance: number;
   lotSize: number;
@@ -843,6 +848,7 @@ export function runSmcBacktest(params: SmcBacktestParams) {
     spec,
     m5Bars,
     m15Bars,
+    m1Bars,
     startTimeMs,
     initialBalance,
     lotSize,
@@ -885,87 +891,215 @@ export function runSmcBacktest(params: SmcBacktestParams) {
   let openPos: OpenPos | null = null;
   let lastTradeExitBar = -10;
   const trades: SmcTradeSim[] = [];
+  const usedSweeps = new Set<string>();
   const equityCurve: Array<{ time: string; balance: number }> = [
     { time: new Date(Math.max(startTimeMs, m5Bars[0]!.time)).toISOString(), balance: initialBalance },
   ];
 
-  // Iterate M5 bars sequentially with zero lookahead
+  // S8 FVG-Defense Refined SL Rescue (NAS100 & XAUUSD Quality-B when Sweep SL > maxSlDist)
+  const tryFvgRefinedSlRescue = (
+    isBull: boolean,
+    entryPrice: number,
+    rawSlDist: number,
+    matched: ZoneBox,
+    closedBar: OhlcBar,
+    prevBar: OhlcBar,
+    candleRange: number,
+    isDirClose: boolean,
+    barsSinceChoch: number
+  ): { slPrice: number; slDist: number } | null => {
+    if (rawSlDist <= maxSlDist) return null;
+    if (spec.symbol !== "NAS100" && spec.symbol !== "XAUUSD") return null;
+
+    const isNas = spec.symbol === "NAS100";
+    const maxRawMult = isNas ? 2.5 : 1.65;
+    const minBody = isNas ? 0.0 : 0.35;
+    const maxChochBars = isNas ? 18 : 8;
+    const minGapMult = isNas ? 1.0 : 1.3;
+    const refBuf = isNas ? 9.5 : 1.1;
+    const minRefSl = isNas ? 25.0 : 3.2;
+
+    if (rawSlDist > maxSlDist * maxRawMult) return null;
+    const bodyRatio = Math.abs(closedBar.close - closedBar.open) / Math.max(1e-9, candleRange);
+    if (minBody > 0 && (!isDirClose || bodyRatio < minBody)) return null;
+    if (barsSinceChoch > maxChochBars) return null;
+    if (matched.high - matched.low < spec.minFvgGap * minGapMult) return null;
+
+    const fvgExtreme = isBull
+      ? Math.min(matched.low, closedBar.low, prevBar.low)
+      : Math.max(matched.high, closedBar.high, prevBar.high);
+    const refSl = rnd(isBull ? fvgExtreme - refBuf : fvgExtreme + refBuf);
+    const refDist = isBull ? entryPrice - refSl : refSl - entryPrice;
+    if (refDist >= minRefSl && refDist <= maxSlDist) {
+      return { slPrice: refSl, slDist: refDist };
+    }
+    return null;
+  };
+
+  const evaluateM5SignalAtSlice = (m5Slice: OhlcBar[], m15Slice: OhlcBar[], entryPriceRaw: number, entryTimeMs: number) => {
+    const m15Bias = detectMarketStructure(m15Slice, spec);
+    if (m15Bias === "NEUTRAL") return null;
+
+    const { sellSweep, buySweep } = detectLiquiditySweep(m5Slice, spec);
+    const isBull = m15Bias === "BULLISH";
+    const sw = isBull ? sellSweep : buySweep;
+    if (!sw.found) return null;
+
+    const swTime = m5Slice[sw.sweepIdx]?.time ?? 0;
+    const swKey = `${isBull ? "B" : "S"}:${swTime}`;
+    if (usedSweeps.has(swKey)) return null;
+
+    const closedIdx = m5Slice.length - 1;
+    const closedBar = m5Slice[closedIdx]!;
+    const prevBar = m5Slice[closedIdx - 1]!;
+    const entryPrice = rnd(entryPriceRaw);
+
+    const choch = detectChochBos(m5Slice, sw.sweepIdx, isBull);
+    if (!choch.found || closedIdx - choch.idx > 18) return null;
+    if (isBull ? closedBar.close < sw.sweepExtreme : closedBar.close > sw.sweepExtreme) return null;
+
+    const zones = isBull
+      ? detectSmcZones(m5Slice, spec, sw.sweepIdx, sw.sweepExtreme)
+      : detectSmcZones(m5Slice, spec, sw.sweepIdx, undefined, sw.sweepExtreme);
+    const matched = checkFvgRetest(closedBar, prevBar, closedIdx, isBull ? zones.bullFvg : zones.bearFvg, isBull, spec);
+    if (!matched) return null;
+
+    const range = Math.max(spec.digits <= 3 ? 0.01 : 0.0001, closedBar.high - closedBar.low);
+    const dirCloseOk = isBull ? closedBar.close > closedBar.open : closedBar.close < closedBar.open;
+    const wickLen = isBull
+      ? Math.min(closedBar.open, closedBar.close) - closedBar.low
+      : closedBar.high - Math.max(closedBar.open, closedBar.close);
+    const bodyBack = isBull ? closedBar.open - closedBar.close : closedBar.close - closedBar.open;
+    const isPin = wickLen / range >= 0.45 && bodyBack <= 0.25 * range;
+    const zoneBoundOk = isBull ? closedBar.close >= matched.low : closedBar.close <= matched.high;
+    if (!zoneBoundOk || (!dirCloseOk && !isPin)) return null;
+
+    const notChasing = isBull ? entryPrice <= matched.high + spec.maxChaseDist : entryPrice >= matched.low - spec.maxChaseDist;
+    if (!notChasing) return null;
+
+    let slPrice = rnd(isBull ? sw.sweepExtreme - spec.wickBuf : sw.sweepExtreme + spec.wickBuf);
+    let slDist = isBull ? entryPrice - slPrice : slPrice - entryPrice;
+    if (slDist > maxSlDist) {
+      const rescued = tryFvgRefinedSlRescue(
+        isBull, entryPrice, slDist, matched, closedBar, prevBar, range, dirCloseOk, closedIdx - choch.idx
+      );
+      if (rescued) {
+        slPrice = rescued.slPrice;
+        slDist = rescued.slDist;
+      }
+    }
+    if (slDist <= 0 || slDist > maxSlDist) return null;
+
+    const target = computeM15OpposingTarget(isBull, m15Slice, entryPrice, slDist, minRrr, spec);
+    if (target.rrr < minRrr) return null;
+
+    const tradeLot = computeSafeTradeLot(slDist, entryPrice, lotSize, spec, smartRiskCapEnabled, riskCapUsd);
+    return {
+      swKey,
+      pos: {
+        type: (isBull ? "BUY" : "SELL") as "BUY" | "SELL",
+        lotUsed: tradeLot,
+        beTrigger: computeAdaptiveBeTrigger(tradeLot, spec, beTriggerUsd),
+        entryPrice,
+        slPrice,
+        initialSlPrice: slPrice,
+        slDist,
+        tpPrice: target.tpPrice,
+        targetRrr: target.rrr,
+        breakevenApplied: false,
+        entryTimeMs,
+        sessionLabel: getPktSessionLabel(entryTimeMs),
+      },
+    };
+  };
+
+  const manageOpenPosOnBar = (currBar: OhlcBar, barIndex: number): boolean => {
+    if (!openPos) return false;
+    let exitPrice: number | null = null;
+    let reason: SmcTradeSim["reason"] | null = null;
+
+    if (openPos.type === "BUY") {
+      if (currBar.low <= openPos.slPrice) {
+        exitPrice = openPos.slPrice;
+        reason = openPos.breakevenApplied ? "BREAKEVEN_LOCKED" : "SL_HIT";
+      } else if (currBar.high >= openPos.tpPrice) {
+        exitPrice = openPos.tpPrice;
+        reason = "TP_HIT";
+      } else if (breakevenEnabled && !openPos.breakevenApplied) {
+        const bestFloating = priceDeltaToUsd(currBar.high - openPos.entryPrice, currBar.high, openPos.lotUsed, spec);
+        if (bestFloating >= openPos.beTrigger) {
+          openPos.slPrice = rnd(openPos.entryPrice + spec.beBuffer);
+          openPos.breakevenApplied = true;
+        }
+      }
+    } else {
+      if (currBar.high >= openPos.slPrice) {
+        exitPrice = openPos.slPrice;
+        reason = openPos.breakevenApplied ? "BREAKEVEN_LOCKED" : "SL_HIT";
+      } else if (currBar.low <= openPos.tpPrice) {
+        exitPrice = openPos.tpPrice;
+        reason = "TP_HIT";
+      } else if (breakevenEnabled && !openPos.breakevenApplied) {
+        const bestFloating = priceDeltaToUsd(openPos.entryPrice - currBar.low, currBar.low, openPos.lotUsed, spec);
+        if (bestFloating >= openPos.beTrigger) {
+          openPos.slPrice = rnd(openPos.entryPrice - spec.beBuffer);
+          openPos.breakevenApplied = true;
+        }
+      }
+    }
+
+    if (exitPrice !== null && reason !== null) {
+      const delta = openPos.type === "BUY" ? exitPrice - openPos.entryPrice : openPos.entryPrice - exitPrice;
+      const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, openPos.lotUsed, spec).toFixed(2));
+      const profitPct = Number(((profitUsd / Math.max(1, balance)) * 100).toFixed(2));
+      balance = Number((balance + profitUsd).toFixed(2));
+      if (balance > peakEquity) peakEquity = balance;
+      const dd = peakEquity > 0 ? ((peakEquity - balance) / peakEquity) * 100 : 0;
+      if (dd > maxDrawdownPct) maxDrawdownPct = dd;
+
+      trades.push({
+        type: openPos.type,
+        symbol: spec.symbol,
+        lotUsed: openPos.lotUsed,
+        entryPrice: openPos.entryPrice,
+        exitPrice: rnd(exitPrice),
+        slPrice: openPos.initialSlPrice,
+        tpPrice: openPos.tpPrice,
+        targetRrr: openPos.targetRrr,
+        achievedRrr: Number((delta / openPos.slDist).toFixed(2)),
+        profitUsd,
+        profitPercent: profitPct,
+        breakevenTriggered: openPos.breakevenApplied,
+        sessionLabel: openPos.sessionLabel,
+        reason,
+        entryTime: new Date(openPos.entryTimeMs).toISOString(),
+        exitTime: new Date(currBar.time).toISOString(),
+      });
+
+      equityCurve.push({ time: new Date(currBar.time).toISOString(), balance });
+      openPos = null;
+      lastTradeExitBar = barIndex;
+    }
+    return true;
+  };
+
+  const useM1Refinement = Boolean(m1Bars && m1Bars.length >= 160 && spec.category === "indices");
+  const m1WarmupIdx = useM1Refinement ? Math.min(120, Math.max(20, m1Bars!.length - 10)) : 0;
+  const m1HandoffStartMs = useM1Refinement ? m1Bars![m1WarmupIdx]!.time : Infinity;
+  let actualM5StopMs = Infinity;
+
+  // Phase 1: M5 Bars (either entire window when no M1 feed, or days before M1 feed begins)
   for (let i = 45; i < m5Bars.length - 1; i++) {
     const currBar = m5Bars[i]!;
+    if (useM1Refinement && currBar.time >= m1HandoffStartMs) {
+      actualM5StopMs = currBar.time;
+      break;
+    }
     while (m15Ptr + 1 < m15Bars.length && m15Bars[m15Ptr + 1]!.time <= currBar.time) {
       m15Ptr++;
     }
 
-    // Manage active open trade 24/7 (SL/BE/TP stay active outside session hours)
-    if (openPos) {
-      let exitPrice: number | null = null;
-      let reason: SmcTradeSim["reason"] | null = null;
-
-      if (openPos.type === "BUY") {
-        // Conservative ordering: check active SL before TP on the same candle
-        if (currBar.low <= openPos.slPrice) {
-          exitPrice = openPos.slPrice;
-          reason = openPos.breakevenApplied ? "BREAKEVEN_LOCKED" : "SL_HIT";
-        } else if (currBar.high >= openPos.tpPrice) {
-          exitPrice = openPos.tpPrice;
-          reason = "TP_HIT";
-        } else if (breakevenEnabled && !openPos.breakevenApplied) {
-          const bestFloating = priceDeltaToUsd(currBar.high - openPos.entryPrice, currBar.high, openPos.lotUsed, spec);
-          if (bestFloating >= openPos.beTrigger) {
-            openPos.slPrice = rnd(openPos.entryPrice + spec.beBuffer);
-            openPos.breakevenApplied = true;
-          }
-        }
-      } else {
-        if (currBar.high >= openPos.slPrice) {
-          exitPrice = openPos.slPrice;
-          reason = openPos.breakevenApplied ? "BREAKEVEN_LOCKED" : "SL_HIT";
-        } else if (currBar.low <= openPos.tpPrice) {
-          exitPrice = openPos.tpPrice;
-          reason = "TP_HIT";
-        } else if (breakevenEnabled && !openPos.breakevenApplied) {
-          const bestFloating = priceDeltaToUsd(openPos.entryPrice - currBar.low, currBar.low, openPos.lotUsed, spec);
-          if (bestFloating >= openPos.beTrigger) {
-            openPos.slPrice = rnd(openPos.entryPrice - spec.beBuffer);
-            openPos.breakevenApplied = true;
-          }
-        }
-      }
-
-      if (exitPrice !== null && reason !== null) {
-        const delta = openPos.type === "BUY" ? exitPrice - openPos.entryPrice : openPos.entryPrice - exitPrice;
-        const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, openPos.lotUsed, spec).toFixed(2));
-        const profitPct = Number(((profitUsd / Math.max(1, balance)) * 100).toFixed(2));
-        balance = Number((balance + profitUsd).toFixed(2));
-        if (balance > peakEquity) peakEquity = balance;
-        const dd = peakEquity > 0 ? ((peakEquity - balance) / peakEquity) * 100 : 0;
-        if (dd > maxDrawdownPct) maxDrawdownPct = dd;
-
-        trades.push({
-          type: openPos.type,
-          symbol: spec.symbol,
-          lotUsed: openPos.lotUsed,
-          entryPrice: openPos.entryPrice,
-          exitPrice: rnd(exitPrice),
-          slPrice: openPos.initialSlPrice,
-          tpPrice: openPos.tpPrice,
-          targetRrr: openPos.targetRrr,
-          achievedRrr: Number((delta / openPos.slDist).toFixed(2)),
-          profitUsd,
-          profitPercent: profitPct,
-          breakevenTriggered: openPos.breakevenApplied,
-          sessionLabel: openPos.sessionLabel,
-          reason,
-          entryTime: new Date(openPos.entryTimeMs).toISOString(),
-          exitTime: new Date(currBar.time).toISOString(),
-        });
-
-        equityCurve.push({ time: new Date(currBar.time).toISOString(), balance });
-        openPos = null;
-        lastTradeExitBar = i;
-      }
-      continue;
-    }
+    if (manageOpenPosOnBar(currBar, i)) continue;
 
     // Cooldown 2 bars after trade close & respect selected lookback window
     if (currBar.time < startTimeMs || i - lastTradeExitBar < 2) continue;
@@ -978,97 +1112,190 @@ export function runSmcBacktest(params: SmcBacktestParams) {
     const m15Slice = m15Bars.slice(Math.max(0, m15Ptr - 99), m15Ptr + 1);
     if (m15Slice.length < 15 || m5Slice.length < 12) continue;
 
-    // Step 1: M15 Market Structure
-    const m15Bias = detectMarketStructure(m15Slice, spec);
-    if (m15Bias === "NEUTRAL") continue;
+    const sig = evaluateM5SignalAtSlice(m5Slice, m15Slice, entryBar.open, entryBar.time);
+    if (sig) {
+      usedSweeps.add(sig.swKey);
+      openPos = sig.pos;
+    }
+  }
 
-    // Step 2: M5 Liquidity Sweep
-    const { sellSweep, buySweep } = detectLiquiditySweep(m5Slice, spec);
-    const closedIdx = m5Slice.length - 1;
-    const closedBar = m5Slice[closedIdx]!;
-    const prevBar = m5Slice[closedIdx - 1]!;
-    const entryPrice = rnd(entryBar.open);
+  // Phase 2: Indices M1 LTF Execution Refinement on available M1 bars (zero lookahead)
+  if (useM1Refinement && m1Bars) {
+    let m5Ptr = 0;
+    let m15PtrM1 = 0;
+    while (m5Ptr + 1 < m5Bars.length && m5Bars[m5Ptr + 1]!.time <= m1Bars[0]!.time) m5Ptr++;
+    while (m15PtrM1 + 1 < m15Bars.length && m15Bars[m15PtrM1 + 1]!.time <= m1Bars[0]!.time) m15PtrM1++;
 
-    if (m15Bias === "BULLISH" && sellSweep.found) {
-      const choch = detectChochBos(m5Slice, sellSweep.sweepIdx, true);
-      if (choch.found && closedIdx - choch.idx <= 18 && closedBar.close >= sellSweep.sweepExtreme) {
-        const zones = detectSmcZones(m5Slice, spec, sellSweep.sweepIdx, sellSweep.sweepExtreme);
-        const matched = checkFvgRetest(closedBar, prevBar, closedIdx, zones.bullFvg, true, spec);
-        if (matched) {
-          const lowerWick = Math.min(closedBar.open, closedBar.close) - closedBar.low;
-          const range = Math.max(spec.digits <= 3 ? 0.01 : 0.0001, closedBar.high - closedBar.low);
-          const isGreen = closedBar.close > closedBar.open;
-          const isPin = lowerWick / range >= 0.45 && closedBar.open - closedBar.close <= 0.25 * range;
-          if (closedBar.close >= matched.low && (isGreen || isPin)) {
-            const slPrice = rnd(sellSweep.sweepExtreme - spec.wickBuf);
-            const slDist = entryPrice - slPrice;
-            const notChasing = entryPrice <= matched.high + spec.maxChaseDist;
-            if (slDist > 0 && slDist <= maxSlDist && notChasing) {
-              const target = computeM15OpposingTarget(true, m15Slice, entryPrice, slDist, minRrr, spec);
-              if (target.rrr >= minRrr) {
-                const tradeLot = computeSafeTradeLot(slDist, entryPrice, lotSize, spec, smartRiskCapEnabled, riskCapUsd);
-                openPos = {
-                  type: "BUY",
-                  lotUsed: tradeLot,
-                  beTrigger: computeAdaptiveBeTrigger(tradeLot, spec, beTriggerUsd),
-                  entryPrice,
-                  slPrice,
-                  initialSlPrice: slPrice,
-                  slDist,
-                  tpPrice: target.tpPrice,
-                  targetRrr: target.rrr,
-                  breakevenApplied: false,
-                  entryTimeMs: entryBar.time,
-                  sessionLabel: getPktSessionLabel(entryBar.time),
-                };
-              }
+    const m1MinGap = 2.2;
+    const m1MinAmp = 5.0;
+    const m1MitTol = 1.0;
+    const m1CloseTol = 1.5;
+    const m1MinPenGap = 4.5;
+    const m1MaxChase = 12.0;
+    let lastM1ExitIdx = -20;
+
+    const detectM1Fvgs = (m1Slice: OhlcBar[], minIdx: number, isBull: boolean, extremeP: number): ZoneBox[] => {
+      const zones: ZoneBox[] = [];
+      const n = m1Slice.length;
+      for (let k = Math.max(2, minIdx); k < n; k++) {
+        if (isBull) {
+          const gap = m1Slice[k]!.low - m1Slice[k - 2]!.high;
+          if (gap >= m1MinGap && m1Slice[k - 2]!.high >= extremeP - spec.sweepMargin) {
+            let mit = false;
+            for (let j = k + 1; j < n - 1; j++) {
+              if (m1Slice[j]!.close < m1Slice[k - 2]!.high - m1MitTol) { mit = true; break; }
             }
+            if (!mit) zones.push({ low: m1Slice[k - 2]!.high, high: m1Slice[k]!.low, idx: k });
+          }
+        } else {
+          const gap = m1Slice[k - 2]!.low - m1Slice[k]!.high;
+          if (gap >= m1MinGap && m1Slice[k - 2]!.low <= extremeP + spec.sweepMargin) {
+            let mit = false;
+            for (let j = k + 1; j < n - 1; j++) {
+              if (m1Slice[j]!.close > m1Slice[k - 2]!.low + m1MitTol) { mit = true; break; }
+            }
+            if (!mit) zones.push({ low: m1Slice[k]!.high, high: m1Slice[k - 2]!.low, idx: k });
           }
         }
       }
-    } else if (m15Bias === "BEARISH" && buySweep.found) {
-      const choch = detectChochBos(m5Slice, buySweep.sweepIdx, false);
-      if (choch.found && closedIdx - choch.idx <= 18 && closedBar.close <= buySweep.sweepExtreme) {
-        const zones = detectSmcZones(m5Slice, spec, buySweep.sweepIdx, undefined, buySweep.sweepExtreme);
-        const matched = checkFvgRetest(closedBar, prevBar, closedIdx, zones.bearFvg, false, spec);
-        if (matched) {
-          const upperWick = closedBar.high - Math.max(closedBar.open, closedBar.close);
-          const range = Math.max(spec.digits <= 3 ? 0.01 : 0.0001, closedBar.high - closedBar.low);
-          const isRed = closedBar.close < closedBar.open;
-          const isPin = upperWick / range >= 0.45 && closedBar.close - closedBar.open <= 0.25 * range;
-          if (closedBar.close <= matched.high && (isRed || isPin)) {
-            const slPrice = rnd(buySweep.sweepExtreme + spec.wickBuf);
-            const slDist = slPrice - entryPrice;
-            const notChasing = entryPrice >= matched.low - spec.maxChaseDist;
-            if (slDist > 0 && slDist <= maxSlDist && notChasing) {
-              const target = computeM15OpposingTarget(false, m15Slice, entryPrice, slDist, minRrr, spec);
-              if (target.rrr >= minRrr) {
-                const tradeLot = computeSafeTradeLot(slDist, entryPrice, lotSize, spec, smartRiskCapEnabled, riskCapUsd);
-                openPos = {
-                  type: "SELL",
-                  lotUsed: tradeLot,
-                  beTrigger: computeAdaptiveBeTrigger(tradeLot, spec, beTriggerUsd),
-                  entryPrice,
-                  slPrice,
-                  initialSlPrice: slPrice,
-                  slDist,
-                  tpPrice: target.tpPrice,
-                  targetRrr: target.rrr,
-                  breakevenApplied: false,
-                  entryTimeMs: entryBar.time,
-                  sessionLabel: getPktSessionLabel(entryBar.time),
-                };
-              }
-            }
-          }
+      return zones;
+    };
+
+    for (let i = m1WarmupIdx; i < m1Bars.length - 1; i++) {
+      const currM1 = m1Bars[i]!;
+      const nextM1 = m1Bars[i + 1]!;
+      while (m5Ptr + 1 < m5Bars.length && m5Bars[m5Ptr + 1]!.time <= currM1.time) m5Ptr++;
+      while (m15PtrM1 + 1 < m15Bars.length && m15Bars[m15PtrM1 + 1]!.time <= currM1.time) m15PtrM1++;
+
+      if (Number.isFinite(actualM5StopMs) && currM1.time < actualM5StopMs) continue;
+
+      if (manageOpenPosOnBar(currM1, i)) {
+        if (!openPos) lastM1ExitIdx = i;
+        continue;
+      }
+
+      if (currM1.time < startTimeMs || i - lastM1ExitIdx < 5) continue;
+      if (sessionFilterEnabled && !isInPktKillzone(nextM1.time)) continue;
+      if (m5Ptr < 35 || m15PtrM1 < 15) continue;
+
+      // Strictly closed M15 and M5 bars before nextM1.time (zero lookahead)
+      const m15ClosedEnd = nextM1.time >= m15Bars[m15PtrM1]!.time + 15 * 60 * 1000 ? m15PtrM1 + 1 : m15PtrM1;
+      const m5ClosedEnd = nextM1.time >= m5Bars[m5Ptr]!.time + 5 * 60 * 1000 ? m5Ptr + 1 : m5Ptr;
+      if (m15ClosedEnd < 15 || m5ClosedEnd < 35) continue;
+
+      const m15Slice = m15Bars.slice(Math.max(0, m15ClosedEnd - 90), m15ClosedEnd);
+      const m5Slice = m5Bars.slice(Math.max(0, m5ClosedEnd - 75), m5ClosedEnd);
+
+      // Try M5 primary + S8 FVG-Defense Rescue at exact M5 close boundaries first
+      const isM5CloseBoundary = m5ClosedEnd > m5Ptr || nextM1.time >= m5Bars[m5Ptr]!.time + 5 * 60 * 1000;
+      if (isM5CloseBoundary) {
+        const m5Sig = evaluateM5SignalAtSlice(m5Slice, m15Slice, nextM1.open, nextM1.time);
+        if (m5Sig) {
+          usedSweeps.add(m5Sig.swKey);
+          openPos = m5Sig.pos;
+          continue;
         }
       }
+
+      // M1 LTF Execution Refinement following confirmed M5 Sweep
+      const m15Bias = detectMarketStructure(m15Slice, spec);
+      if (m15Bias === "NEUTRAL") continue;
+
+      const { sellSweep, buySweep } = detectLiquiditySweep(m5Slice, spec);
+      const isBull = m15Bias === "BULLISH";
+      const sw = isBull ? sellSweep : buySweep;
+      if (!sw.found) continue;
+
+      const swTime = m5Slice[sw.sweepIdx]?.time ?? 0;
+      const swKey = `${isBull ? "B" : "S"}:${swTime}`;
+      if (usedSweeps.has(swKey)) continue;
+
+      const m1WinStartTime = swTime - 8 * 60 * 1000;
+      let sIdx = Math.max(0, i - 100);
+      while (sIdx < i && m1Bars[sIdx]!.time < m1WinStartTime) sIdx++;
+      if (i - sIdx < 10) continue;
+
+      const m1Slice = m1Bars.slice(sIdx, i + 1);
+      const n1 = m1Slice.length;
+      const closedM1 = m1Slice[n1 - 1]!;
+
+      let anchorIdx = 0;
+      let m1Extreme = isBull ? Infinity : -Infinity;
+      for (let k = 0; k < n1 - 2; k++) {
+        if (m1Slice[k]!.time >= swTime - 60000 && m1Slice[k]!.time <= swTime + 5 * 60000) {
+          if (isBull && m1Slice[k]!.low < m1Extreme) { m1Extreme = m1Slice[k]!.low; anchorIdx = k; }
+          if (!isBull && m1Slice[k]!.high > m1Extreme) { m1Extreme = m1Slice[k]!.high; anchorIdx = k; }
+        }
+      }
+      if (anchorIdx < 2 || anchorIdx >= n1 - 3 || n1 - 1 - anchorIdx > 60) continue;
+
+      const trueExtreme = isBull ? Math.min(sw.sweepExtreme, m1Extreme) : Math.max(sw.sweepExtreme, m1Extreme);
+      let invalid = false;
+      for (let k = anchorIdx + 1; k < n1; k++) {
+        if ((isBull && m1Slice[k]!.close < trueExtreme) || (!isBull && m1Slice[k]!.close > trueExtreme)) {
+          invalid = true;
+          break;
+        }
+      }
+      if (invalid) continue;
+
+      const choch = detectChochBos(m1Slice, anchorIdx, isBull, m1MinAmp);
+      if (!choch.found || n1 - 1 - choch.idx > 25) continue;
+
+      const fvgs = detectM1Fvgs(m1Slice, anchorIdx, isBull, trueExtreme);
+      if (!fvgs.length) continue;
+
+      let matched: ZoneBox | null = null;
+      for (let z = fvgs.length - 1; z >= 0; z--) {
+        const f = fvgs[z]!;
+        if (n1 - 1 <= f.idx) continue;
+        const gap = Math.max(0, f.high - f.low);
+        const pen = gap >= m1MinPenGap ? 0.35 * gap : 0;
+        const dirOk = isBull
+          ? closedM1.low <= f.high - pen && closedM1.low >= f.low - spec.wickBuf && closedM1.close >= f.low - m1CloseTol
+          : closedM1.high >= f.low + pen && closedM1.high <= f.high + spec.wickBuf && closedM1.close <= f.high + m1CloseTol;
+        if (dirOk) { matched = f; break; }
+      }
+      if (!matched) continue;
+
+      const range = Math.max(0.01, closedM1.high - closedM1.low);
+      const bodyOk = isBull
+        ? closedM1.close > closedM1.open && (closedM1.close - closedM1.open) / range >= 0.25 && closedM1.close >= matched.low
+        : closedM1.close < closedM1.open && (closedM1.open - closedM1.close) / range >= 0.25 && closedM1.close <= matched.high;
+      if (!bodyOk) continue;
+
+      const entryPrice = rnd(nextM1.open);
+      const slPrice = rnd(isBull ? trueExtreme - spec.wickBuf : trueExtreme + spec.wickBuf);
+      const slDist = isBull ? entryPrice - slPrice : slPrice - entryPrice;
+      const notChasing = isBull ? entryPrice <= matched.high + m1MaxChase : entryPrice >= matched.low - m1MaxChase;
+      if (slDist < 15.0 || slDist > maxSlDist || !notChasing) continue;
+
+      const target = computeM15OpposingTarget(isBull, m15Slice, entryPrice, slDist, minRrr, spec);
+      if (target.rrr < minRrr) continue;
+
+      const tradeLot = computeSafeTradeLot(slDist, entryPrice, lotSize, spec, smartRiskCapEnabled, riskCapUsd);
+      usedSweeps.add(swKey);
+      openPos = {
+        type: isBull ? "BUY" : "SELL",
+        lotUsed: tradeLot,
+        beTrigger: computeAdaptiveBeTrigger(tradeLot, spec, beTriggerUsd),
+        entryPrice,
+        slPrice,
+        initialSlPrice: slPrice,
+        slDist,
+        tpPrice: target.tpPrice,
+        targetRrr: target.rrr,
+        breakevenApplied: false,
+        entryTimeMs: nextM1.time,
+        sessionLabel: getPktSessionLabel(nextM1.time),
+      };
     }
   }
 
   // Close any open position at end of historical sample for clean accounting
-  if (openPos && m5Bars.length > 0) {
-    const lastBar = m5Bars[m5Bars.length - 1]!;
+  const finalBars = useM1Refinement && m1Bars && m1Bars.length > 0 ? m1Bars : m5Bars;
+  if (openPos && finalBars.length > 0) {
+    const lastBar = finalBars[finalBars.length - 1]!;
     const exitPrice = rnd(lastBar.close);
     const delta = openPos.type === "BUY" ? exitPrice - openPos.entryPrice : openPos.entryPrice - exitPrice;
     const profitUsd = Number(priceDeltaToUsd(delta, exitPrice, openPos.lotUsed, spec).toFixed(2));
