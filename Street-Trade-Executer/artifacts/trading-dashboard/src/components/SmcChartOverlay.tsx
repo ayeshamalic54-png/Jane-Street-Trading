@@ -737,9 +737,9 @@ export function SmcChartOverlay({
     return picked;
   }, [activeZones, livePrice, isMetals]);
 
-  // FVG Bounds: When M1 active check M1 candles first, then bot telemetry M5 zones, then structural displacement
+  // FVG Bounds: When M1 LTF active check M1 candles first, then bot telemetry M5 zones; never fabricate fake FVG before CHoCH
   const fvgBounds = useMemo(() => {
-    if (chartTimeframe === "M1" && hasRealM1 && realCandles && realCandles.length >= 6) {
+    if (chartTimeframe === "M1" && showM1Mode && hasRealM1 && realCandles && realCandles.length >= 6) {
       const m1GapMin = isIndices ? 2.2 : isMetals ? 0.25 : 0.0001;
       for (let i = realCandles.length - 1; i >= 2; i--) {
         if (isBullishSetup) {
@@ -797,19 +797,19 @@ export function SmcChartOverlay({
       }
     }
 
-    // 3. Fallback: Structural displacement FVG on the SMC Diagram
-    const swP = sweepPrice > 0 ? sweepPrice : (isBullishSetup ? livePrice - (isIndices ? 46.75 : isMetals ? 5.5 : 0.003) : livePrice + (isIndices ? 46.75 : isMetals ? 5.5 : 0.003));
-    const chP = chochPrice > 0 ? chochPrice : (isBullishSetup ? swP + (isIndices ? 32.3 : isMetals ? 3.8 : 0.002) : swP - (isIndices ? 32.3 : isMetals ? 3.8 : 0.002));
-    const low = isBullishSetup ? Number((swP + (chP - swP) * 0.35).toFixed(2)) : Number((chP + (swP - chP) * 0.35).toFixed(2));
-    const high = isBullishSetup ? Number((swP + (chP - swP) * 0.65).toFixed(2)) : Number((chP + (swP - chP) * 0.65).toFixed(2));
-    if (high > low) {
-      return { low: Math.min(low, high), high: Math.max(low, high), label: chartTimeframe === "M1" ? "M1 DISPLACEMENT FVG" : (s4Pass ? "S4 DISPLACEMENT FVG" : "DISPLACEMENT FVG") };
+    // 3. Structural displacement fallback only after CHoCH + Sweep actually confirmed (never draw fake FVG while Sweep is pending)
+    if (s4Pass && sweepPrice > 0 && chochPrice > 0) {
+      const low = isBullishSetup ? Number((sweepPrice + (chochPrice - sweepPrice) * 0.35).toFixed(2)) : Number((chochPrice + (sweepPrice - chochPrice) * 0.35).toFixed(2));
+      const high = isBullishSetup ? Number((sweepPrice + (chochPrice - sweepPrice) * 0.65).toFixed(2)) : Number((chochPrice + (sweepPrice - chochPrice) * 0.65).toFixed(2));
+      if (high > low) {
+        return { low: Math.min(low, high), high: Math.max(low, high), label: chartTimeframe === "M1" ? "M1 DISPLACEMENT FVG" : "C4 DISPLACEMENT FVG" };
+      }
     }
 
     return null;
-  }, [telemetry, chartTimeframe, hasRealM1, realCandles, parsedActiveZones, livePrice, sweepPrice, chochPrice, isMetals, isIndices, isBullishSetup, s4Pass]);
+  }, [telemetry, chartTimeframe, showM1Mode, hasRealM1, realCandles, parsedActiveZones, livePrice, sweepPrice, chochPrice, isMetals, isIndices, isBullishSetup, s4Pass]);
 
-  // Institutional Swing Structure Levels (Buy-Side & Sell-Side Liquidity + CHoCH)
+  // Institutional Swing Structure Levels (Buy-Side & Sell-Side Liquidity + Real Confirmed CHoCH Only)
   const swingStructure = useMemo(() => {
     if (!candles || candles.length < 5) {
       return { swingHigh: 0, swingLow: 0, chochLvl: 0 };
@@ -823,19 +823,14 @@ export function SmcChartOverlay({
 
     const swingHigh = sweepPrice > 0 && isBearishSetup ? sweepPrice : highest;
     const swingLow = sweepPrice > 0 && isBullishSetup ? sweepPrice : lowest;
-    const chochLvl =
-      chochPrice > 0
-        ? chochPrice
-        : isBullishSetup
-        ? Number((swingLow + (highest - swingLow) * 0.45).toFixed(2))
-        : Number((swingHigh - (swingHigh - lowest) * 0.45).toFixed(2));
+    const chochLvl = chochPrice > 0 && s3Pass ? chochPrice : 0;
 
     return {
       swingHigh: Number(swingHigh.toFixed(2)),
       swingLow: Number(swingLow.toFixed(2)),
       chochLvl: Number(chochLvl.toFixed(2)),
     };
-  }, [candles, sweepPrice, chochPrice, isBullishSetup, isBearishSetup]);
+  }, [candles, sweepPrice, chochPrice, s3Pass, isBullishSetup, isBearishSetup]);
 
   // Dimensions & Price Mapping (Full-Height TradingView Candlestick Proportions)
   const svgWidth = Math.max(320, containerWidth);
