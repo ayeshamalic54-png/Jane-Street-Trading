@@ -3072,8 +3072,8 @@ def main():
                 asset_prof = get_smc_asset_profile(df_a, symbol=s_a_resolved, category=cat_a, ref_price=p_a)
                 m1_ltf_now = bool(M1_LTF_ENABLED and asset_prof.get("m1_ltf_enabled") and cat_a != "crypto")
                 df_m1 = None
-                if m1_ltf_now:
-                    df_m1 = get_rates_df(s_a_resolved, mt5.TIMEFRAME_M1, count=140)
+                if cat_a != "crypto":
+                    df_m1 = get_rates_df(s_a_resolved, mt5.TIMEFRAME_M1, count=140 if m1_ltf_now else 70)
                     if df_m1 is not None and not df_m1.empty:
                         df_m1.attrs["symbol"] = s_a_resolved
                         df_m1.attrs["category"] = cat_a
@@ -3093,7 +3093,7 @@ def main():
                     obi_enabled=OBI_ENABLED,
                     live_price=p_a,
                     symbol=s_a_resolved,
-                    df_m1=df_m1,
+                    df_m1=df_m1 if m1_ltf_now else None,
                     used_m5_sweeps=sweep_set,
                     m1_ltf_override=M1_LTF_ENABLED,
                 )
@@ -3210,7 +3210,7 @@ def main():
                     c_digits = int(asset_prof.get("digits", 2 if asset_prof.get("is_high_point") else 5))
                     marker_tol = 17.0 if asset_prof.get("category") == "indices" else (2.0 if asset_prof.get("is_high_point") else 0.005)
                     zone_dict["candles"] = _build_chart_candle_records(df_m5, 45, c_digits, marker_tol, m15_b, sweep_p_val, choch_p_val)
-                    zone_dict["candles_m1"] = _build_chart_candle_records(df_m1, 60, c_digits, marker_tol, m15_b, sweep_p_val, choch_p_val) if m1_ltf_now else []
+                    zone_dict["candles_m1"] = _build_chart_candle_records(df_m1, 60, c_digits, marker_tol, m15_b, sweep_p_val, choch_p_val) if (df_m1 is not None and not df_m1.empty) else []
                     zone_dict["m1_active"] = bool(m1_ltf_now)
                     zone_dict["execution_mode"] = exec_mode_str
                     zone_dict["conditions_count"] = 6 if m1_ltf_now else 7

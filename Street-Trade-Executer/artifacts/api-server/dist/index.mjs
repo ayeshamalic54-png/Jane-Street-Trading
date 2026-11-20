@@ -51785,11 +51785,24 @@ app.use(import_express13.default.json({ limit: "50mb" }));
 app.use(import_express13.default.urlencoded({ limit: "50mb", extended: true }));
 app.use("/api", routes_default);
 var clientDistPath = path.resolve(__dirname2, "../../trading-dashboard/dist/public");
-app.use(import_express13.default.static(clientDistPath));
+app.use(
+  import_express13.default.static(clientDistPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".html")) {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      }
+    }
+  })
+);
 app.use((req, res, next) => {
   if (req.path.startsWith("/api")) {
     return next();
   }
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   res.sendFile(path.join(clientDistPath, "index.html"), (err) => {
     if (err) {
       next();

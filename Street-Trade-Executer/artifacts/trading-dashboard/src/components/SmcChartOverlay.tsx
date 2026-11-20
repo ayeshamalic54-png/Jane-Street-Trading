@@ -80,7 +80,7 @@ function TradingViewEmbedded({ symbol, interval = "5" }: { symbol: string; inter
     tvScriptLoadingPromise.then(() => {
       if (containerRef.current && typeof (window as any).TradingView !== "undefined") {
         containerRef.current.innerHTML = "";
-        const widgetId = `tv_chart_embed_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
+        const widgetId = `tv_chart_embed_${symbol.replace(/[^a-zA-Z0-9]/g, "_")}_${interval}`;
         const widgetEl = document.createElement("div");
         widgetEl.id = widgetId;
         widgetEl.style.height = "560px";
@@ -204,9 +204,14 @@ export function SmcChartOverlay({
   );
   const showM1Mode = isIndices ? (m1LtfEnabled !== false && (isM1Eligible || telemetryM1Active)) : false;
   const [chartTimeframe, setChartTimeframe] = useState<"M1" | "M5">(showM1Mode ? "M1" : "M5");
+  const lastAutoModeKeyRef = useRef<string>("");
 
   useEffect(() => {
-    setChartTimeframe(showM1Mode ? "M1" : "M5");
+    const modeKey = `${symbol}:${showM1Mode ? "M1" : "M5"}`;
+    if (lastAutoModeKeyRef.current !== modeKey) {
+      lastAutoModeKeyRef.current = modeKey;
+      setChartTimeframe(showM1Mode ? "M1" : "M5");
+    }
   }, [symbol, showM1Mode]);
 
   const isPassText = (val: string) =>
@@ -1763,45 +1768,37 @@ export function SmcChartOverlay({
             <span className="sm:hidden">📈 TV {chartTimeframe}</span>
           </Button>
 
-          {/* M1 (1m) vs M5 (5m) Timeframe Switcher */}
-          <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-700 rounded-md p-0.5">
-            <Button
+          {/* Prominent M1 (1m) vs M5 (5m) Chart Timeframe Switcher (Always Clickable on All Symbols) */}
+          <div className="flex items-center gap-1 bg-zinc-950 border-2 border-cyan-500/40 rounded-lg p-1 shadow-[0_0_12px_rgba(6,182,212,0.12)]">
+            <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase px-1.5 hidden sm:inline">
+              TF:
+            </span>
+            <button
               type="button"
-              size="sm"
-              variant={chartTimeframe === "M1" ? "default" : "ghost"}
-              disabled={!isIndices || m1LtfEnabled === false}
-              className={cn(
-                "h-7 px-2 text-[11px] font-mono font-bold",
-                chartTimeframe === "M1"
-                  ? "bg-cyan-600 text-white hover:bg-cyan-500"
-                  : "text-zinc-400 hover:text-white"
-              )}
               onClick={() => setChartTimeframe("M1")}
-              title={
-                !isIndices
-                  ? "M1 LTF available on US30 / NAS100 when M1 Toggle is ON"
-                  : m1LtfEnabled === false
-                  ? "M1 LTF Toggle is OFF in Config Page"
-                  : "Switch Chart & TradingView to M1 (1-minute)"
-              }
+              className={cn(
+                "h-7 px-3 rounded-md text-xs font-mono font-black transition-all cursor-pointer select-none",
+                chartTimeframe === "M1"
+                  ? "bg-cyan-500 text-black shadow-[0_0_10px_rgba(6,182,212,0.5)] ring-1 ring-cyan-200"
+                  : "bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800"
+              )}
+              title="Switch Chart & TradingView to M1 (1-Minute) Candles"
             >
               ⚡ M1 (1m)
-            </Button>
-            <Button
+            </button>
+            <button
               type="button"
-              size="sm"
-              variant={chartTimeframe === "M5" ? "default" : "ghost"}
-              className={cn(
-                "h-7 px-2 text-[11px] font-mono font-bold",
-                chartTimeframe === "M5"
-                  ? "bg-amber-600 text-white hover:bg-amber-500"
-                  : "text-zinc-400 hover:text-white"
-              )}
               onClick={() => setChartTimeframe("M5")}
-              title="Switch Chart & TradingView to M5 (5-minute)"
+              className={cn(
+                "h-7 px-3 rounded-md text-xs font-mono font-black transition-all cursor-pointer select-none",
+                chartTimeframe === "M5"
+                  ? "bg-amber-500 text-black shadow-[0_0_10px_rgba(245,158,11,0.5)] ring-1 ring-amber-200"
+                  : "bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800"
+              )}
+              title="Switch Chart & TradingView to M5 (5-Minute) Candles"
             >
               📊 M5 (5m)
-            </Button>
+            </button>
           </div>
         </div>
 
@@ -1870,32 +1867,51 @@ export function SmcChartOverlay({
                 >
                   HTF Bias: {rawM15Bias}
                 </Badge>
-                {chartTimeframe === "M1" && hasRealM1 ? (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] px-2 py-0.5 font-bold bg-cyan-500/20 text-cyan-300 border-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.3)]"
-                  >
-                    ⚡ REAL MT5 M1 (1m) FEED
-                  </Badge>
-                ) : hasRealM5 ? (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] px-2 py-0.5 font-bold bg-cyan-500/20 text-cyan-300 border-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.3)]"
-                  >
-                    {showM1Mode ? "⚡ REAL MT5 M5 SWEEP / M1 LTF" : "⚡ REAL MT5 M5 FEED"}
-                  </Badge>
-                ) : (
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] px-2 py-0.5 font-bold bg-indigo-500/20 text-indigo-300 border-indigo-500"
-                  >
-                    {chartTimeframe === "M1" ? "📐 M1 LTF CANVAS" : "📐 M5 SMC CANVAS"}
-                  </Badge>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setChartTimeframe((prev) => (prev === "M1" ? "M5" : "M1"))}
+                  title="Click to toggle between M1 (1m) and M5 (5m) candles"
+                  className={cn(
+                    "inline-flex items-center rounded-md border text-[10px] px-2.5 py-0.5 font-bold cursor-pointer transition-all hover:brightness-125",
+                    chartTimeframe === "M1"
+                      ? "bg-cyan-500/25 text-cyan-200 border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.35)]"
+                      : "bg-amber-500/20 text-amber-200 border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.25)]"
+                  )}
+                >
+                  {chartTimeframe === "M1" && hasRealM1
+                    ? "⚡ REAL MT5 M1 (1m) FEED ⇄"
+                    : hasRealM5
+                    ? (chartTimeframe === "M1" ? "📐 M1 VIEW (LOADING MT5 M1) ⇄" : "⚡ REAL MT5 M5 (5m) FEED ⇄")
+                    : chartTimeframe === "M1"
+                    ? "📐 M1 (1m) CANVAS ⇄"
+                    : "📐 M5 (5m) CANVAS ⇄"}
+                </button>
               </div>
 
               <div className="flex items-center gap-2 text-[11px]">
-                <span className="text-zinc-400 font-bold">{showM1Mode ? "M1 LTF Progress:" : "M5 SMC Progress:"}</span>
+                <div className="inline-flex items-center rounded border border-zinc-700 bg-zinc-950 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setChartTimeframe("M1")}
+                    className={cn(
+                      "px-2 py-0.5 rounded text-[10px] font-black cursor-pointer transition-all",
+                      chartTimeframe === "M1" ? "bg-cyan-500 text-black" : "text-zinc-400 hover:text-white"
+                    )}
+                  >
+                    M1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChartTimeframe("M5")}
+                    className={cn(
+                      "px-2 py-0.5 rounded text-[10px] font-black cursor-pointer transition-all",
+                      chartTimeframe === "M5" ? "bg-amber-500 text-black" : "text-zinc-400 hover:text-white"
+                    )}
+                  >
+                    M5
+                  </button>
+                </div>
+                <span className="text-zinc-400 font-bold hidden sm:inline">{showM1Mode ? "M1 LTF Progress:" : "M5 SMC Progress:"}</span>
                 <span className="font-black px-2 py-0.5 rounded bg-zinc-800 text-emerald-400 border border-zinc-700">
                   {isTradeActive ? "TRADE ACTIVE 🟢" : `${Math.min(totalSteps, passedCount)} / ${totalSteps} Steps Verified`}
                 </span>
@@ -2046,7 +2062,7 @@ export function SmcChartOverlay({
 
         {/* ACTIVE CHART DISPLAY: REAL TRADINGVIEW (M1 / M5) OR SMC DIAGRAM CANVAS */}
         {activeTab === "tv" ? (
-          <TradingViewEmbedded symbol={symbol} interval={chartTimeframe === "M1" ? "1" : "5"} />
+          <TradingViewEmbedded key={`${symbol}_${chartTimeframe}`} symbol={symbol} interval={chartTimeframe === "M1" ? "1" : "5"} />
         ) : (
           /* SVG Canvas with Crisp Rendering and Real-time Cursor Tracking */
           <div className="relative w-full h-[440px] sm:h-[470px]">
