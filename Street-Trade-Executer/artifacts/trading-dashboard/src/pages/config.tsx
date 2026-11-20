@@ -255,9 +255,49 @@ export default function Config() {
     }
   };
 
+  const [m1Saving, setM1Saving] = useState(false);
+
+  const handleM1ToggleImmediate = async (checked: boolean) => {
+    if (isReadOnly || m1Saving) return;
+    const prevVal = form.getValues("m1LtfEnabled");
+    form.setValue("m1LtfEnabled", checked, { shouldDirty: true, shouldTouch: true });
+    setM1Saving(true);
+    try {
+      const res = await fetch("/api/toggle-m1-ltf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: checked }),
+      });
+      if (!res.ok) throw new Error("Failed to toggle M1 LTF");
+      const json = await res.json();
+      const confirmed = Boolean(json?.m1LtfEnabled ?? checked);
+      queryClient.setQueryData(getGetConfigQueryKey(), (old: any) =>
+        old ? { ...old, m1LtfEnabled: confirmed } : old
+      );
+      queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
+      toast({
+        title: confirmed ? "M1 LTF Execution ON" : "M1 LTF Execution OFF",
+        description: confirmed
+          ? "US30 & NAS100 now execute 6-Condition M1 LTF entries (Gold/Forex remain M5)."
+          : "All instruments now execute strictly 7-Condition M5 SMC entries.",
+      });
+    } catch {
+      form.setValue("m1LtfEnabled", prevVal);
+      toast({
+        title: "Failed to update M1 LTF toggle",
+        description: "Please verify API server connection and retry.",
+        variant: "destructive",
+      });
+    } finally {
+      setM1Saving(false);
+    }
+  };
+
   const onSubmit = (data: ConfigFormValues) => {
     updateConfig.mutate({ data }, {
-      onSuccess: () => {
+      onSuccess: (savedData: any) => {
+        queryClient.setQueryData(getGetConfigQueryKey(), (old: any) => ({ ...old, ...savedData, m1LtfEnabled: data.m1LtfEnabled }));
         toast({ title: "Configuration saved", description: `Active pair: ${data.activePair}` });
         queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() });
         queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
@@ -586,12 +626,17 @@ export default function Config() {
                                 </FormLabel>
                                 <FormDescription className="text-xs leading-relaxed">
                                   {field.value
-                                    ? "Enabled: US30 & NAS100 execute 6-Condition M15 Bias -> M5 Sweep -> M1 Execution (min 38pt SL). Gold & Forex stay on M15 -> M5."
-                                    : "Disabled: ALL instruments run strictly 7-Condition M15 -> M5 execution (no M1 refinement entries)."}
+                                    ? "ON (Recommended): US30 & NAS100 execute 6-Condition M15 Bias -> M5 Sweep -> M1 LTF entries (min 38pt SL). Gold & Forex stay on M5."
+                                    : "OFF (Strict M5 Only): ALL instruments (including US30 & NAS100) execute strictly 7-Condition M5 SMC entries (no M1 live entries)."}
                                 </FormDescription>
                               </div>
                               <FormControl>
-                                <Switch className="shrink-0" checked={field.value} onCheckedChange={field.onChange} />
+                                <Switch
+                                  className="shrink-0"
+                                  disabled={m1Saving}
+                                  checked={Boolean(field.value)}
+                                  onCheckedChange={handleM1ToggleImmediate}
+                                />
                               </FormControl>
                             </div>
                             <FormMessage />

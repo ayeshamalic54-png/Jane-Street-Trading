@@ -44341,6 +44341,7 @@ var botStateTable = pgTable("bot_state", {
   forexEnabled: boolean("forex_enabled").default(true),
   indicesEnabled: boolean("indices_enabled").default(true),
   stocksEnabled: boolean("stocks_enabled").default(true),
+  m1LtfEnabled: boolean("m1_ltf_enabled").default(true),
   riskLimitsEnabled: boolean("risk_limits_enabled").default(true),
   zEntryThreshold: numeric("z_entry_threshold", { precision: 4, scale: 2 }).default("2.00"),
   defaultLots: numeric("default_lots", { precision: 5, scale: 2 }).default("0.01"),
@@ -49338,6 +49339,7 @@ router2.post("/config", async (req, res) => {
     const updated = (await db.select().from(botStateTable).limit(1))[0];
     const updatedPair = updated?.activePair ?? activePair;
     const updatedParts = updatedPair.split("/");
+    const resolvedM1Ltf = typeof updated?.m1LtfEnabled === "boolean" ? updated.m1LtfEnabled : Boolean(updated?.m1_ltf_enabled ?? m1LtfExec);
     return res.json({
       activePair: updatedPair,
       symbolA: updatedParts[0] ?? parts[0],
@@ -49355,7 +49357,7 @@ router2.post("/config", async (req, res) => {
       forexEnabled: updated?.forexEnabled ?? forexExec,
       indicesEnabled: updated?.indicesEnabled ?? indicesExec,
       stocksEnabled: updated?.stocksEnabled ?? stocksExec,
-      m1LtfEnabled: Boolean(updated?.m1LtfEnabled ?? updated?.m1_ltf_enabled ?? m1LtfExec),
+      m1LtfEnabled: resolvedM1Ltf,
       riskLimitsEnabled: updated?.riskLimitsEnabled ?? riskLimits,
       knifeProtectionEnabled: updated?.knifeProtectionEnabled ?? knifeExec,
       obiEnabled: updated?.obiEnabled ?? obiExec,
@@ -49438,6 +49440,28 @@ router2.post("/toggle-session-guard", async (req, res) => {
   } catch (err) {
     console.error("Failed to toggle session guard", err);
     return res.status(500).json({ error: "Failed to toggle session guard" });
+  }
+});
+router2.post("/toggle-m1-ltf", async (req, res) => {
+  try {
+    await ensureSessionGuardColumns();
+    const body = req.body || {};
+    const rawVal = body.enabled !== void 0 ? body.enabled : body.m1LtfEnabled;
+    if (rawVal === void 0) {
+      return res.status(400).json({ error: "enabled boolean is required" });
+    }
+    const nextEnabled = Boolean(rawVal);
+    await db.execute(
+      sql`UPDATE bot_state
+          SET m1_ltf_enabled = ${nextEnabled},
+              updated_at     = NOW()
+          WHERE id = (SELECT MIN(id) FROM bot_state)`
+    );
+    void broadcastDashboardNow();
+    return res.json({ status: "success", m1LtfEnabled: nextEnabled });
+  } catch (err) {
+    console.error("Failed to toggle M1 LTF execution", err);
+    return res.status(500).json({ error: "Failed to toggle M1 LTF execution" });
   }
 });
 router2.post("/bot/control", async (req, res) => {

@@ -154,6 +154,9 @@ router.post("/config", async (req, res) => {
     const updated = (await db.select().from(botStateTable).limit(1))[0];
     const updatedPair = updated?.activePair ?? activePair;
     const updatedParts = updatedPair.split("/");
+    const resolvedM1Ltf = typeof (updated as any)?.m1LtfEnabled === "boolean"
+      ? (updated as any).m1LtfEnabled
+      : Boolean((updated as any)?.m1_ltf_enabled ?? m1LtfExec);
 
     return res.json({
       activePair: updatedPair,
@@ -172,7 +175,7 @@ router.post("/config", async (req, res) => {
       forexEnabled: updated?.forexEnabled ?? forexExec,
       indicesEnabled: updated?.indicesEnabled ?? indicesExec,
       stocksEnabled: updated?.stocksEnabled ?? stocksExec,
-      m1LtfEnabled: Boolean((updated as any)?.m1LtfEnabled ?? (updated as any)?.m1_ltf_enabled ?? m1LtfExec),
+      m1LtfEnabled: resolvedM1Ltf,
       riskLimitsEnabled: updated?.riskLimitsEnabled ?? riskLimits,
       knifeProtectionEnabled: updated?.knifeProtectionEnabled ?? knifeExec,
       obiEnabled: updated?.obiEnabled ?? obiExec,
@@ -262,6 +265,32 @@ router.post("/toggle-session-guard", async (req, res) => {
   } catch (err) {
     console.error("Failed to toggle session guard", err);
     return res.status(500).json({ error: "Failed to toggle session guard" });
+  }
+});
+
+// ── INSTANT M1 LTF EXECUTION TOGGLE ──────────────────────────────
+router.post("/toggle-m1-ltf", async (req, res) => {
+  try {
+    await ensureSessionGuardColumns();
+    const body = req.body || {};
+    const rawVal = body.enabled !== undefined ? body.enabled : body.m1LtfEnabled;
+    if (rawVal === undefined) {
+      return res.status(400).json({ error: "enabled boolean is required" });
+    }
+    const nextEnabled = Boolean(rawVal);
+
+    await db.execute(
+      sql`UPDATE bot_state
+          SET m1_ltf_enabled = ${nextEnabled},
+              updated_at     = NOW()
+          WHERE id = (SELECT MIN(id) FROM bot_state)`
+    );
+
+    void broadcastDashboardNow();
+    return res.json({ status: "success", m1LtfEnabled: nextEnabled });
+  } catch (err) {
+    console.error("Failed to toggle M1 LTF execution", err);
+    return res.status(500).json({ error: "Failed to toggle M1 LTF execution" });
   }
 });
 

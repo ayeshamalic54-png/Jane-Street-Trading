@@ -33,6 +33,7 @@ export const botStateTable = pgTable("bot_state", {
   forexEnabled: boolean("forex_enabled").default(true),
   indicesEnabled: boolean("indices_enabled").default(true),
   stocksEnabled: boolean("stocks_enabled").default(true),
+  m1LtfEnabled: boolean("m1_ltf_enabled").default(true),
   riskLimitsEnabled: boolean("risk_limits_enabled").default(true),
   zEntryThreshold: numeric("z_entry_threshold", { precision: 4, scale: 2 }).default("2.00"),
   defaultLots: numeric("default_lots", { precision: 5, scale: 2 }).default("0.01"),
