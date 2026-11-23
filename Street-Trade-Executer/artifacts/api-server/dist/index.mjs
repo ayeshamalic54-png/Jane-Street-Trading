@@ -44398,7 +44398,16 @@ var signalsTable = pgTable("signals", {
   alpha: numeric("alpha", { precision: 15, scale: 5 }).notNull(),
   zScore: numeric("z_score", { precision: 10, scale: 4 }).notNull(),
   obi: numeric("obi", { precision: 10, scale: 4 }).notNull(),
-  action: varchar("action", { length: 20 }).notNull()
+  action: varchar("action", { length: 20 }).notNull(),
+  entryPrice: numeric("entry_price", { precision: 15, scale: 5 }),
+  sl: numeric("sl", { precision: 15, scale: 5 }),
+  tp: numeric("tp", { precision: 15, scale: 5 }),
+  signalLots: numeric("signal_lots", { precision: 10, scale: 2 }),
+  executionMode: varchar("execution_mode", { length: 20 }),
+  signalStatus: varchar("signal_status", { length: 20 }),
+  closePrice: numeric("close_price", { precision: 15, scale: 5 }),
+  simulatedProfit: numeric("simulated_profit", { precision: 15, scale: 2 }),
+  closedAt: timestamp("closed_at")
 });
 var fvgZonesTable = pgTable("fvg_zones", {
   id: serial("id").primaryKey(),
@@ -48879,14 +48888,25 @@ var GetSignalsResponseItem = objectType({
   "obi": numberType().optional(),
   "action": stringType(),
   "totalLots": numberType().optional(),
-  "totalProfit": numberType().optional(),
+  "totalProfit": numberType().nullable().optional(),
+  "sl": numberType().nullable().optional(),
+  "tp": numberType().nullable().optional(),
+  "signalLots": numberType().nullable().optional(),
+  "executionMode": stringType().nullable().optional(),
+  "signalStatus": stringType().nullable().optional(),
+  "closePrice": numberType().nullable().optional(),
+  "simulatedProfit": numberType().nullable().optional(),
+  "closedAt": stringType().nullable().optional(),
   "trades": arrayType(objectType({
     "ticket": numberType().optional(),
     "symbol": stringType().optional(),
     "lots": numberType().optional(),
     "status": stringType().optional(),
-    "profit": numberType().optional(),
-    "comment": stringType().optional()
+    "profit": numberType().nullable().optional(),
+    "comment": stringType().optional(),
+    "entryPrice": numberType().nullable().optional(),
+    "sl": numberType().nullable().optional(),
+    "tp": numberType().nullable().optional()
   })).optional()
 });
 var GetSignalsResponse = arrayType(GetSignalsResponseItem);
@@ -50280,6 +50300,9 @@ router7.get("/signals", async (req, res) => {
         const actualSl = (executedTrade?.sl != null ? Number(executedTrade.sl) : null) ?? (s.sl != null ? Number(s.sl) : null);
         const actualTp = (executedTrade?.tp != null ? Number(executedTrade.tp) : null) ?? (s.tp != null ? Number(s.tp) : null);
         const actualEntry = (executedTrade?.entryPrice != null ? Number(executedTrade.entryPrice) : null) ?? (s.entryPrice != null ? Number(s.entryPrice) : Number(s.priceA));
+        const recordedSigLots = s.signalLots != null ? Number(s.signalLots) : null;
+        const simProfit = s.simulatedProfit != null ? Number(s.simulatedProfit) : null;
+        const effectiveTotalProfit = totalProfit !== null ? totalProfit : simProfit;
         return {
           id: s.id,
           timestamp: s.timestamp?.toISOString() ?? (/* @__PURE__ */ new Date()).toISOString(),
@@ -50292,10 +50315,16 @@ router7.get("/signals", async (req, res) => {
           zScore: Number(s.zScore),
           obi: Number(s.obi),
           action: s.action,
-          totalLots: totalLots > 0 ? totalLots : defaultCatLots,
-          totalProfit: totalProfit !== null ? totalProfit : 0,
+          totalLots: totalLots > 0 ? totalLots : recordedSigLots != null && recordedSigLots > 0 ? recordedSigLots : defaultCatLots,
+          totalProfit: effectiveTotalProfit,
           sl: actualSl,
           tp: actualTp,
+          signalLots: recordedSigLots,
+          executionMode: s.executionMode ?? null,
+          signalStatus: s.signalStatus ?? null,
+          closePrice: s.closePrice != null ? Number(s.closePrice) : null,
+          simulatedProfit: simProfit,
+          closedAt: s.closedAt ? s.closedAt.toISOString() : null,
           trades: tradesForSignal.map((t) => ({
             ticket: Number(t.ticket),
             symbol: t.symbol,
@@ -51676,7 +51705,8 @@ router10.post("/backup/import", async (req, res) => {
       const formattedSignals = signals.map((s) => ({
         ...s,
         id: Number(s.id),
-        timestamp: s.timestamp ? new Date(s.timestamp) : /* @__PURE__ */ new Date()
+        timestamp: s.timestamp ? new Date(s.timestamp) : /* @__PURE__ */ new Date(),
+        closedAt: s.closedAt ? new Date(s.closedAt) : null
       }));
       await db.insert(signalsTable).values(formattedSignals);
     }
@@ -51965,7 +51995,16 @@ async function initDb() {
     )`,
     `ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS metrics_reset_at TIMESTAMP DEFAULT NULL`,
     `ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS m1_ltf_enabled BOOLEAN DEFAULT TRUE`,
-    `ALTER TABLE trades ADD COLUMN IF NOT EXISTS mt5_login BIGINT DEFAULT NULL`
+    `ALTER TABLE trades ADD COLUMN IF NOT EXISTS mt5_login BIGINT DEFAULT NULL`,
+    `ALTER TABLE signals ADD COLUMN IF NOT EXISTS entry_price NUMERIC(15, 5) DEFAULT NULL`,
+    `ALTER TABLE signals ADD COLUMN IF NOT EXISTS sl NUMERIC(15, 5) DEFAULT NULL`,
+    `ALTER TABLE signals ADD COLUMN IF NOT EXISTS tp NUMERIC(15, 5) DEFAULT NULL`,
+    `ALTER TABLE signals ADD COLUMN IF NOT EXISTS signal_lots NUMERIC(10, 2) DEFAULT NULL`,
+    `ALTER TABLE signals ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(20) DEFAULT NULL`,
+    `ALTER TABLE signals ADD COLUMN IF NOT EXISTS signal_status VARCHAR(20) DEFAULT NULL`,
+    `ALTER TABLE signals ADD COLUMN IF NOT EXISTS close_price NUMERIC(15, 5) DEFAULT NULL`,
+    `ALTER TABLE signals ADD COLUMN IF NOT EXISTS simulated_profit NUMERIC(15, 2) DEFAULT NULL`,
+    `ALTER TABLE signals ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP DEFAULT NULL`
   ];
   const client = await pool.connect();
   try {

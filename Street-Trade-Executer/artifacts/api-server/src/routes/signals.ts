@@ -57,6 +57,9 @@ router.get("/signals", async (req, res) => {
         const actualSl = (executedTrade?.sl != null ? Number(executedTrade.sl) : null) ?? (s.sl != null ? Number(s.sl) : null);
         const actualTp = (executedTrade?.tp != null ? Number(executedTrade.tp) : null) ?? (s.tp != null ? Number(s.tp) : null);
         const actualEntry = (executedTrade?.entryPrice != null ? Number(executedTrade.entryPrice) : null) ?? (s.entryPrice != null ? Number(s.entryPrice) : Number(s.priceA));
+        const recordedSigLots = s.signalLots != null ? Number(s.signalLots) : null;
+        const simProfit = s.simulatedProfit != null ? Number(s.simulatedProfit) : null;
+        const effectiveTotalProfit = totalProfit !== null ? totalProfit : simProfit;
 
         return {
           id: s.id,
@@ -70,10 +73,16 @@ router.get("/signals", async (req, res) => {
           zScore: Number(s.zScore),
           obi: Number(s.obi),
           action: s.action,
-          totalLots: totalLots > 0 ? totalLots : defaultCatLots,
-          totalProfit: totalProfit !== null ? totalProfit : 0.0,
+          totalLots: totalLots > 0 ? totalLots : (recordedSigLots != null && recordedSigLots > 0 ? recordedSigLots : defaultCatLots),
+          totalProfit: effectiveTotalProfit,
           sl: actualSl,
           tp: actualTp,
+          signalLots: recordedSigLots,
+          executionMode: s.executionMode ?? null,
+          signalStatus: s.signalStatus ?? null,
+          closePrice: s.closePrice != null ? Number(s.closePrice) : null,
+          simulatedProfit: simProfit,
+          closedAt: s.closedAt ? s.closedAt.toISOString() : null,
           trades: tradesForSignal.map((t) => ({
             ticket: Number(t.ticket),
             symbol: t.symbol,

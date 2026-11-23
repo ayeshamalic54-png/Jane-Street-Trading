@@ -181,6 +181,15 @@ def initialize_database():
         ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS session2_end_hour DOUBLE PRECISION DEFAULT 22.0;
         ALTER TABLE bot_state ADD COLUMN IF NOT EXISTS metrics_reset_at TIMESTAMP DEFAULT NULL;
         ALTER TABLE trades ADD COLUMN IF NOT EXISTS mt5_login BIGINT DEFAULT NULL;
+        ALTER TABLE signals ADD COLUMN IF NOT EXISTS entry_price NUMERIC(15, 5) DEFAULT NULL;
+        ALTER TABLE signals ADD COLUMN IF NOT EXISTS sl NUMERIC(15, 5) DEFAULT NULL;
+        ALTER TABLE signals ADD COLUMN IF NOT EXISTS tp NUMERIC(15, 5) DEFAULT NULL;
+        ALTER TABLE signals ADD COLUMN IF NOT EXISTS signal_lots NUMERIC(10, 2) DEFAULT NULL;
+        ALTER TABLE signals ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(20) DEFAULT NULL;
+        ALTER TABLE signals ADD COLUMN IF NOT EXISTS signal_status VARCHAR(20) DEFAULT NULL;
+        ALTER TABLE signals ADD COLUMN IF NOT EXISTS close_price NUMERIC(15, 5) DEFAULT NULL;
+        ALTER TABLE signals ADD COLUMN IF NOT EXISTS simulated_profit NUMERIC(15, 2) DEFAULT NULL;
+        ALTER TABLE signals ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP DEFAULT NULL;
 
         CREATE TABLE IF NOT EXISTS mt5_accounts (
             id SERIAL PRIMARY KEY,
@@ -772,11 +781,11 @@ def purge_symbol_telemetry(symbol: str, symbol_pair: str = None):
         if conn:
             conn.close()
 
-def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action, entry_price=None, sl=None, tp=None):
-    """Logs a generated mathematical signal with exact entry, sl, and tp. Returns the signal ID."""
+def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action, entry_price=None, sl=None, tp=None, signal_lots=None, execution_mode=None, signal_status=None):
+    """Logs a generated mathematical signal with exact entry, sl, tp, lots, and mode. Returns the signal ID."""
     query = """
-        INSERT INTO signals (symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action, entry_price, sl, tp)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO signals (symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, action, entry_price, sl, tp, signal_lots, execution_mode, signal_status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
     """
     conn = None
@@ -791,7 +800,10 @@ def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, 
             action,
             float(entry_price) if entry_price is not None else float(price_a),
             float(sl) if sl is not None else None,
-            float(tp) if tp is not None else None
+            float(tp) if tp is not None else None,
+            float(signal_lots) if signal_lots is not None else None,
+            str(execution_mode) if execution_mode else None,
+            str(signal_status) if signal_status else None,
         ))
         row = cur.fetchone()
         conn.commit()
@@ -805,6 +817,64 @@ def log_signal(symbol_a, symbol_b, price_a, price_b, beta, alpha, z_score, obi, 
         if conn:
             conn.close()
     return None
+
+def get_open_signal_only_trades(lookback_hours=48):
+    """Fetches Signal-Only entries awaiting SL/TP resolution within lookback window."""
+    query = """
+        SELECT id, timestamp, symbol_a, action, entry_price, price_a, sl, tp, signal_lots, execution_mode
+        FROM signals
+        WHERE signal_status = 'OPEN'
+          AND sl IS NOT NULL
+          AND tp IS NOT NULL
+          AND timestamp >= (CURRENT_TIMESTAMP - (%s || ' hours')::INTERVAL)
+        ORDER BY timestamp ASC
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(query, (str(int(lookback_hours)),))
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+    except Exception as e:
+        print(f"Error loading open signal-only trades: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def close_signal_only_trade(signal_id, status, close_price=None, simulated_profit=None):
+    """Atomically resolves an OPEN Signal-Only record so close alerts fire at most once."""
+    query = """
+        UPDATE signals
+        SET signal_status = %s,
+            close_price = %s,
+            simulated_profit = %s,
+            closed_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+          AND signal_status = 'OPEN'
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(query, (
+            str(status),
+            float(close_price) if close_price is not None else None,
+            float(simulated_profit) if simulated_profit is not None else None,
+            int(signal_id),
+        ))
+        changed = cur.rowcount > 0
+        conn.commit()
+        cur.close()
+        return changed
+    except Exception as e:
+        print(f"Error closing signal-only trade #{signal_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 def send_discord_message(content):
     """Sends a general plain text message or embed to the Discord Webhook."""

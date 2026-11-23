@@ -93,6 +93,15 @@ export const signalsTable = pgTable("signals", {
   zScore: numeric("z_score", { precision: 10, scale: 4 }).notNull(),
   obi: numeric("obi", { precision: 10, scale: 4 }).notNull(),
   action: varchar("action", { length: 20 }).notNull(),
+  entryPrice: numeric("entry_price", { precision: 15, scale: 5 }),
+  sl: numeric("sl", { precision: 15, scale: 5 }),
+  tp: numeric("tp", { precision: 15, scale: 5 }),
+  signalLots: numeric("signal_lots", { precision: 10, scale: 2 }),
+  executionMode: varchar("execution_mode", { length: 20 }),
+  signalStatus: varchar("signal_status", { length: 20 }),
+  closePrice: numeric("close_price", { precision: 15, scale: 5 }),
+  simulatedProfit: numeric("simulated_profit", { precision: 15, scale: 2 }),
+  closedAt: timestamp("closed_at"),
 });
 
 export const fvgZonesTable = pgTable("fvg_zones", {

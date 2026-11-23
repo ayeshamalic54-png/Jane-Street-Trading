@@ -79,6 +79,7 @@ router.post("/backup/import", async (req, res) => {
         ...s,
         id: Number(s.id),
         timestamp: s.timestamp ? new Date(s.timestamp) : new Date(),
+        closedAt: s.closedAt ? new Date(s.closedAt) : null,
       }));
       await db.insert(signalsTable).values(formattedSignals);
     }

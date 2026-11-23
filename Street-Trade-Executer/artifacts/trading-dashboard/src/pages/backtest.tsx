@@ -175,11 +175,11 @@ export default function Backtest() {
             Pure SMC / ICT Backtesting
           </h2>
           <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-            9-Condition M15 + M5 Forex &amp; Metals Simulator · Sweep → CHoCH → FVG Retest → M15 Liquidity Target (Zero Crypto / Zero Z-Score)
+            7-Condition M15 + M5 Forex &amp; Metals Simulator · Sweep → CHoCH → FVG Retest → M15 Liquidity Target (Zero Crypto / Zero Z-Score)
           </p>
         </div>
         <Badge variant="outline" className="font-mono text-[10px] border-emerald-500/30 bg-emerald-500/10 text-emerald-400 shrink-0">
-          FOREX &amp; METALS ONLY · SMC 9-STEP ENGINE
+          FOREX &amp; METALS ONLY · SMC 7-STEP ENGINE
         </Badge>
       </div>
 
@@ -520,7 +520,7 @@ export default function Backtest() {
               <CardContent className="p-0 max-h-[320px] overflow-y-auto">
                 {results.trades.length === 0 ? (
                   <div className="p-8 text-center text-xs font-mono text-muted-foreground">
-                    No strict 9-condition SMC setups fired in this lookback window. Try 30D lookback or toggling Session Filter.
+                    No strict 7-condition SMC setups fired in this lookback window. Try 30D lookback or toggling Session Filter.
                   </div>
                 ) : (
                   <Table>

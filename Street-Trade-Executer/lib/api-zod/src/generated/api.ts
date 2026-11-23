@@ -122,14 +122,25 @@ export const GetSignalsResponseItem = zod.object({
   "obi": zod.number().optional(),
   "action": zod.string(),
   "totalLots": zod.number().optional(),
-  "totalProfit": zod.number().optional(),
+  "totalProfit": zod.number().nullable().optional(),
+  "sl": zod.number().nullable().optional(),
+  "tp": zod.number().nullable().optional(),
+  "signalLots": zod.number().nullable().optional(),
+  "executionMode": zod.string().nullable().optional(),
+  "signalStatus": zod.string().nullable().optional(),
+  "closePrice": zod.number().nullable().optional(),
+  "simulatedProfit": zod.number().nullable().optional(),
+  "closedAt": zod.string().nullable().optional(),
   "trades": zod.array(zod.object({
   "ticket": zod.number().optional(),
   "symbol": zod.string().optional(),
   "lots": zod.number().optional(),
   "status": zod.string().optional(),
-  "profit": zod.number().optional(),
-  "comment": zod.string().optional()
+  "profit": zod.number().nullable().optional(),
+  "comment": zod.string().optional(),
+  "entryPrice": zod.number().nullable().optional(),
+  "sl": zod.number().nullable().optional(),
+  "tp": zod.number().nullable().optional()
 })).optional()
 })
 export const GetSignalsResponse = zod.array(GetSignalsResponseItem)

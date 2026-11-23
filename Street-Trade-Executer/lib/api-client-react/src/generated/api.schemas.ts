@@ -111,7 +111,15 @@ export interface Signal {
   obi?: number;
   action: string;
   totalLots?: number;
-  totalProfit?: number;
+  totalProfit?: number | null;
+  sl?: number | null;
+  tp?: number | null;
+  signalLots?: number | null;
+  executionMode?: string | null;
+  signalStatus?: string | null;
+  closePrice?: number | null;
+  simulatedProfit?: number | null;
+  closedAt?: string | null;
   trades?: SignalTradesItem[];
 }
 

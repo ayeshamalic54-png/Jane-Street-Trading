@@ -30,7 +30,7 @@ from execution_bot import execute_three_part_trade, execute_three_part_hedge_tra
 
 
 from smc_indicators import detect_smc_zones, is_price_in_zones, get_smc_asset_profile
-from database import log_signal, get_connection, save_or_update_mt5_account, get_target_mt5_login, clear_target_mt5_login, get_bot_running_state, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset, purge_disabled_category_zones, utc_now_naive, to_utc_naive, format_pkt_time
+from database import log_signal, get_open_signal_only_trades, close_signal_only_trade, get_connection, save_or_update_mt5_account, get_target_mt5_login, clear_target_mt5_login, get_bot_running_state, update_bot_state, update_daily_metrics, log_fvg_zones, get_auto_execute, initialize_database, log_trade_entry, get_open_trades_count, log_trade_exit, update_scanned_asset, purge_disabled_category_zones, utc_now_naive, to_utc_naive, format_pkt_time
 from news_guard import check_pair_news_block, check_post_news_stability
 try:
     from binance_execution import (
@@ -949,7 +949,8 @@ def execute_mt5_smc_order(
                 entry_b=0.0,
                 sl_b=0.0,
                 lots_b=0.0,
-                side_b="NONE"
+                side_b="NONE",
+                execution_mode=best_sig.get("execution_mode"),
             )
         except Exception as ex_open_notify:
             logger.error(f"Error sending Discord OPEN notification: {ex_open_notify}")
@@ -1334,11 +1335,158 @@ def sync_mt5_open_positions_with_db():
             logger.info(f"🏁 [MT5 SYNC CLOSE] Ticket #{ticket} ({symbol}) closed. Exit: {close_price:.5f} | PnL: ${profit:.2f}")
             send_discord_trade_closed_notification(symbol, order_type, lots, entry_price, close_price, profit, exit_reason="Trade Closed (MT5 / Manual Exit)")
 
+        # Check M5/M1 simulated Signal-Only SL/TP outcomes
         conn.commit()
         cur.close()
         conn.close()
     except Exception as e:
         logger.error(f"Error in sync_mt5_open_positions_with_db: {e}")
+
+def _compute_signal_mode_profit(symbol_resolved: str, is_long: bool, lots: float, entry_price: float, close_price: float) -> float:
+    """Computes broker-accurate simulated USD PnL for Signal-Only TP/SL exits."""
+    try:
+        vol = float(lots or 0.0)
+        ep = float(entry_price or 0.0)
+        cp = float(close_price or 0.0)
+        if vol <= 0 or ep <= 0 or cp <= 0:
+            return 0.0
+        mt5_type = mt5.ORDER_TYPE_BUY if is_long else mt5.ORDER_TYPE_SELL
+        if mt5 and hasattr(mt5, "order_calc_profit"):
+            try:
+                calc_pnl = mt5.order_calc_profit(mt5_type, symbol_resolved, vol, ep, cp)
+                if calc_pnl is not None:
+                    return round(float(calc_pnl), 2)
+            except Exception:
+                pass
+        signed_move = (cp - ep) if is_long else (ep - cp)
+        info = mt5.symbol_info(symbol_resolved) if mt5 else None
+        if info is not None:
+            t_sz = float(getattr(info, "trade_tick_size", 0.0) or 0.0)
+            t_val = max(
+                float(getattr(info, "trade_tick_value", 0.0) or 0.0),
+                float(getattr(info, "trade_tick_value_profit", 0.0) or 0.0),
+            )
+            if t_sz > 0 and t_val > 0:
+                return round(vol * signed_move * (t_val / t_sz), 2)
+        sym_u = str(symbol_resolved or "").upper()
+        if "XAU" in sym_u or "GOLD" in sym_u:
+            return round(vol * signed_move * 100.0, 2)
+        if any(k in sym_u for k in ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX")):
+            return round(vol * signed_move * 1.0, 2)
+        if "JPY" in sym_u:
+            return round(vol * signed_move * 1000.0, 2)
+        return round(vol * signed_move * 100000.0, 2)
+    except Exception:
+        return 0.0
+
+def monitor_open_signal_only_trades():
+    """
+    Tracks active Signals-Only alerts against live MT5 M1 candles & ticks so when TP or SL hits,
+    the Signals Page updates (HIT/SL + simulated PnL) and Discord receives a Close Signal notification.
+    """
+    try:
+        if not mt5.initialize():
+            return
+        open_sigs = get_open_signal_only_trades(lookback_hours=48)
+        if not open_sigs:
+            return
+
+        # Check if any signal ID already corresponds to a real MT5 trade in DB
+        conn = get_connection()
+        cur = conn.cursor()
+        sig_ids = [int(r[0]) for r in open_sigs]
+        cur.execute("SELECT DISTINCT signal_id FROM trades WHERE signal_id = ANY(%s)", (sig_ids,))
+        executed_ids = {int(r[0]) for r in cur.fetchall() if r[0] is not None}
+        cur.close()
+        conn.close()
+
+        for sig_id, sig_ts, symbol_a, action, entry_p, price_a, sl_p, tp_p, sig_lots, exec_mode in open_sigs:
+            if int(sig_id) in executed_ids:
+                close_signal_only_trade(sig_id, "EXECUTED")
+                continue
+
+            entry_val = float(entry_p if entry_p is not None else price_a)
+            sl_val = float(sl_p or 0.0)
+            tp_val = float(tp_p or 0.0)
+            if entry_val <= 0 or sl_val <= 0 or tp_val <= 0:
+                continue
+
+            is_long = "BUY" in str(action or "").upper()
+            cat = get_symbol_category(symbol_a)
+            if cat == "crypto":
+                continue
+
+            sym_resolved = resolve_broker_symbol(symbol_a)
+            check_and_subscribe_symbol(sym_resolved, expected_symbol=symbol_a)
+            lots_val = float(sig_lots) if sig_lots is not None and float(sig_lots) > 0 else (0.07 if cat == "metals" else (0.60 if cat == "indices" else 0.51))
+            sig_open_utc = sig_ts.replace(tzinfo=None) if hasattr(sig_ts, "tzinfo") and sig_ts.tzinfo else sig_ts
+
+            exit_status = None
+            exit_px = None
+            exit_reason = None
+
+            # 1. Inspect chronological M1 bars strictly after signal timestamp to catch fast intra-minute TP/SL fills
+            rates = mt5.copy_rates_from_pos(sym_resolved, mt5.TIMEFRAME_M1, 0, 1440)
+            if rates is not None and len(rates) > 0:
+                for bar in rates:
+                    bar_utc = mt5_epoch_to_utc_naive(bar["time"], sym_resolved)
+                    if bar_utc <= sig_open_utc:
+                        continue
+                    b_high = float(bar["high"])
+                    b_low = float(bar["low"])
+                    if is_long:
+                        if b_low <= sl_val:
+                            exit_status, exit_px, exit_reason = "SL_HIT", sl_val, "Signals Mode — Stop Loss (SL) Hit"
+                            break
+                        if b_high >= tp_val:
+                            exit_status, exit_px, exit_reason = "TP_HIT", tp_val, "Signals Mode — Take Profit (TP) Hit"
+                            break
+                    else:
+                        if b_high >= sl_val:
+                            exit_status, exit_px, exit_reason = "SL_HIT", sl_val, "Signals Mode — Stop Loss (SL) Hit"
+                            break
+                        if b_low <= tp_val:
+                            exit_status, exit_px, exit_reason = "TP_HIT", tp_val, "Signals Mode — Take Profit (TP) Hit"
+                            break
+
+            # 2. Check current live MT5 bid/ask tick
+            if exit_status is None:
+                tick = mt5.symbol_info_tick(sym_resolved)
+                if tick:
+                    mkt_px = float(tick.bid if is_long else tick.ask)
+                    if mkt_px > 0:
+                        if is_long:
+                            if mkt_px <= sl_val:
+                                exit_status, exit_px, exit_reason = "SL_HIT", sl_val, "Signals Mode — Stop Loss (SL) Hit"
+                            elif mkt_px >= tp_val:
+                                exit_status, exit_px, exit_reason = "TP_HIT", tp_val, "Signals Mode — Take Profit (TP) Hit"
+                        else:
+                            if mkt_px >= sl_val:
+                                exit_status, exit_px, exit_reason = "SL_HIT", sl_val, "Signals Mode — Stop Loss (SL) Hit"
+                            elif mkt_px <= tp_val:
+                                exit_status, exit_px, exit_reason = "TP_HIT", tp_val, "Signals Mode — Take Profit (TP) Hit"
+
+            if exit_status and exit_px is not None:
+                sim_pnl = _compute_signal_mode_profit(sym_resolved, is_long, lots_val, entry_val, exit_px)
+                if close_signal_only_trade(sig_id, exit_status, close_price=exit_px, simulated_profit=sim_pnl):
+                    side_lbl = "BUY" if is_long else "SELL"
+                    logger.info(
+                        f"🏁 [SIGNAL MODE CLOSED #{sig_id}] {symbol_a} ({side_lbl}) {exit_status} | "
+                        f"Entry: {entry_val} -> Exit: {exit_px} | Sim PnL: ${sim_pnl:+.2f} USD"
+                    )
+                    send_discord_trade_closed_notification(
+                        symbol=symbol_a,
+                        order_type=side_lbl,
+                        lots=lots_val,
+                        entry_price=entry_val,
+                        close_price=exit_px,
+                        profit=sim_pnl,
+                        exit_reason=exit_reason,
+                        is_signal_only=True,
+                        execution_mode=exec_mode,
+                    )
+    except Exception as e:
+        logger.error(f"Error in monitor_open_signal_only_trades: {e}")
 
 def get_tp_distance(symbol: str, price: float, tp_pips_override: float = None) -> float:
     """
@@ -1358,7 +1506,13 @@ def get_tp_distance(symbol: str, price: float, tp_pips_override: float = None) -
     else:
         return 50.0 * pip_sz
 
-def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_a, sl_a, tp1, tp2, tp3, lots_a, entry_b, sl_b, lots_b, side_b, is_signal_only=False):
+def _get_discord_condition_labels(execution_mode: str = None):
+    mode_u = str(execution_mode or "").upper()
+    if mode_u == "M1_LTF":
+        return "6-CONDITION M1 LTF ENGINE", "Pure SMC M1 LTF Structure (6-Step Verified) 🟢"
+    return "7-CONDITION M5 SMC ENGINE", "Pure SMC M5 Structure (7-Step Verified) 🟢"
+
+def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_a, sl_a, tp1, tp2, tp3, lots_a, entry_b, sl_b, lots_b, side_b, is_signal_only=False, execution_mode=None):
     import os
     import requests
     
@@ -1393,14 +1547,17 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
         
         rrr_val = (abs(tp2 - entry_a) / abs(entry_a - sl_a)) if abs(entry_a - sl_a) > 0 else 1.85
         
+        if execution_mode is None and prof_a["category"] == "indices" and M1_LTF_ENABLED:
+            execution_mode = "M1_LTF"
+        engine_title, strat_line = _get_discord_condition_labels(execution_mode)
         mode_header = "📢 **[ NEW PURE SMC TRADING SIGNAL ]** 📢\n*(Signals Only Mode — Auto-Execution OFF)*" if is_signal_only else "🚀 **[ NEW OPEN POSITION ]** 🚀"
         message = (
             f"@everyone\n"
-            f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
+            f"📢 **PURE SMC / ICT {engine_title}** 📢\n"
             f"{mode_header}\n\n"
-            f"🟢 **ACTION:** `{act_str}` ({symbol_a})\n"
+            f"{'🟢' if 'BUY' in act_str else '🔴'} **ACTION:** `{act_str}` ({symbol_a})\n"
             f"⏱ **TIME:** `{now_str}`\n"
-            f"📊 **STRATEGY:** `Pure SMC Structure (9-Step Verified) 🟢`\n\n"
+            f"📊 **STRATEGY:** `{strat_line}`\n\n"
             f"📥 **ENTRY PRICE:** `{entry_a:.{digits_a}f}`\n"
             f"⛔ **STOP LOSS (SL):** `{sl_a:.{digits_a}f}` *({sl_pips:.1f} {unit_lbl} | Sweep {'-' if 'BUY' in act_str else '+'} {buf_str} Buffer)*\n"
             f"🎯 **TAKE PROFIT (TP):** `{tp2:.{digits_a}f}` *({rrr_val:.2f}R Opposing Structural Liquidity Target)*\n"
@@ -1416,7 +1573,7 @@ def send_discord_signal_notification(action, symbol_a, symbol_b, z_score, entry_
     except Exception as e:
         logger.error(f"Error sending Discord open notification: {e}")
 
-def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price, close_price, profit, exit_reason="Target / SL Hit"):
+def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price, close_price, profit, exit_reason="Target / SL Hit", is_signal_only=False, execution_mode=None):
     import os
     import requests
     
@@ -1430,12 +1587,21 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
         pnl_sign = "+" if profit >= 0 else ""
         
         info = mt5.symbol_info(symbol) if mt5.initialize() else None
-        digits = info.digits if info else 5
+        prof = get_smc_asset_profile(symbol=symbol, category=get_symbol_category(symbol), ref_price=entry_price)
+        digits = info.digits if info else prof["digits"]
+        if execution_mode is None and prof["category"] == "indices" and M1_LTF_ENABLED:
+            execution_mode = "M1_LTF"
+        engine_title, _ = _get_discord_condition_labels(execution_mode)
+        close_header = (
+            "🏁 **[ SIGNAL POSITION CLOSED ]** 🏁\n*(Signals Only Mode — TP/SL Result)*"
+            if is_signal_only
+            else "🏁 **[ POSITION CLOSED ]** 🏁"
+        )
         
         message = (
             f"@everyone\n"
-            f"📢 **PURE SMC / ICT 9-CONDITION SIGNAL ENGINE** 📢\n"
-            f"🏁 **[ POSITION CLOSED ]** 🏁\n\n"
+            f"📢 **PURE SMC / ICT {engine_title}** 📢\n"
+            f"{close_header}\n\n"
             f"📊 **ASSET:** `{symbol}` ({order_type})\n"
             f"📦 **LOT SIZE:** `{lots:.2f} Lots`\n"
             f"📥 **ENTRY PRICE:** `{entry_price:.{digits}f}`\n"
@@ -1457,7 +1623,7 @@ def send_discord_trade_closed_notification(symbol, order_type, lots, entry_price
 _DISCARD_ALERT_CACHE = {}
 
 def send_discord_discard_notification(action, symbol_a, symbol_b, reason, sl_price=0.0, tp_price=0.0, entry_price=0.0):
-    """Sends a Discord webhook notification when a valid 9-Condition SMC signal is discarded or blocked."""
+    """Sends a Discord webhook notification when a valid SMC signal is discarded or blocked."""
     import os
     import requests
     import time
@@ -2850,6 +3016,7 @@ def main():
             # Auto-import & sync all active MT5 open positions with database
             try:
                 sync_mt5_open_positions_with_db()
+                monitor_open_signal_only_trades()
             except Exception as e_sync:
                 logger.error(f"Error calling sync_mt5_open_positions_with_db: {e_sync}")
 
@@ -3323,6 +3490,7 @@ def main():
                                 "smc_sl": smc_sl,
                                 "smc_tp": smc_tp,
                                 "smc_sl_dist": smc_sl_dist,
+                                "execution_mode": ("M1_LTF" if "M1 LTF" in str(smc_reason) else "M5_SMC"),
                                 "candle_time": cand_candle_time
                             })
                         else:
@@ -3529,6 +3697,7 @@ def main():
                         sig_bar_time = str(best_sig.get("candle_time") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
                         pair_sig_key = f"{S_A}_{best_action}"
                         
+                        sig_exec_mode = best_sig.get("execution_mode") or ("M1_LTF" if (best_cat_a == "indices" and M1_LTF_ENABLED) else "M5_SMC")
                         if LAST_LOGGED_SIGNAL_BAR.get(pair_sig_key) != sig_bar_time:
                             LAST_LOGGED_SIGNAL_BAR[pair_sig_key] = sig_bar_time
                             signal_id = log_signal(
@@ -3539,9 +3708,12 @@ def main():
                                 best_action,
                                 entry_price=entry_a,
                                 sl=sl_a,
-                                tp=tp2_val
+                                tp=tp2_val,
+                                signal_lots=actual_lots_a,
+                                execution_mode=sig_exec_mode,
+                                signal_status=("OPEN" if not AUTO_EXECUTE else "EXECUTED"),
                             )
-                            logger.info(f"✅ [SIGNAL RECORDED #{signal_id}] {S_A} ({best_action}) | Entry: {entry_a:.5f} | SL: {sl_a:.5f} | TP: {tp2_val:.5f} | Bar: {sig_bar_time}")
+                            logger.info(f"✅ [SIGNAL RECORDED #{signal_id}] {S_A} ({best_action}) | Mode: {sig_exec_mode} | Lots: {actual_lots_a:.2f} | Entry: {entry_a:.5f} | SL: {sl_a:.5f} | TP: {tp2_val:.5f} | Bar: {sig_bar_time}")
                             try:
                                 send_discord_signal_notification(
                                     action=best_action,
@@ -3558,7 +3730,8 @@ def main():
                                     sl_b=sl_b,
                                     lots_b=lots_b,
                                     side_b=side_b,
-                                    is_signal_only=(not AUTO_EXECUTE)
+                                    is_signal_only=(not AUTO_EXECUTE),
+                                    execution_mode=sig_exec_mode,
                                 )
                             except Exception as e_notify:
                                 logger.error(f"Error preparing Discord notification: {e_notify}")
@@ -3568,7 +3741,7 @@ def main():
 
                         # If Auto-Execution is toggled OFF (Signals Only Mode), stop here!
                         if not AUTO_EXECUTE:
-                            logger.info(f"📢 [SIGNALS ONLY MODE 🟢] All 9 SMC conditions verified. Signal #{signal_id} logged to Dashboard & Discord. MT5 order placement SKIPPED per user configuration.")
+                            logger.info(f"📢 [SIGNALS ONLY MODE 🟢] {sig_exec_mode} SMC conditions verified. Signal #{signal_id} logged to Dashboard & Discord (tracking TP/SL exit automatically). MT5 order placement SKIPPED per user configuration.")
                             continue
 
                     except Exception as e_sig_prep:
