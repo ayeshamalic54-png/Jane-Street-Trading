@@ -1692,34 +1692,85 @@ def send_discord_general_alert(message_text: str):
     except Exception as e:
         logger.error(f"Failed to send Discord alert: {e}")
 
-def is_pair_in_cooldown(symbol_a: str, symbol_b: str) -> bool:
+_CORRELATED_CLUSTER_MAP = {
+    "US30": ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"),
+    "DJ30": ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"),
+    "WS30": ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"),
+    "DOW": ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"),
+    "NAS100": ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"),
+    "USTEC": ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"),
+    "US100": ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"),
+    "NDX": ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"),
+    "US500": ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"),
+    "SPX": ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX"),
+    "XAUUSD": ("XAUUSD", "GOLD", "XAGUSD", "SILVER"),
+    "XAGUSD": ("XAUUSD", "GOLD", "XAGUSD", "SILVER"),
+}
+
+
+def _get_correlated_base_symbols(symbol: str) -> tuple:
+    base = str(symbol or "").upper().split(".")[0]
+    for key, cluster in _CORRELATED_CLUSTER_MAP.items():
+        if key in base:
+            return cluster
+    return (base,)
+
+
+def is_pair_in_cooldown(symbol_a: str, symbol_b: str):
     """
-    10-minute cooldown guard between trades on the same asset.
-    Prevents instant re-entry right after a trade closes!
+    Post-trade cooldown guard:
+    - 10-minute cooldown after ANY trade close on the same symbol.
+    - Strict 45-minute Post-SL Loss Cooldown across the same asset AND its correlated cluster
+      (e.g. NAS100 SL loss locks NAS100 + US30 + US500 for 45 mins to stop Holiday/London whipsaws).
+    Returns: (in_cooldown: bool, reason: str)
     """
     pair_key = f"{symbol_a.upper().split('.')[0]}/{symbol_b.upper().split('.')[0]}"
     expiry = GLOBAL_PAIR_COOLDOWNS.get(pair_key, 0)
     if time.time() < expiry:
-        return True
-        
+        return True, "Memory Cooldown Active"
+
     try:
+        base_a = str(symbol_a or "").upper().split(".")[0]
+        base_b = str(symbol_b or "").upper().split(".")[0]
+        cluster_bases = set(_get_correlated_base_symbols(base_a)) | {base_a, base_b}
+
         conn = get_connection()
         cur = conn.cursor()
-        ten_mins_ago = utc_now_naive() - datetime.timedelta(minutes=10)
+        now_utc = utc_now_naive()
+        ten_mins_ago = now_utc - datetime.timedelta(minutes=10)
+        loss_window = now_utc - datetime.timedelta(minutes=45)
+
         cur.execute(
             """
-            SELECT COUNT(*) FROM trades 
-            WHERE (symbol = %s OR symbol = %s) 
-              AND (entry_time >= %s OR close_time >= %s)
+            SELECT symbol, profit, close_time, entry_time, status
+            FROM trades
+            WHERE (entry_time >= %s OR close_time >= %s)
+            ORDER BY COALESCE(close_time, entry_time) DESC
+            LIMIT 20
             """,
-            (symbol_a, symbol_b, ten_mins_ago, ten_mins_ago)
+            (loss_window, loss_window),
         )
-        count = cur.fetchone()[0]
+        recent_rows = cur.fetchall()
         cur.close()
         conn.close()
-        return count > 0
+
+        for tr_sym, tr_profit, tr_close_t, tr_entry_t, tr_status in recent_rows:
+            tr_base = str(tr_sym or "").upper().split(".")[0]
+            ref_time = tr_close_t or tr_entry_t
+            if ref_time is None:
+                continue
+            mins_ago = max(0.0, (now_utc - ref_time).total_seconds() / 60.0)
+            is_closed_loss = (str(tr_status or "").upper() == "CLOSED") and (tr_profit is not None) and (float(tr_profit) <= -5.0)
+            if is_closed_loss and any(cb in tr_base or tr_base == cb for cb in cluster_bases) and mins_ago < 45.0:
+                rem = max(1, int(round(45.0 - mins_ago)))
+                return True, f"45m Post-SL Correlated Lock ({tr_base} ${float(tr_profit):.2f}, {rem}m remaining)"
+            if (tr_base == base_a or tr_base == base_b) and ref_time >= ten_mins_ago:
+                rem10 = max(1, int(round(10.0 - mins_ago)))
+                return True, f"10m Same-Asset Cooldown ({tr_base}, {rem10}m remaining)"
+
+        return False, ""
     except Exception:
-        return False
+        return False, ""
 
 def check_200_ema_trend(symbol: str, price: float) -> str:
     """
@@ -3440,15 +3491,20 @@ def main():
                     except Exception:
                         pass
                 elif action != "NONE":
-                    in_cd = is_pair_in_cooldown(s_a_resolved, s_b_resolved)
-                    if (cooldown_dir == action or in_cd) and not has_any_active_trade:
-                        logger.info(f"⚡ [COOLDOWN BYPASS] Signal {action} generated for {s_a_resolved}/{s_b_resolved}. Bypassing post-trade cooldown since 0 active trades on MT5.")
-                        in_cd = False
+                    pair_news_blocked, pair_news_reason, _, _ = check_pair_news_block([s_a_resolved, s_b_resolved])
+                    in_cd, cd_reason = is_pair_in_cooldown(s_a_resolved, s_b_resolved)
+                    if cooldown_dir == action and not has_any_active_trade and not in_cd:
                         cooldown_dir = None
 
-                    if cooldown_dir == action or in_cd:
-                        disc_msg = f"COOLDOWN ACTIVE (Post-trade cooldown active, dir={cooldown_dir}, db_cd={in_cd})"
-                        logger.info(f"⏳ [COOLDOWN ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), but cooldown is active. Entry BLOCKED.")
+                    if pair_news_blocked:
+                        logger.info(f"📰 [PAIR NEWS/HOLIDAY BLOCK] Signal {action} on {s_a_resolved}/{s_b_resolved} blocked: {pair_news_reason}")
+                        try:
+                            send_discord_discard_notification(action, s_a_resolved, s_b_resolved, pair_news_reason, smc_sl or 0.0, smc_tp or 0.0, entry_price=p_a)
+                        except Exception:
+                            pass
+                    elif cooldown_dir == action or in_cd:
+                        disc_msg = f"COOLDOWN ACTIVE ({cd_reason or f'dir={cooldown_dir}'})"
+                        logger.info(f"⏳ [COOLDOWN ACTIVE] Signal generated for {s_a_resolved}/{s_b_resolved} ({action}), blocked: {disc_msg}")
                         try:
                             send_discord_discard_notification(action, s_a_resolved, s_b_resolved, disc_msg, smc_sl or 0.0, smc_tp or 0.0, entry_price=p_a)
                         except Exception:

@@ -57,22 +57,41 @@ def send_discord_news_alert(country, event_title, mins, stage="Stage 1"):
 
     threading.Thread(target=_async_send, daemon=True).start()
 
-def get_news_halt_status(symbols, buffer_minutes=15.0):
-    """
-    Checks for high impact economic news for the currencies in symbols (USD, EUR, GBP, etc.).
-    Halts trading if high-impact news is within buffer_minutes (default 15 minutes before or after).
-    Works 100% automatically via ForexFactory live JSON feed with 5-min caching.
-    """
-    currencies = set()
-    for sym in symbols:
-        sym_clean = sym.replace("/", "").replace("USDT", "USD").upper()
-        if len(sym_clean) == 6:
-            currencies.add(sym_clean[:3])
-            currencies.add(sym_clean[3:])
-        else:
-            currencies.add(sym_clean[-3:])
-            currencies.add(sym_clean[:-3])
+_US_INDEX_KEYS = ("US30", "DJ30", "WS30", "DOW", "NAS100", "USTEC", "US100", "NDX", "US500", "SPX")
+_EU_INDEX_KEYS = ("GER30", "GER40", "DE30", "DE40", "DAX")
+_UK_INDEX_KEYS = ("UK100", "FTSE")
+_US_STOCK_KEYS = ("AAPL", "MSFT", "GOOGL", "TSLA", "NVDA", "AMD", "META", "AMZN")
 
+
+def _is_us_index_or_stock(sym: str) -> bool:
+    s = str(sym or "").upper().split(".")[0]
+    return any(k in s for k in _US_INDEX_KEYS) or any(k in s for k in _US_STOCK_KEYS)
+
+
+def _extract_currencies(symbols) -> set:
+    currencies = set()
+    for s in symbols or []:
+        s_clean = str(s).replace("/", "").replace("USDT", "USD").split(".")[0].upper()
+        if "XAU" in s_clean or "GOLD" in s_clean:
+            currencies.update(("USD", "XAU"))
+        elif "XAG" in s_clean or "SILVER" in s_clean:
+            currencies.update(("USD", "XAG"))
+        elif any(k in s_clean for k in _US_INDEX_KEYS) or any(k in s_clean for k in _US_STOCK_KEYS):
+            currencies.add("USD")
+        elif any(k in s_clean for k in _EU_INDEX_KEYS):
+            currencies.add("EUR")
+        elif any(k in s_clean for k in _UK_INDEX_KEYS):
+            currencies.add("GBP")
+        elif len(s_clean) == 6:
+            currencies.add(s_clean[:3])
+            currencies.add(s_clean[3:])
+        elif len(s_clean) > 3:
+            currencies.add(s_clean[-3:])
+            currencies.add(s_clean[:-3])
+    return currencies
+
+
+def _load_calendar_events():
     events = []
     cached_data = None
     if os.path.exists(CACHE_FILE):
@@ -83,39 +102,89 @@ def get_news_halt_status(symbols, buffer_minutes=15.0):
             pass
 
     if cached_data and (time.time() - cached_data.get("timestamp", 0) < CACHE_EXPIRY_SECONDS):
-        events = cached_data.get("data", [])
-    else:
-        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-            with urllib.request.urlopen(req, timeout=10) as response:
-                events = json.loads(response.read().decode('utf-8'))
-                with open(CACHE_FILE, "w") as f:
-                    json.dump({"timestamp": time.time(), "data": events}, f)
-        except Exception:
-            if cached_data:
-                events = cached_data.get("data", [])
-            else:
-                return False, f"No high-impact news within {int(buffer_minutes)} minutes"
+        return cached_data.get("data", [])
 
+    url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            events = json.loads(response.read().decode("utf-8"))
+            with open(CACHE_FILE, "w") as f:
+                json.dump({"timestamp": time.time(), "data": events}, f)
+            return events
+    except Exception:
+        if cached_data:
+            return cached_data.get("data", [])
+        return []
+
+
+def _is_fixed_major_us_market_holiday(est_date: datetime.date):
+    """Fallback guard for major full-day NYSE/NASDAQ closures even if calendar feed is offline."""
+    if (est_date.month, est_date.day) in ((1, 1), (7, 4), (12, 25)):
+        return True, "US Major Market Holiday"
+    # Thanksgiving Day: 4th Thursday of November
+    if est_date.month == 11 and est_date.weekday() == 3 and 22 <= est_date.day <= 28:
+        return True, "US Thanksgiving Bank Holiday"
+    return False, ""
+
+
+def _check_us_holiday_block(symbols, events, utc_now=None):
+    """Blocks thin-liquidity US Bank Holiday sessions on US Equity Indices & Stocks (US30, NAS100, US500)."""
+    if not any(_is_us_index_or_stock(s) for s in (symbols or [])):
+        return False, ""
+    now_utc = utc_now or datetime.datetime.now(datetime.timezone.utc)
+    est_now = now_utc - datetime.timedelta(hours=5)
+    est_today = est_now.date()
+
+    for event in events or []:
+        impact = str(event.get("impact", "")).lower()
+        country = str(event.get("country", "")).upper()
+        title = str(event.get("title", "Bank Holiday") or "Bank Holiday")
+        date_str = str(event.get("date", "") or "")
+        if country == "USD" and (impact == "holiday" or "bank holiday" in title.lower()):
+            try:
+                ev_est_date = datetime.datetime.fromisoformat(date_str).astimezone(
+                    datetime.timezone(datetime.timedelta(hours=-5))
+                ).date()
+                if ev_est_date == est_today:
+                    return True, f"USD Bank Holiday ({title})"
+            except Exception:
+                pass
+
+    fixed_hol, hol_name = _is_fixed_major_us_market_holiday(est_today)
+    if fixed_hol:
+        return True, hol_name
+    return False, ""
+
+
+def get_news_halt_status(symbols, buffer_minutes=15.0):
+    """
+    Checks for high-impact economic news and US Index Bank Holidays via ForexFactory feed (5-min cache).
+    """
+    currencies = _extract_currencies(symbols)
+    events = _load_calendar_events()
     utc_now = datetime.datetime.now(datetime.timezone.utc)
-    
+
+    is_hol, hol_reason = _check_us_holiday_block(symbols, events, utc_now)
+    if is_hol:
+        return True, hol_reason
+
+    if not events:
+        return False, f"No high-impact news within {int(buffer_minutes)} minutes"
+
     for event in events:
         impact = str(event.get("impact", "")).lower()
         country = str(event.get("country", "")).upper()
         event_title = event.get("title", "News")
         date_str = event.get("date", "")
-        
+
         if impact == "high" and (country in currencies or (country == "USD" and "USD" in currencies)):
             try:
                 event_time = datetime.datetime.fromisoformat(date_str).astimezone(datetime.timezone.utc)
                 diff_minutes = (event_time - utc_now).total_seconds() / 60.0
-                
-                # If event is within next buffer_minutes (e.g. 15 mins)
+
                 if 0 <= diff_minutes <= buffer_minutes:
                     return True, f"High impact {country} news ({event_title}) in {int(diff_minutes)}m"
-                
-                # If event was in the last buffer_minutes (e.g. 15 mins)
                 if -buffer_minutes <= diff_minutes < 0:
                     return True, f"High impact {country} news ({event_title}) released {int(abs(diff_minutes))}m ago"
             except Exception:
@@ -126,57 +195,24 @@ def get_news_halt_status(symbols, buffer_minutes=15.0):
 
 def should_auto_close_before_news(symbols, lead_minutes=15.0):
     """
-    Returns (True, reason) if high impact news is scheduled within `lead_minutes` (default 15 mins) before release.
-    Used to block new position entries before high-impact news spikes.
+    Returns (True, reason) if high impact news is scheduled within `lead_minutes` before release.
     """
-    currencies = set()
-    for sym in symbols:
-        sym_clean = sym.replace("/", "").replace("USDT", "USD").upper()
-        if len(sym_clean) == 6:
-            currencies.add(sym_clean[:3])
-            currencies.add(sym_clean[3:])
-        else:
-            currencies.add(sym_clean[-3:])
-            currencies.add(sym_clean[:-3])
-
-    events = []
-    cached_data = None
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, "r") as f:
-                cached_data = json.load(f)
-        except Exception:
-            pass
-
-    if cached_data and (time.time() - cached_data.get("timestamp", 0) < CACHE_EXPIRY_SECONDS):
-        events = cached_data.get("data", [])
-    else:
-        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-            with urllib.request.urlopen(req, timeout=10) as response:
-                events = json.loads(response.read().decode('utf-8'))
-                with open(CACHE_FILE, "w") as f:
-                    json.dump({"timestamp": time.time(), "data": events}, f)
-        except Exception:
-            if cached_data:
-                events = cached_data.get("data", [])
-            else:
-                return False, ""
+    currencies = _extract_currencies(symbols)
+    events = _load_calendar_events()
+    if not events:
+        return False, ""
 
     utc_now = datetime.datetime.now(datetime.timezone.utc)
-    
     for event in events:
         impact = str(event.get("impact", "")).lower()
         country = str(event.get("country", "")).upper()
         event_title = event.get("title", "News")
         date_str = event.get("date", "")
-        
+
         if impact == "high" and (country in currencies or (country == "USD" and "USD" in currencies)):
             try:
                 event_time = datetime.datetime.fromisoformat(date_str).astimezone(datetime.timezone.utc)
                 diff_minutes = (event_time - utc_now).total_seconds() / 60.0
-                
                 if 0.0 <= diff_minutes <= lead_minutes:
                     return True, f"High impact {country} news ({event_title}) in {int(diff_minutes)}m"
             except Exception:
@@ -184,55 +220,25 @@ def should_auto_close_before_news(symbols, lead_minutes=15.0):
 
     return False, ""
 
+
 def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
     """
-    Currency-Specific High-Impact News Enforcement Layer.
-    Detects high-impact news and identifies affected currencies.
-    Blocks NEW entries for pairs containing that currency from pre_minutes (15m before)
-    until post_minutes (30m after release).
-    Does NOT close, modify, or interfere with existing open positions.
+    Currency-Specific High-Impact News & US Index Bank Holiday Enforcement Layer.
+    Blocks NEW entries during pre/post high-impact news or USD Bank Holidays (on US30/NAS100).
     Returns: (is_blocked, reason, affected_currency, event_title)
     """
-    currencies = set()
-    for s in symbols:
-        s_clean = str(s).replace("/", "").replace("USDT", "USD").upper()
-        if "XAU" in s_clean or "XAG" in s_clean or "GOLD" in s_clean:
-            currencies.add("USD")
-            currencies.add("XAU")
-            currencies.add("XAG")
-        elif len(s_clean) == 6:
-            currencies.add(s_clean[:3])
-            currencies.add(s_clean[3:])
-        else:
-            currencies.add(s_clean[-3:])
-            currencies.add(s_clean[:-3])
-
-    events = []
-    cached_data = None
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, "r") as f:
-                cached_data = json.load(f)
-        except Exception:
-            pass
-
-    if cached_data and (time.time() - cached_data.get("timestamp", 0) < CACHE_EXPIRY_SECONDS):
-        events = cached_data.get("data", [])
-    else:
-        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-            with urllib.request.urlopen(req, timeout=10) as response:
-                events = json.loads(response.read().decode('utf-8'))
-                with open(CACHE_FILE, "w") as f:
-                    json.dump({"timestamp": time.time(), "data": events}, f)
-        except Exception:
-            if cached_data:
-                events = cached_data.get("data", [])
-            else:
-                return False, "", "", ""
-
+    currencies = _extract_currencies(symbols)
+    events = _load_calendar_events()
     utc_now = datetime.datetime.now(datetime.timezone.utc)
+
+    is_hol, hol_reason = _check_us_holiday_block(symbols, events, utc_now)
+    if is_hol:
+        pair_str = "/".join(symbols) if isinstance(symbols, (list, tuple, set)) else str(symbols)
+        logger.info(f"HOLIDAY BLOCK | Currency: USD | Event: {hol_reason} | Pair: {pair_str} | TRADE BLOCKED")
+        return True, f"USD BANK HOLIDAY ({hol_reason})", "USD", hol_reason
+
+    if not events:
+        return False, "", "", ""
 
     for event in events:
         impact = str(event.get("impact", "")).lower()
@@ -245,7 +251,6 @@ def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
                 event_time = datetime.datetime.fromisoformat(date_str).astimezone(datetime.timezone.utc)
                 diff_minutes = (event_time - utc_now).total_seconds() / 60.0
 
-                # Block from pre_minutes before (15m) to post_minutes after (30m)
                 if -post_minutes <= diff_minutes <= pre_minutes:
                     reason = f"{country} HIGH IMPACT NEWS ({event_title})"
                     mins = max(1, int(round(diff_minutes)))
@@ -258,36 +263,13 @@ def check_pair_news_block(symbols, pre_minutes=15.0, post_minutes=30.0):
 
     return False, "", "", ""
 
+
 def check_post_news_stability(symbols, kf_pair=None, post_window_minutes=120.0):
     """
     Stage 2: Post-News Regime Confirmation Protection.
-    After the 30m hard news-block window expires (between 30m and 120m after release),
-    verifies if the affected spread has stabilized and returned to a mean-reverting regime.
-    If post-news directional momentum / Z-velocity is still excessively fast, entry is deferred.
-    Returns: (is_unstable, reason, affected_currency, event_title)
     """
-    currencies = set()
-    for s in symbols:
-        s_clean = s.replace("/", "").replace("USDT", "USD").upper()
-        if len(s_clean) == 6:
-            currencies.add(s_clean[:3])
-            currencies.add(s_clean[3:])
-        else:
-            currencies.add(s_clean[-3:])
-            currencies.add(s_clean[:-3])
-
-    events = []
-    cached_data = None
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, "r") as f:
-                cached_data = json.load(f)
-        except Exception:
-            pass
-
-    if cached_data and (time.time() - cached_data.get("timestamp", 0) < CACHE_EXPIRY_SECONDS):
-        events = cached_data.get("data", [])
-
+    currencies = _extract_currencies(symbols)
+    events = _load_calendar_events()
     if not events:
         return False, "", "", ""
 
